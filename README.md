@@ -14,9 +14,9 @@ de forma incremental y cada etapa entrega algo usable por sí sola:
 
 | # | Etapa | Estado |
 |---|---|---|
-| 0 | Setup del proyecto | en curso |
-| 1 | Conexión y exploración de esquema | pendiente |
-| 2 | Monitoreo y mantenimiento | pendiente |
+| 0 | Setup del proyecto | listo |
+| 1 | Conexión y exploración de esquema | listo |
+| 2 | Monitoreo y mantenimiento | siguiente |
 | 3 | Editor SQL + EXPLAIN | pendiente |
 | 4 | Grilla de datos editable | pendiente |
 | 5 | Gestión de objetos DDL | pendiente |
@@ -42,6 +42,19 @@ ui/                    Interfaz: Svelte 5 + TypeScript + Vite + Tailwind.
 `pgforge-cli` existe para garantizar que el core sea usable sin interfaz gráfica. Si una
 funcionalidad solo se puede ejecutar desde la ventana, el core está mal diseñado.
 
+```bash
+pgforge info
+pgforge server --url postgres://postgres@localhost:5432/postgres
+pgforge tree   --url postgres://postgres@localhost:5432/postgres --depth 4
+pgforge ddl    --url postgres://postgres@localhost:5432/postgres public.clientes
+```
+
+## Contraseñas
+
+Nunca se guardan en los archivos de la aplicación. El archivo de conexiones solo tiene los datos
+del servidor; la contraseña va al almacén de credenciales del sistema operativo (Credential
+Manager, Keychain o Secret Service) y solo si se pide recordarla.
+
 ## Desarrollo
 
 Requisitos: Rust estable, Node 20+, pnpm y — en Windows — Visual Studio Build Tools con el
@@ -53,11 +66,27 @@ cargo build --workspace     # compilar el core y la CLI
 pnpm --dir ui tauri dev     # levantar la aplicación
 ```
 
-Los tests de integración necesitan al menos una instancia real de PostgreSQL:
+Los tests de integración necesitan al menos una instancia real de PostgreSQL. Se ejecutan contra
+todas las URLs indicadas, lo que permite validar de una sola pasada que las consultas al catálogo
+funcionan igual en distintas versiones del servidor:
 
 ```bash
-# Una o varias URLs separadas por coma; los tests corren contra todas.
 export PGFORGE_TEST_URLS="postgres://postgres@localhost:5432/postgres,postgres://postgres@localhost:5433/postgres"
+cargo test --workspace
+```
+
+Sin esa variable, los tests de integración no verifican nada y lo avisan por consola.
+
+Para no dejar credenciales en el historial del intérprete de comandos, conviene ponerlas en un
+archivo `.env.local` en la raíz del repositorio (ya está ignorado por git):
+
+```powershell
+# .env.local
+PGFORGE_TEST_URLS=postgres://postgres:clave@localhost:5432/postgres,postgres://postgres:clave@localhost:5433/postgres
+```
+
+```powershell
+$env:PGFORGE_TEST_URLS = ((Get-Content .env.local) -match 'PGFORGE_TEST_URLS=') -replace '^[^=]*='
 cargo test --workspace
 ```
 

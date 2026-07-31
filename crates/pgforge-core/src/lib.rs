@@ -7,7 +7,14 @@
 #![warn(clippy::disallowed_macros)]
 
 pub mod caps;
+pub mod conn;
+pub mod ddl;
 pub mod error;
+pub mod introspect;
 
 pub use caps::{ServerCaps, ServerVersion};
+pub use conn::{
+    ConnectionManager, ConnectionProfile, Password, ProfileId, ProfileStore, ServerHandle,
+};
 pub use error::{Error, Result};
+pub use introspect::{TreeNode, TreeOptions};
