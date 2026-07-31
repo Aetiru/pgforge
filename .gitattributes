@@ -1,0 +1,7 @@
+# El repositorio se trabaja desde Windows, macOS y Linux, y el CI corre en los tres. Los finales
+# de línea se normalizan a LF para que un cambio de plataforma no genere diffs falsos.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.icns binary
