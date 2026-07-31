@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permisos de la ventana principal. Se agregan solo los que cada etapa necesita.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

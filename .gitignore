@@ -1,0 +1,31 @@
+# Rust
+/target
+**/target
+Cargo.lock.bak
+
+# Node
+node_modules/
+.pnpm-store/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Tauri
+/src-tauri/gen/
+/src-tauri/target/
+
+# Entorno local
+.env
+.env.local
+*.local
+
+# Editores / SO
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Credenciales y perfiles de conexion locales (nunca versionar)
+*.pgpass
+connections.local.json

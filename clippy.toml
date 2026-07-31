@@ -1,0 +1,5 @@
+# El core no debe imprimir a stdout: la UI y la CLI deciden como presentar.
+disallowed-macros = [
+    { path = "std::print", reason = "usar tracing en el core" },
+    { path = "std::println", reason = "usar tracing en el core" },
+]

@@ -1,0 +1,15 @@
+[package]
+name = "pgforge-core"
+description = "Núcleo de pgforge: conexión, introspección y administración de PostgreSQL"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+keyring = { version = "3.6.3", features = ["apple-native", "sync-secret-service", "windows-native"] }
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.19"
+tokio-postgres = "0.7.13"

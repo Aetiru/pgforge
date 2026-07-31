@@ -1,0 +1,23 @@
+[package]
+name = "pgforge-app"
+description = "Aplicación de escritorio de pgforge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "pgforge_app_lib"
+# Solo escritorio: los tipos cdylib/staticlib que agrega la plantilla de Tauri son para las
+# plataformas móviles y acá solo aportan tiempo de compilación y ruido del linker.
+crate-type = ["lib"]
+
+[dependencies]
+pgforge-core.workspace = true
+serde = { version = "1.0.229", features = ["derive"] }
+tauri = { version = "2.11.5", features = [] }
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
