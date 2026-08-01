@@ -19,7 +19,7 @@ de forma incremental y cada etapa entrega algo usable por sí sola:
 | 2 | Monitoreo y mantenimiento | listo |
 | 3 | Editor SQL + EXPLAIN | listo |
 | 4 | Grilla de datos editable | listo |
-| 5 | Gestión de objetos DDL | siguiente |
+| 5 | Gestión de objetos DDL | en curso (tablas y columnas: listo; índices, constraints, vistas, funciones y triggers: pendiente) |
 | 6 | Roles y permisos | pendiente |
 | 7+ | Backup/restore, replicación, configuración del servidor | pendiente |
 

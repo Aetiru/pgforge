@@ -50,6 +50,8 @@ pub fn run() {
             commands::data::data_page,
             commands::data::data_preview,
             commands::data::data_apply,
+            commands::ddl::ddl_preview,
+            commands::ddl::ddl_apply,
             commands::query::explain_warning,
         ])
         .run(tauri::generate_context!())

@@ -6,6 +6,9 @@
 //! delega en `pg_dump`; ver [`pg_dump`] para el razonamiento.
 
 pub mod pg_dump;
+pub mod table;
+
+pub use table::{ColumnDef, Identity, Statement as TableStatement, TableChange};
 
 use serde::{Deserialize, Serialize};
 
@@ -119,7 +122,7 @@ pub fn quote_ident(ident: &str) -> String {
     }
 }
 
-fn qualified(schema: &str, name: &str) -> String {
+pub(crate) fn qualified(schema: &str, name: &str) -> String {
     format!("{}.{}", quote_ident(schema), quote_ident(name))
 }
 

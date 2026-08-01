@@ -5,6 +5,7 @@
 //! sin necesidad de una ventana.
 
 pub mod data;
+pub mod ddl;
 pub mod monitoring;
 pub mod query;
 pub mod schema;

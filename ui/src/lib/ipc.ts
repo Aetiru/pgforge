@@ -535,6 +535,52 @@ export const dataPreview = (shape: TableShape, changes: Change[]) =>
 export const dataApply = (id: string, shape: TableShape, changes: Change[], database?: string) =>
   invoke<Applied>("data_apply", { id, shape, changes, database: database ?? null });
 
+// ---------------------------------------------------------------------------
+// Estructura de tablas
+// ---------------------------------------------------------------------------
+
+export type Identity = "always" | "byDefault";
+
+export interface ColumnDef {
+  name: string;
+  /** Texto crudo: lo valida el servidor al ejecutar, acá no se interpreta. */
+  typeName: string;
+  notNull: boolean;
+  /** Expresión SQL cruda (p. ej. `now()`), no un literal a escapar. */
+  default: string | null;
+  identity: Identity | null;
+}
+
+export type TableChange =
+  | { kind: "createTable"; schema: string; name: string; columns: ColumnDef[] }
+  | { kind: "dropTable"; schema: string; name: string; cascade: boolean }
+  | { kind: "renameTable"; schema: string; name: string; newName: string }
+  | { kind: "addColumn"; schema: string; table: string; column: ColumnDef }
+  | { kind: "dropColumn"; schema: string; table: string; column: string; cascade: boolean }
+  | { kind: "renameColumn"; schema: string; table: string; column: string; newName: string }
+  | {
+      kind: "alterColumnType";
+      schema: string;
+      table: string;
+      column: string;
+      typeName: string;
+      /** Solo hace falta cuando el cambio de tipo no es implícito. */
+      using: string | null;
+    }
+  | { kind: "setColumnNotNull"; schema: string; table: string; column: string; notNull: boolean }
+  | { kind: "setColumnDefault"; schema: string; table: string; column: string; default: string | null };
+
+/** El DDL no admite parámetros: a diferencia de `PreviewStatement`, el texto ya está completo. */
+export interface DdlStatement {
+  sql: string;
+}
+
+export const ddlPreview = (changes: TableChange[]) =>
+  invoke<DdlStatement[]>("ddl_preview", { changes });
+
+export const ddlApply = (id: string, changes: TableChange[], database?: string) =>
+  invoke<void>("ddl_apply", { id, changes, database: database ?? null });
+
 export { Channel };
 
 /** `160004` se muestra como `16.4`. */
