@@ -72,7 +72,13 @@
       <p class="p-4 text-sm text-neutral-500">{empty}</p>
     {:else}
       <div class="relative" style="height: {rows.length * ROW_HEIGHT}px">
-        {#each visible as row, index (rowKey(row))}
+        <!--
+          La clave es la posición absoluta de la fila, no su identidad. En una lista con ventana
+          deslizante los nodos se reciclan por posición de todos modos, y una clave derivada de los
+          datos obliga a que sean únicos: pg_stat_statements, por ejemplo, distingue sus filas por
+          (usuario, base, queryid) y repite el texto de la consulta, lo que hacía abortar el render.
+        -->
+        {#each visible as row, index (start + index)}
           {@const key = rowKey(row)}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <div

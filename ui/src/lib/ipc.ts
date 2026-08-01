@@ -232,6 +232,9 @@ export interface IndexStat {
 }
 
 export interface StatementStat {
+  queryId: number | null;
+  database: string | null;
+  user: string | null;
   query: string;
   calls: number;
   totalMs: number;

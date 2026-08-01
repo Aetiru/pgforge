@@ -134,6 +134,12 @@ pub async fn indexes(client: &Client, limit: i64) -> Result<Vec<IndexStat>> {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatementStat {
+    /// `pg_stat_statements` identifica cada fila por (usuario, base, queryid): el mismo texto
+    /// normalizado aparece repetido para cada combinación, y sin estos campos las filas son
+    /// indistinguibles en pantalla.
+    pub query_id: Option<i64>,
+    pub database: Option<String>,
+    pub user: Option<String>,
     pub query: String,
     pub calls: i64,
     pub total_ms: f64,
@@ -157,12 +163,17 @@ pub async fn statements(client: &Client, limit: i64) -> Result<Vec<StatementStat
     // pero la versión mínima soportada ya usa los nuevos.
     let rows = client
         .query(
-            "SELECT s.query,
+            "SELECT s.queryid,
+                    d.datname::text,
+                    r.rolname::text,
+                    s.query,
                     s.calls,
                     s.total_exec_time,
                     s.mean_exec_time,
                     s.rows
                FROM pg_stat_statements s
+               LEFT JOIN pg_catalog.pg_database d ON d.oid = s.dbid
+               LEFT JOIN pg_catalog.pg_roles r ON r.oid = s.userid
               ORDER BY s.total_exec_time DESC
               LIMIT $1",
             &[&limit],
@@ -172,11 +183,14 @@ pub async fn statements(client: &Client, limit: i64) -> Result<Vec<StatementStat
     Ok(rows
         .into_iter()
         .map(|row| StatementStat {
-            query: row.get(0),
-            calls: row.get(1),
-            total_ms: row.get(2),
-            mean_ms: row.get(3),
-            rows: row.get(4),
+            query_id: row.get(0),
+            database: row.get(1),
+            user: row.get(2),
+            query: row.get(3),
+            calls: row.get(4),
+            total_ms: row.get(5),
+            mean_ms: row.get(6),
+            rows: row.get(7),
         })
         .collect())
 }

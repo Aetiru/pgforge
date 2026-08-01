@@ -251,10 +251,12 @@
   ];
 
   const statementColumns: Column<StatementStat>[] = [
+    { key: "database", header: "Base", width: 120, value: (s) => s.database ?? "—" },
+    { key: "user", header: "Usuario", width: 110, value: (s) => s.user ?? "—" },
     {
       key: "query",
       header: "Sentencia",
-      width: 700,
+      width: 620,
       value: (s) => oneLine(s.query, 400),
       title: (s) => s.query,
     },
@@ -487,7 +489,8 @@
         <DataGrid
           columns={statementColumns}
           rows={statements}
-          rowKey={(statement) => statement.query}
+          rowKey={(statement) =>
+            `${statement.database}/${statement.user}/${statement.queryId ?? statement.query}`}
           empty="Todavía no hay consultas registradas."
         />
       {/if}
