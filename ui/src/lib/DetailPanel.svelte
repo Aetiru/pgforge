@@ -8,10 +8,12 @@
     onedit,
     ondelete,
     onconnect,
+    onquery,
   }: {
     onedit: (profileId: string) => void;
     ondelete: (profileId: string) => void;
     onconnect: (profileId: string) => void;
+    onquery: (profileId: string, database: string, title: string) => void;
   } = $props();
 
   let ddl = $state<Ddl | null>(null);
@@ -67,6 +69,19 @@
     setTimeout(() => (copied = false), 1500);
   }
 
+  /**
+   * Contra qué base abriría una consulta lo que está seleccionado. Los objetos la llevan encima;
+   * la fila del servidor recién conectado usa la del perfil.
+   */
+  const queryTarget = $derived.by<{ database: string; title: string } | null>(() => {
+    if (!selected) return null;
+    if (node) return { database: node.database, title: node.label };
+    if (selected.connected && profile) {
+      return { database: profile.database, title: profile.name };
+    }
+    return null;
+  });
+
   const properties = $derived.by<[string, string][]>(() => {
     if (isServer && profile) {
       const rows: [string, string][] = [
@@ -113,8 +128,20 @@
         <h2 class="truncate text-base font-medium">{selected.label}</h2>
         <span class="tag tag-neutral">{kindLabel(node?.kind ?? null)}</span>
 
+        {#if queryTarget}
+          <button
+            class="btn ml-auto shrink-0"
+            title={`Abre una consulta contra ${queryTarget.database}`}
+            onclick={() =>
+              onquery(selected.profileId, queryTarget.database, queryTarget.title)}
+          >
+            <Icon name="sql" size={12} />
+            Consulta
+          </button>
+        {/if}
+
         {#if isServer}
-          <span class="ml-auto flex shrink-0 gap-1.5">
+          <span class="flex shrink-0 gap-1.5 {queryTarget ? '' : 'ml-auto'}">
             {#if selected.connected}
               <button class="btn" onclick={() => explorer.disconnect(selected.profileId)}>
                 Desconectar

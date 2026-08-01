@@ -22,6 +22,8 @@
     | "constraint"
     | "trigger"
     | "plus"
+    | "play"
+    | "sql"
     | "search"
     | "refresh"
     | "chevron"
@@ -51,6 +53,8 @@
     constraint: '<path d="M12 3l8 3v6c0 4.8-3.4 8.4-8 9-4.6-.6-8-4.2-8-9V6z"/>',
     trigger: '<path d="M13 2L4.5 13.5H11L10 22l8.5-11.5H12z"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
+    play: '<path d="M7 4.8l12 7.2-12 7.2z"/>',
+    sql: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M6.5 10l2.5 2-2.5 2M12 14.5h5.5"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
     refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/>',
     chevron: '<path d="M9 6l6 6-6 6"/>',

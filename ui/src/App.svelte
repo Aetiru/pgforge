@@ -3,8 +3,10 @@
   import Dashboard from "./lib/Dashboard.svelte";
   import DetailPanel from "./lib/DetailPanel.svelte";
   import Icon from "./lib/Icon.svelte";
+  import QueryPanel from "./lib/QueryPanel.svelte";
   import TreePanel from "./lib/TreePanel.svelte";
   import { explorer } from "./lib/explorer.svelte";
+  import { queries } from "./lib/query.svelte";
   import {
     appInfo,
     deleteProfile,
@@ -74,6 +76,22 @@
       banner = describeError(error);
     }
   }
+
+  async function openQuery(profileId: string, database: string, title: string) {
+    view = "explorer";
+    await queries.open(profileId, database, title);
+  }
+
+  // Una pestaña de consulta es una conexión viva: si el servidor se desconecta, no queda nada del
+  // otro lado. Se cierra acá y no en cada lugar que desconecta, para que ningún camino se olvide.
+  $effect(() => {
+    const connected = new Set(
+      explorer.roots.filter((row) => row.connected).map((row) => row.profileId),
+    );
+    for (const tab of queries.tabs) {
+      if (!connected.has(tab.profileId)) queries.close(tab.key);
+    }
+  });
 
   function startResize(event: MouseEvent) {
     event.preventDefault();
@@ -209,15 +227,61 @@
         onmousedown={startResize}
       ></div>
 
-      <main class="min-w-0 flex-1">
-        <DetailPanel
-          onconnect={connectById}
-          onedit={(profileId) => {
-            const profile = profileOf(profileId);
-            if (profile) dialog = { profile };
-          }}
-          ondelete={(profileId) => (confirmDelete = profileOf(profileId))}
-        />
+      <main class="flex min-w-0 flex-1 flex-col">
+        {#if queries.tabs.length > 0}
+          <div class="divider-b flex items-stretch gap-px overflow-x-auto px-1" role="tablist">
+            <div class="tab-wrap">
+              <button
+                class="tab"
+                role="tab"
+                aria-selected={queries.active === null}
+                onclick={() => (queries.active = null)}
+              >
+                Detalle
+              </button>
+            </div>
+
+            {#each queries.tabs as tab (tab.key)}
+              <div class="tab-wrap">
+                <button
+                  class="tab pr-1"
+                  role="tab"
+                  aria-selected={queries.active === tab.key}
+                  title={`${tab.title} · ${tab.database}`}
+                  onclick={() => (queries.active = tab.key)}
+                >
+                  <Icon name="sql" size={12} class={tab.running ? "text-blue-500" : "muted"} />
+                  {tab.title}
+                </button>
+                <button
+                  class="tab-close"
+                  aria-label="Cerrar la consulta"
+                  onclick={() => queries.close(tab.key)}
+                >
+                  <Icon name="close" size={10} />
+                </button>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+        <div class="min-h-0 flex-1">
+          {#if queries.current}
+            {#key queries.current.key}
+              <QueryPanel tab={queries.current} />
+            {/key}
+          {:else}
+            <DetailPanel
+              onconnect={connectById}
+              onedit={(profileId) => {
+                const profile = profileOf(profileId);
+                if (profile) dialog = { profile };
+              }}
+              ondelete={(profileId) => (confirmDelete = profileOf(profileId))}
+              onquery={openQuery}
+            />
+          {/if}
+        </div>
       </main>
     </div>
   {/if}

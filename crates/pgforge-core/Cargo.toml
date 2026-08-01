@@ -12,6 +12,7 @@ repository.workspace = true
 deadpool-postgres = "0.14.1"
 futures-util = { version = "0.3.33", default-features = false, features = ["std"] }
 keyring = { version = "3.6.3", features = ["apple-native", "sync-secret-service", "windows-native"] }
+rusqlite = { version = "0.40.1", features = ["bundled"] }
 rustls = { version = "0.23.43", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 rustls-native-certs = "0.8.4"
 rustls-pemfile = "2.2.0"

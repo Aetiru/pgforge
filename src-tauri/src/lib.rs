@@ -36,6 +36,17 @@ pub fn run() {
             commands::monitoring::maintenance_plan,
             commands::monitoring::maintenance_run,
             commands::monitoring::maintenance_cancel,
+            commands::query::query_open,
+            commands::query::query_close,
+            commands::query::query_run,
+            commands::query::query_cancel,
+            commands::query::query_explain,
+            commands::query::statement_at_cursor,
+            commands::query::schema_snapshot,
+            commands::query::history_recent,
+            commands::query::history_search,
+            commands::query::history_clear,
+            commands::query::explain_warning,
         ])
         .run(tauri::generate_context!())
         .expect("no se pudo iniciar la aplicación");

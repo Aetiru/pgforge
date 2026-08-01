@@ -318,6 +318,138 @@ export const maintenanceRun = (
 export const maintenanceCancel = (taskId: string) =>
   invoke<void>("maintenance_cancel", { taskId });
 
+// ---------------------------------------------------------------------------
+// Consultas
+// ---------------------------------------------------------------------------
+
+export interface QueryTab {
+  tabId: string;
+  database: string;
+}
+
+export interface QueryLimits {
+  maxRows: number;
+}
+
+/** Resultado de una sentencia. Refleja `pgforge_core::sql::Outcome`. */
+export type Outcome =
+  | {
+      kind: "rows";
+      columns: string[];
+      /** `null` es un NULL de la base, distinto de la cadena vacía. */
+      rows: (string | null)[][];
+      rowCount: number;
+      truncated: boolean;
+      seconds: number;
+    }
+  | { kind: "command"; tag: string; affected: number; seconds: number };
+
+export type QueryEvent =
+  | { type: "started"; index: number; total: number; line: number }
+  | { type: "finished"; index: number; outcome: Outcome }
+  | { type: "notice"; severity: string; message: string }
+  | { type: "failed"; index: number; error: CoreError; offset: number }
+  | { type: "completed"; seconds: number; executed: number };
+
+export interface ExplainOptions {
+  analyze: boolean;
+  buffers: boolean;
+  verbose: boolean;
+}
+
+export interface PlanNode {
+  nodeType: string;
+  relation: string | null;
+  index: string | null;
+  condition: string | null;
+  startupCost: number;
+  totalCost: number;
+  planRows: number;
+  actualRows: number | null;
+  loops: number | null;
+  totalMs: number | null;
+  /** Tiempo del nodo sin el de sus hijos: el que señala al culpable. */
+  selfMs: number | null;
+  rowsRemoved: number | null;
+  misestimated: boolean;
+  sharedHitBlocks: number | null;
+  sharedReadBlocks: number | null;
+  children: PlanNode[];
+}
+
+export interface Plan {
+  root: PlanNode;
+  planningMs: number | null;
+  executionMs: number | null;
+  analyzed: boolean;
+}
+
+export const queryOpen = (id: string, database?: string) =>
+  invoke<QueryTab>("query_open", { id, database: database ?? null });
+
+export const queryClose = (tabId: string) => invoke<void>("query_close", { tabId });
+
+export const queryRun = (
+  tabId: string,
+  sql: string,
+  channel: Channel<QueryEvent>,
+  limits?: QueryLimits,
+) => invoke<void>("query_run", { tabId, sql, channel, limits: limits ?? null });
+
+export const queryCancel = (tabId: string) => invoke<void>("query_cancel", { tabId });
+
+export const queryExplain = (tabId: string, sql: string, options?: ExplainOptions) =>
+  invoke<Plan>("query_explain", { tabId, sql, options: options ?? null });
+
+export interface SchemaRelation {
+  schema: string;
+  name: string;
+  columns: string[];
+}
+
+export interface SchemaSnapshot {
+  database: string;
+  schemas: string[];
+  relations: SchemaRelation[];
+}
+
+export const schemaSnapshot = (id: string, database?: string) =>
+  invoke<SchemaSnapshot>("schema_snapshot", { id, database: database ?? null });
+
+export interface SqlStatement {
+  text: string;
+  /** Desplazamiento del primer carácter dentro del script, en caracteres. */
+  offset: number;
+  line: number;
+}
+
+export interface HistoryEntry {
+  id: number;
+  profileId: string;
+  database: string;
+  sql: string;
+  /** Segundos desde el epoch. */
+  startedAt: number;
+  seconds: number;
+  rowCount: number | null;
+  succeeded: boolean;
+  error: string | null;
+}
+
+export const historyRecent = (id?: string, limit?: number) =>
+  invoke<HistoryEntry[]>("history_recent", { id: id ?? null, limit: limit ?? null });
+
+export const historySearch = (text: string, limit?: number) =>
+  invoke<HistoryEntry[]>("history_search", { text, limit: limit ?? null });
+
+export const historyClear = () => invoke<void>("history_clear");
+
+export const statementAtCursor = (sql: string, cursor: number) =>
+  invoke<SqlStatement | null>("statement_at_cursor", { sql, cursor });
+
+export const explainWarning = (sql: string, options?: ExplainOptions) =>
+  invoke<string | null>("explain_warning", { sql, options: options ?? null });
+
 export { Channel };
 
 /** `160004` se muestra como `16.4`. */

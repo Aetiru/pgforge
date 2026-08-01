@@ -3,10 +3,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use pgforge_core::monitor::{ActivityFilter, Monitor};
+use pgforge_core::sql::{HistoryStore, QuerySession};
 use pgforge_core::{ConnectionManager, ProfileId, ProfileStore};
+use tauri::ipc::Channel;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio_postgres::CancelToken;
+
+use crate::commands::query::QueryEvent;
 
 /// Refresco por omisión del dashboard.
 pub const DEFAULT_POLL_MS: u64 = 2_000;
@@ -60,11 +64,28 @@ pub struct MaintenanceEntry {
     pub cancel: CancelToken,
 }
 
+/// Una pestaña de consulta abierta, con su conexión propia.
+///
+/// La sesión vive acá y no dentro de la llamada que ejecuta: es lo que hace que un `BEGIN`, un
+/// `SET` o una tabla temporal sigan valiendo en la consulta siguiente de la misma pestaña.
+pub struct QueryEntry {
+    pub profile: ProfileId,
+    /// Se guarda para el historial: la pestaña queda atada a la base con la que se abrió.
+    pub database: String,
+    pub session: Arc<Mutex<QuerySession>>,
+    pub cancel: CancelToken,
+    /// Canal de la ejecución en curso. Los `RAISE NOTICE` llegan por una tarea aparte que vive
+    /// mientras dura la pestaña, así que necesita saber a dónde mandarlos en cada momento.
+    pub notices: Arc<Mutex<Option<Channel<QueryEvent>>>>,
+}
+
 pub struct AppState {
     pub manager: ConnectionManager,
     pub store: Mutex<ProfileStore>,
     pub monitors: Mutex<HashMap<ProfileId, MonitorEntry>>,
     pub maintenance: Mutex<HashMap<String, MaintenanceEntry>>,
+    pub queries: Mutex<HashMap<String, QueryEntry>>,
+    pub history: Mutex<HistoryStore>,
 }
 
 impl AppState {
@@ -73,8 +94,10 @@ impl AppState {
         Ok(Self {
             manager: ConnectionManager::new(),
             store: Mutex::new(ProfileStore::load(config_dir.join("connections.json"))?),
+            history: Mutex::new(HistoryStore::open(config_dir.join("history.db"))?),
             monitors: Mutex::new(HashMap::new()),
             maintenance: Mutex::new(HashMap::new()),
+            queries: Mutex::new(HashMap::new()),
         })
     }
 }

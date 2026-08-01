@@ -17,8 +17,8 @@ de forma incremental y cada etapa entrega algo usable por sí sola:
 | 0 | Setup del proyecto | listo |
 | 1 | Conexión y exploración de esquema | listo |
 | 2 | Monitoreo y mantenimiento | listo |
-| 3 | Editor SQL + EXPLAIN | siguiente |
-| 4 | Grilla de datos editable | pendiente |
+| 3 | Editor SQL + EXPLAIN | listo |
+| 4 | Grilla de datos editable | siguiente |
 | 5 | Gestión de objetos DDL | pendiente |
 | 6 | Roles y permisos | pendiente |
 | 7+ | Backup/restore, replicación, configuración del servidor | pendiente |
@@ -47,6 +47,8 @@ pgforge info
 pgforge server --url postgres://postgres@localhost:5432/postgres
 pgforge tree   --url postgres://postgres@localhost:5432/postgres --depth 4
 pgforge ddl    --url postgres://postgres@localhost:5432/postgres public.clientes
+pgforge query  --url postgres://postgres@localhost:5432/postgres --sql "SELECT * FROM clientes"
+pgforge query  --url postgres://postgres@localhost:5432/postgres --sql "SELECT …" --explain --analyze
 ```
 
 ## Contraseñas
@@ -61,9 +63,9 @@ Requisitos: Rust estable, Node 20+, pnpm y — en Windows — Visual Studio Buil
 workload de C++ para el linker de MSVC.
 
 ```bash
-pnpm --dir ui install
+pnpm install                # el CLI de Tauri vive en la raíz del workspace
 cargo build --workspace     # compilar el core y la CLI
-pnpm --dir ui tauri dev     # levantar la aplicación
+pnpm dev                    # levantar la aplicación
 ```
 
 Los tests de integración necesitan al menos una instancia real de PostgreSQL. Se ejecutan contra

@@ -97,6 +97,31 @@ body {
   @apply flex items-center gap-1.5 text-xs text-zinc-500 select-none dark:text-zinc-400;
 }
 
+/* Pestañas del panel principal: el detalle del objeto y las consultas abiertas. */
+.tab-wrap {
+  @apply flex shrink-0 items-center border-b-2 border-transparent;
+}
+
+.tab-wrap:has([aria-selected="true"]) {
+  @apply border-blue-600 dark:border-blue-400;
+}
+
+/* El subrayado lo pinta el contenedor y no el botón, así abarca también la cruz de cerrar. */
+.tab {
+  @apply flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-xs font-medium whitespace-nowrap
+    text-zinc-500 transition-colors hover:text-zinc-900 dark:text-zinc-400
+    dark:hover:text-zinc-100;
+}
+
+.tab[aria-selected="true"] {
+  @apply text-zinc-900 dark:text-zinc-50;
+}
+
+.tab-close {
+  @apply rounded p-1 text-zinc-400 transition-colors hover:bg-zinc-200 hover:text-zinc-700
+    dark:hover:bg-zinc-700 dark:hover:text-zinc-100;
+}
+
 .check input {
   @apply size-3.5 accent-blue-600;
 }
@@ -137,4 +162,50 @@ body {
 
 .tag-neutral {
   @apply bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400;
+}
+
+/* --------------------------------------------------------------------------
+   Editor SQL
+
+   CodeMirror no usa clases de Tailwind: se le pasan colores. Se declaran acá como variables para
+   que el modo oscuro lo siga decidiendo `prefers-color-scheme` en un solo lugar, igual que el
+   resto de la aplicación.
+   -------------------------------------------------------------------------- */
+
+:root {
+  --cm-keyword: var(--color-blue-700);
+  --cm-string: var(--color-emerald-700);
+  --cm-number: var(--color-violet-700);
+  --cm-comment: var(--color-zinc-400);
+  --cm-type: var(--color-amber-700);
+  --cm-function: var(--color-sky-700);
+  --cm-operator: var(--color-zinc-500);
+
+  --cm-gutter: var(--color-zinc-400);
+  --cm-caret: var(--color-blue-600);
+  --cm-selection: color-mix(in srgb, var(--color-blue-500) 22%, transparent);
+  --cm-active-line: color-mix(in srgb, var(--color-zinc-500) 7%, transparent);
+  --cm-error: var(--color-rose-500);
+  --cm-tooltip-bg: var(--color-white);
+  --cm-tooltip-border: var(--color-zinc-200);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --cm-keyword: var(--color-blue-400);
+    --cm-string: var(--color-emerald-400);
+    --cm-number: var(--color-violet-400);
+    --cm-comment: var(--color-zinc-500);
+    --cm-type: var(--color-amber-400);
+    --cm-function: var(--color-sky-400);
+    --cm-operator: var(--color-zinc-400);
+
+    --cm-gutter: var(--color-zinc-600);
+    --cm-caret: var(--color-blue-400);
+    --cm-selection: color-mix(in srgb, var(--color-blue-400) 28%, transparent);
+    --cm-active-line: color-mix(in srgb, var(--color-zinc-400) 8%, transparent);
+    --cm-error: var(--color-rose-400);
+    --cm-tooltip-bg: var(--color-zinc-900);
+    --cm-tooltip-border: var(--color-zinc-700);
+  }
 }

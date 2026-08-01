@@ -12,6 +12,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 use pgforge_core::conn::{ConnectionManager, ConnectionProfile, ServerHandle};
 use pgforge_core::introspect::{self, NodeKind, TreeNode, TreeOptions};
+use pgforge_core::sql::{self, ExplainOptions, Limits, Outcome, QuerySession};
 use pgforge_core::{caps::MIN_SUPPORTED_VERSION_NUM, ddl, Error, Result, ServerVersion};
 
 #[derive(Parser)]
@@ -52,6 +53,27 @@ enum Command {
         /// Por ejemplo public.clientes
         object: String,
     },
+
+    /// Ejecuta SQL y muestra el resultado.
+    Query {
+        #[arg(long)]
+        url: String,
+        /// El script a ejecutar. Puede tener varias sentencias separadas por punto y coma.
+        #[arg(long)]
+        sql: String,
+        /// Base sobre la que ejecutar. Por omisión, la del perfil.
+        #[arg(long)]
+        database: Option<String>,
+        /// Cuántas filas traer como máximo.
+        #[arg(long, default_value_t = sql::DEFAULT_MAX_ROWS)]
+        max_rows: usize,
+        /// Muestra el plan de ejecución en vez de ejecutar la consulta.
+        #[arg(long)]
+        explain: bool,
+        /// Con --explain, mide tiempos reales. Ojo: ejecuta la sentencia.
+        #[arg(long)]
+        analyze: bool,
+    },
 }
 
 #[tokio::main]
@@ -66,6 +88,21 @@ async fn main() -> ExitCode {
         Command::Server { url } => server(&url).await,
         Command::Tree { url, depth, system } => tree(&url, depth, system).await,
         Command::Ddl { url, object } => show_ddl(&url, &object).await,
+        Command::Query {
+            url,
+            sql,
+            database,
+            max_rows,
+            explain,
+            analyze,
+        } => {
+            let options = explain.then_some(ExplainOptions {
+                analyze,
+                buffers: analyze,
+                verbose: false,
+            });
+            query(&url, &sql, database.as_deref(), max_rows, options).await
+        }
     };
 
     match result {
@@ -168,6 +205,172 @@ async fn show_ddl(url: &str, object: &str) -> Result<()> {
 
     println!("{}", ddl.sql);
     Ok(())
+}
+
+async fn query(
+    url: &str,
+    script: &str,
+    database: Option<&str>,
+    max_rows: usize,
+    explain: Option<ExplainOptions>,
+) -> Result<()> {
+    let handle = connect(url).await?;
+    let database = database.unwrap_or_else(|| handle.default_database());
+    let session = QuerySession::open(&handle, database).await?;
+
+    let statements = sql::split(script);
+    if statements.is_empty() {
+        return Err(Error::Config(
+            "el script no tiene ninguna sentencia".to_owned(),
+        ));
+    }
+
+    for (index, statement) in statements.iter().enumerate() {
+        if statements.len() > 1 {
+            println!(
+                "-- [{}/{}] línea {}",
+                index + 1,
+                statements.len(),
+                statement.line
+            );
+        }
+
+        match explain {
+            Some(options) => {
+                if let Some(aviso) = sql::explain::warning(&statement.text, options) {
+                    eprintln!("aviso: {aviso}");
+                }
+                print_plan(&sql::explain::explain(&session, &statement.text, options).await?);
+            }
+            // Se corta en el primer error: seguir con las que faltan es lo que convierte un script
+            // a medio aplicar en un problema difícil de reconstruir.
+            None => print_outcome(&session.run(&statement.text, Limits { max_rows }).await?),
+        }
+    }
+
+    Ok(())
+}
+
+fn print_plan(plan: &sql::Plan) {
+    fn walk(node: &sql::PlanNode, level: usize) {
+        let sangria = "  ".repeat(level);
+        let objeto = match (&node.index, &node.relation) {
+            (Some(index), Some(relation)) => format!(" sobre {relation} vía {index}"),
+            (_, Some(relation)) => format!(" sobre {relation}"),
+            _ => String::new(),
+        };
+
+        println!(
+            "{sangria}{}{objeto}  (costo {:.2})",
+            node.node_type, node.total_cost
+        );
+
+        match (node.actual_rows, node.self_ms) {
+            (Some(rows), Some(propio)) => println!(
+                "{sangria}  filas {} estimadas / {} reales{}  ·  propio {:.3} ms",
+                node.plan_rows,
+                rows,
+                if node.misestimated { " ⚠" } else { "" },
+                propio
+            ),
+            _ => println!("{sangria}  filas {} estimadas", node.plan_rows),
+        }
+
+        if let Some(condition) = &node.condition {
+            println!("{sangria}  {condition}");
+        }
+
+        for child in &node.children {
+            walk(child, level + 1);
+        }
+    }
+
+    walk(&plan.root, 0);
+
+    if let Some(planning) = plan.planning_ms {
+        println!("planificación: {planning:.3} ms");
+    }
+    if let Some(execution) = plan.execution_ms {
+        println!("ejecución: {execution:.3} ms");
+    }
+}
+
+fn print_outcome(outcome: &Outcome) {
+    match outcome {
+        Outcome::Command {
+            tag,
+            affected,
+            seconds,
+        } => println!("{tag}: {affected} · {seconds:.3} s"),
+
+        Outcome::Rows {
+            columns,
+            rows,
+            row_count,
+            truncated,
+            seconds,
+        } => {
+            print_grid(columns, rows);
+            if *truncated {
+                println!(
+                    "({row_count} filas, se muestran {} · {seconds:.3} s)",
+                    rows.len()
+                );
+            } else {
+                println!("({row_count} filas · {seconds:.3} s)");
+            }
+        }
+    }
+}
+
+/// Grilla de ancho fijo por columna, acotada para que una columna con un JSON adentro no rompa la
+/// alineación de todo lo demás.
+fn print_grid(columns: &[String], rows: &[Vec<Option<String>>]) {
+    const MAX_WIDTH: usize = 40;
+    const NULL: &str = "∅";
+
+    let cell = |value: &Option<String>| value.as_deref().unwrap_or(NULL).replace('\n', " ");
+
+    let widths: Vec<usize> = columns
+        .iter()
+        .enumerate()
+        .map(|(index, column)| {
+            rows.iter()
+                .filter_map(|row| row.get(index))
+                .map(|value| cell(value).chars().count())
+                .chain(std::iter::once(column.chars().count()))
+                .max()
+                .unwrap_or(0)
+                .min(MAX_WIDTH)
+        })
+        .collect();
+
+    let line = |values: Vec<String>| {
+        let padded: Vec<String> = values
+            .iter()
+            .zip(&widths)
+            .map(|(value, width)| {
+                let mut text: String = value.chars().take(*width).collect();
+                let padding = width.saturating_sub(text.chars().count());
+                text.extend(std::iter::repeat_n(' ', padding));
+                text
+            })
+            .collect();
+        println!("{}", padded.join(" | ").trim_end());
+    };
+
+    line(columns.to_vec());
+    println!(
+        "{}",
+        widths
+            .iter()
+            .map(|w| "-".repeat(*w))
+            .collect::<Vec<_>>()
+            .join("-+-")
+    );
+    for row in rows {
+        line(row.iter().map(cell).collect());
+    }
 }
 
 /// Busca el objeto recorriendo las carpetas del esquema. Es el mismo camino que hace la interfaz

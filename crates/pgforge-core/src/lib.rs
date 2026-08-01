@@ -12,6 +12,7 @@ pub mod ddl;
 pub mod error;
 pub mod introspect;
 pub mod monitor;
+pub mod sql;
 
 pub use caps::{ServerCaps, ServerVersion};
 pub use conn::{

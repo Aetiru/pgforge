@@ -40,6 +40,9 @@ pub enum Error {
     #[error("no se pudo acceder al almacén de credenciales del sistema: {0}")]
     Credentials(String),
 
+    #[error("no se pudo usar el historial de consultas: {0}")]
+    History(String),
+
     #[error("configuración inválida: {0}")]
     Config(String),
 
