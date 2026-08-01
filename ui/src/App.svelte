@@ -1,12 +1,15 @@
 <script lang="ts">
   import ConnectionDialog from "./lib/ConnectionDialog.svelte";
   import Dashboard from "./lib/Dashboard.svelte";
+  import DataPanel from "./lib/DataPanel.svelte";
   import DetailPanel from "./lib/DetailPanel.svelte";
   import Icon from "./lib/Icon.svelte";
   import QueryPanel from "./lib/QueryPanel.svelte";
   import TreePanel from "./lib/TreePanel.svelte";
+  import { openData, DataTab } from "./lib/data.svelte";
   import { explorer } from "./lib/explorer.svelte";
-  import { queries } from "./lib/query.svelte";
+  import { openQuery, QueryTab } from "./lib/query.svelte";
+  import { tabs } from "./lib/tabs.svelte";
   import {
     appInfo,
     deleteProfile,
@@ -77,19 +80,14 @@
     }
   }
 
-  async function openQuery(profileId: string, database: string, title: string) {
-    view = "explorer";
-    await queries.open(profileId, database, title);
-  }
-
-  // Una pestaña de consulta es una conexión viva: si el servidor se desconecta, no queda nada del
-  // otro lado. Se cierra acá y no en cada lugar que desconecta, para que ningún camino se olvide.
+  // Una pestaña vive sobre una conexión: si el servidor se desconecta, no queda nada del otro
+  // lado. Se cierra acá y no en cada lugar que desconecta, para que ningún camino se olvide.
   $effect(() => {
     const connected = new Set(
       explorer.roots.filter((row) => row.connected).map((row) => row.profileId),
     );
-    for (const tab of queries.tabs) {
-      if (!connected.has(tab.profileId)) queries.close(tab.key);
+    for (const tab of tabs.all) {
+      if (!connected.has(tab.profileId)) tabs.close(tab.key);
     }
   });
 
@@ -228,35 +226,39 @@
       ></div>
 
       <main class="flex min-w-0 flex-1 flex-col">
-        {#if queries.tabs.length > 0}
+        {#if tabs.all.length > 0}
           <div class="divider-b flex items-stretch gap-px overflow-x-auto px-1" role="tablist">
             <div class="tab-wrap">
               <button
                 class="tab"
                 role="tab"
-                aria-selected={queries.active === null}
-                onclick={() => (queries.active = null)}
+                aria-selected={tabs.active === null}
+                onclick={() => (tabs.active = null)}
               >
                 Detalle
               </button>
             </div>
 
-            {#each queries.tabs as tab (tab.key)}
+            {#each tabs.all as tab (tab.key)}
               <div class="tab-wrap">
                 <button
                   class="tab pr-1"
                   role="tab"
-                  aria-selected={queries.active === tab.key}
+                  aria-selected={tabs.active === tab.key}
                   title={`${tab.title} · ${tab.database}`}
-                  onclick={() => (queries.active = tab.key)}
+                  onclick={() => (tabs.active = tab.key)}
                 >
-                  <Icon name="sql" size={12} class={tab.running ? "text-blue-500" : "muted"} />
+                  <Icon
+                    name={tab.kind === "query" ? "sql" : "table"}
+                    size={12}
+                    class={tab instanceof QueryTab && tab.running ? "text-blue-500" : "muted"}
+                  />
                   {tab.title}
                 </button>
                 <button
                   class="tab-close"
-                  aria-label="Cerrar la consulta"
-                  onclick={() => queries.close(tab.key)}
+                  aria-label="Cerrar la pestaña"
+                  onclick={() => tabs.close(tab.key)}
                 >
                   <Icon name="close" size={10} />
                 </button>
@@ -266,9 +268,13 @@
         {/if}
 
         <div class="min-h-0 flex-1">
-          {#if queries.current}
-            {#key queries.current.key}
-              <QueryPanel tab={queries.current} />
+          {#if tabs.current instanceof QueryTab}
+            {#key tabs.current.key}
+              <QueryPanel tab={tabs.current} />
+            {/key}
+          {:else if tabs.current instanceof DataTab}
+            {#key tabs.current.key}
+              <DataPanel tab={tabs.current} />
             {/key}
           {:else}
             <DetailPanel
@@ -279,6 +285,7 @@
               }}
               ondelete={(profileId) => (confirmDelete = profileOf(profileId))}
               onquery={openQuery}
+              ondata={openData}
             />
           {/if}
         </div>

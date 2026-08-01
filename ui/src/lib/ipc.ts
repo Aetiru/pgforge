@@ -3,6 +3,8 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 /** Error del núcleo tal como cruza el IPC. Refleja `pgforge_core::error::ErrorPayload`. */
 export type CoreError =
   | { kind: "canceled" }
+  /** Los datos cambiaron entre que se leyeron y se quisieron escribir. */
+  | { kind: "conflict"; message: string }
   | { kind: "permission"; message: string }
   | {
       kind: "database";
@@ -450,6 +452,89 @@ export const statementAtCursor = (sql: string, cursor: number) =>
 export const explainWarning = (sql: string, options?: ExplainOptions) =>
   invoke<string | null>("explain_warning", { sql, options: options ?? null });
 
+// ---------------------------------------------------------------------------
+// Datos de una tabla
+// ---------------------------------------------------------------------------
+
+export interface TableColumn {
+  name: string;
+  /** Como lo escribe `format_type`: ya es válido para usar en SQL. */
+  typeName: string;
+  notNull: boolean;
+  default: string | null;
+  /** La calcula el servidor (identidad o generada): no se puede escribir. */
+  generated: boolean;
+  comment: string | null;
+}
+
+export interface TableKey {
+  name: string;
+  kind: "primary" | "unique";
+  columns: string[];
+}
+
+export interface TableShape {
+  oid: number;
+  schema: string;
+  name: string;
+  columns: TableColumn[];
+  key: TableKey | null;
+  /** Por qué no se puede editar. `null` significa que sí se puede. */
+  readOnly: string | null;
+}
+
+export type Cursor = { kind: "after"; key: string[] } | { kind: "offset"; rows: number };
+
+export interface DataPage {
+  columns: string[];
+  rows: (string | null)[][];
+  /** Con qué pedir la página siguiente. `null` cuando ya no hay más. */
+  next: Cursor | null;
+}
+
+/** Valores de una fila, por nombre de columna. `null` es un NULL de la base. */
+export type RowValues = Record<string, string | null>;
+
+export type Change =
+  | { kind: "insert"; values: RowValues }
+  | { kind: "update"; key: string[]; original: RowValues; changes: RowValues }
+  | { kind: "delete"; key: string[] };
+
+export interface PreviewStatement {
+  sql: string;
+  params: (string | null)[];
+}
+
+export interface Applied {
+  inserted: number;
+  updated: number;
+  deleted: number;
+}
+
+export const dataOpen = (id: string, oid: number, database?: string) =>
+  invoke<TableShape>("data_open", { id, oid, database: database ?? null });
+
+export const dataPage = (
+  id: string,
+  shape: TableShape,
+  cursor: Cursor | null,
+  limit?: number,
+  database?: string,
+) =>
+  invoke<DataPage>("data_page", {
+    id,
+    shape,
+    cursor,
+    limit: limit ?? null,
+    database: database ?? null,
+  });
+
+export const dataPreview = (shape: TableShape, changes: Change[]) =>
+  invoke<PreviewStatement[]>("data_preview", { shape, changes });
+
+export const dataApply = (id: string, shape: TableShape, changes: Change[], database?: string) =>
+  invoke<Applied>("data_apply", { id, shape, changes, database: database ?? null });
+
 export { Channel };
 
 /** `160004` se muestra como `16.4`. */
@@ -472,6 +557,8 @@ export function describeError(error: unknown): string {
   switch (e?.kind) {
     case "canceled":
       return "Operación cancelada.";
+    case "conflict":
+      return e.message;
     case "permission":
       return `Permiso insuficiente: ${e.message}`;
     case "database":

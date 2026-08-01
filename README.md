@@ -18,8 +18,8 @@ de forma incremental y cada etapa entrega algo usable por sí sola:
 | 1 | Conexión y exploración de esquema | listo |
 | 2 | Monitoreo y mantenimiento | listo |
 | 3 | Editor SQL + EXPLAIN | listo |
-| 4 | Grilla de datos editable | siguiente |
-| 5 | Gestión de objetos DDL | pendiente |
+| 4 | Grilla de datos editable | listo |
+| 5 | Gestión de objetos DDL | siguiente |
 | 6 | Roles y permisos | pendiente |
 | 7+ | Backup/restore, replicación, configuración del servidor | pendiente |
 
@@ -47,6 +47,7 @@ pgforge info
 pgforge server --url postgres://postgres@localhost:5432/postgres
 pgforge tree   --url postgres://postgres@localhost:5432/postgres --depth 4
 pgforge ddl    --url postgres://postgres@localhost:5432/postgres public.clientes
+pgforge data   --url postgres://postgres@localhost:5432/postgres public.clientes --limit 20
 pgforge query  --url postgres://postgres@localhost:5432/postgres --sql "SELECT * FROM clientes"
 pgforge query  --url postgres://postgres@localhost:5432/postgres --sql "SELECT …" --explain --analyze
 ```

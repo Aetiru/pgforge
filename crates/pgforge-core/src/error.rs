@@ -25,6 +25,11 @@ pub enum Error {
     #[error("la operación fue cancelada")]
     Canceled,
 
+    /// Los datos cambiaron entre que se leyeron y se quisieron escribir. No es una falla del
+    /// servidor ni del usuario, y merece un mensaje distinto de ambos.
+    #[error("{0}")]
+    Conflict(String),
+
     /// Cualquier otro error reportado por el servidor, con los campos del protocolo preservados
     /// para que la interfaz pueda resaltar la posición exacta dentro de la consulta.
     #[error("[{code}] {message}")]
@@ -104,6 +109,9 @@ impl From<keyring::Error> for Error {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ErrorPayload {
     Canceled,
+    Conflict {
+        message: String,
+    },
     Permission {
         message: String,
     },
@@ -124,6 +132,9 @@ impl From<&Error> for ErrorPayload {
     fn from(err: &Error) -> Self {
         match err {
             Error::Canceled => ErrorPayload::Canceled,
+            Error::Conflict(message) => ErrorPayload::Conflict {
+                message: message.clone(),
+            },
             Error::Permission(message) => ErrorPayload::Permission {
                 message: message.clone(),
             },

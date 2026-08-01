@@ -8,6 +8,7 @@
 
 pub mod caps;
 pub mod conn;
+pub mod data;
 pub mod ddl;
 pub mod error;
 pub mod introspect;

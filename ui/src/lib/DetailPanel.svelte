@@ -9,11 +9,13 @@
     ondelete,
     onconnect,
     onquery,
+    ondata,
   }: {
     onedit: (profileId: string) => void;
     ondelete: (profileId: string) => void;
     onconnect: (profileId: string) => void;
     onquery: (profileId: string, database: string, title: string) => void;
+    ondata: (profileId: string, database: string, title: string, oid: number) => void;
   } = $props();
 
   let ddl = $state<Ddl | null>(null);
@@ -82,6 +84,16 @@
     return null;
   });
 
+  /**
+   * Las relaciones que tienen filas para mostrar. Las vistas y las materializadas entran: se abren
+   * en solo lectura, y el propio panel explica por qué.
+   */
+  const dataTarget = $derived.by<number | null>(() => {
+    const kinds = ["table", "partitionedTable", "view", "materializedView", "foreignTable"];
+    if (!node || typeof node.kind !== "string" || !kinds.includes(node.kind)) return null;
+    return node.oid ?? null;
+  });
+
   const properties = $derived.by<[string, string][]>(() => {
     if (isServer && profile) {
       const rows: [string, string][] = [
@@ -128,9 +140,20 @@
         <h2 class="truncate text-base font-medium">{selected.label}</h2>
         <span class="tag tag-neutral">{kindLabel(node?.kind ?? null)}</span>
 
-        {#if queryTarget}
+        {#if dataTarget !== null && queryTarget}
           <button
             class="btn ml-auto shrink-0"
+            title={`Abre los datos de ${selected.label}`}
+            onclick={() => ondata(selected.profileId, queryTarget.database, queryTarget.title, dataTarget)}
+          >
+            <Icon name="table" size={12} />
+            Datos
+          </button>
+        {/if}
+
+        {#if queryTarget}
+          <button
+            class="btn shrink-0 {dataTarget === null ? 'ml-auto' : ''}"
             title={`Abre una consulta contra ${queryTarget.database}`}
             onclick={() =>
               onquery(selected.profileId, queryTarget.database, queryTarget.title)}

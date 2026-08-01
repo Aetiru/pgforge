@@ -46,6 +46,10 @@ pub fn run() {
             commands::query::history_recent,
             commands::query::history_search,
             commands::query::history_clear,
+            commands::data::data_open,
+            commands::data::data_page,
+            commands::data::data_preview,
+            commands::data::data_apply,
             commands::query::explain_warning,
         ])
         .run(tauri::generate_context!())

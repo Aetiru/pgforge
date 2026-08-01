@@ -1,4 +1,5 @@
 import type { SQLNamespace } from "@codemirror/lang-sql";
+import { Tab, tabs } from "./tabs.svelte";
 import {
   Channel,
   describeError,
@@ -39,13 +40,11 @@ export interface ErrorMark {
 
 export type ResultView = "rows" | "plan" | "messages" | "history";
 
-let sequence = 0;
-
 /**
  * Los nombres de una base, cacheados mientras dure la ventana.
  *
  * Dos pestañas contra la misma base comparten el resultado: la consulta al catálogo no es gratis y
- * abrir varias pestañas sobre la base en la que uno está trabajando es lo normal.
+ * abrir varias pestañas sobre la base en la que uno trabaja es lo normal.
  */
 const namespaces = new Map<string, Promise<SQLNamespace>>();
 
@@ -69,19 +68,10 @@ async function schemaFor(profileId: string, database: string): Promise<SQLNamesp
   return pending;
 }
 
-/**
- * Una pestaña de consulta.
- *
- * `tabId` es el identificador que devuelve el backend y que representa la conexión; `key` es local
- * y existe desde antes, porque la pestaña aparece en la interfaz apenas se la abre y la conexión
- * puede tardar o fallar.
- */
-export class QueryTab {
-  readonly key = `consulta-${++sequence}`;
-  readonly profileId: string;
-  readonly database: string;
-  readonly title: string;
+export class QueryTab extends Tab {
+  readonly kind = "query" as const;
 
+  /** Identificador de la conexión del lado del backend. */
   tabId = $state<string | null>(null);
   /** Nombres del esquema en el formato que espera `@codemirror/lang-sql`. */
   schema = $state.raw<SQLNamespace | undefined>(undefined);
@@ -90,10 +80,9 @@ export class QueryTab {
   running = $state(false);
 
   /**
-   * Los tres van en `$state.raw` y no en `$state` porque se reemplazan enteros y nunca se mutan por
-   * dentro. `$state` envuelve en un proxy cada objeto anidado: un resultado de diez mil filas por
-   * veinte columnas serían doscientas mil envolturas, creadas para nada, justo antes de dibujar la
-   * grilla.
+   * Van en `$state.raw` y no en `$state` porque se reemplazan enteros y nunca se mutan por dentro.
+   * `$state` envuelve en un proxy cada objeto anidado: un resultado de diez mil filas por veinte
+   * columnas serían doscientas mil envolturas, creadas para nada, justo antes de dibujar la grilla.
    */
   results = $state.raw<ResultSet[]>([]);
   plan = $state.raw<Plan | null>(null);
@@ -104,12 +93,6 @@ export class QueryTab {
   /** Cuál de los resultados se está mirando, cuando el script devolvió más de uno. */
   shown = $state(0);
 
-  constructor(profileId: string, database: string, title: string) {
-    this.profileId = profileId;
-    this.database = database;
-    this.title = title;
-  }
-
   get result(): ResultSet | null {
     return this.results[this.shown] ?? null;
   }
@@ -117,69 +100,9 @@ export class QueryTab {
   log(tone: MessageTone, text: string) {
     this.messages.push({ tone, text });
   }
-}
 
-class QueryTabs {
-  tabs = $state<QueryTab[]>([]);
-  /** `null` significa que se está mirando el detalle del objeto, no una consulta. */
-  active = $state<string | null>(null);
-
-  get current(): QueryTab | null {
-    return this.tabs.find((tab) => tab.key === this.active) ?? null;
-  }
-
-  find(key: string): QueryTab | null {
-    return this.tabs.find((tab) => tab.key === key) ?? null;
-  }
-
-  /** Abre una pestaña contra una base y la deja seleccionada. */
-  async open(profileId: string, database: string, title: string): Promise<QueryTab> {
-    const tab = new QueryTab(profileId, database, title);
-    this.tabs.push(tab);
-    this.active = tab.key;
-
-    try {
-      const opened = await queryOpen(profileId, database);
-      tab.tabId = opened.tabId;
-      tab.log("info", `Conectado a ${opened.database}.`);
-    } catch (error) {
-      tab.log("error", describeError(error));
-      tab.view = "messages";
-    } finally {
-      tab.opening = false;
-    }
-
-    // El autocompletado no bloquea: la pestaña ya sirve para escribir y ejecutar mientras el
-    // catálogo se consulta. Si falla, se pierde el autocompletado y nada más.
-    schemaFor(profileId, database)
-      .then((namespace) => {
-        tab.schema = namespace;
-      })
-      .catch((error) => tab.log("notice", `Sin autocompletado: ${describeError(error)}`));
-
-    return tab;
-  }
-
-  async close(key: string) {
-    const tab = this.find(key);
-    if (!tab) return;
-
-    this.tabs = this.tabs.filter((item) => item.key !== key);
-    if (this.active === key) {
-      this.active = this.tabs.at(-1)?.key ?? null;
-    }
-
-    // La conexión se suelta aunque la consulta siga corriendo: el servidor la corta al cerrarse.
-    if (tab.tabId) {
-      await queryClose(tab.tabId).catch(() => {});
-    }
-  }
-
-  /** Cierra las pestañas de un servidor que se desconectó; su conexión ya no existe. */
-  async closeFor(profileId: string) {
-    for (const tab of this.tabs.filter((item) => item.profileId === profileId)) {
-      await this.close(tab.key);
-    }
+  override async dispose() {
+    if (this.tabId) await queryClose(this.tabId);
   }
 
   /**
@@ -187,32 +110,32 @@ class QueryTabs {
    * manda al servidor solo ese fragmento, así que la posición que devuelve un error está referida
    * al fragmento: sin sumar el desplazamiento, la marca caería sobre la primera sentencia.
    */
-  async run(tab: QueryTab, sql: string, base = 0) {
-    if (!tab.tabId || tab.running || sql.trim() === "") return;
+  async run(sql: string, base = 0) {
+    if (!this.tabId || this.running || sql.trim() === "") return;
 
-    tab.running = true;
-    tab.results = [];
-    tab.messages = [];
-    tab.errorMark = null;
-    tab.plan = null;
-    tab.shown = 0;
-    tab.view = "rows";
+    this.running = true;
+    this.results = [];
+    this.messages = [];
+    this.errorMark = null;
+    this.plan = null;
+    this.shown = 0;
+    this.view = "rows";
 
     const lines = new Map<number, number>();
     const channel = new Channel<QueryEvent>();
-    channel.onmessage = (event) => this.apply(tab, event, lines, base);
+    channel.onmessage = (event) => this.apply(event, lines, base);
 
     try {
-      await queryRun(tab.tabId, sql, channel);
+      await queryRun(this.tabId, sql, channel);
     } catch (error) {
-      tab.log("error", describeError(error));
-      tab.view = "messages";
+      this.log("error", describeError(error));
+      this.view = "messages";
     } finally {
-      tab.running = false;
+      this.running = false;
     }
   }
 
-  private apply(tab: QueryTab, event: QueryEvent, lines: Map<number, number>, base: number) {
+  private apply(event: QueryEvent, lines: Map<number, number>, base: number) {
     switch (event.type) {
       case "started":
         lines.set(event.index, event.line);
@@ -220,8 +143,8 @@ class QueryTabs {
 
       case "finished":
         // Reasignar y no `push`: con `$state.raw` el cambio se notifica al reemplazar el arreglo.
-        tab.results = [
-          ...tab.results,
+        this.results = [
+          ...this.results,
           {
             index: event.index,
             line: lines.get(event.index) ?? 1,
@@ -229,9 +152,9 @@ class QueryTabs {
           },
         ];
         if (event.outcome.kind === "command") {
-          tab.log("info", `${event.outcome.tag}: ${event.outcome.affected}`);
+          this.log("info", `${event.outcome.tag}: ${event.outcome.affected}`);
         } else if (event.outcome.truncated) {
-          tab.log(
+          this.log(
             "notice",
             `Se recortó el resultado: hay ${event.outcome.rowCount} filas y se trajeron ` +
               `${event.outcome.rows.length}.`,
@@ -239,26 +162,26 @@ class QueryTabs {
         }
         // Mostrar el último resultado con filas es lo que uno espera al ejecutar un script que
         // termina en un SELECT.
-        tab.shown = tab.results.reduce(
+        this.shown = this.results.reduce(
           (last, result, index) => (result.outcome.kind === "rows" ? index : last),
           0,
         );
         break;
 
       case "notice":
-        tab.log("notice", `${event.severity}: ${event.message}`);
+        this.log("notice", `${event.severity}: ${event.message}`);
         break;
 
       case "failed": {
         if (isCanceled(event.error)) {
-          tab.log("info", "Consulta cancelada.");
+          this.log("info", "Consulta cancelada.");
           break;
         }
-        tab.log("error", describeError(event.error));
-        tab.view = "messages";
+        this.log("error", describeError(event.error));
+        this.view = "messages";
         // La posición del servidor viene con base 1 y relativa a su sentencia.
         if (event.error.kind === "database" && event.error.position !== null) {
-          tab.errorMark = {
+          this.errorMark = {
             at: base + event.offset + event.error.position - 1,
             message: event.error.message,
           };
@@ -268,47 +191,72 @@ class QueryTabs {
 
       case "completed":
         if (event.executed > 1) {
-          tab.log("info", `${event.executed} sentencias en ${event.seconds.toFixed(3)} s.`);
+          this.log("info", `${event.executed} sentencias en ${event.seconds.toFixed(3)} s.`);
         }
         break;
     }
   }
 
-  async cancel(tab: QueryTab) {
-    if (!tab.tabId || !tab.running) return;
+  async cancel() {
+    if (!this.tabId || !this.running) return;
     try {
-      await queryCancel(tab.tabId);
+      await queryCancel(this.tabId);
     } catch (error) {
-      tab.log("error", describeError(error));
+      this.log("error", describeError(error));
     }
   }
 
-  async explain(tab: QueryTab, sql: string, base: number, options: ExplainOptions) {
-    if (!tab.tabId || tab.running || sql.trim() === "") return;
+  async explain(sql: string, base: number, options: ExplainOptions) {
+    if (!this.tabId || this.running || sql.trim() === "") return;
 
-    tab.running = true;
-    tab.errorMark = null;
-    tab.messages = [];
+    this.running = true;
+    this.errorMark = null;
+    this.messages = [];
 
     try {
-      tab.plan = await queryExplain(tab.tabId, sql, options);
-      tab.view = "plan";
+      this.plan = await queryExplain(this.tabId, sql, options);
+      this.view = "plan";
     } catch (error) {
-      tab.log("error", describeError(error));
-      tab.view = "messages";
+      this.log("error", describeError(error));
+      this.view = "messages";
 
       // La posición ya viene descontado el `EXPLAIN (…)` que antepuso el núcleo.
       const failure = error as CoreError;
       if (failure.kind === "database" && failure.position !== null) {
-        tab.errorMark = {
-          at: base + failure.position - 1,
-          message: failure.message,
-        };
+        this.errorMark = { at: base + failure.position - 1, message: failure.message };
       }
     } finally {
-      tab.running = false;
+      this.running = false;
     }
   }
 }
 
-export const queries = new QueryTabs();
+/** Abre una pestaña de consulta contra una base y la deja seleccionada. */
+export async function openQuery(
+  profileId: string,
+  database: string,
+  title: string,
+): Promise<QueryTab> {
+  const tab = tabs.add(new QueryTab(profileId, database, title));
+
+  try {
+    const opened = await queryOpen(profileId, database);
+    tab.tabId = opened.tabId;
+    tab.log("info", `Conectado a ${opened.database}.`);
+  } catch (error) {
+    tab.log("error", describeError(error));
+    tab.view = "messages";
+  } finally {
+    tab.opening = false;
+  }
+
+  // El autocompletado no bloquea: la pestaña ya sirve para escribir y ejecutar mientras el catálogo
+  // se consulta. Si falla, se pierde el autocompletado y nada más.
+  schemaFor(profileId, database)
+    .then((namespace) => {
+      tab.schema = namespace;
+    })
+    .catch((error) => tab.log("notice", `Sin autocompletado: ${describeError(error)}`));
+
+  return tab;
+}

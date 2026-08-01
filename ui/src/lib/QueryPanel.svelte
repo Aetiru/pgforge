@@ -5,7 +5,7 @@
   import ResultGrid from "./ResultGrid.svelte";
   import SqlEditor from "./SqlEditor.svelte";
   import { decimal } from "./format";
-  import { queries, type QueryTab } from "./query.svelte";
+  import type { QueryTab } from "./query.svelte";
   import { describeError, explainWarning, statementAtCursor, type ExplainOptions } from "./ipc";
 
   let { tab }: { tab: QueryTab } = $props();
@@ -40,7 +40,7 @@
 
   async function run(selection: string, cursor: number) {
     const target = await resolve(selection, cursor);
-    if (target) await queries.run(tab, target.sql, target.base);
+    if (target) await tab.run(target.sql, target.base);
   }
 
   async function explain(selection: string, cursor: number, options: ExplainOptions) {
@@ -58,7 +58,7 @@
       tab.log("error", describeError(error));
     }
 
-    await queries.explain(tab, target.sql, target.base, options);
+    await tab.explain(target.sql, target.base, options);
   }
 
   function startResize(event: MouseEvent) {
@@ -87,7 +87,7 @@
 <div class="flex h-full flex-col">
   <header class="divider-b flex flex-wrap items-center gap-1.5 px-2 py-1.5">
     {#if tab.running}
-      <button class="btn" onclick={() => queries.cancel(tab)}>
+      <button class="btn" onclick={() => tab.cancel()}>
         <Icon name="close" size={12} />
         Cancelar
       </button>
@@ -105,7 +105,7 @@
         class="btn"
         disabled={tab.tabId === null}
         title="Ejecuta todas las sentencias del editor (Ctrl+Shift+Enter)"
-        onclick={() => queries.run(tab, tab.sql)}
+        onclick={() => tab.run(tab.sql)}
       >
         Script entero
       </button>
@@ -147,8 +147,8 @@
         lastCursor = cursor;
         run(selection, cursor);
       }}
-      onrunScript={() => queries.run(tab, tab.sql)}
-      oncancel={() => queries.cancel(tab)}
+      onrunScript={() => tab.run(tab.sql)}
+      oncancel={() => tab.cancel()}
     />
   </div>
 
@@ -277,7 +277,7 @@
           onclick={() => {
             const target = pending;
             pending = null;
-            if (target) queries.explain(tab, target.sql, target.base, target.options);
+            if (target) tab.explain(target.sql, target.base, target.options);
           }}
         >
           Ejecutar igual

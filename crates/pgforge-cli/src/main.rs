@@ -11,6 +11,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use pgforge_core::conn::{ConnectionManager, ConnectionProfile, ServerHandle};
+use pgforge_core::data;
 use pgforge_core::introspect::{self, NodeKind, TreeNode, TreeOptions};
 use pgforge_core::sql::{self, ExplainOptions, Limits, Outcome, QuerySession};
 use pgforge_core::{caps::MIN_SUPPORTED_VERSION_NUM, ddl, Error, Result, ServerVersion};
@@ -74,6 +75,21 @@ enum Command {
         #[arg(long)]
         analyze: bool,
     },
+
+    /// Muestra los datos de una tabla, indicada como esquema.nombre
+    Data {
+        #[arg(long)]
+        url: String,
+        /// Por ejemplo public.clientes
+        table: String,
+        /// Cuántas filas traer.
+        #[arg(long, default_value_t = data::DEFAULT_PAGE_SIZE)]
+        limit: usize,
+        /// Valores de clave de la última fila vista, separados por coma, para pedir la página
+        /// siguiente.
+        #[arg(long, value_delimiter = ',')]
+        after: Option<Vec<String>>,
+    },
 }
 
 #[tokio::main]
@@ -103,6 +119,12 @@ async fn main() -> ExitCode {
             });
             query(&url, &sql, database.as_deref(), max_rows, options).await
         }
+        Command::Data {
+            url,
+            table,
+            limit,
+            after,
+        } => show_data(&url, &table, limit, after).await,
     };
 
     match result {
@@ -371,6 +393,43 @@ fn print_grid(columns: &[String], rows: &[Vec<Option<String>>]) {
     for row in rows {
         line(row.iter().map(cell).collect());
     }
+}
+
+async fn show_data(url: &str, table: &str, limit: usize, after: Option<Vec<String>>) -> Result<()> {
+    let (schema_name, table_name) = table.split_once('.').ok_or_else(|| {
+        Error::Config("indicá la tabla como esquema.nombre, por ejemplo public.clientes".to_owned())
+    })?;
+
+    let handle = connect(url).await?;
+    let node = find_object(&handle, schema_name, table_name).await?;
+    let oid = node
+        .oid
+        .ok_or_else(|| Error::Config(format!("{table} no tiene oid en el catálogo")))?;
+
+    let database = handle.default_database().to_owned();
+    let shape = data::shape(&handle, &database, oid).await?;
+
+    match (&shape.key, &shape.read_only) {
+        (Some(key), None) => println!("-- editable por {} ({})", key.name, key.columns.join(", ")),
+        (_, Some(motivo)) => println!("-- solo lectura: {motivo}"),
+        (None, None) => {}
+    }
+
+    let cursor = after.map(|key| data::Cursor::After { key });
+    let page = data::page(&handle, &database, &shape, cursor.as_ref(), limit).await?;
+
+    print_grid(&page.columns, &page.rows);
+    println!("({} filas)", page.rows.len());
+
+    // Se imprime el cursor para poder encadenar la llamada siguiente a mano, que es justamente lo
+    // que hace verificable la paginación desde la línea de comandos.
+    match page.next {
+        Some(data::Cursor::After { key }) => println!("-- siguiente: --after {}", key.join(",")),
+        Some(data::Cursor::Offset { rows }) => println!("-- siguiente: offset {rows}"),
+        None => println!("-- no hay más filas"),
+    }
+
+    Ok(())
 }
 
 /// Busca el objeto recorriendo las carpetas del esquema. Es el mismo camino que hace la interfaz
