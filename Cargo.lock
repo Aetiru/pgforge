@@ -2465,6 +2465,8 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tokio",
+ "tokio-postgres",
+ "uuid",
 ]
 
 [[package]]
@@ -2481,6 +2483,7 @@ name = "pgforge-core"
 version = "0.1.0"
 dependencies = [
  "deadpool-postgres",
+ "futures-util",
  "keyring",
  "rustls",
  "rustls-native-certs",

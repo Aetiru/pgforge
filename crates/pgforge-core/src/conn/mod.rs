@@ -6,7 +6,7 @@ pub mod secret;
 pub mod store;
 pub mod tls;
 
-pub use manager::{ConnectionManager, ServerHandle};
+pub use manager::{ConnectionManager, DatabaseInfo, Notice, ServerHandle, Session};
 pub use profile::{ConnectionProfile, ProfileId, SshTunnel, SslMode};
 pub use secret::Password;
 pub use store::ProfileStore;

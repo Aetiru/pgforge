@@ -18,7 +18,9 @@ crate-type = ["lib"]
 pgforge-core.workspace = true
 serde = { version = "1.0.229", features = ["derive"] }
 tauri = { version = "2.11.5", features = [] }
-tokio = { version = "1.53.1", features = ["sync"] }
+tokio = { version = "1.53.1", features = ["rt", "sync", "time"] }
+tokio-postgres = "0.7.18"
+uuid = { version = "1.24.0", features = ["v4"] }
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }

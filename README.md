@@ -16,8 +16,8 @@ de forma incremental y cada etapa entrega algo usable por sí sola:
 |---|---|---|
 | 0 | Setup del proyecto | listo |
 | 1 | Conexión y exploración de esquema | listo |
-| 2 | Monitoreo y mantenimiento | siguiente |
-| 3 | Editor SQL + EXPLAIN | pendiente |
+| 2 | Monitoreo y mantenimiento | listo |
+| 3 | Editor SQL + EXPLAIN | siguiente |
 | 4 | Grilla de datos editable | pendiente |
 | 5 | Gestión de objetos DDL | pendiente |
 | 6 | Roles y permisos | pendiente |

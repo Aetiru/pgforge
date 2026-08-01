@@ -10,7 +10,8 @@
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.1"
+    "@tauri-apps/api": "^2.11.1",
+    "uplot": "^1.6.32"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.2.0",

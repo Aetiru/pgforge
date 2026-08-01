@@ -8,8 +8,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use deadpool_postgres::{Manager, ManagerConfig, Object, Pool, PoolError, RecyclingMethod};
-use tokio::sync::{Mutex, RwLock};
-use tokio_postgres::{Client, NoTls};
+use futures_util::{stream, StreamExt};
+use serde::Serialize;
+use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio_postgres::tls::TlsStream;
+use tokio_postgres::{AsyncMessage, CancelToken, Client, Connection, NoTls, Socket};
 
 use super::profile::{ConnectionProfile, ProfileId, SslMode};
 use super::secret::Password;
@@ -31,11 +34,17 @@ fn map_pool_error(err: PoolError) -> Error {
     }
 }
 
-fn build_pool(
+/// Configuración de conexión común al pool y a las sesiones dedicadas.
+///
+/// `statement_timeout` se pasa aparte porque no todos los usos quieren el mismo: el explorador
+/// respeta el del perfil, el monitoreo impone uno corto, y una tarea de mantenimiento no puede
+/// tener ninguno o el servidor mataría el `VACUUM` a mitad de camino.
+fn build_config(
     profile: &ConnectionProfile,
     password: Option<&Password>,
     database: &str,
-) -> Result<Pool> {
+    statement_timeout_ms: Option<u64>,
+) -> tokio_postgres::Config {
     let mut cfg = tokio_postgres::Config::new();
     cfg.host(&profile.host)
         .port(profile.port)
@@ -60,9 +69,19 @@ fn build_pool(
 
     // Se aplica en el arranque de la sesión en vez de con un `SET` posterior, así también cubre a
     // las conexiones que el pool recicla.
-    if let Some(ms) = profile.statement_timeout_ms {
+    if let Some(ms) = statement_timeout_ms {
         cfg.options(format!("-c statement_timeout={ms}"));
     }
+
+    cfg
+}
+
+fn build_pool(
+    profile: &ConnectionProfile,
+    password: Option<&Password>,
+    database: &str,
+) -> Result<Pool> {
+    let cfg = build_config(profile, password, database, profile.statement_timeout_ms);
 
     let manager_config = ManagerConfig {
         recycling_method: RecyclingMethod::Fast,
@@ -77,6 +96,78 @@ fn build_pool(
         .max_size(POOL_MAX_SIZE)
         .build()
         .map_err(|e| Error::Connection(format!("no se pudo crear el pool: {e}")))
+}
+
+/// Mensaje informativo enviado por el servidor durante una operación.
+///
+/// `VACUUM VERBOSE` y `RAISE NOTICE` reportan su avance por acá, no en el resultado de la
+/// consulta: sin capturarlos, una tarea larga es una pantalla en blanco hasta que termina.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Notice {
+    pub severity: String,
+    pub message: String,
+}
+
+/// Conexión propia, fuera del pool.
+///
+/// El monitoreo y el mantenimiento no pueden compartir conexión con el resto de la aplicación: un
+/// `VACUUM` de diez minutos dejaría al explorador sin conexiones libres, y para cancelar una
+/// consulta hace falta un canal distinto del que la está ejecutando.
+pub struct Session {
+    client: Client,
+    cancel: CancelToken,
+    notices: Option<mpsc::UnboundedReceiver<Notice>>,
+}
+
+impl Session {
+    pub fn client(&self) -> &Client {
+        &self.client
+    }
+
+    /// Permite pedirle al servidor que aborte lo que esta sesión esté ejecutando. Se puede usar
+    /// mientras la consulta corre, que es justamente cuando el cliente está ocupado.
+    pub fn cancel_token(&self) -> CancelToken {
+        self.cancel.clone()
+    }
+
+    /// Entrega el canal de mensajes del servidor. Solo el primer llamado lo obtiene.
+    pub fn take_notices(&mut self) -> Option<mpsc::UnboundedReceiver<Notice>> {
+        self.notices.take()
+    }
+}
+
+/// Pone a correr la mitad "conexión" del par que devuelve tokio-postgres y deriva sus mensajes
+/// asincrónicos a un canal. Sin esta tarea, el cliente no avanza.
+fn spawn_connection<T>(client: Client, mut connection: Connection<Socket, T>) -> Session
+where
+    T: TlsStream + Unpin + Send + 'static,
+{
+    let cancel = client.cancel_token();
+    let (sender, receiver) = mpsc::unbounded_channel();
+
+    tokio::spawn(async move {
+        let mut messages = stream::poll_fn(move |cx| connection.poll_message(cx));
+        while let Some(message) = messages.next().await {
+            match message {
+                Ok(AsyncMessage::Notice(notice)) => {
+                    let _ = sender.send(Notice {
+                        severity: notice.severity().to_owned(),
+                        message: notice.message().to_owned(),
+                    });
+                }
+                Ok(_) => {}
+                // La conexión se cerró: la tarea termina y quien tenga el cliente verá el error.
+                Err(_) => break,
+            }
+        }
+    });
+
+    Session {
+        client,
+        cancel,
+        notices: Some(receiver),
+    }
 }
 
 const CAPS_SQL: &str = "
@@ -148,6 +239,48 @@ impl ServerHandle {
             }
         };
         pool.get().await.map_err(map_pool_error)
+    }
+
+    /// Abre una conexión propia, fuera del pool.
+    ///
+    /// `statement_timeout_ms` en `None` deja la sesión sin límite, que es lo que corresponde para
+    /// las tareas de mantenimiento.
+    pub async fn open_session(
+        &self,
+        database: &str,
+        statement_timeout_ms: Option<u64>,
+    ) -> Result<Session> {
+        let config = build_config(
+            &self.profile,
+            self.password.as_ref(),
+            database,
+            statement_timeout_ms,
+        );
+
+        let session = match tls::connector(&self.profile)? {
+            Some(connector) => {
+                let (client, connection) = config.connect(connector).await?;
+                spawn_connection(client, connection)
+            }
+            None => {
+                let (client, connection) = config.connect(NoTls).await?;
+                spawn_connection(client, connection)
+            }
+        };
+
+        Ok(session)
+    }
+
+    /// Pide al servidor que aborte lo que esté ejecutando la sesión dueña del token.
+    ///
+    /// La cancelación viaja por una conexión nueva —la original está ocupada— y esa conexión tiene
+    /// que usar el mismo cifrado que el perfil, o un servidor que exige SSL la va a rechazar.
+    pub async fn cancel(&self, token: &CancelToken) -> Result<()> {
+        match tls::connector(&self.profile)? {
+            Some(connector) => token.cancel_query(connector).await?,
+            None => token.cancel_query(NoTls).await?,
+        }
+        Ok(())
     }
 
     /// Bases del servidor a las que el usuario puede conectarse.

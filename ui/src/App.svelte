@@ -1,5 +1,6 @@
 <script lang="ts">
   import ConnectionDialog from "./lib/ConnectionDialog.svelte";
+  import Dashboard from "./lib/Dashboard.svelte";
   import DetailPanel from "./lib/DetailPanel.svelte";
   import TreePanel from "./lib/TreePanel.svelte";
   import { explorer } from "./lib/explorer.svelte";
@@ -19,6 +20,9 @@
   );
   let banner = $state<string | null>(null);
   let sidebarWidth = $state(320);
+  let view = $state<"explorer" | "monitor">("explorer");
+  /** Servidor sobre el que trabaja el monitoreo. */
+  let activeServer = $state<string | null>(null);
 
   $effect(() => {
     appInfo().then((value) => (info = value));
@@ -29,6 +33,7 @@
     banner = null;
     try {
       await explorer.connect(profile, password);
+      activeServer = profile.id;
       prompt = null;
     } catch (error) {
       const message = describeError(error);
@@ -78,7 +83,23 @@
       Nuevo servidor
     </button>
 
-    <label class="ml-auto flex items-center gap-1.5 text-xs text-neutral-500">
+    <nav class="ml-4 flex gap-3">
+      {#each [["explorer", "Explorador"], ["monitor", "Monitoreo"]] as [value, label] (value)}
+        <button
+          class="text-sm {view === value
+            ? 'font-medium text-blue-600 dark:text-blue-400'
+            : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100'}"
+          onclick={() => (view = value as typeof view)}
+        >
+          {label}
+        </button>
+      {/each}
+    </nav>
+
+    <label
+      class="ml-auto flex items-center gap-1.5 text-xs text-neutral-500"
+      class:hidden={view !== "explorer"}
+    >
       <input
         type="checkbox"
         checked={explorer.options.showSystemSchemas}
@@ -103,6 +124,19 @@
     </div>
   {/if}
 
+  {#if view === "monitor"}
+    {#if activeServer && explorer.isConnected(activeServer)}
+      <div class="min-h-0 flex-1">
+        {#key activeServer}
+          <Dashboard profileId={activeServer} />
+        {/key}
+      </div>
+    {:else}
+      <div class="flex flex-1 items-center justify-center p-6 text-sm text-neutral-500">
+        Conectá un servidor para monitorearlo.
+      </div>
+    {/if}
+  {:else}
   <div class="flex min-h-0 flex-1">
     <aside class="flex min-h-0 flex-col" style="width: {sidebarWidth}px">
       <div class="max-h-56 overflow-auto border-b border-neutral-200 dark:border-neutral-800">
@@ -119,7 +153,13 @@
                 : 'bg-neutral-300 dark:bg-neutral-600'}"
               title={connected ? "Conectado" : "Desconectado"}
             ></span>
-            <span class="truncate">{profile.name}</span>
+            <button
+              class="truncate {activeServer === profile.id ? 'font-medium' : ''}"
+              title="Elegir como servidor activo"
+              onclick={() => (activeServer = profile.id)}
+            >
+              {profile.name}
+            </button>
             <span class="truncate text-xs text-neutral-400">
               {#if connected && caps}
                 PostgreSQL {formatVersion(caps.version)}
@@ -157,6 +197,7 @@
       <DetailPanel />
     </main>
   </div>
+  {/if}
 </div>
 
 {#if dialog}
