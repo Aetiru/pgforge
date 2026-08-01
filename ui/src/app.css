@@ -12,28 +12,129 @@ body,
 }
 
 body {
-  @apply bg-white text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100;
+  @apply bg-white text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
   /* La ventana es una aplicación, no una página: nada de rebote ni de selección accidental. */
   overscroll-behavior: none;
   user-select: none;
 }
 
-.field {
-  @apply rounded border border-neutral-300 bg-white px-2 py-1 text-sm
-    focus:border-blue-500 focus:outline-none
-    dark:border-neutral-700 dark:bg-neutral-800;
+/* --------------------------------------------------------------------------
+   Superficies
+   -------------------------------------------------------------------------- */
+
+.panel {
+  @apply bg-zinc-50 dark:bg-zinc-900;
 }
 
+.divider-r {
+  @apply border-r border-zinc-200 dark:border-zinc-800;
+}
+
+.divider-b {
+  @apply border-b border-zinc-200 dark:border-zinc-800;
+}
+
+.divider-t {
+  @apply border-t border-zinc-200 dark:border-zinc-800;
+}
+
+.card {
+  @apply rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900;
+}
+
+.muted {
+  @apply text-zinc-500 dark:text-zinc-400;
+}
+
+/* --------------------------------------------------------------------------
+   Controles
+   -------------------------------------------------------------------------- */
+
 .btn {
-  @apply rounded border border-neutral-300 px-3 py-1 text-sm
-    hover:bg-neutral-100 disabled:opacity-50
-    dark:border-neutral-700 dark:hover:bg-neutral-800;
+  @apply inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1
+    text-sm text-zinc-700 transition-colors
+    hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-40
+    dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700;
 }
 
 .btn-primary {
-  @apply border-blue-600 bg-blue-600 text-white hover:bg-blue-700 dark:hover:bg-blue-500;
+  @apply border-blue-600 bg-blue-600 text-white hover:bg-blue-700
+    dark:border-blue-600 dark:bg-blue-600 dark:text-white dark:hover:bg-blue-500;
 }
 
-.link {
-  @apply text-xs text-neutral-500 underline hover:text-neutral-900 dark:hover:text-neutral-100;
+.btn-ghost {
+  @apply border-transparent bg-transparent text-zinc-500
+    hover:bg-zinc-100 hover:text-zinc-900
+    dark:bg-transparent dark:hover:bg-zinc-800 dark:hover:text-zinc-100;
+}
+
+.btn-icon {
+  @apply grid size-7 place-items-center rounded-md p-0;
+}
+
+.field {
+  @apply rounded-md border border-zinc-200 bg-white px-2 py-1 text-sm text-zinc-900
+    outline-none transition-colors
+    focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20
+    dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100;
+}
+
+/* Control segmentado: la forma más compacta de mostrar unas pocas vistas excluyentes. */
+.seg {
+  @apply inline-flex gap-0.5 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800;
+}
+
+.seg-item {
+  @apply rounded-md px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors
+    hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100;
+}
+
+.seg-item[aria-selected="true"] {
+  @apply bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50;
+}
+
+.check {
+  @apply flex items-center gap-1.5 text-xs text-zinc-500 select-none dark:text-zinc-400;
+}
+
+.check input {
+  @apply size-3.5 accent-blue-600;
+}
+
+/* --------------------------------------------------------------------------
+   Indicadores
+   -------------------------------------------------------------------------- */
+
+.dot {
+  @apply size-1.5 shrink-0 rounded-full;
+}
+
+.dot-on {
+  @apply bg-emerald-500;
+}
+
+.dot-off {
+  @apply bg-zinc-300 dark:bg-zinc-600;
+}
+
+.spinner {
+  @apply size-3 animate-spin rounded-full border border-zinc-300 border-t-blue-600
+    dark:border-zinc-600 dark:border-t-blue-400;
+}
+
+/* Etiqueta de estado, para lo que hay que mirar dos veces. */
+.tag {
+  @apply rounded px-1.5 py-px text-[11px] font-medium;
+}
+
+.tag-warn {
+  @apply bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300;
+}
+
+.tag-bad {
+  @apply bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300;
+}
+
+.tag-neutral {
+  @apply bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400;
 }

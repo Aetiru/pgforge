@@ -25,6 +25,11 @@
 
   let { profileId }: { profileId: string } = $props();
 
+  // Declaradas una sola vez y no en línea: pasarlas como flechas dentro del marcado les cambiaría
+  // la identidad en cada muestra, y el gráfico se destruiría y volvería a crearse cada dos segundos.
+  const oneDecimal = (value: number) => value.toFixed(1);
+  const asPercent = (value: number) => `${value.toFixed(1)} %`;
+
   type Tab = "sesiones" | "bloqueos" | "tablas" | "indices" | "consultas";
 
   let tab = $state<Tab>("sesiones");
@@ -55,6 +60,37 @@
   const metrics = $derived(snapshot?.metrics ?? null);
   const backends = $derived(snapshot?.backends ?? []);
   const selected = $derived(backends.find((backend) => backend.pid === selectedPid) ?? null);
+
+  /**
+   * Los indicadores que se resaltan son los que piden una acción: conexiones cerca del techo,
+   * transacciones abiertas sin actividad y sesiones esperando a otra. El resto informa.
+   */
+  const tiles = $derived.by(() => {
+    if (!metrics) return [];
+    const nearLimit =
+      metrics.maxConnections > 0 && metrics.totalConnections / metrics.maxConnections > 0.8;
+
+    return [
+      {
+        label: "Conexiones",
+        value: `${metrics.totalConnections} / ${metrics.maxConnections}`,
+        tone: nearLimit ? "text-rose-600 dark:text-rose-400" : undefined,
+      },
+      { label: "Activas", value: String(metrics.activeConnections) },
+      {
+        label: "Inactivas en transacción",
+        value: String(metrics.idleInTransaction),
+        tone: metrics.idleInTransaction > 0 ? "text-amber-600 dark:text-amber-400" : undefined,
+      },
+      {
+        label: "Esperando",
+        value: String(metrics.waitingConnections),
+        tone: metrics.waitingConnections > 0 ? "text-rose-600 dark:text-rose-400" : undefined,
+      },
+      { label: "Transacciones/s", value: decimal(metrics.transactionsPerSecond) },
+      { label: "Transacción más vieja", value: duration(metrics.longestTransactionSeconds) },
+    ];
+  });
 
   const times = $derived(monitor.history.map((sample) => sample.time));
   const connectionsSeries = $derived([
@@ -276,36 +312,16 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <div
-    class="flex flex-wrap items-center gap-3 border-b border-neutral-200 px-3 py-2
-           dark:border-neutral-800"
-  >
-    {#each TABS as [value, label] (value)}
-      <button
-        class="text-sm {tab === value
-          ? 'font-medium text-blue-600 dark:text-blue-400'
-          : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100'}"
-        onclick={() => (tab = value)}
-      >
-        {label}
-      </button>
-    {/each}
+  <div class="divider-b flex flex-wrap items-center gap-3 px-3 py-2">
+    <div class="seg" role="tablist">
+      {#each TABS as [value, label] (value)}
+        <button class="seg-item" role="tab" aria-selected={tab === value} onclick={() => (tab = value)}>
+          {label}
+        </button>
+      {/each}
+    </div>
 
-    <label class="ml-auto flex items-center gap-1.5 text-xs text-neutral-500">
-      Refresco
-      <select
-        class="field py-0.5"
-        value={monitor.intervalMs}
-        onchange={(event) => monitor.setInterval(Number(event.currentTarget.value))}
-      >
-        <option value={1000}>1 s</option>
-        <option value={2000}>2 s</option>
-        <option value={5000}>5 s</option>
-        <option value={15000}>15 s</option>
-      </select>
-    </label>
-
-    <label class="flex items-center gap-1.5 text-xs text-neutral-500">
+    <label class="check ml-auto">
       <input
         type="checkbox"
         checked={monitor.filter.includeIdle}
@@ -315,7 +331,7 @@
       Inactivas
     </label>
 
-    <label class="flex items-center gap-1.5 text-xs text-neutral-500">
+    <label class="check">
       <input
         type="checkbox"
         checked={monitor.filter.includeBackground}
@@ -324,25 +340,43 @@
       />
       Procesos internos
     </label>
+
+    <label class="check">
+      Refresco
+      <select
+        class="field py-0.5 text-xs"
+        value={monitor.intervalMs}
+        onchange={(event) => monitor.setInterval(Number(event.currentTarget.value))}
+      >
+        <option value={1000}>1 s</option>
+        <option value={2000}>2 s</option>
+        <option value={5000}>5 s</option>
+        <option value={15000}>15 s</option>
+      </select>
+    </label>
   </div>
 
   {#if monitor.error}
     <p
-      class="border-b border-red-200 bg-red-50 px-3 py-1.5 text-sm text-red-700
-             dark:border-red-900 dark:bg-red-950 dark:text-red-300"
+      class="border-b border-rose-200 bg-rose-50 px-3 py-1.5 text-sm text-rose-700
+             dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300"
     >
       {monitor.error}
     </p>
   {/if}
 
   {#if metrics}
-    <div class="grid grid-cols-2 gap-2 px-3 py-2 md:grid-cols-4 xl:grid-cols-6">
-      {#each [["Conexiones", `${metrics.totalConnections} / ${metrics.maxConnections}`], ["Activas", String(metrics.activeConnections)], ["Inactivas en transacción", String(metrics.idleInTransaction)], ["Esperando", String(metrics.waitingConnections)], ["Transacciones/s", decimal(metrics.transactionsPerSecond)], ["Transacción más vieja", duration(metrics.longestTransactionSeconds)]] as [label, value] (label)}
-        <div class="rounded border border-neutral-200 px-3 py-2 dark:border-neutral-800">
-          <div class="truncate text-xs text-neutral-500">{label}</div>
-          <div class="font-mono text-lg tabular-nums">{value}</div>
+    <div class="grid grid-cols-2 gap-2 px-3 py-3 md:grid-cols-3 xl:grid-cols-6">
+      {#each tiles as tile (tile.label)}
+        <div class="card px-3 py-2">
+          <div class="truncate text-xs muted">{tile.label}</div>
+          <div class="font-mono text-xl tabular-nums {tile.tone ?? ''}">{tile.value}</div>
         </div>
       {/each}
+    </div>
+  {:else}
+    <div class="flex items-center gap-2 px-3 py-3 text-sm muted">
+      <span class="spinner"></span> Tomando la primera muestra…
     </div>
   {/if}
 
@@ -350,28 +384,21 @@
     <div class="grid grid-cols-2 gap-2 px-3 pb-2 xl:grid-cols-4">
       <Chart label="Conexiones" data={connectionsSeries} />
       <Chart label="Activas" data={activeSeries} color="#f59e0b" />
-      <Chart
-        label="Transacciones/s"
-        data={tpsSeries}
-        color="#10b981"
-        formatValue={(value) => value.toFixed(1)}
-      />
+      <Chart label="Transacciones/s" data={tpsSeries} color="#10b981" formatValue={oneDecimal} />
       <Chart
         label="Aciertos de caché"
         data={cacheSeries}
         color="#8b5cf6"
-        formatValue={(value) => `${value.toFixed(1)} %`}
+        formatValue={asPercent}
+        formatTick={oneDecimal}
       />
     </div>
 
     {#if selected}
-      <div
-        class="flex flex-wrap items-center gap-2 border-y border-neutral-200 px-3 py-2 text-sm
-               dark:border-neutral-800"
-      >
-        <span class="font-mono">PID {selected.pid}</span>
+      <div class="divider-t divider-b flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
+        <span class="tag tag-neutral font-mono">PID {selected.pid}</span>
         {#if selected.isMonitor}
-          <span class="text-xs text-neutral-500">Es la sesión del propio monitor.</span>
+          <span class="text-xs muted">Es la sesión del propio monitor.</span>
         {:else}
           <button class="btn" onclick={() => (confirming = { pid: selected.pid, kind: "cancel" })}>
             Cancelar consulta
@@ -385,7 +412,7 @@
         {/if}
 
         {#if locks.length > 0}
-          <span class="text-xs text-neutral-500">
+          <span class="truncate text-xs muted">
             Candados: {locks
               .map((lock) => `${lock.mode}${lock.granted ? "" : " (esperando)"}`)
               .join(", ")}
@@ -397,8 +424,8 @@
     {#if actionMessage}
       <p
         class="px-3 py-1.5 text-sm {actionFailed
-          ? 'text-red-600 dark:text-red-400'
-          : 'text-emerald-600'}"
+          ? 'text-rose-600 dark:text-rose-400'
+          : 'text-emerald-600 dark:text-emerald-400'}"
       >
         {actionMessage}
       </p>
@@ -417,9 +444,9 @@
   {:else if tab === "bloqueos"}
     <div class="min-h-0 flex-1 overflow-auto px-3 py-2">
       {#if !snapshot || snapshot.blocking.length === 0}
-        <p class="text-sm text-neutral-500">Ninguna sesión está esperando a otra.</p>
+        <p class="text-sm text-zinc-500">Ninguna sesión está esperando a otra.</p>
       {:else}
-        <p class="mb-2 text-xs text-neutral-500">
+        <p class="mb-2 text-xs text-zinc-500">
           La sesión de arriba de cada rama es la que hay que resolver: las de abajo esperan por
           ella.
         </p>
@@ -435,8 +462,8 @@
       {/if}
     </div>
   {:else if tab === "tablas"}
-    <div class="flex items-center gap-2 border-y border-neutral-200 px-3 py-2 dark:border-neutral-800">
-      <span class="text-xs text-neutral-500">
+    <div class="divider-t divider-b flex items-center gap-2 px-3 py-2">
+      <span class="text-xs muted">
         La proporción de tuplas muertas es una estimación sobre los contadores de estadísticas, no
         una medición del espacio desperdiciado.
       </span>
@@ -476,9 +503,9 @@
   {:else}
     <div class="min-h-0 flex-1">
       {#if statementsError}
-        <p class="p-4 text-sm text-red-600 dark:text-red-400">{statementsError}</p>
+        <p class="p-4 text-sm text-rose-600 dark:text-rose-400">{statementsError}</p>
       {:else if statementsAvailable === false}
-        <div class="space-y-2 p-4 text-sm text-neutral-500">
+        <div class="space-y-2 p-4 text-sm text-zinc-500">
           <p>La extensión <code>pg_stat_statements</code> no está instalada en esta base.</p>
           <p>
             Para habilitarla hay que agregarla a <code>shared_preload_libraries</code>, reiniciar el
@@ -500,11 +527,11 @@
 
 {#if confirming}
   <div class="fixed inset-0 z-10 flex items-center justify-center bg-black/40 p-4">
-    <div class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl dark:bg-neutral-900">
+    <div class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl dark:bg-zinc-900">
       <h2 class="text-base font-medium">
         {confirming.kind === "cancel" ? "Cancelar la consulta" : "Terminar la sesión"}
       </h2>
-      <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
+      <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
         {#if confirming.kind === "cancel"}
           Se le pide al servidor que aborte la consulta del PID {confirming.pid}. La sesión sigue
           conectada y su transacción queda abierta pero abortada.

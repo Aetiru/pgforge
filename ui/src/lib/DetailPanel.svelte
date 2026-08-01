@@ -1,7 +1,18 @@
 <script lang="ts">
-  import { kindLabel } from "./badges";
+  import Icon from "./Icon.svelte";
+  import { kindLabel, lookOf } from "./badges";
   import { explorer } from "./explorer.svelte";
-  import { describeError, folderOf, objectDdl, type Ddl } from "./ipc";
+  import { describeError, folderOf, formatVersion, objectDdl, type Ddl } from "./ipc";
+
+  let {
+    onedit,
+    ondelete,
+    onconnect,
+  }: {
+    onedit: (profileId: string) => void;
+    ondelete: (profileId: string) => void;
+    onconnect: (profileId: string) => void;
+  } = $props();
 
   let ddl = $state<Ddl | null>(null);
   let ddlError = $state<string | null>(null);
@@ -10,7 +21,14 @@
 
   const selected = $derived(explorer.selected);
   const node = $derived(selected?.node ?? null);
-  /** Ni las carpetas ni la fila del servidor tienen un DDL propio que mostrar. */
+  const isServer = $derived(selected !== null && selected.node === null);
+  const profile = $derived(
+    selected ? (explorer.profiles.find((item) => item.id === selected.profileId) ?? null) : null,
+  );
+  const caps = $derived(selected ? (explorer.caps[selected.profileId] ?? null) : null);
+  const look = $derived(lookOf(node?.kind ?? null));
+
+  /** Ni las carpetas, ni las bases, ni la fila del servidor tienen un DDL propio. */
   const hasDdl = $derived(node !== null && folderOf(node.kind) === null && node.kind !== "database");
 
   $effect(() => {
@@ -48,55 +66,114 @@
     copied = true;
     setTimeout(() => (copied = false), 1500);
   }
+
+  const properties = $derived.by<[string, string][]>(() => {
+    if (isServer && profile) {
+      const rows: [string, string][] = [
+        ["Servidor", `${profile.host}:${profile.port}`],
+        ["Base inicial", profile.database],
+        ["Usuario", profile.user],
+        ["Cifrado", profile.sslMode],
+      ];
+      if (caps) {
+        rows.push(
+          ["Versión", `PostgreSQL ${formatVersion(caps.version)}`],
+          ["Superusuario", caps.isSuperuser ? "sí" : "no"],
+          [
+            "Puede cancelar sesiones",
+            caps.canSignalBackends ? "sí" : "no (falta pg_signal_backend)",
+          ],
+          [
+            "Ve todas las estadísticas",
+            caps.canReadAllStats ? "sí" : "no (falta pg_read_all_stats)",
+          ],
+        );
+      }
+      return rows;
+    }
+
+    if (!node) return [];
+    const rows: [string, string][] = [["Base de datos", node.database]];
+    if (node.schema) rows.push(["Esquema", node.schema]);
+    if (node.oid) rows.push(["OID", String(node.oid)]);
+    return rows;
+  });
 </script>
 
 <div class="flex h-full flex-col">
   {#if !selected}
-    <div class="flex h-full items-center justify-center p-6 text-sm text-neutral-500">
-      Elegí un objeto del árbol.
+    <div class="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+      <Icon name="schema" size={28} class="text-zinc-300 dark:text-zinc-700" />
+      <p class="text-sm muted">Elegí un objeto del árbol para ver su detalle.</p>
     </div>
   {:else}
-    <header class="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-      <div class="flex items-baseline gap-2">
+    <header class="divider-b px-5 py-4">
+      <div class="flex items-center gap-2">
+        <Icon name={look.icon} size={18} class={look.tone} />
         <h2 class="truncate text-base font-medium">{selected.label}</h2>
-        <span class="text-xs text-neutral-500">{kindLabel(node?.kind ?? null)}</span>
+        <span class="tag tag-neutral">{kindLabel(node?.kind ?? null)}</span>
+
+        {#if isServer}
+          <span class="ml-auto flex shrink-0 gap-1.5">
+            {#if selected.connected}
+              <button class="btn" onclick={() => explorer.disconnect(selected.profileId)}>
+                Desconectar
+              </button>
+            {:else}
+              <button class="btn btn-primary" onclick={() => onconnect(selected.profileId)}>
+                Conectar
+              </button>
+            {/if}
+            <button class="btn" onclick={() => onedit(selected.profileId)}>Editar</button>
+            <button class="btn" onclick={() => ondelete(selected.profileId)}>Eliminar</button>
+          </span>
+        {/if}
       </div>
-      {#if node}
-        <p class="mt-0.5 text-xs text-neutral-500">
-          {node.database}{node.schema ? ` · ${node.schema}` : ""}{node.oid
-            ? ` · oid ${node.oid}`
-            : ""}
-        </p>
-      {/if}
+
       {#if selected.comment}
-        <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">{selected.comment}</p>
+        <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-300">{selected.comment}</p>
       {/if}
     </header>
 
-    <div class="min-h-0 flex-1 overflow-auto">
-      {#if !hasDdl}
-        <p class="p-4 text-sm text-neutral-500">Este nodo no tiene un DDL propio.</p>
-      {:else if loading}
-        <p class="p-4 text-sm text-neutral-500">Generando DDL…</p>
-      {:else if ddlError}
-        <p class="p-4 text-sm text-red-600 dark:text-red-400">{ddlError}</p>
-      {:else if ddl}
-        <div class="flex items-center justify-between px-4 py-2 text-xs text-neutral-500">
-          <span>
-            {ddl.source === "pgDump"
-              ? "Reconstruido con pg_dump"
-              : "Generado por PostgreSQL"}
-          </span>
-          <button
-            class="rounded border border-neutral-300 px-2 py-0.5 hover:bg-neutral-100
-                   dark:border-neutral-700 dark:hover:bg-neutral-800"
-            onclick={copy}
-          >
-            {copied ? "Copiado" : "Copiar"}
-          </button>
+    <div class="min-h-0 flex-1 overflow-auto p-5">
+      {#if properties.length > 0}
+        <dl class="mb-5 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
+          {#each properties as [label, value] (label)}
+            <dt class="muted">{label}</dt>
+            <dd class="truncate">{value}</dd>
+          {/each}
+        </dl>
+      {/if}
+
+      {#if isServer && !selected.connected}
+        <p class="text-sm muted">Conectá el servidor para explorar sus objetos.</p>
+      {:else if !hasDdl && !isServer}
+        <p class="text-sm muted">Este nodo agrupa otros objetos; no tiene un DDL propio.</p>
+      {:else if hasDdl}
+        <div class="card overflow-hidden">
+          <div class="divider-b flex items-center gap-2 px-3 py-1.5">
+            <span class="text-xs font-medium">DDL</span>
+            {#if ddl}
+              <span class="text-xs muted">
+                {ddl.source === "pgDump" ? "reconstruido con pg_dump" : "generado por PostgreSQL"}
+              </span>
+              <button class="btn btn-ghost ml-auto px-2 py-0.5 text-xs" onclick={copy}>
+                <Icon name="copy" size={12} />
+                {copied ? "Copiado" : "Copiar"}
+              </button>
+            {/if}
+          </div>
+
+          {#if loading}
+            <p class="px-3 py-4 text-sm muted">Generando DDL…</p>
+          {:else if ddlError}
+            <p class="px-3 py-4 text-sm text-rose-600 dark:text-rose-400">{ddlError}</p>
+          {:else if ddl}
+            <pre
+              class="max-h-[60vh] overflow-auto px-3 py-3 font-mono text-xs leading-relaxed
+                     select-text">{ddl.sql}</pre>
+          {/if}
         </div>
-        <pre
-          class="select-text overflow-x-auto px-4 pb-4 font-mono text-xs leading-relaxed">{ddl.sql}</pre>
       {/if}
     </div>
   {/if}

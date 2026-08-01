@@ -11,12 +11,16 @@ import {
 } from "./ipc";
 
 /**
- * Una fila del árbol. Las filas de servidor tienen `node` en `null`: son la raíz local, no un
- * objeto del catálogo.
+ * Una fila del árbol.
+ *
+ * Los servidores son las raíces del mismo árbol, estén conectados o no. Tener una lista de
+ * servidores aparte del árbol obligaba a entender dos cosas para hacer una: elegir el servidor en
+ * un lado y navegarlo en el otro.
  */
 export interface Row {
   key: string;
   profileId: string;
+  /** `null` en las filas de servidor: son la raíz local, no un objeto del catálogo. */
   node: TreeNode | null;
   level: number;
   label: string;
@@ -27,6 +31,8 @@ export interface Row {
   loading: boolean;
   error?: string;
   children: Row[] | null;
+  /** Solo significa algo en las filas de servidor. */
+  connected: boolean;
 }
 
 function serverRow(profile: ConnectionProfile): Row {
@@ -41,6 +47,7 @@ function serverRow(profile: ConnectionProfile): Row {
     expanded: false,
     loading: false,
     children: null,
+    connected: false,
   };
 }
 
@@ -57,6 +64,7 @@ function childRow(parent: Row, node: TreeNode): Row {
     expanded: false,
     loading: false,
     children: null,
+    connected: true,
   };
 }
 
@@ -66,41 +74,66 @@ class Explorer {
   roots = $state<Row[]>([]);
   selected = $state<Row | null>(null);
   options = $state<TreeOptions>({ showSystemSchemas: false });
+  search = $state("");
 
+  /** Relee los perfiles guardados sin perder lo que ya estaba abierto en el árbol. */
   async refreshProfiles() {
-    this.profiles = await listProfiles();
+    const profiles = await listProfiles();
+    const previous = new Map(this.roots.map((row) => [row.profileId, row]));
+
+    this.profiles = profiles;
+    this.roots = profiles.map((profile) => {
+      const existing = previous.get(profile.id);
+      if (!existing) return serverRow(profile);
+      existing.label = profile.name;
+      existing.detail = `${profile.host}:${profile.port}`;
+      return existing;
+    });
+  }
+
+  rowFor(profileId: string): Row | null {
+    return this.roots.find((row) => row.profileId === profileId) ?? null;
   }
 
   isConnected(profileId: string) {
-    return this.roots.some((row) => row.profileId === profileId);
+    return this.rowFor(profileId)?.connected ?? false;
   }
 
   async connect(profile: ConnectionProfile, password?: string) {
     const result = await ipcConnect(profile.id, password);
     this.caps[profile.id] = result.caps;
 
-    const row = serverRow(result.profile);
-    // Reconectar reemplaza la fila anterior en su lugar, para que el servidor no salte de posición.
-    const existing = this.roots.findIndex((r) => r.profileId === profile.id);
-    if (existing >= 0) {
-      this.roots[existing] = row;
-    } else {
-      this.roots.push(row);
+    const row = this.rowFor(profile.id);
+    if (row) {
+      row.connected = true;
+      row.error = undefined;
+      row.children = null;
+      await this.toggle(row);
     }
-    await this.toggle(row);
   }
 
   async disconnect(profileId: string) {
     await ipcDisconnect(profileId);
-    this.roots = this.roots.filter((row) => row.profileId !== profileId);
+    const row = this.rowFor(profileId);
+    if (row) {
+      row.connected = false;
+      row.expanded = false;
+      row.children = null;
+    }
     delete this.caps[profileId];
     if (this.selected?.profileId === profileId) {
       this.selected = null;
     }
   }
 
+  /** `true` si la fila no se puede abrir todavía porque su servidor está desconectado. */
+  needsConnection(row: Row) {
+    return row.node === null && !row.connected;
+  }
+
   async toggle(row: Row) {
-    if (!row.hasChildren) return;
+    if (!row.hasChildren || this.needsConnection(row)) return;
+
     if (row.expanded) {
       row.expanded = false;
       return;
@@ -126,7 +159,6 @@ class Explorer {
     }
   }
 
-  /** Vuelve a pedir los hijos de un nodo ya cargado. */
   async reload(row: Row) {
     row.children = null;
     if (row.expanded) {
@@ -134,9 +166,10 @@ class Explorer {
     }
   }
 
-  /** Descarta todo lo cargado; se usa al cambiar las opciones de visualización. */
+  /** Descarta lo cargado de los servidores conectados; se usa al cambiar las opciones. */
   async reloadAll() {
     for (const root of this.roots) {
+      if (!root.connected) continue;
       root.children = null;
       root.expanded = false;
       await this.toggle(root);
@@ -151,13 +184,38 @@ class Explorer {
 
 export const explorer = new Explorer();
 
-/** Aplana el árbol a la lista de filas visibles, que es lo que se dibuja. */
-export function visibleRows(rows: Row[], out: Row[] = []): Row[] {
-  for (const row of rows) {
-    out.push(row);
-    if (row.expanded && row.children) {
-      visibleRows(row.children, out);
-    }
+/**
+ * Aplana el árbol a la lista de filas visibles.
+ *
+ * Con búsqueda activa se muestran las coincidencias y sus ancestros, sin importar si el nodo
+ * estaba expandido. Solo alcanza a lo que ya se trajo del servidor: el árbol se carga por niveles
+ * y buscar en todo el catálogo sería otra cosa.
+ */
+export function visibleRows(rows: Row[], search = ""): Row[] {
+  const needle = search.trim().toLowerCase();
+  const out: Row[] = [];
+
+  if (needle === "") {
+    const walk = (list: Row[]) => {
+      for (const row of list) {
+        out.push(row);
+        if (row.expanded && row.children) walk(row.children);
+      }
+    };
+    walk(rows);
+    return out;
   }
+
+  const collect = (list: Row[], into: Row[]) => {
+    for (const row of list) {
+      const matched: Row[] = [];
+      if (row.children) collect(row.children, matched);
+
+      if (matched.length > 0 || row.label.toLowerCase().includes(needle)) {
+        into.push(row, ...matched);
+      }
+    }
+  };
+  collect(rows, out);
   return out;
 }

@@ -60,50 +60,50 @@
   }
 </script>
 
-<div class="fixed inset-0 z-10 flex items-center justify-center bg-black/40 p-4">
+<div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
   <div
-    class="w-full max-w-lg rounded-lg bg-white shadow-xl dark:bg-neutral-900"
+    class="card w-full max-w-lg shadow-xl"
     role="dialog"
     aria-modal="true"
     aria-label="Datos del servidor"
   >
-    <h2 class="border-b border-neutral-200 px-5 py-3 text-base font-medium dark:border-neutral-800">
+    <h2 class="divider-b px-5 py-3 text-base font-medium">
       {profile ? "Editar servidor" : "Nuevo servidor"}
     </h2>
 
     <div class="grid grid-cols-2 gap-3 px-5 py-4 text-sm">
       <label class="col-span-2 flex flex-col gap-1">
-        <span class="text-xs text-neutral-500">Nombre</span>
+        <span class="text-xs muted">Nombre</span>
         <input class="field" bind:value={form.name} placeholder="Producción" />
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="text-xs text-neutral-500">Servidor</span>
+        <span class="text-xs muted">Servidor</span>
         <input class="field" bind:value={form.host} />
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="text-xs text-neutral-500">Puerto</span>
+        <span class="text-xs muted">Puerto</span>
         <input class="field" type="number" bind:value={form.port} />
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="text-xs text-neutral-500">Base de datos</span>
+        <span class="text-xs muted">Base de datos</span>
         <input class="field" bind:value={form.database} />
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="text-xs text-neutral-500">Usuario</span>
+        <span class="text-xs muted">Usuario</span>
         <input class="field" bind:value={form.user} />
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="text-xs text-neutral-500">Contraseña</span>
+        <span class="text-xs muted">Contraseña</span>
         <input class="field" type="password" bind:value={password} autocomplete="off" />
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="text-xs text-neutral-500">Cifrado</span>
+        <span class="text-xs muted">Cifrado</span>
         <select class="field" bind:value={form.sslMode}>
           {#each SSL_MODES as mode (mode.value)}
             <option value={mode.value}>{mode.label}</option>
@@ -111,22 +111,21 @@
         </select>
       </label>
 
-      <label class="col-span-2 flex items-center gap-2">
+      <label class="check col-span-2">
         <input type="checkbox" bind:checked={form.savePassword} />
-        <span class="text-xs text-neutral-500">
-          Recordar la contraseña en el almacén de credenciales del sistema
-        </span>
+        Recordar la contraseña en el almacén de credenciales del sistema
       </label>
 
       {#if error}
-        <p class="col-span-2 text-sm text-red-600 dark:text-red-400">{error}</p>
+        <p class="col-span-2 text-sm text-rose-600 dark:text-rose-400">{error}</p>
       {/if}
     </div>
 
-    <div
-      class="flex justify-end gap-2 border-t border-neutral-200 px-5 py-3 dark:border-neutral-800"
-    >
-      <button class="btn" onclick={onclose} disabled={saving}>Cancelar</button>
+    <div class="divider-t flex items-center gap-2 px-5 py-3">
+      <span class="text-xs muted">
+        La contraseña nunca se guarda en los archivos de la aplicación.
+      </span>
+      <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
       <button class="btn" onclick={() => submit(false)} disabled={saving}>Guardar</button>
       <button class="btn btn-primary" onclick={() => submit(true)} disabled={saving}>
         Guardar y conectar

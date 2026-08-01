@@ -1,73 +1,69 @@
+import type { IconName } from "./Icon.svelte";
 import { folderOf, type NodeKind } from "./ipc";
 
 /**
- * Distintivo corto de cada tipo de objeto.
+ * Ícono y color de cada tipo de nodo.
  *
- * Un árbol de base de datos mezcla catorce tipos de nodo; sin una marca visual, distinguir una
- * vista de una tabla obliga a leer el nombre completo de cada fila.
+ * Un árbol de base de datos mezcla quince tipos de objeto. El color agrupa por familia —relaciones
+ * en azul, código en violeta, integridad en rosa— para que el ojo encuentre lo que busca sin leer
+ * cada fila.
  */
-export interface Badge {
-  text: string;
+export interface NodeLook {
+  icon: IconName;
   tone: string;
 }
 
-const TONES = {
-  slate: "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200",
-  blue: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200",
-  emerald: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200",
-  violet: "bg-violet-100 text-violet-700 dark:bg-violet-900 dark:text-violet-200",
-  amber: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
-  rose: "bg-rose-100 text-rose-700 dark:bg-rose-900 dark:text-rose-200",
-} as const;
+const RELATION = "text-blue-600 dark:text-blue-400";
+const DERIVED = "text-emerald-600 dark:text-emerald-400";
+const CODE = "text-violet-600 dark:text-violet-400";
+const INTEGRITY = "text-rose-500 dark:text-rose-400";
+const VALUE = "text-amber-600 dark:text-amber-400";
+const STRUCTURE = "text-zinc-400 dark:text-zinc-500";
 
-export function badgeFor(kind: NodeKind | null): Badge {
-  if (kind === null) return { text: "SV", tone: TONES.slate };
-
-  const folder = folderOf(kind);
-  if (folder !== null) return { text: "", tone: TONES.slate };
+export function lookOf(kind: NodeKind | null): NodeLook {
+  if (kind === null) return { icon: "server", tone: STRUCTURE };
+  if (folderOf(kind) !== null) return { icon: "folder", tone: STRUCTURE };
 
   switch (kind) {
     case "database":
-      return { text: "BD", tone: TONES.slate };
+      return { icon: "database", tone: STRUCTURE };
     case "schema":
-      return { text: "ES", tone: TONES.slate };
+      return { icon: "schema", tone: STRUCTURE };
     case "table":
-      return { text: "TB", tone: TONES.blue };
+      return { icon: "table", tone: RELATION };
     case "partitionedTable":
-      return { text: "TP", tone: TONES.blue };
+      return { icon: "partitioned", tone: RELATION };
     case "foreignTable":
-      return { text: "TE", tone: TONES.blue };
+      return { icon: "table", tone: RELATION };
     case "view":
-      return { text: "VI", tone: TONES.emerald };
+      return { icon: "view", tone: DERIVED };
     case "materializedView":
-      return { text: "VM", tone: TONES.emerald };
+      return { icon: "matview", tone: DERIVED };
     case "sequence":
-      return { text: "SQ", tone: TONES.amber };
+      return { icon: "sequence", tone: VALUE };
     case "function":
-      return { text: "FN", tone: TONES.violet };
+      return { icon: "function", tone: CODE };
     case "procedure":
-      return { text: "PR", tone: TONES.violet };
+      return { icon: "function", tone: CODE };
     case "type":
-      return { text: "TY", tone: TONES.amber };
+      return { icon: "type", tone: VALUE };
     case "column":
-      return { text: "CO", tone: TONES.slate };
+      return { icon: "column", tone: STRUCTURE };
     case "index":
-      return { text: "IX", tone: TONES.rose };
+      return { icon: "index", tone: INTEGRITY };
     case "constraint":
-      return { text: "RS", tone: TONES.rose };
+      return { icon: "constraint", tone: INTEGRITY };
     case "trigger":
-      return { text: "DP", tone: TONES.rose };
+      return { icon: "trigger", tone: CODE };
     default:
-      return { text: "??", tone: TONES.slate };
+      return { icon: "folder", tone: STRUCTURE };
   }
 }
 
 /** Nombre legible del tipo de nodo, para el panel de propiedades. */
 export function kindLabel(kind: NodeKind | null): string {
   if (kind === null) return "Servidor";
-
-  const folder = folderOf(kind);
-  if (folder !== null) return "Carpeta";
+  if (folderOf(kind) !== null) return "Carpeta";
 
   const names: Record<string, string> = {
     database: "Base de datos",

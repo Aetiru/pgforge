@@ -123,12 +123,12 @@
 
 <div class="fixed inset-0 z-10 flex items-center justify-center bg-black/40 p-4">
   <div
-    class="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-lg bg-white shadow-xl dark:bg-neutral-900"
+    class="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-lg bg-white shadow-xl dark:bg-zinc-900"
     role="dialog"
     aria-modal="true"
     aria-label="Mantenimiento"
   >
-    <h2 class="border-b border-neutral-200 px-5 py-3 text-base font-medium dark:border-neutral-800">
+    <h2 class="border-b border-zinc-200 px-5 py-3 text-base font-medium dark:border-zinc-800">
       Mantenimiento de {targetLabel}
     </h2>
 
@@ -146,7 +146,7 @@
       </div>
 
       {#if kind === "vacuum"}
-        <div class="flex flex-wrap gap-4 text-xs text-neutral-600 dark:text-neutral-300">
+        <div class="flex flex-wrap gap-4 text-xs text-zinc-600 dark:text-zinc-300">
           <label class="flex items-center gap-1.5">
             <input type="checkbox" bind:checked={full} disabled={running} /> FULL
           </label>
@@ -158,7 +158,7 @@
           </label>
         </div>
       {:else if kind === "reindex"}
-        <label class="flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-300">
+        <label class="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300">
           <input type="checkbox" bind:checked={concurrently} disabled={running} />
           CONCURRENTLY (no bloquea las escrituras)
         </label>
@@ -174,23 +174,23 @@
       {/if}
 
       {#if planError}
-        <p class="text-xs text-red-600 dark:text-red-400">{planError}</p>
+        <p class="text-xs text-rose-600 dark:text-rose-400">{planError}</p>
       {:else}
         <pre
-          class="select-text overflow-x-auto rounded bg-neutral-100 px-3 py-2 font-mono text-xs
-                 dark:bg-neutral-800">{sql}</pre>
+          class="select-text overflow-x-auto rounded bg-zinc-100 px-3 py-2 font-mono text-xs
+                 dark:bg-zinc-800">{sql}</pre>
       {/if}
 
       {#if log.length > 0 || outcome}
         <div
-          class="max-h-56 select-text overflow-auto rounded border border-neutral-200 px-3 py-2
-                 font-mono text-xs dark:border-neutral-800"
+          class="max-h-56 select-text overflow-auto rounded border border-zinc-200 px-3 py-2
+                 font-mono text-xs dark:border-zinc-800"
         >
           {#each log as line, index (index)}
             <div class="whitespace-pre-wrap">{line}</div>
           {/each}
           {#if outcome}
-            <div class={failed ? "text-red-600 dark:text-red-400" : "text-emerald-600"}>
+            <div class={failed ? "text-rose-600 dark:text-rose-400" : "text-emerald-600"}>
               {outcome}
             </div>
           {/if}
@@ -199,7 +199,7 @@
     </div>
 
     <div
-      class="flex justify-end gap-2 border-t border-neutral-200 px-5 py-3 dark:border-neutral-800"
+      class="flex justify-end gap-2 border-t border-zinc-200 px-5 py-3 dark:border-zinc-800"
     >
       <button class="btn" onclick={onclose} disabled={running}>Cerrar</button>
       {#if running}

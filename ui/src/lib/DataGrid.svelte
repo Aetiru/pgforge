@@ -54,10 +54,7 @@
   bind:clientHeight={viewportHeight}
 >
   <div style="width: {totalWidth}px">
-    <div
-      class="sticky top-0 z-10 flex border-b border-neutral-200 bg-neutral-50 text-xs
-             font-medium text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900"
-    >
+    <div class="panel divider-b sticky top-0 z-10 flex text-xs font-medium muted">
       {#each columns as column (column.key)}
         <div
           class="shrink-0 truncate px-2 py-1 {column.align === 'right' ? 'text-right' : ''}"
@@ -69,7 +66,7 @@
     </div>
 
     {#if rows.length === 0}
-      <p class="p-4 text-sm text-neutral-500">{empty}</p>
+      <p class="p-4 text-sm muted">{empty}</p>
     {:else}
       <div class="relative" style="height: {rows.length * ROW_HEIGHT}px">
         <!--
@@ -82,8 +79,10 @@
           {@const key = rowKey(row)}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <div
-            class="absolute left-0 flex text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800
-                   {selectedKey === key ? 'bg-blue-100 dark:bg-blue-950' : ''}"
+            class="absolute left-0 flex text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800/70
+                   {selectedKey === key
+              ? 'bg-blue-50 text-blue-900 dark:bg-blue-950/60 dark:text-blue-100'
+              : ''}"
             style="top: {(start + index) *
               ROW_HEIGHT}px; height: {ROW_HEIGHT}px; width: {totalWidth}px"
             role="row"

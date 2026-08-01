@@ -7,16 +7,26 @@
     label,
     data,
     color = "#3b82f6",
-    height = 110,
+    height = 92,
     formatValue = (value: number) => value.toFixed(0),
+    formatTick,
   }: {
     label: string;
     /** `[tiempos, valores]`, en el formato alineado que espera uPlot. */
     data: uPlot.AlignedData;
     color?: string;
     height?: number;
+    /** Formato del número grande del encabezado. */
     formatValue?: (value: number) => string;
+    /**
+     * Formato de las marcas del eje. Por omisión se redondea: uPlot escribe todos los decimales
+     * que necesita para distinguir dos marcas, y un `74.5923` no entra en el ancho del eje.
+     */
+    formatTick?: (value: number) => string;
   } = $props();
+
+  const tick = (value: number) =>
+    formatTick ? formatTick(value) : String(Math.round(value * 10) / 10);
 
   let container = $state<HTMLDivElement | null>(null);
   let width = $state(0);
@@ -46,8 +56,13 @@
         legend: { show: false },
         scales: { x: { time: true } },
         axes: [
-          { stroke: "#9ca3af", grid: { show: false }, size: 24 },
-          { stroke: "#9ca3af", grid: { stroke: "#9ca3af22", width: 1 }, size: 40 },
+          { stroke: "#9ca3af", grid: { show: false }, size: 22 },
+          {
+            stroke: "#9ca3af",
+            grid: { stroke: "#9ca3af22", width: 1 },
+            size: 48,
+            values: (_, ticks) => ticks.map((value) => tick(value)),
+          },
         ],
         series: [
           {},
@@ -71,9 +86,9 @@
   });
 </script>
 
-<div class="rounded border border-neutral-200 p-2 dark:border-neutral-800">
+<div class="card p-2">
   <div class="flex items-baseline justify-between px-1">
-    <span class="text-xs text-neutral-500">{label}</span>
+    <span class="text-xs muted">{label}</span>
     <span class="font-mono text-sm tabular-nums">{last}</span>
   </div>
   <div bind:this={container} bind:clientWidth={width} style="height: {height}px"></div>
