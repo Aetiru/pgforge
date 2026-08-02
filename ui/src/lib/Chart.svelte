@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import uPlot from "uplot";
   import "uplot/dist/uPlot.min.css";
+  import { theme } from "./theme.svelte";
 
   let {
     label,
@@ -38,12 +39,22 @@
     return value === null || value === undefined ? "—" : formatValue(value);
   });
 
-  // La creación depende solo del tamaño: si también leyera `data`, el gráfico se destruiría y se
-  // volvería a crear en cada muestra en lugar de actualizarse.
+  /** uPlot recibe colores, no clases: los toma del mismo lugar que el resto de la interfaz. */
+  function cssColor(name: string): string {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  // La creación depende del tamaño y del tema: si también leyera `data`, el gráfico se destruiría
+  // y se volvería a crear en cada muestra en lugar de actualizarse. Los colores de los ejes se
+  // fijan al construirlo, así que cambiar de claro a oscuro sí obliga a rehacerlo.
   $effect(() => {
     const element = container;
     const currentWidth = width;
+    void theme.resolved;
     if (!element || currentWidth === 0) return;
+
+    const axis = cssColor("--plot-axis");
+    const grid = cssColor("--plot-grid");
 
     plot = new uPlot(
       {
@@ -56,18 +67,15 @@
         legend: { show: false },
         scales: { x: { time: true } },
         axes: [
-          { stroke: "#9ca3af", grid: { show: false }, size: 22 },
+          { stroke: axis, grid: { show: false }, size: 22 },
           {
-            stroke: "#9ca3af",
-            grid: { stroke: "#9ca3af22", width: 1 },
+            stroke: axis,
+            grid: { stroke: grid, width: 1 },
             size: 48,
             values: (_, ticks) => ticks.map((value) => tick(value)),
           },
         ],
-        series: [
-          {},
-          { stroke: color, fill: `${color}22`, width: 1.5, points: { show: false } },
-        ],
+        series: [{}, { stroke: color, fill: `${color}22`, width: 1.5, points: { show: false } }],
       },
       // Se arranca con lo que haya, pero sin registrar `data` como dependencia de este efecto.
       untrack(() => data),
@@ -88,7 +96,10 @@
 
 <div class="card p-2">
   <div class="flex items-baseline justify-between px-1">
-    <span class="text-xs muted">{label}</span>
+    <span class="flex items-center gap-1.5 text-xs muted">
+      <span class="size-1.5 rounded-full" style="background: {color}"></span>
+      {label}
+    </span>
     <span class="font-mono text-sm tabular-nums">{last}</span>
   </div>
   <div bind:this={container} bind:clientWidth={width} style="height: {height}px"></div>

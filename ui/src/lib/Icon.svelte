@@ -2,8 +2,8 @@
   /**
    * Íconos del árbol y de la barra.
    *
-   * Se dibujan a mano en vez de sumar una librería: son quince formas simples y una dependencia de
-   * íconos completa pesa más que toda la interfaz.
+   * Se dibujan a mano en vez de sumar una librería: son unas pocas decenas de formas simples y una
+   * dependencia de íconos completa pesa más que toda la interfaz.
    */
   export type IconName =
     | "server"
@@ -30,7 +30,20 @@
     | "chevron"
     | "close"
     | "copy"
-    | "dots";
+    | "dots"
+    | "sun"
+    | "moon"
+    | "auto"
+    | "trash"
+    | "edit"
+    | "check"
+    | "warn"
+    | "info"
+    | "clock"
+    | "key"
+    | "sort"
+    | "chart"
+    | "compass";
 
   const PATHS: Record<IconName, string> = {
     server:
@@ -63,6 +76,20 @@
     close: '<path d="M6 6l12 12M18 6L6 18"/>',
     copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
     dots: '<circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/>',
+    moon: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>',
+    /* El automático es el mismo círculo con una mitad llena: sigue al sistema, sea cual sea. */
+    auto: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none"/>',
+    trash: '<path d="M4 7h16M9.5 7V5h5v2M6.5 7l1 13h9l1-13"/>',
+    edit: '<path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M14.5 6.5l3 3"/>',
+    check: '<path d="M5 12.5l4.5 4.5L19 7"/>',
+    warn: '<path d="M12 3.5l9 16H3z"/><path d="M12 10v4.5M12 17.2h.01"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.8h.01"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5.5l3.5 2"/>',
+    key: '<circle cx="8" cy="15" r="4"/><path d="M10.9 12.1L20 3l1.5 1.5-1.5 1.5 1.5 1.5-3 3-1.5-1.5-1.5 1.5"/>',
+    sort: '<path d="M8 4v16M8 4L4.5 7.5M8 4l3.5 3.5"/><path d="M16 20V4M16 20l-3.5-3.5M16 20l3.5-3.5"/>',
+    chart: '<path d="M4 20V4"/><path d="M4 20h16"/><path d="M8 16.5v-4M12.5 16.5v-8M17 16.5v-5.5"/>',
+    compass: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
   };
 
   export function iconPath(name: IconName): string {

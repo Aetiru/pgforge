@@ -1,5 +1,8 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import Alert from "./Alert.svelte";
+  import Modal from "./Modal.svelte";
+  import SqlPreview from "./SqlPreview.svelte";
   import {
     describeError,
     privilegeApply,
@@ -160,75 +163,65 @@
   }
 </script>
 
-<div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
-  <div
-    class="card flex max-h-[85vh] w-full max-w-lg flex-col shadow-xl"
-    role="dialog"
-    aria-modal="true"
-    aria-label={existing ? "Editar privilegios" : "Nuevo privilegio"}
-  >
-    <h2 class="divider-b px-5 py-3 text-base font-medium">
-      {existing ? `Editar privilegios de ${existing.grantee}` : "Nuevo privilegio"}
-    </h2>
+<Modal
+  title={existing ? `Privilegios de ${existing.grantee}` : "Nuevo privilegio"}
+  subtitle={kind === "table" ? `${schema}.${table}` : `esquema ${schema}`}
+  busy={saving}
+  {onclose}
+>
+  <label class="flex flex-col gap-1">
+    <span class="label">Rol destinatario</span>
+    <input
+      class="field"
+      data-autofocus
+      bind:value={grantee}
+      disabled={existing !== null}
+      placeholder="ana, o PUBLIC para todos"
+    />
+  </label>
 
-    <div class="min-h-0 flex-1 overflow-auto px-5 py-4 text-sm">
-      <label class="flex flex-col gap-1">
-        <span class="text-xs muted">Rol destinatario</span>
-        <input
-          class="field"
-          bind:value={grantee}
-          disabled={existing !== null}
-          placeholder="ana, o PUBLIC para todos"
-        />
-      </label>
-
-      <div class="mt-3">
-        <span class="text-xs muted">Privilegios</span>
-        <div class="mt-1 flex flex-wrap gap-3">
-          {#each options as option (option.value)}
-            <label class="check text-xs">
-              <input
-                type="checkbox"
-                checked={selected.includes(option.value)}
-                onchange={() => toggle(option.value)}
-              />
-              {option.label}
-            </label>
-          {/each}
-        </div>
-      </div>
-
-      <label class="check mt-3 text-xs">
-        <input type="checkbox" bind:checked={grantOption} />
-        Con GRANT OPTION (puede volver a otorgarlos)
-      </label>
-
-      {#if existing}
-        <label class="check mt-2 text-xs">
-          <input type="checkbox" bind:checked={cascade} />
-          CASCADE al revocar lo que se desmarque
+  <div class="mt-3">
+    <span class="label">Privilegios</span>
+    <div class="mt-1 flex flex-wrap gap-x-4 gap-y-1.5">
+      {#each options as option (option.value)}
+        <label class="check">
+          <input
+            type="checkbox"
+            checked={selected.includes(option.value)}
+            onchange={() => toggle(option.value)}
+          />
+          {option.label}
         </label>
-      {/if}
-
-      {#if error}
-        <p class="mt-3 text-sm text-rose-600 dark:text-rose-400">{error}</p>
-      {/if}
-
-      {#if preview}
-        <pre
-          class="mt-3 max-h-40 overflow-auto rounded bg-zinc-100 p-2 font-mono text-xs
-                 whitespace-pre-wrap select-text dark:bg-zinc-800">{preview}</pre>
-      {/if}
-    </div>
-
-    <div class="divider-t flex items-center gap-2 px-5 py-3">
-      <button class="btn btn-ghost text-xs" onclick={showPreview} disabled={saving}>
-        Ver SQL
-      </button>
-      <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
-      <button class="btn btn-primary" onclick={submit} disabled={saving}>
-        {existing ? "Guardar" : "Otorgar"}
-      </button>
+      {/each}
     </div>
   </div>
-</div>
+
+  <label class="check mt-3">
+    <input type="checkbox" bind:checked={grantOption} />
+    Con GRANT OPTION (puede volver a otorgarlos)
+  </label>
+
+  {#if existing}
+    <label class="check mt-2">
+      <input type="checkbox" bind:checked={cascade} />
+      CASCADE al revocar lo que se desmarque
+    </label>
+  {/if}
+
+  {#if error}
+    <Alert tone="bad" box class="mt-3">{error}</Alert>
+  {/if}
+
+  {#if preview}
+    <SqlPreview sql={preview} />
+  {/if}
+
+  {#snippet footer()}
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-primary" onclick={submit} disabled={saving}>
+      {#if saving}<span class="spinner"></span>{/if}
+      {existing ? "Guardar" : "Otorgar"}
+    </button>
+  {/snippet}
+</Modal>

@@ -1,19 +1,25 @@
 <script lang="ts">
+  import Alert from "./lib/Alert.svelte";
+  import Confirm from "./lib/Confirm.svelte";
   import ConnectionDialog from "./lib/ConnectionDialog.svelte";
   import Dashboard from "./lib/Dashboard.svelte";
   import DataPanel from "./lib/DataPanel.svelte";
   import DetailPanel from "./lib/DetailPanel.svelte";
+  import Empty from "./lib/Empty.svelte";
   import Icon from "./lib/Icon.svelte";
+  import Modal from "./lib/Modal.svelte";
   import QueryPanel from "./lib/QueryPanel.svelte";
   import TreePanel from "./lib/TreePanel.svelte";
   import { openData, DataTab } from "./lib/data.svelte";
   import { explorer } from "./lib/explorer.svelte";
   import { openQuery, QueryTab } from "./lib/query.svelte";
   import { tabs } from "./lib/tabs.svelte";
+  import { theme } from "./lib/theme.svelte";
   import {
     appInfo,
     deleteProfile,
     describeError,
+    formatVersion,
     type AppInfo,
     type ConnectionProfile,
   } from "./lib/ipc";
@@ -26,9 +32,12 @@
   let confirmDelete = $state<ConnectionProfile | null>(null);
   let banner = $state<string | null>(null);
   let sidebarWidth = $state(300);
+  let sidebarOpen = $state(true);
   let view = $state<"explorer" | "monitor">("explorer");
   /** Servidor elegido a mano en la vista de monitoreo; si es `null` se usa el del árbol. */
   let monitorChoice = $state<string | null>(null);
+
+  const DEFAULT_SIDEBAR = 300;
 
   $effect(() => {
     appInfo().then((value) => (info = value));
@@ -99,63 +108,122 @@
     const up = () => {
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
+      document.body.classList.remove("cursor-col-resize");
     };
+    // Mientras se arrastra, el cursor no cambia al pasar por encima de otros elementos.
+    document.body.classList.add("cursor-col-resize");
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
   }
+
+  /** Atajos que valen en toda la ventana. Los del editor los maneja CodeMirror, que tiene el foco. */
+  function onKeydown(event: KeyboardEvent) {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b") {
+      event.preventDefault();
+      sidebarOpen = !sidebarOpen;
+    }
+  }
+
+  const THEME_LABEL = {
+    system: "Tema: el del sistema",
+    light: "Tema: claro",
+    dark: "Tema: oscuro",
+  } as const;
+
+  const THEME_ICON = { system: "auto", light: "sun", dark: "moon" } as const;
+
+  const VIEWS = [
+    { value: "explorer", label: "Explorador", icon: "schema" },
+    { value: "monitor", label: "Monitoreo", icon: "chart" },
+  ] as const;
+
+  /** Lo que dice la barra de estado: dónde está parado el usuario ahora mismo. */
+  const context = $derived.by(() => {
+    const selected = explorer.selected;
+    if (!selected) return null;
+    const profile = profileOf(selected.profileId);
+    const caps = explorer.caps[selected.profileId];
+    return {
+      server: profile?.name ?? selected.label,
+      connected: explorer.isConnected(selected.profileId),
+      version: caps ? `PostgreSQL ${formatVersion(caps.version)}` : null,
+      path: selected.node
+        ? [selected.node.database, selected.node.schema, selected.node.label]
+            .filter(Boolean)
+            .join(" / ")
+        : (profile?.host ?? ""),
+    };
+  });
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 <div class="flex h-full flex-col">
   <header class="divider-b flex items-center gap-3 px-3 py-2">
     <div class="flex items-center gap-2">
       <span
         class="grid size-6 place-items-center rounded-md bg-blue-600 font-mono text-[11px]
-               font-bold text-white">pg</span
+               font-bold text-white shadow-sm shadow-blue-600/30">pg</span
       >
       <span class="text-sm font-semibold tracking-tight">pgforge</span>
     </div>
 
     <div class="seg ml-2" role="tablist">
-      {#each [["explorer", "Explorador"], ["monitor", "Monitoreo"]] as [value, label] (value)}
+      {#each VIEWS as item (item.value)}
         <button
           class="seg-item"
           role="tab"
-          aria-selected={view === value}
-          onclick={() => (view = value as typeof view)}
+          aria-selected={view === item.value}
+          onclick={() => (view = item.value)}
         >
-          {label}
+          <Icon name={item.icon} size={12} />
+          {item.label}
         </button>
       {/each}
     </div>
 
     {#if view === "monitor" && connectedServers.length > 0}
-      <select
-        class="field w-44 py-0.5 text-xs"
-        title="Servidor que se está monitoreando"
-        value={monitorServer}
-        onchange={(event) => (monitorChoice = event.currentTarget.value)}
-      >
-        {#each connectedServers as server (server.profileId)}
-          <option value={server.profileId}>{server.label}</option>
-        {/each}
-      </select>
+      <label class="check gap-1.5">
+        Servidor
+        <select
+          class="field w-44 py-0.5 text-xs"
+          title="Servidor que se está monitoreando"
+          value={monitorServer}
+          onchange={(event) => (monitorChoice = event.currentTarget.value)}
+        >
+          {#each connectedServers as server (server.profileId)}
+            <option value={server.profileId}>{server.label}</option>
+          {/each}
+        </select>
+      </label>
     {/if}
 
-    {#if info}
-      <span class="ml-auto text-xs muted">v{info.version}</span>
-    {/if}
+    <div class="ml-auto flex items-center gap-2">
+      {#if connectedServers.length > 0}
+        <span class="flex items-center gap-1.5 text-xs muted" title="Servidores conectados">
+          <span class="dot dot-on"></span>
+          {connectedServers.length}
+          {connectedServers.length === 1 ? "conectado" : "conectados"}
+        </span>
+      {/if}
+
+      <button
+        class="btn btn-ghost btn-icon"
+        title={THEME_LABEL[theme.preference]}
+        aria-label={THEME_LABEL[theme.preference]}
+        onclick={() => theme.cycle()}
+      >
+        <Icon name={THEME_ICON[theme.preference]} size={15} />
+      </button>
+
+      {#if info}
+        <span class="text-xs muted">v{info.version}</span>
+      {/if}
+    </div>
   </header>
 
   {#if banner}
-    <div
-      class="flex items-center gap-2 border-b border-rose-200 bg-rose-50 px-3 py-1.5 text-sm
-             text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300"
-    >
-      <span class="flex-1">{banner}</span>
-      <button class="btn btn-ghost px-1.5 py-0.5" onclick={() => (banner = null)}>
-        <Icon name="close" size={12} />
-      </button>
-    </div>
+    <Alert tone="bad" onclose={() => (banner = null)}>{banner}</Alert>
   {/if}
 
   {#if view === "monitor"}
@@ -166,106 +234,157 @@
         {/key}
       </div>
     {:else}
-      <div class="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-        <Icon name="server" size={28} class="text-zinc-300 dark:text-zinc-700" />
-        <p class="text-sm muted">Conectá un servidor para monitorearlo.</p>
-        <button class="btn" onclick={() => (view = "explorer")}>Ir al explorador</button>
-      </div>
+      <Empty
+        icon="server"
+        title="No hay ningún servidor conectado"
+        hint="El monitoreo lee las estadísticas en vivo de una conexión abierta."
+      >
+        <button class="btn btn-primary" onclick={() => (view = "explorer")}>
+          Ir al explorador
+        </button>
+      </Empty>
     {/if}
   {:else}
     <div class="flex min-h-0 flex-1">
-      <aside class="panel divider-r flex min-h-0 flex-col" style="width: {sidebarWidth}px">
-        <div class="flex items-center gap-1.5 px-2 py-2">
-          <div class="relative flex-1">
-            <Icon
-              name="search"
-              size={13}
-              class="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-zinc-400"
-            />
-            <input
-              class="field w-full py-1 pl-7"
-              placeholder="Buscar"
-              title="Busca entre los objetos ya cargados en el árbol"
-              bind:value={explorer.search}
-            />
+      {#if sidebarOpen}
+        <aside class="panel flex min-h-0 flex-col" style="width: {sidebarWidth}px">
+          <div class="flex items-center gap-1.5 px-2 py-2">
+            <div class="relative flex-1">
+              <Icon
+                name="search"
+                size={13}
+                class="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-zinc-400"
+              />
+              <input
+                class="field w-full py-1 pr-7 pl-7"
+                placeholder="Buscar"
+                title="Busca entre los objetos ya cargados en el árbol"
+                bind:value={explorer.search}
+                onkeydown={(event) => {
+                  if (event.key === "Escape") explorer.search = "";
+                }}
+              />
+              {#if explorer.search}
+                <button
+                  class="btn btn-ghost btn-icon absolute top-1/2 right-0.5 size-6 -translate-y-1/2"
+                  aria-label="Limpiar la búsqueda"
+                  onclick={() => (explorer.search = "")}
+                >
+                  <Icon name="close" size={11} />
+                </button>
+              {/if}
+            </div>
+            <button
+              class="btn btn-icon"
+              title="Nuevo servidor"
+              aria-label="Nuevo servidor"
+              onclick={() => (dialog = { profile: null })}
+            >
+              <Icon name="plus" />
+            </button>
           </div>
-          <button
-            class="btn btn-icon"
-            title="Nuevo servidor"
-            aria-label="Nuevo servidor"
-            onclick={() => (dialog = { profile: null })}
-          >
-            <Icon name="plus" />
-          </button>
-        </div>
 
-        <div class="min-h-0 flex-1 px-1 pb-1">
-          <TreePanel onconnect={connectById} />
-        </div>
+          <div class="min-h-0 flex-1 px-1 pb-1">
+            <TreePanel onconnect={connectById} onnew={() => (dialog = { profile: null })} />
+          </div>
 
-        <div class="divider-t px-3 py-2">
-          <label class="check">
-            <input
-              type="checkbox"
-              checked={explorer.options.showSystemSchemas}
-              onchange={(event) => {
-                explorer.options = { showSystemSchemas: event.currentTarget.checked };
-                explorer.reloadAll();
-              }}
-            />
-            Mostrar objetos del sistema
-          </label>
-        </div>
-      </aside>
+          <div class="divider-t px-3 py-2">
+            <label class="check">
+              <input
+                type="checkbox"
+                checked={explorer.options.showSystemSchemas}
+                onchange={(event) => {
+                  explorer.options = { showSystemSchemas: event.currentTarget.checked };
+                  explorer.reloadAll();
+                }}
+              />
+              Mostrar objetos del sistema
+            </label>
+          </div>
+        </aside>
 
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="w-px shrink-0 cursor-col-resize bg-zinc-200 transition-colors hover:bg-blue-400
-               dark:bg-zinc-800"
-        onmousedown={startResize}
-      ></div>
+        <!--
+          El separador mide un píxel a la vista pero atrapa el mouse en seis: agarrar una línea de
+          un píxel es de las cosas más frustrantes de una interfaz de escritorio.
+        -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="group relative w-px shrink-0 bg-zinc-200 dark:bg-zinc-800"
+          onmousedown={startResize}
+          ondblclick={() => (sidebarWidth = DEFAULT_SIDEBAR)}
+          title="Arrastrá para cambiar el ancho; doble clic para restablecerlo"
+        >
+          <div
+            class="absolute inset-y-0 -left-[3px] w-[7px] cursor-col-resize
+                   transition-colors group-hover:bg-blue-500/40"
+          ></div>
+        </div>
+      {/if}
 
       <main class="flex min-w-0 flex-1 flex-col">
-        {#if tabs.all.length > 0}
-          <div class="divider-b flex items-stretch gap-px overflow-x-auto px-1" role="tablist">
+        <!-- `overflow-y-hidden`: sin eso, el subrayado de la pestaña activa desborda un píxel hacia
+             abajo y el navegador dibuja una barra de desplazamiento vertical en toda la tira. -->
+        <div
+          class="divider-b flex items-stretch gap-px overflow-x-auto overflow-y-hidden px-1 pt-1"
+          role="tablist"
+        >
+          <button
+            class="btn btn-ghost btn-icon mr-1 self-center"
+            title={sidebarOpen ? "Ocultar el árbol (Ctrl+B)" : "Mostrar el árbol (Ctrl+B)"}
+            aria-label={sidebarOpen ? "Ocultar el árbol" : "Mostrar el árbol"}
+            onclick={() => (sidebarOpen = !sidebarOpen)}
+          >
+            <Icon
+              name="chevron"
+              size={13}
+              class="transition-transform {sidebarOpen ? 'rotate-180' : ''}"
+            />
+          </button>
+
+          <div class="tab-wrap">
+            <button
+              class="tab"
+              role="tab"
+              aria-selected={tabs.active === null}
+              title="El objeto seleccionado en el árbol"
+              onclick={() => (tabs.active = null)}
+            >
+              <Icon name="compass" size={12} class="muted" />
+              Detalle
+            </button>
+          </div>
+
+          {#each tabs.all as tab (tab.key)}
             <div class="tab-wrap">
               <button
-                class="tab"
+                class="tab pr-1"
                 role="tab"
-                aria-selected={tabs.active === null}
-                onclick={() => (tabs.active = null)}
+                aria-selected={tabs.active === tab.key}
+                title={`${tab.title} · ${tab.database}`}
+                onclick={() => (tabs.active = tab.key)}
+                onauxclick={(event) => {
+                  // Botón del medio: cerrar, como en cualquier navegador.
+                  if (event.button === 1) tabs.close(tab.key);
+                }}
               >
-                Detalle
+                {#if tab instanceof QueryTab && tab.running}
+                  <span class="spinner"></span>
+                {:else}
+                  <Icon name={tab.kind === "query" ? "sql" : "table"} size={12} class="muted" />
+                {/if}
+                <span class="truncate">{tab.title}</span>
+              </button>
+              <button
+                class="tab-close"
+                aria-label="Cerrar la pestaña"
+                title="Cerrar la pestaña"
+                onclick={() => tabs.close(tab.key)}
+              >
+                <Icon name="close" size={10} />
               </button>
             </div>
-
-            {#each tabs.all as tab (tab.key)}
-              <div class="tab-wrap">
-                <button
-                  class="tab pr-1"
-                  role="tab"
-                  aria-selected={tabs.active === tab.key}
-                  title={`${tab.title} · ${tab.database}`}
-                  onclick={() => (tabs.active = tab.key)}
-                >
-                  <Icon
-                    name={tab.kind === "query" ? "sql" : "table"}
-                    size={12}
-                    class={tab instanceof QueryTab && tab.running ? "text-blue-500" : "muted"}
-                  />
-                  {tab.title}
-                </button>
-                <button
-                  class="tab-close"
-                  aria-label="Cerrar la pestaña"
-                  onclick={() => tabs.close(tab.key)}
-                >
-                  <Icon name="close" size={10} />
-                </button>
-              </div>
-            {/each}
-          </div>
-        {/if}
+          {/each}
+        </div>
 
         <div class="min-h-0 flex-1">
           {#if tabs.current instanceof QueryTab}
@@ -291,6 +410,28 @@
         </div>
       </main>
     </div>
+
+    <!--
+      Barra de estado: dónde está parado uno. En una aplicación con árbol, pestañas y diálogos, el
+      nombre de una tabla no dice contra qué servidor se está trabajando, y esa es justo la
+      pregunta que conviene poder contestar sin hacer clic.
+    -->
+    <footer
+      class="panel divider-t flex h-6 shrink-0 items-center gap-2 px-3 text-[11px] muted"
+    >
+      {#if context}
+        <span class="dot {context.connected ? 'dot-on' : 'dot-off'}"></span>
+        <span class="font-medium text-zinc-600 dark:text-zinc-300">{context.server}</span>
+        {#if context.path}
+          <span class="truncate">{context.path}</span>
+        {/if}
+        {#if context.version}
+          <span class="ml-auto shrink-0">{context.version}</span>
+        {/if}
+      {:else}
+        <span>Elegí un objeto del árbol para ver su detalle.</span>
+      {/if}
+    </footer>
   {/if}
 </div>
 
@@ -309,51 +450,46 @@
 {/if}
 
 {#if prompt}
-  <div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
-    <div class="card w-full max-w-sm p-5 shadow-xl">
-      <h2 class="text-base font-medium">Contraseña de {prompt.profile.name}</h2>
-      <p class="mt-1 text-xs muted">{prompt.message}</p>
-      <!-- svelte-ignore a11y_autofocus -->
+  <Modal
+    title="Contraseña de {prompt.profile.name}"
+    subtitle="{prompt.profile.user}@{prompt.profile.host}:{prompt.profile.port}"
+    size="sm"
+    onclose={() => (prompt = null)}
+  >
+    <Alert tone="bad" box>{prompt.message}</Alert>
+
+    <label class="mt-3 flex flex-col gap-1">
+      <span class="label">Contraseña</span>
       <input
-        class="field mt-3 w-full"
+        class="field"
         type="password"
         autocomplete="off"
-        autofocus
+        data-autofocus
         bind:value={prompt.password}
         onkeydown={(event) => {
           if (event.key === "Enter" && prompt) connect(prompt.profile, prompt.password);
         }}
       />
-      <div class="mt-4 flex justify-end gap-2">
-        <button class="btn" onclick={() => (prompt = null)}>Cancelar</button>
-        <button
-          class="btn btn-primary"
-          onclick={() => prompt && connect(prompt.profile, prompt.password)}
-        >
-          Conectar
-        </button>
-      </div>
-    </div>
-  </div>
+    </label>
+
+    {#snippet footer()}
+      <button class="btn ml-auto" onclick={() => (prompt = null)}>Cancelar</button>
+      <button
+        class="btn btn-primary"
+        onclick={() => prompt && connect(prompt.profile, prompt.password)}
+      >
+        Conectar
+      </button>
+    {/snippet}
+  </Modal>
 {/if}
 
 {#if confirmDelete}
-  <div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
-    <div class="card w-full max-w-sm p-5 shadow-xl">
-      <h2 class="text-base font-medium">Eliminar «{confirmDelete.name}»</h2>
-      <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
-        Se borra el servidor de la lista y su contraseña guardada. No se toca nada en la base de
-        datos.
-      </p>
-      <div class="mt-4 flex justify-end gap-2">
-        <button class="btn" onclick={() => (confirmDelete = null)}>Cancelar</button>
-        <button
-          class="btn btn-primary border-rose-600 bg-rose-600 hover:bg-rose-700"
-          onclick={() => confirmDelete && remove(confirmDelete)}
-        >
-          Eliminar
-        </button>
-      </div>
-    </div>
-  </div>
+  <Confirm
+    title="Eliminar «{confirmDelete.name}»"
+    message="Se borra el servidor de la lista y su contraseña guardada. No se toca nada en la base de datos."
+    confirmLabel="Eliminar"
+    onconfirm={() => confirmDelete && remove(confirmDelete)}
+    onclose={() => (confirmDelete = null)}
+  />
 {/if}

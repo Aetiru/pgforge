@@ -1,5 +1,8 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import Alert from "./Alert.svelte";
+  import Modal from "./Modal.svelte";
+  import SqlPreview from "./SqlPreview.svelte";
   import {
     ddlApply,
     ddlPreview,
@@ -165,97 +168,86 @@
   }
 </script>
 
-<div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
-  <div
-    class="card w-full max-w-lg shadow-xl"
-    role="dialog"
-    aria-modal="true"
-    aria-label={column ? "Editar columna" : "Nueva columna"}
-  >
-    <h2 class="divider-b px-5 py-3 text-base font-medium">
-      {column ? `Editar ${column.name}` : `Nueva columna en ${table}`}
-    </h2>
+<Modal
+  title={column ? `Editar la columna ${column.name}` : "Nueva columna"}
+  subtitle="{schema}.{table}"
+  busy={saving}
+  {onclose}
+>
+  <div class="grid grid-cols-2 gap-3">
+    <label class="flex flex-col gap-1">
+      <span class="label">Nombre</span>
+      <input class="field" data-autofocus bind:value={name} />
+    </label>
 
-    <div class="grid grid-cols-2 gap-3 px-5 py-4 text-sm">
+    <label class="flex flex-col gap-1">
+      <span class="label">Tipo</span>
+      <input class="field" list="pgforge-column-types" bind:value={typeName} />
+    </label>
+
+    {#if column && typeChanged}
+      <label class="col-span-2 flex flex-col gap-1">
+        <span class="label">USING (opcional, solo si el cambio de tipo no es implícito)</span>
+        <input class="field" placeholder={`${column.name}::${typeName}`} bind:value={using} />
+      </label>
+    {/if}
+
+    {#if !column}
       <label class="flex flex-col gap-1">
-        <span class="text-xs muted">Nombre</span>
-        <input class="field" bind:value={name} />
+        <span class="label">Identidad</span>
+        <select class="field" bind:value={identity}>
+          {#each IDENTITY_OPTIONS as option (option.value)}
+            <option value={option.value}>{option.label}</option>
+          {/each}
+        </select>
       </label>
+    {/if}
 
-      <label class="flex flex-col gap-1">
-        <span class="text-xs muted">Tipo</span>
-        <input class="field" list="pgforge-column-types" bind:value={typeName} />
-      </label>
+    <label class="flex flex-col gap-1">
+      <span class="label">Default</span>
+      <input
+        class="field"
+        disabled={!column && identity !== ""}
+        bind:value={defaultValue}
+        placeholder="expresión SQL, p. ej. now()"
+      />
+    </label>
 
-      {#if column && typeChanged}
-        <label class="col-span-2 flex flex-col gap-1">
-          <span class="text-xs muted">
-            USING (opcional, solo si el cambio de tipo no es implícito)
-          </span>
-          <input class="field" placeholder={`${column.name}::${typeName}`} bind:value={using} />
-        </label>
-      {/if}
+    <label class="check col-span-2">
+      <input type="checkbox" bind:checked={notNull} />
+      NOT NULL
+    </label>
 
-      {#if !column}
-        <label class="flex flex-col gap-1">
-          <span class="text-xs muted">Identidad</span>
-          <select class="field" bind:value={identity}>
-            {#each IDENTITY_OPTIONS as option (option.value)}
-              <option value={option.value}>{option.label}</option>
-            {/each}
-          </select>
-        </label>
-      {/if}
-
-      <label class="flex flex-col gap-1">
-        <span class="text-xs muted">Default</span>
-        <input
-          class="field"
-          disabled={!column && identity !== ""}
-          bind:value={defaultValue}
-          placeholder="expresión SQL, p. ej. now()"
-        />
-      </label>
-
-      <label class="check col-span-2">
-        <input type="checkbox" bind:checked={notNull} />
-        NOT NULL
-      </label>
-
-      <datalist id="pgforge-column-types">
-        {#each COMMON_TYPES as type (type)}
-          <option value={type}></option>
-        {/each}
-      </datalist>
-
-      {#if error}
-        <p class="col-span-2 text-sm text-rose-600 dark:text-rose-400">{error}</p>
-      {/if}
-
-      {#if preview}
-        <pre
-          class="col-span-2 max-h-40 overflow-auto rounded bg-zinc-100 p-2 font-mono text-xs
-                 whitespace-pre-wrap select-text dark:bg-zinc-800">{preview}</pre>
-      {/if}
-    </div>
-
-    <div class="divider-t flex items-center gap-2 px-5 py-3">
-      <button class="btn btn-ghost text-xs" onclick={showPreview} disabled={saving}>
-        Ver SQL
-      </button>
-      <span class="text-xs muted">
-        {#if column}
-          {pending > 0 ? `${pending} cambio${pending === 1 ? "" : "s"}` : "sin cambios"}
-        {/if}
-      </span>
-      <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
-      <button
-        class="btn btn-primary"
-        onclick={submit}
-        disabled={saving || (column !== null && pending === 0)}
-      >
-        {column ? "Guardar" : "Agregar columna"}
-      </button>
-    </div>
+    <datalist id="pgforge-column-types">
+      {#each COMMON_TYPES as type (type)}
+        <option value={type}></option>
+      {/each}
+    </datalist>
   </div>
-</div>
+
+  {#if error}
+    <Alert tone="bad" box class="mt-3">{error}</Alert>
+  {/if}
+
+  {#if preview}
+    <SqlPreview sql={preview} />
+  {/if}
+
+  {#snippet footer()}
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
+    {#if column}
+      <span class="text-xs muted">
+        {pending > 0 ? `${pending} cambio${pending === 1 ? "" : "s"}` : "sin cambios"}
+      </span>
+    {/if}
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button
+      class="btn btn-primary"
+      onclick={submit}
+      disabled={saving || (column !== null && pending === 0)}
+    >
+      {#if saving}<span class="spinner"></span>{/if}
+      {column ? "Guardar" : "Agregar columna"}
+    </button>
+  {/snippet}
+</Modal>

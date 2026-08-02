@@ -1,19 +1,24 @@
 <script lang="ts">
+  import Confirm from "./Confirm.svelte";
+  import Empty from "./Empty.svelte";
   import HistoryPanel from "./HistoryPanel.svelte";
   import Icon from "./Icon.svelte";
   import PlanTree from "./PlanTree.svelte";
   import ResultGrid from "./ResultGrid.svelte";
   import SqlEditor from "./SqlEditor.svelte";
-  import { decimal } from "./format";
+  import { count, decimal } from "./format";
   import type { QueryTab } from "./query.svelte";
   import { describeError, explainWarning, statementAtCursor, type ExplainOptions } from "./ipc";
 
   let { tab }: { tab: QueryTab } = $props();
 
   let editorHeight = $state(240);
-  let pending = $state<{ sql: string; base: number; options: ExplainOptions; warning: string } | null>(
-    null,
-  );
+  let pending = $state<{
+    sql: string;
+    base: number;
+    options: ExplainOptions;
+    warning: string;
+  } | null>(null);
 
   const result = $derived(tab.result);
   const withRows = $derived(result?.outcome.kind === "rows" ? result.outcome : null);
@@ -72,7 +77,9 @@
     const up = () => {
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
+      document.body.classList.remove("cursor-row-resize");
     };
+    document.body.classList.add("cursor-row-resize");
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
   }
@@ -82,12 +89,19 @@
 
   /** El editor entrega la selección y el cursor; el panel decide qué hacer con ellos. */
   let lastCursor = $state(0);
+
+  const VIEWS = [
+    { value: "rows", label: "Resultados" },
+    { value: "plan", label: "Plan" },
+    { value: "messages", label: "Mensajes" },
+    { value: "history", label: "Historial" },
+  ] as const;
 </script>
 
 <div class="flex h-full flex-col">
-  <header class="divider-b flex flex-wrap items-center gap-1.5 px-2 py-1.5">
+  <header class="toolbar">
     {#if tab.running}
-      <button class="btn" onclick={() => tab.cancel()}>
+      <button class="btn btn-danger" onclick={() => tab.cancel()}>
         <Icon name="close" size={12} />
         Cancelar
       </button>
@@ -95,23 +109,25 @@
       <button
         class="btn btn-primary"
         disabled={tab.tabId === null}
-        title="Ejecuta la selección, o la sentencia donde está el cursor (Ctrl+Enter)"
+        title="Ejecuta la selección, o la sentencia donde está el cursor"
         onclick={() => run("", lastCursor)}
       >
         <Icon name="play" size={12} />
         Ejecutar
+        <span class="kbd border-white/30 bg-white/15 text-white/80">Ctrl+↵</span>
       </button>
       <button
         class="btn"
         disabled={tab.tabId === null}
-        title="Ejecuta todas las sentencias del editor (Ctrl+Shift+Enter)"
+        title="Ejecuta todas las sentencias del editor"
         onclick={() => tab.run(tab.sql)}
       >
         Script entero
+        <span class="kbd">Ctrl+⇧+↵</span>
       </button>
     {/if}
 
-    <span class="mx-1 h-4 w-px bg-zinc-200 dark:bg-zinc-800"></span>
+    <span class="toolbar-sep"></span>
 
     <button
       class="btn"
@@ -132,9 +148,15 @@
 
     <span class="ml-auto flex items-center gap-2 text-xs muted">
       {#if tab.running}
-        <span class="spinner"></span>
+        <span class="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
+          <span class="spinner"></span>
+          ejecutando…
+        </span>
       {/if}
-      <span title="Base sobre la que corre esta pestaña">{tab.database}</span>
+      <span class="tag tag-neutral" title="Base sobre la que corre esta pestaña">
+        <Icon name="database" size={10} />
+        {tab.database}
+      </span>
     </span>
   </header>
 
@@ -154,24 +176,30 @@
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="h-px shrink-0 cursor-row-resize bg-zinc-200 transition-colors hover:bg-blue-400
-           dark:bg-zinc-800"
+    class="group relative h-px shrink-0 bg-zinc-200 dark:bg-zinc-800"
     onmousedown={startResize}
-  ></div>
+    ondblclick={() => (editorHeight = 240)}
+    title="Arrastrá para cambiar la altura del editor; doble clic para restablecerla"
+  >
+    <div
+      class="absolute inset-x-0 -top-[3px] h-[7px] cursor-row-resize transition-colors
+             group-hover:bg-blue-500/40"
+    ></div>
+  </div>
 
   <div class="flex min-h-0 flex-1 flex-col">
-    <div class="divider-b flex items-center gap-1 px-2 py-1">
+    <div class="divider-b flex items-center gap-2 px-2 py-1">
       <div class="seg" role="tablist">
-        {#each [["rows", "Resultados"], ["plan", "Plan"], ["messages", "Mensajes"], ["history", "Historial"]] as [value, label] (value)}
+        {#each VIEWS as item (item.value)}
           <button
             class="seg-item"
             role="tab"
-            aria-selected={tab.view === value}
-            onclick={() => (tab.view = value as typeof tab.view)}
+            aria-selected={tab.view === item.value}
+            onclick={() => (tab.view = item.value)}
           >
-            {label}
-            {#if value === "messages" && errors > 0}
-              <span class="ml-1 text-rose-600 dark:text-rose-400">•</span>
+            {item.label}
+            {#if item.value === "messages" && errors > 0}
+              <span class="tag tag-bad px-1 py-0 text-[10px]">{errors}</span>
             {/if}
           </button>
         {/each}
@@ -179,7 +207,7 @@
 
       {#if tab.results.length > 1}
         <select
-          class="field ml-1 w-40 py-0.5 text-xs"
+          class="field ml-1 w-44 py-0.5 text-xs"
           title="El script devolvió más de un resultado"
           value={tab.shown}
           onchange={(event) => (tab.shown = Number(event.currentTarget.value))}
@@ -191,11 +219,17 @@
       {/if}
 
       {#if withRows}
-        <span class="ml-auto text-xs muted">
-          {withRows.rowCount}
-          {withRows.rowCount === 1 ? "fila" : "filas"}
-          {#if withRows.truncated}· se muestran {withRows.rows.length}{/if}
-          · {decimal(withRows.seconds * 1000, 0)} ms
+        <span class="ml-auto flex items-center gap-2 text-xs muted">
+          {#if withRows.truncated}
+            <span class="tag tag-warn" title="Hay más filas de las que se trajeron">
+              se muestran {count(withRows.rows.length)}
+            </span>
+          {/if}
+          <span class="tabular-nums">
+            {count(withRows.rowCount)}
+            {withRows.rowCount === 1 ? "fila" : "filas"}
+          </span>
+          <span class="tabular-nums">{decimal(withRows.seconds * 1000, 0)} ms</span>
         </span>
       {/if}
     </div>
@@ -206,35 +240,44 @@
           {#key result}
             <ResultGrid columns={withRows.columns} rows={withRows.rows} />
           {/key}
-        {:else if result}
-          <p class="p-4 text-sm muted">
-            {result.outcome.kind === "command"
-              ? `${result.outcome.tag}: ${result.outcome.affected}`
-              : ""}
-          </p>
+        {:else if result && result.outcome.kind === "command"}
+          <Empty
+            icon="check"
+            title="{result.outcome.tag} · {count(result.outcome.affected)} {result.outcome
+              .affected === 1
+              ? 'fila'
+              : 'filas'}"
+            hint="La sentencia no devuelve filas; el servidor informó cuántas tocó."
+          />
         {:else}
-          <p class="p-4 text-sm muted">
-            Escribí una consulta y ejecutala con Ctrl+Enter.
-          </p>
+          <Empty
+            icon="sql"
+            title="Todavía no ejecutaste nada"
+            hint="Escribí una consulta y ejecutala con Ctrl+Enter. Si hay varias sentencias, se ejecuta la del cursor; si hay una selección, se ejecuta la selección."
+          />
         {/if}
       {:else if tab.view === "plan"}
         {#if tab.plan}
           <div class="h-full overflow-auto p-2">
             <PlanTree node={tab.plan.root} {worst} />
-            <p class="mt-3 px-2 text-xs muted">
+            <p class="mt-3 flex flex-wrap gap-x-3 px-2 text-xs muted">
               {#if tab.plan.planningMs !== null}
-                planificación {decimal(tab.plan.planningMs, 2)} ms
+                <span>planificación {decimal(tab.plan.planningMs, 2)} ms</span>
               {/if}
               {#if tab.plan.executionMs !== null}
-                · ejecución {decimal(tab.plan.executionMs, 2)} ms
+                <span>ejecución {decimal(tab.plan.executionMs, 2)} ms</span>
               {/if}
               {#if !tab.plan.analyzed}
-                · plan estimado, sin ejecutar
+                <span class="tag tag-neutral">plan estimado, sin ejecutar</span>
               {/if}
             </p>
           </div>
         {:else}
-          <p class="p-4 text-sm muted">Pedí «Explicar» para ver cómo resolvería la consulta.</p>
+          <Empty
+            icon="compass"
+            title="Sin plan"
+            hint="«Explicar» muestra cómo resolvería PostgreSQL la consulta sin ejecutarla; «Explicar y medir» la ejecuta y compara lo estimado con lo real."
+          />
         {/if}
       {:else if tab.view === "history"}
         <HistoryPanel
@@ -245,18 +288,25 @@
           }}
         />
       {:else if tab.messages.length === 0}
-        <p class="p-4 text-sm muted">Sin mensajes.</p>
+        <Empty
+          icon="info"
+          title="Sin mensajes"
+          hint="Acá aparecen los avisos del servidor (NOTICE, WARNING) y los errores de cada sentencia."
+        />
       {:else}
-        <ul class="h-full overflow-auto p-2 font-mono text-xs">
+        <ul class="h-full overflow-auto p-2 font-mono text-xs select-text">
           {#each tab.messages as message, index (index)}
             <li
-              class="px-2 py-0.5 {message.tone === 'error'
+              class="flex items-start gap-2 rounded px-2 py-1 {message.tone === 'error'
                 ? 'text-rose-600 dark:text-rose-400'
                 : message.tone === 'notice'
                   ? 'text-amber-700 dark:text-amber-400'
                   : 'muted'}"
             >
-              {message.text}
+              {#if message.tone !== "info"}
+                <Icon name="warn" size={12} class="mt-0.5 shrink-0" />
+              {/if}
+              <span class="min-w-0 flex-1 break-words whitespace-pre-wrap">{message.text}</span>
             </li>
           {/each}
         </ul>
@@ -266,23 +316,15 @@
 </div>
 
 {#if pending}
-  <div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
-    <div class="card w-full max-w-md p-5 shadow-xl">
-      <h2 class="text-base font-medium">Esto ejecuta la sentencia</h2>
-      <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-300">{pending.warning}</p>
-      <div class="mt-4 flex justify-end gap-2">
-        <button class="btn" onclick={() => (pending = null)}>Cancelar</button>
-        <button
-          class="btn btn-primary"
-          onclick={() => {
-            const target = pending;
-            pending = null;
-            if (target) tab.explain(target.sql, target.base, target.options);
-          }}
-        >
-          Ejecutar igual
-        </button>
-      </div>
-    </div>
-  </div>
+  <Confirm
+    title="Esto ejecuta la sentencia"
+    message={pending.warning}
+    confirmLabel="Ejecutar igual"
+    onconfirm={() => {
+      const target = pending;
+      pending = null;
+      if (target) tab.explain(target.sql, target.base, target.options);
+    }}
+    onclose={() => (pending = null)}
+  />
 {/if}

@@ -1,4 +1,7 @@
 <script lang="ts">
+  import Alert from "./Alert.svelte";
+  import Modal from "./Modal.svelte";
+  import SqlPreview from "./SqlPreview.svelte";
   import { describeError, indexCreate, indexPreview, type IndexDef, type TableColumn } from "./ipc";
 
   let {
@@ -97,82 +100,74 @@
   }
 </script>
 
-<div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
-  <div
-    class="card flex max-h-[85vh] w-full max-w-lg flex-col shadow-xl"
-    role="dialog"
-    aria-modal="true"
-    aria-label="Nuevo índice"
-  >
-    <h2 class="divider-b px-5 py-3 text-base font-medium">Nuevo índice en {table}</h2>
+<Modal title="Nuevo índice" subtitle="{schema}.{table}" busy={saving} {onclose}>
+  <div class="grid grid-cols-2 gap-3">
+    <label class="flex flex-col gap-1">
+      <span class="label">Nombre (opcional)</span>
+      <input class="field" data-autofocus bind:value={name} placeholder="lo nombra Postgres" />
+    </label>
 
-    <div class="min-h-0 flex-1 overflow-auto px-5 py-4 text-sm">
-      <div class="grid grid-cols-2 gap-3">
-        <label class="flex flex-col gap-1">
-          <span class="text-xs muted">Nombre (opcional)</span>
-          <input class="field" bind:value={name} placeholder="lo nombra Postgres" />
-        </label>
-
-        <label class="flex flex-col gap-1">
-          <span class="text-xs muted">Método</span>
-          <select class="field" bind:value={method}>
-            {#each METHODS as option (option.value)}
-              <option value={option.value}>{option.label}</option>
-            {/each}
-          </select>
-        </label>
-      </div>
-
-      <div class="mt-3">
-        <span class="text-xs muted">Columnas</span>
-        <div class="mt-1 flex flex-col gap-1 rounded border border-zinc-200 p-2 dark:border-zinc-800">
-          {#each columns as column (column.name)}
-            <label class="check text-xs">
-              <input
-                type="checkbox"
-                checked={selected.includes(column.name)}
-                onchange={() => toggle(column.name)}
-              />
-              {column.name}
-              <span class="muted">{column.typeName}</span>
-            </label>
-          {/each}
-        </div>
-      </div>
-
-      <label class="mt-3 flex flex-col gap-1">
-        <span class="text-xs muted">WHERE (opcional, índice parcial)</span>
-        <input class="field" bind:value={whereClause} placeholder="expresión SQL" />
-      </label>
-
-      <div class="mt-3 flex gap-4">
-        <label class="check text-xs">
-          <input type="checkbox" bind:checked={unique} />
-          Único
-        </label>
-        <label class="check text-xs">
-          <input type="checkbox" bind:checked={concurrently} />
-          CONCURRENTLY (no bloquea la tabla mientras se construye)
-        </label>
-      </div>
-
-      {#if error}
-        <p class="mt-3 text-sm text-rose-600 dark:text-rose-400">{error}</p>
-      {/if}
-
-      {#if preview}
-        <pre
-          class="mt-3 max-h-32 overflow-auto rounded bg-zinc-100 p-2 font-mono text-xs
-                 whitespace-pre-wrap select-text dark:bg-zinc-800">{preview}</pre>
-      {/if}
-    </div>
-
-    <div class="divider-t flex items-center gap-2 px-5 py-3">
-      <button class="btn btn-ghost text-xs" onclick={showPreview} disabled={saving}>
-        Ver SQL
-      </button>
-      <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
-      <button class="btn btn-primary" onclick={submit} disabled={saving}>Crear índice</button>
-    </div>
+    <label class="flex flex-col gap-1">
+      <span class="label">Método</span>
+      <select class="field" bind:value={method}>
+        {#each METHODS as option (option.value)}
+          <option value={option.value}>{option.label}</option>
+        {/each}
+      </select>
+    </label>
   </div>
-</div>
+
+  <div class="mt-3">
+    <span class="label">Columnas {selected.length > 0 ? `(${selected.join(", ")})` : ""}</span>
+    <div
+      class="mt-1 flex max-h-52 flex-col gap-1 overflow-auto rounded-md border border-zinc-200 p-2
+             dark:border-zinc-800"
+    >
+      {#each columns as column (column.name)}
+        <label class="check text-xs">
+          <input
+            type="checkbox"
+            checked={selected.includes(column.name)}
+            onchange={() => toggle(column.name)}
+          />
+          {column.name}
+          <span class="muted">{column.typeName}</span>
+        </label>
+      {/each}
+    </div>
+    <p class="mt-1 text-[11px] muted">El orden en que se marcan es el orden del índice.</p>
+  </div>
+
+  <label class="mt-3 flex flex-col gap-1">
+    <span class="label">WHERE (opcional, índice parcial)</span>
+    <input class="field" bind:value={whereClause} placeholder="expresión SQL" />
+  </label>
+
+  <div class="mt-3 flex flex-wrap gap-4">
+    <label class="check">
+      <input type="checkbox" bind:checked={unique} />
+      Único
+    </label>
+    <label class="check">
+      <input type="checkbox" bind:checked={concurrently} />
+      CONCURRENTLY (no bloquea la tabla mientras se construye)
+    </label>
+  </div>
+
+  {#if error}
+    <Alert tone="bad" box class="mt-3">{error}</Alert>
+  {/if}
+
+  {#if preview}
+    <SqlPreview sql={preview} />
+  {/if}
+
+  {#snippet footer()}
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-primary" onclick={submit} disabled={saving}>
+      {#if saving}<span class="spinner"></span>{/if}
+      Crear índice
+    </button>
+  {/snippet}
+</Modal>

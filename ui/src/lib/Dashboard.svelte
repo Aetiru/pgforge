@@ -1,8 +1,12 @@
 <script lang="ts">
   import type uPlot from "uplot";
+  import Alert from "./Alert.svelte";
   import BlockTree from "./BlockTree.svelte";
   import Chart from "./Chart.svelte";
+  import Confirm from "./Confirm.svelte";
   import DataGrid, { type Column } from "./DataGrid.svelte";
+  import Empty from "./Empty.svelte";
+  import Icon from "./Icon.svelte";
   import MaintenanceDialog from "./MaintenanceDialog.svelte";
   import { ago, bytes, count, decimal, duration, oneLine, percent } from "./format";
   import {
@@ -74,23 +78,46 @@
       {
         label: "Conexiones",
         value: `${metrics.totalConnections} / ${metrics.maxConnections}`,
-        tone: nearLimit ? "text-rose-600 dark:text-rose-400" : undefined,
+        tone: nearLimit ? "bad" : null,
+        hint: nearLimit ? "cerca del máximo configurado" : null,
       },
-      { label: "Activas", value: String(metrics.activeConnections) },
+      { label: "Activas", value: String(metrics.activeConnections), tone: null, hint: null },
       {
         label: "Inactivas en transacción",
         value: String(metrics.idleInTransaction),
-        tone: metrics.idleInTransaction > 0 ? "text-amber-600 dark:text-amber-400" : undefined,
+        tone: metrics.idleInTransaction > 0 ? "warn" : null,
+        hint: metrics.idleInTransaction > 0 ? "retienen candados sin trabajar" : null,
       },
       {
         label: "Esperando",
         value: String(metrics.waitingConnections),
-        tone: metrics.waitingConnections > 0 ? "text-rose-600 dark:text-rose-400" : undefined,
+        tone: metrics.waitingConnections > 0 ? "bad" : null,
+        hint: metrics.waitingConnections > 0 ? "bloqueadas por otra sesión" : null,
       },
-      { label: "Transacciones/s", value: decimal(metrics.transactionsPerSecond) },
-      { label: "Transacción más vieja", value: duration(metrics.longestTransactionSeconds) },
+      {
+        label: "Transacciones/s",
+        value: decimal(metrics.transactionsPerSecond),
+        tone: null,
+        hint: null,
+      },
+      {
+        label: "Transacción más vieja",
+        value: duration(metrics.longestTransactionSeconds),
+        tone: null,
+        hint: null,
+      },
     ];
   });
+
+  const TILE_TONE: Record<string, string> = {
+    bad: "text-rose-600 dark:text-rose-400",
+    warn: "text-amber-600 dark:text-amber-400",
+  };
+
+  const TILE_EDGE: Record<string, string> = {
+    bad: "border-l-rose-500",
+    warn: "border-l-amber-500",
+  };
 
   const times = $derived(monitor.history.map((sample) => sample.time));
   const connectionsSeries = $derived([
@@ -173,7 +200,14 @@
   }
 
   const backendColumns: Column<Backend>[] = [
-    { key: "pid", header: "PID", width: 64, align: "right", value: (b) => String(b.pid) },
+    {
+      key: "pid",
+      header: "PID",
+      width: 64,
+      align: "right",
+      value: (b) => String(b.pid),
+      sort: (b) => b.pid,
+    },
     {
       key: "state",
       header: "Estado",
@@ -190,6 +224,7 @@
       width: 90,
       align: "right",
       value: (b) => duration(b.querySeconds),
+      sort: (b) => b.querySeconds ?? -1,
     },
     {
       key: "xact",
@@ -197,6 +232,7 @@
       width: 100,
       align: "right",
       value: (b) => duration(b.transactionSeconds),
+      sort: (b) => b.transactionSeconds ?? -1,
     },
     {
       key: "blocked",
@@ -204,6 +240,7 @@
       width: 110,
       value: (b) => (b.blockedBy.length ? b.blockedBy.join(", ") : "—"),
       tone: (b) => (b.blockedBy.length ? "text-rose-600 dark:text-rose-400" : undefined),
+      sort: (b) => -b.blockedBy.length,
     },
     {
       key: "wait",
@@ -232,26 +269,69 @@
   const tableColumns: Column<TableStat>[] = [
     { key: "schema", header: "Esquema", width: 130, value: (t) => t.schema },
     { key: "table", header: "Tabla", width: 200, value: (t) => t.table },
-    { key: "live", header: "Filas vivas", width: 110, align: "right", value: (t) => count(t.liveTuples) },
-    { key: "dead", header: "Muertas", width: 100, align: "right", value: (t) => count(t.deadTuples) },
+    {
+      key: "live",
+      header: "Filas vivas",
+      width: 110,
+      align: "right",
+      value: (t) => count(t.liveTuples),
+      sort: (t) => t.liveTuples ?? -1,
+    },
+    {
+      key: "dead",
+      header: "Muertas",
+      width: 100,
+      align: "right",
+      value: (t) => count(t.deadTuples),
+      sort: (t) => t.deadTuples ?? -1,
+    },
     {
       key: "ratio",
       header: "% muertas (est.)",
       width: 120,
       align: "right",
       value: (t) => percent(t.deadRatio),
-      tone: (t) =>
-        (t.deadRatio ?? 0) > 0.2 ? "text-amber-600 dark:text-amber-400" : undefined,
+      sort: (t) => t.deadRatio ?? -1,
+      tone: (t) => ((t.deadRatio ?? 0) > 0.2 ? "text-amber-600 dark:text-amber-400" : undefined),
     },
-    { key: "total", header: "Tamaño", width: 100, align: "right", value: (t) => bytes(t.totalBytes) },
-    { key: "idx", header: "Índices", width: 100, align: "right", value: (t) => bytes(t.indexBytes) },
-    { key: "seq", header: "Seq scans", width: 100, align: "right", value: (t) => count(t.sequentialScans) },
-    { key: "iscan", header: "Idx scans", width: 100, align: "right", value: (t) => count(t.indexScans) },
+    {
+      key: "total",
+      header: "Tamaño",
+      width: 100,
+      align: "right",
+      value: (t) => bytes(t.totalBytes),
+      sort: (t) => t.totalBytes ?? -1,
+    },
+    {
+      key: "idx",
+      header: "Índices",
+      width: 100,
+      align: "right",
+      value: (t) => bytes(t.indexBytes),
+      sort: (t) => t.indexBytes ?? -1,
+    },
+    {
+      key: "seq",
+      header: "Seq scans",
+      width: 100,
+      align: "right",
+      value: (t) => count(t.sequentialScans),
+      sort: (t) => t.sequentialScans ?? -1,
+    },
+    {
+      key: "iscan",
+      header: "Idx scans",
+      width: 100,
+      align: "right",
+      value: (t) => count(t.indexScans),
+      sort: (t) => t.indexScans ?? -1,
+    },
     {
       key: "vac",
       header: "Último autovacuum",
       width: 160,
       value: (t) => ago(t.lastAutovacuumSeconds),
+      sort: (t) => t.lastAutovacuumSeconds ?? Number.MAX_SAFE_INTEGER,
     },
   ];
 
@@ -259,8 +339,22 @@
     { key: "schema", header: "Esquema", width: 130, value: (i) => i.schema },
     { key: "table", header: "Tabla", width: 200, value: (i) => i.table },
     { key: "index", header: "Índice", width: 260, value: (i) => i.index },
-    { key: "scans", header: "Usos", width: 100, align: "right", value: (i) => count(i.scans) },
-    { key: "size", header: "Tamaño", width: 100, align: "right", value: (i) => bytes(i.bytes) },
+    {
+      key: "scans",
+      header: "Usos",
+      width: 100,
+      align: "right",
+      value: (i) => count(i.scans),
+      sort: (i) => i.scans ?? -1,
+    },
+    {
+      key: "size",
+      header: "Tamaño",
+      width: 100,
+      align: "right",
+      value: (i) => bytes(i.bytes),
+      sort: (i) => i.bytes ?? -1,
+    },
     {
       key: "kind",
       header: "Tipo",
@@ -296,27 +390,66 @@
       value: (s) => oneLine(s.query, 400),
       title: (s) => s.query,
     },
-    { key: "calls", header: "Llamadas", width: 110, align: "right", value: (s) => count(s.calls) },
-    { key: "total", header: "Total", width: 110, align: "right", value: (s) => duration(s.totalMs / 1000) },
-    { key: "mean", header: "Media", width: 110, align: "right", value: (s) => duration(s.meanMs / 1000) },
-    { key: "rows", header: "Filas", width: 110, align: "right", value: (s) => count(s.rows) },
+    {
+      key: "calls",
+      header: "Llamadas",
+      width: 110,
+      align: "right",
+      value: (s) => count(s.calls),
+      sort: (s) => s.calls,
+    },
+    {
+      key: "total",
+      header: "Total",
+      width: 110,
+      align: "right",
+      value: (s) => duration(s.totalMs / 1000),
+      sort: (s) => s.totalMs,
+    },
+    {
+      key: "mean",
+      header: "Media",
+      width: 110,
+      align: "right",
+      value: (s) => duration(s.meanMs / 1000),
+      sort: (s) => s.meanMs,
+    },
+    {
+      key: "rows",
+      header: "Filas",
+      width: 110,
+      align: "right",
+      value: (s) => count(s.rows),
+      sort: (s) => s.rows,
+    },
   ];
 
-  const TABS: [Tab, string][] = [
-    ["sesiones", "Sesiones"],
-    ["bloqueos", "Bloqueos"],
-    ["tablas", "Tablas"],
-    ["indices", "Índices"],
-    ["consultas", "Consultas lentas"],
+  const TABS: { value: Tab; label: string }[] = [
+    { value: "sesiones", label: "Sesiones" },
+    { value: "bloqueos", label: "Bloqueos" },
+    { value: "tablas", label: "Tablas" },
+    { value: "indices", label: "Índices" },
+    { value: "consultas", label: "Consultas lentas" },
   ];
+
+  /** Cuántas sesiones esperan a otra: el número que decide si hay que mirar la pestaña. */
+  const blocked = $derived(backends.filter((backend) => backend.blockedBy.length > 0).length);
 </script>
 
 <div class="flex h-full flex-col">
   <div class="divider-b flex flex-wrap items-center gap-3 px-3 py-2">
     <div class="seg" role="tablist">
-      {#each TABS as [value, label] (value)}
-        <button class="seg-item" role="tab" aria-selected={tab === value} onclick={() => (tab = value)}>
-          {label}
+      {#each TABS as item (item.value)}
+        <button
+          class="seg-item"
+          role="tab"
+          aria-selected={tab === item.value}
+          onclick={() => (tab = item.value)}
+        >
+          {item.label}
+          {#if item.value === "bloqueos" && blocked > 0}
+            <span class="tag tag-bad px-1 py-0 text-[10px]">{blocked}</span>
+          {/if}
         </button>
       {/each}
     </div>
@@ -342,9 +475,10 @@
     </label>
 
     <label class="check">
-      Refresco
+      <Icon name="refresh" size={11} />
       <select
         class="field py-0.5 text-xs"
+        title="Cada cuánto se toma una muestra"
         value={monitor.intervalMs}
         onchange={(event) => monitor.setInterval(Number(event.currentTarget.value))}
       >
@@ -357,20 +491,22 @@
   </div>
 
   {#if monitor.error}
-    <p
-      class="border-b border-rose-200 bg-rose-50 px-3 py-1.5 text-sm text-rose-700
-             dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300"
-    >
-      {monitor.error}
-    </p>
+    <Alert tone="bad">{monitor.error}</Alert>
   {/if}
 
   {#if metrics}
     <div class="grid grid-cols-2 gap-2 px-3 py-3 md:grid-cols-3 xl:grid-cols-6">
       {#each tiles as tile (tile.label)}
-        <div class="card px-3 py-2">
-          <div class="truncate text-xs muted">{tile.label}</div>
-          <div class="font-mono text-xl tabular-nums {tile.tone ?? ''}">{tile.value}</div>
+        <div class="card border-l-4 px-3 py-2 {tile.tone ? TILE_EDGE[tile.tone] : 'border-l-transparent'}">
+          <div class="truncate text-xs muted" title={tile.label}>{tile.label}</div>
+          <div class="font-mono text-xl tabular-nums {tile.tone ? TILE_TONE[tile.tone] : ''}">
+            {tile.value}
+          </div>
+          {#if tile.hint}
+            <div class="truncate text-[11px] {tile.tone ? TILE_TONE[tile.tone] : ''}" title={tile.hint}>
+              {tile.hint}
+            </div>
+          {/if}
         </div>
       {/each}
     </div>
@@ -395,40 +531,46 @@
     </div>
 
     {#if selected}
-      <div class="divider-t divider-b flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
+      <div class="divider-t divider-b flex flex-wrap items-center gap-2 bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900/60">
         <span class="tag tag-neutral font-mono">PID {selected.pid}</span>
-        {#if selected.isMonitor}
-          <span class="text-xs muted">Es la sesión del propio monitor.</span>
-        {:else}
-          <button class="btn" onclick={() => (confirming = { pid: selected.pid, kind: "cancel" })}>
-            Cancelar consulta
-          </button>
-          <button
-            class="btn"
-            onclick={() => (confirming = { pid: selected.pid, kind: "terminate" })}
-          >
-            Terminar sesión
-          </button>
-        {/if}
+        <span class="truncate text-xs muted">
+          {selected.user ?? "?"}@{selected.database ?? "?"}
+          {#if selected.state}· {selected.state}{/if}
+        </span>
 
         {#if locks.length > 0}
-          <span class="truncate text-xs muted">
-            Candados: {locks
+          <span class="truncate text-xs muted" title="Candados que tiene o espera esta sesión">
+            candados: {locks
               .map((lock) => `${lock.mode}${lock.granted ? "" : " (esperando)"}`)
               .join(", ")}
+          </span>
+        {/if}
+
+        {#if selected.isMonitor}
+          <span class="tag tag-info ml-auto">es la sesión del propio monitor</span>
+        {:else}
+          <span class="ml-auto flex gap-1.5">
+            <button
+              class="btn btn-sm"
+              onclick={() => (confirming = { pid: selected.pid, kind: "cancel" })}
+            >
+              Cancelar consulta
+            </button>
+            <button
+              class="btn btn-sm btn-danger-ghost"
+              onclick={() => (confirming = { pid: selected.pid, kind: "terminate" })}
+            >
+              Terminar sesión
+            </button>
           </span>
         {/if}
       </div>
     {/if}
 
     {#if actionMessage}
-      <p
-        class="px-3 py-1.5 text-sm {actionFailed
-          ? 'text-rose-600 dark:text-rose-400'
-          : 'text-emerald-600 dark:text-emerald-400'}"
-      >
+      <Alert tone={actionFailed ? "bad" : "ok"} onclose={() => (actionMessage = null)}>
         {actionMessage}
-      </p>
+      </Alert>
     {/if}
 
     <div class="min-h-0 flex-1">
@@ -438,15 +580,20 @@
         rowKey={(backend) => backend.pid}
         selectedKey={selectedPid}
         onselect={(backend) => (selectedPid = backend.pid)}
+        sortable
         empty="No hay sesiones que cumplan el filtro."
       />
     </div>
   {:else if tab === "bloqueos"}
     <div class="min-h-0 flex-1 overflow-auto px-3 py-2">
       {#if !snapshot || snapshot.blocking.length === 0}
-        <p class="text-sm text-zinc-500">Ninguna sesión está esperando a otra.</p>
+        <Empty
+          icon="check"
+          title="Ninguna sesión está esperando a otra"
+          hint="Cuando una sesión quede bloqueada, acá aparece la cadena completa hasta la que hay que resolver."
+        />
       {:else}
-        <p class="mb-2 text-xs text-zinc-500">
+        <p class="mb-2 text-xs muted">
           La sesión de arriba de cada rama es la que hay que resolver: las de abajo esperan por
           ella.
         </p>
@@ -470,6 +617,9 @@
       <button
         class="btn ml-auto"
         disabled={!selectedTable}
+        title={selectedTable
+          ? `VACUUM, ANALYZE o REINDEX sobre ${selectedTable.schema}.${selectedTable.table}`
+          : "Elegí una tabla de la lista"}
         onclick={() =>
           selectedTable &&
           (maintenanceTarget = {
@@ -488,6 +638,7 @@
         rowKey={(table) => `${table.schema}.${table.table}`}
         selectedKey={selectedTable ? `${selectedTable.schema}.${selectedTable.table}` : null}
         onselect={(table) => (selectedTable = table)}
+        sortable
         empty="No hay estadísticas de tablas en esta base."
       />
     </div>
@@ -497,27 +648,27 @@
         columns={indexColumns}
         rows={indexes}
         rowKey={(index) => `${index.schema}.${index.index}`}
+        sortable
         empty="No hay estadísticas de índices en esta base."
       />
     </div>
   {:else}
     <div class="min-h-0 flex-1">
       {#if statementsError}
-        <p class="p-4 text-sm text-rose-600 dark:text-rose-400">{statementsError}</p>
+        <Alert tone="bad">{statementsError}</Alert>
       {:else if statementsAvailable === false}
-        <div class="space-y-2 p-4 text-sm text-zinc-500">
-          <p>La extensión <code>pg_stat_statements</code> no está instalada en esta base.</p>
-          <p>
-            Para habilitarla hay que agregarla a <code>shared_preload_libraries</code>, reiniciar el
-            servidor y ejecutar <code>CREATE EXTENSION pg_stat_statements;</code>.
-          </p>
-        </div>
+        <Empty
+          icon="info"
+          title="Falta la extensión pg_stat_statements"
+          hint="Agregala a shared_preload_libraries, reiniciá el servidor y ejecutá CREATE EXTENSION pg_stat_statements; en esta base."
+        />
       {:else}
         <DataGrid
           columns={statementColumns}
           rows={statements}
           rowKey={(statement) =>
             `${statement.database}/${statement.user}/${statement.queryId ?? statement.query}`}
+          sortable
           empty="Todavía no hay consultas registradas."
         />
       {/if}
@@ -526,31 +677,15 @@
 </div>
 
 {#if confirming}
-  <div class="fixed inset-0 z-10 flex items-center justify-center bg-black/40 p-4">
-    <div class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl dark:bg-zinc-900">
-      <h2 class="text-base font-medium">
-        {confirming.kind === "cancel" ? "Cancelar la consulta" : "Terminar la sesión"}
-      </h2>
-      <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
-        {#if confirming.kind === "cancel"}
-          Se le pide al servidor que aborte la consulta del PID {confirming.pid}. La sesión sigue
-          conectada y su transacción queda abierta pero abortada.
-        {:else}
-          Se cierra la sesión {confirming.pid} por completo: su transacción se revierte y el cliente
-          pierde la conexión sin aviso.
-        {/if}
-      </p>
-      <div class="mt-4 flex justify-end gap-2">
-        <button class="btn" onclick={() => (confirming = null)}>No</button>
-        <button
-          class="btn btn-primary"
-          onclick={() => confirming && act(confirming.pid, confirming.kind)}
-        >
-          {confirming.kind === "cancel" ? "Cancelar la consulta" : "Terminar la sesión"}
-        </button>
-      </div>
-    </div>
-  </div>
+  <Confirm
+    title={confirming.kind === "cancel" ? "Cancelar la consulta" : "Terminar la sesión"}
+    message={confirming.kind === "cancel"
+      ? `Se le pide al servidor que aborte la consulta del PID ${confirming.pid}. La sesión sigue conectada y su transacción queda abierta pero abortada.`
+      : `Se cierra la sesión ${confirming.pid} por completo: su transacción se revierte y el cliente pierde la conexión sin aviso.`}
+    confirmLabel={confirming.kind === "cancel" ? "Cancelar la consulta" : "Terminar la sesión"}
+    onconfirm={() => confirming && act(confirming.pid, confirming.kind)}
+    onclose={() => (confirming = null)}
+  />
 {/if}
 
 {#if maintenanceTarget}

@@ -1,6 +1,10 @@
 <script lang="ts">
+  import { untrack } from "svelte";
+  import Alert from "./Alert.svelte";
   import ColumnDialog from "./ColumnDialog.svelte";
+  import Confirm from "./Confirm.svelte";
   import ConstraintDialog from "./ConstraintDialog.svelte";
+  import Empty from "./Empty.svelte";
   import FunctionDialog from "./FunctionDialog.svelte";
   import Icon from "./Icon.svelte";
   import IndexDialog from "./IndexDialog.svelte";
@@ -173,15 +177,7 @@
   /** Tablas y esquemas son los dos únicos tipos de objeto que tienen privilegios en este recorte. */
   const isSchema = $derived(node?.kind === "schema");
 
-  /** Cualquiera de los botones "+" de carpeta: solo puede haber uno a la vez para un mismo nodo. */
-  const hasCreateFolderButton = $derived(
-    isTablesFolder ||
-      isViewsFolder ||
-      isMatViewsFolder ||
-      isFunctionsFolder ||
-      isProceduresFolder ||
-      isRolesFolder,
-  );
+  const isFolder = $derived(node !== null && folderOf(node.kind) !== null);
 
   // -------------------------------------------------------------------------
   // Estructura: columnas de la tabla seleccionada
@@ -290,23 +286,30 @@
   }
 
   /** Una fila de `aclexplode` por privilegio: se agrupan por `grantee` para mostrar una sola línea. */
-  const privilegeGroups = $derived.by<{ grantee: string; privileges: string[]; grantable: boolean }[]>(
-    () => {
-      if (!privileges) return [];
-      const byGrantee = new Map<string, { grantee: string; privileges: string[]; grantable: boolean }>();
-      for (const grant of privileges) {
-        const group = byGrantee.get(grant.grantee);
-        const privilege = grant.privilege.toLowerCase();
-        if (group) {
-          group.privileges.push(privilege);
-          if (grant.grantable) group.grantable = true;
-        } else {
-          byGrantee.set(grant.grantee, { grantee: grant.grantee, privileges: [privilege], grantable: grant.grantable });
-        }
+  const privilegeGroups = $derived.by<
+    { grantee: string; privileges: string[]; grantable: boolean }[]
+  >(() => {
+    if (!privileges) return [];
+    const byGrantee = new Map<
+      string,
+      { grantee: string; privileges: string[]; grantable: boolean }
+    >();
+    for (const grant of privileges) {
+      const group = byGrantee.get(grant.grantee);
+      const privilege = grant.privilege.toLowerCase();
+      if (group) {
+        group.privileges.push(privilege);
+        if (grant.grantable) group.grantable = true;
+      } else {
+        byGrantee.set(grant.grantee, {
+          grantee: grant.grantee,
+          privileges: [privilege],
+          grantable: grant.grantable,
+        });
       }
-      return [...byGrantee.values()];
-    },
-  );
+    }
+    return [...byGrantee.values()];
+  });
 
   $effect(() => {
     // Depender de `node` (y no llamar directo) es lo que dispara de nuevo al cambiar de tabla.
@@ -316,6 +319,58 @@
     loadConstraints();
     loadTriggers();
     loadPrivileges();
+  });
+
+  // -------------------------------------------------------------------------
+  // Secciones
+  //
+  // Una tabla tiene columnas, índices, restricciones, triggers, privilegios y DDL. Apilarlos en un
+  // scroll obligaba a recorrer toda la página para saber si la tabla tiene un índice de más; en
+  // pestañas, la cuenta se ve sin abrir nada y cada sección empieza arriba de todo.
+  // -------------------------------------------------------------------------
+
+  type SectionId =
+    | "info"
+    | "columns"
+    | "indexes"
+    | "constraints"
+    | "triggers"
+    | "privileges"
+    | "ddl";
+
+  const sections = $derived.by<{ id: SectionId; label: string; count: number | null }[]>(() => {
+    if (isServer || node?.kind === "database") {
+      return [{ id: "info", label: "Propiedades", count: null }];
+    }
+    if (isTable) {
+      return [
+        { id: "columns", label: "Columnas", count: shape?.columns.length ?? null },
+        { id: "indexes", label: "Índices", count: indexes?.length ?? null },
+        { id: "constraints", label: "Restricciones", count: constraints?.length ?? null },
+        { id: "triggers", label: "Triggers", count: triggers?.length ?? null },
+        { id: "privileges", label: "Privilegios", count: privileges ? privilegeGroups.length : null },
+        { id: "ddl", label: "DDL", count: null },
+      ];
+    }
+    if (isSchema) {
+      return [
+        { id: "privileges", label: "Privilegios", count: privileges ? privilegeGroups.length : null },
+        { id: "ddl", label: "DDL", count: null },
+      ];
+    }
+    if (hasDdl) return [{ id: "ddl", label: "DDL", count: null }];
+    return [];
+  });
+
+  let section = $state<SectionId>("columns");
+
+  // Al cambiar de objeto se vuelve a la primera sección: quedarse en «Triggers» al pasar de una
+  // tabla a un índice mostraría una pestaña que ese objeto no tiene. La lista se lee sin
+  // registrarla como dependencia, porque sus contadores cambian cuando termina cada consulta y eso
+  // devolvería al usuario a la primera pestaña mientras está mirando otra.
+  $effect(() => {
+    void selected;
+    section = untrack(() => sections)[0]?.id ?? "ddl";
   });
 
   /** Busca la fila del árbol que tiene a `target` entre sus hijos, para refrescarla tras un cambio. */
@@ -519,7 +574,13 @@
     if (!selected || !node?.oid || !node.schema) return;
     try {
       const args = await functionArgs(selected.profileId, node.oid, node.database);
-      dropTarget = { kind: "function", schema: node.schema, name: node.label, args, procedure: isProcedure };
+      dropTarget = {
+        kind: "function",
+        schema: node.schema,
+        name: node.label,
+        args,
+        procedure: isProcedure,
+      };
     } catch (error) {
       ddlError = describeError(error);
     }
@@ -643,7 +704,14 @@
         case "view":
           await viewApply(
             selected.profileId,
-            [{ kind: "dropView", schema: node.schema!, name: dropTarget.label, cascade: dropCascade }],
+            [
+              {
+                kind: "dropView",
+                schema: node.schema!,
+                name: dropTarget.label,
+                cascade: dropCascade,
+              },
+            ],
             node.database,
           );
           {
@@ -688,7 +756,11 @@
           explorer.selected = null;
           break;
         case "role":
-          await roleApply(selected.profileId, [{ kind: "dropRole", name: dropTarget.label }], node.database);
+          await roleApply(
+            selected.profileId,
+            [{ kind: "dropRole", name: dropTarget.label }],
+            node.database,
+          );
           {
             const parent = parentOf(explorer.roots, selected);
             if (parent) await explorer.reload(parent);
@@ -704,198 +776,238 @@
     }
   }
 
-  const properties = $derived.by<[string, string][]>(() => {
-    if (isServer && profile) {
-      const rows: [string, string][] = [
-        ["Servidor", `${profile.host}:${profile.port}`],
-        ["Base inicial", profile.database],
-        ["Usuario", profile.user],
-        ["Cifrado", profile.sslMode],
+  const dropQuestion = $derived.by(() => {
+    if (!dropTarget) return "";
+    switch (dropTarget.kind) {
+      case "table":
+        return `¿Eliminar la tabla ${dropTarget.label}? Se pierden sus datos.`;
+      case "column":
+        return `¿Eliminar la columna ${dropTarget.label}? Se pierden sus valores en todas las filas.`;
+      case "index":
+        return `¿Eliminar el índice ${dropTarget.label}?`;
+      case "constraint":
+        return `¿Eliminar la restricción ${dropTarget.label}?`;
+      case "trigger":
+        return `¿Eliminar el trigger ${dropTarget.label}?`;
+      case "view":
+        return `¿Eliminar la vista ${dropTarget.label}?`;
+      case "materializedView":
+        return `¿Eliminar la vista materializada ${dropTarget.label}? Se pierden los datos guardados.`;
+      case "function":
+        return `¿Eliminar ${dropTarget.procedure ? "el procedimiento" : "la función"} ${dropTarget.name}(${dropTarget.args})?`;
+      case "role":
+        return `¿Eliminar el rol ${dropTarget.label}?`;
+    }
+  });
+
+  /** Lo que no cabe en el encabezado: los datos de la conexión, o los de una base. */
+  const properties = $derived.by<{ label: string; value: string; bad?: boolean }[]>(() => {
+    if (!isServer) {
+      if (!node) return [];
+      const rows: { label: string; value: string; bad?: boolean }[] = [
+        { label: "Base de datos", value: node.database },
       ];
-      if (caps) {
-        rows.push(
-          ["Versión", `PostgreSQL ${formatVersion(caps.version)}`],
-          ["Superusuario", caps.isSuperuser ? "sí" : "no"],
-          [
-            "Puede cancelar sesiones",
-            caps.canSignalBackends ? "sí" : "no (falta pg_signal_backend)",
-          ],
-          [
-            "Ve todas las estadísticas",
-            caps.canReadAllStats ? "sí" : "no (falta pg_read_all_stats)",
-          ],
-        );
-      }
+      if (node.schema) rows.push({ label: "Esquema", value: node.schema });
+      if (node.oid) rows.push({ label: "OID", value: String(node.oid) });
       return rows;
     }
-
-    if (!node) return [];
-    const rows: [string, string][] = [["Base de datos", node.database]];
-    if (node.schema) rows.push(["Esquema", node.schema]);
-    if (node.oid) rows.push(["OID", String(node.oid)]);
+    if (!profile) return [];
+    const rows: { label: string; value: string; bad?: boolean }[] = [
+      { label: "Servidor", value: `${profile.host}:${profile.port}` },
+      { label: "Base inicial", value: profile.database },
+      { label: "Usuario", value: profile.user },
+      { label: "Cifrado", value: profile.sslMode },
+    ];
+    if (caps) {
+      rows.push(
+        { label: "Versión", value: `PostgreSQL ${formatVersion(caps.version)}` },
+        { label: "Superusuario", value: caps.isSuperuser ? "sí" : "no" },
+        {
+          label: "Puede cancelar sesiones",
+          value: caps.canSignalBackends ? "sí" : "no (falta pg_signal_backend)",
+          bad: !caps.canSignalBackends,
+        },
+        {
+          label: "Ve todas las estadísticas",
+          value: caps.canReadAllStats ? "sí" : "no (falta pg_read_all_stats)",
+          bad: !caps.canReadAllStats,
+        },
+      );
+    }
     return rows;
+  });
+
+  /** La ruta del objeto: base / esquema. Contesta «¿de dónde salió esto?» sin volver al árbol. */
+  const path = $derived.by(() => {
+    if (isServer) return profile ? `${profile.host}:${profile.port}` : "";
+    if (!node) return "";
+    return [node.database, node.schema].filter(Boolean).join(" / ");
   });
 </script>
 
 <div class="flex h-full flex-col">
   {#if !selected}
-    <div class="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-      <Icon name="schema" size={28} class="text-zinc-300 dark:text-zinc-700" />
-      <p class="text-sm muted">Elegí un objeto del árbol para ver su detalle.</p>
-    </div>
+    <Empty
+      icon="compass"
+      title="Nada seleccionado"
+      hint="Elegí un servidor, una base o un objeto del árbol de la izquierda para ver su detalle, su DDL y las acciones que admite."
+    />
   {:else}
-    <header class="divider-b px-5 py-4">
-      <div class="flex items-center gap-2">
-        <Icon name={look.icon} size={18} class={look.tone} />
-        <h2 class="truncate text-base font-medium">{selected.label}</h2>
-        <span class="tag tag-neutral">{kindLabel(node?.kind ?? null)}</span>
+    <header class="divider-b px-5 py-3">
+      <div class="flex items-center gap-2.5">
+        <div
+          class="grid size-9 shrink-0 place-items-center rounded-lg bg-zinc-100 dark:bg-zinc-800
+                 {look.tone}"
+        >
+          <Icon name={look.icon} size={18} />
+        </div>
 
-        {#if isTablesFolder && node?.schema}
-          <button class="btn ml-auto shrink-0" onclick={() => (newTable = true)}>
-            <Icon name="plus" size={12} />
-            Tabla
-          </button>
-        {/if}
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <h2 class="truncate text-base font-medium">{selected.label}</h2>
+            <span class="tag tag-neutral shrink-0">{kindLabel(node?.kind ?? null)}</span>
+            {#if isServer}
+              <span class="tag shrink-0 {selected.connected ? 'tag-ok' : 'tag-neutral'}">
+                {selected.connected ? "conectado" : "sin conectar"}
+              </span>
+            {/if}
+          </div>
+          {#if path}
+            <p class="truncate text-xs muted">{path}</p>
+          {/if}
+        </div>
 
-        {#if isViewsFolder && node?.schema}
-          <button
-            class="btn ml-auto shrink-0"
-            onclick={() => (viewDialog = { materialized: false, existing: null })}
-          >
-            <Icon name="plus" size={12} />
-            Vista
-          </button>
-        {/if}
+        <div class="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+          {#if isTablesFolder && node?.schema}
+            <button class="btn btn-primary" onclick={() => (newTable = true)}>
+              <Icon name="plus" size={12} />
+              Nueva tabla
+            </button>
+          {/if}
 
-        {#if isMatViewsFolder && node?.schema}
-          <button
-            class="btn ml-auto shrink-0"
-            onclick={() => (viewDialog = { materialized: true, existing: null })}
-          >
-            <Icon name="plus" size={12} />
-            Vista materializada
-          </button>
-        {/if}
+          {#if isViewsFolder && node?.schema}
+            <button
+              class="btn btn-primary"
+              onclick={() => (viewDialog = { materialized: false, existing: null })}
+            >
+              <Icon name="plus" size={12} />
+              Nueva vista
+            </button>
+          {/if}
 
-        {#if isFunctionsFolder && node?.schema}
-          <button
-            class="btn ml-auto shrink-0"
-            onclick={() => (functionDialog = { sql: functionSkeleton(node!.schema!, false), isEdit: false })}
-          >
-            <Icon name="plus" size={12} />
-            Función
-          </button>
-        {/if}
+          {#if isMatViewsFolder && node?.schema}
+            <button
+              class="btn btn-primary"
+              onclick={() => (viewDialog = { materialized: true, existing: null })}
+            >
+              <Icon name="plus" size={12} />
+              Nueva vista materializada
+            </button>
+          {/if}
 
-        {#if isProceduresFolder && node?.schema}
-          <button
-            class="btn ml-auto shrink-0"
-            onclick={() => (functionDialog = { sql: functionSkeleton(node!.schema!, true), isEdit: false })}
-          >
-            <Icon name="plus" size={12} />
-            Procedimiento
-          </button>
-        {/if}
+          {#if isFunctionsFolder && node?.schema}
+            <button
+              class="btn btn-primary"
+              onclick={() =>
+                (functionDialog = { sql: functionSkeleton(node!.schema!, false), isEdit: false })}
+            >
+              <Icon name="plus" size={12} />
+              Nueva función
+            </button>
+          {/if}
 
-        {#if isRolesFolder}
-          <button class="btn ml-auto shrink-0" onclick={() => (roleDialog = { existing: null })}>
-            <Icon name="plus" size={12} />
-            Rol
-          </button>
-        {/if}
+          {#if isProceduresFolder && node?.schema}
+            <button
+              class="btn btn-primary"
+              onclick={() =>
+                (functionDialog = { sql: functionSkeleton(node!.schema!, true), isEdit: false })}
+            >
+              <Icon name="plus" size={12} />
+              Nuevo procedimiento
+            </button>
+          {/if}
 
-        {#if dataTarget !== null && queryTarget}
-          <button
-            class="btn shrink-0 {hasCreateFolderButton ? '' : 'ml-auto'}"
-            title={`Abre los datos de ${selected.label}`}
-            onclick={() => ondata(selected.profileId, queryTarget.database, queryTarget.title, dataTarget)}
-          >
-            <Icon name="table" size={12} />
-            Datos
-          </button>
-        {/if}
+          {#if isRolesFolder}
+            <button class="btn btn-primary" onclick={() => (roleDialog = { existing: null })}>
+              <Icon name="plus" size={12} />
+              Nuevo rol
+            </button>
+          {/if}
 
-        {#if queryTarget}
-          <button
-            class="btn shrink-0 {dataTarget === null && !hasCreateFolderButton ? 'ml-auto' : ''}"
-            title={`Abre una consulta contra ${queryTarget.database}`}
-            onclick={() =>
-              onquery(selected.profileId, queryTarget.database, queryTarget.title)}
-          >
-            <Icon name="sql" size={12} />
-            Consulta
-          </button>
-        {/if}
+          {#if dataTarget !== null && queryTarget}
+            <button
+              class="btn btn-primary"
+              title={`Abre los datos de ${selected.label}`}
+              onclick={() =>
+                ondata(selected.profileId, queryTarget.database, queryTarget.title, dataTarget)}
+            >
+              <Icon name="table" size={12} />
+              Datos
+            </button>
+          {/if}
 
-        {#if isTable && shape}
-          <button
-            class="btn shrink-0"
-            onclick={() => (dropTarget = { kind: "table", label: shape!.name })}
-          >
-            Eliminar tabla
-          </button>
-        {/if}
+          {#if queryTarget}
+            <button
+              class="btn"
+              title={`Abre una consulta contra ${queryTarget.database}`}
+              onclick={() => onquery(selected.profileId, queryTarget.database, queryTarget.title)}
+            >
+              <Icon name="sql" size={12} />
+              Consulta
+            </button>
+          {/if}
 
-        {#if isView && node}
-          <button
-            class="btn shrink-0"
-            onclick={() => (viewDialog = { materialized: false, existing: { oid: node!.oid!, name: node!.label } })}
-          >
-            Editar
-          </button>
-          <button
-            class="btn shrink-0"
-            onclick={() => (dropTarget = { kind: "view", label: node!.label })}
-          >
-            Eliminar vista
-          </button>
-        {/if}
+          {#if isView && node}
+            <button
+              class="btn"
+              onclick={() =>
+                (viewDialog = {
+                  materialized: false,
+                  existing: { oid: node!.oid!, name: node!.label },
+                })}
+            >
+              <Icon name="edit" size={12} />
+              Editar
+            </button>
+          {/if}
 
-        {#if isMaterializedView && node}
-          <button
-            class="btn shrink-0"
-            onclick={() => (viewDialog = { materialized: true, existing: { oid: node!.oid!, name: node!.label } })}
-          >
-            Editar
-          </button>
-          <button
-            class="btn shrink-0"
-            onclick={() => (refreshTarget = { schema: node!.schema!, name: node!.label })}
-          >
-            Refrescar
-          </button>
-          <button
-            class="btn shrink-0"
-            onclick={() => (dropTarget = { kind: "materializedView", label: node!.label })}
-          >
-            Eliminar vista materializada
-          </button>
-        {/if}
+          {#if isMaterializedView && node}
+            <button
+              class="btn"
+              onclick={() =>
+                (viewDialog = {
+                  materialized: true,
+                  existing: { oid: node!.oid!, name: node!.label },
+                })}
+            >
+              <Icon name="edit" size={12} />
+              Editar
+            </button>
+            <button
+              class="btn"
+              title="Vuelve a calcular los datos guardados de la vista"
+              onclick={() => (refreshTarget = { schema: node!.schema!, name: node!.label })}
+            >
+              <Icon name="refresh" size={12} />
+              Refrescar
+            </button>
+          {/if}
 
-        {#if (isFunction || isProcedure) && ddl}
-          <button
-            class="btn shrink-0"
-            onclick={() => (functionDialog = { sql: ddl!.sql, isEdit: true })}
-          >
-            Editar
-          </button>
-          <button class="btn shrink-0" onclick={askDropFunction}>
-            Eliminar {isProcedure ? "procedimiento" : "función"}
-          </button>
-        {/if}
+          {#if (isFunction || isProcedure) && ddl}
+            <button class="btn" onclick={() => (functionDialog = { sql: ddl!.sql, isEdit: true })}>
+              <Icon name="edit" size={12} />
+              Editar
+            </button>
+          {/if}
 
-        {#if isRole}
-          <button class="btn shrink-0" onclick={openEditRole}>Editar</button>
-          <button
-            class="btn shrink-0"
-            onclick={() => (dropTarget = { kind: "role", label: selected.label })}
-          >
-            Eliminar rol
-          </button>
-        {/if}
+          {#if isRole}
+            <button class="btn" onclick={openEditRole}>
+              <Icon name="edit" size={12} />
+              Editar
+            </button>
+          {/if}
 
-        {#if isServer}
-          <span class="flex shrink-0 gap-1.5 {queryTarget ? '' : 'ml-auto'}">
+          {#if isServer}
             {#if selected.connected}
               <button class="btn" onclick={() => explorer.disconnect(selected.profileId)}>
                 Desconectar
@@ -905,10 +1017,68 @@
                 Conectar
               </button>
             {/if}
-            <button class="btn" onclick={() => onedit(selected.profileId)}>Editar</button>
-            <button class="btn" onclick={() => ondelete(selected.profileId)}>Eliminar</button>
-          </span>
-        {/if}
+            <button class="btn" onclick={() => onedit(selected.profileId)}>
+              <Icon name="edit" size={12} />
+              Editar
+            </button>
+          {/if}
+
+          <!-- Lo que borra va último y en rojo: se llega a ello después de todo lo demás. -->
+          {#if isTable && shape}
+            <button
+              class="btn btn-danger-ghost"
+              title="Eliminar la tabla"
+              onclick={() => (dropTarget = { kind: "table", label: shape!.name })}
+            >
+              <Icon name="trash" size={12} />
+              Eliminar
+            </button>
+          {/if}
+
+          {#if isView && node}
+            <button
+              class="btn btn-danger-ghost"
+              onclick={() => (dropTarget = { kind: "view", label: node!.label })}
+            >
+              <Icon name="trash" size={12} />
+              Eliminar
+            </button>
+          {/if}
+
+          {#if isMaterializedView && node}
+            <button
+              class="btn btn-danger-ghost"
+              onclick={() => (dropTarget = { kind: "materializedView", label: node!.label })}
+            >
+              <Icon name="trash" size={12} />
+              Eliminar
+            </button>
+          {/if}
+
+          {#if (isFunction || isProcedure) && ddl}
+            <button class="btn btn-danger-ghost" onclick={askDropFunction}>
+              <Icon name="trash" size={12} />
+              Eliminar
+            </button>
+          {/if}
+
+          {#if isRole}
+            <button
+              class="btn btn-danger-ghost"
+              onclick={() => (dropTarget = { kind: "role", label: selected.label })}
+            >
+              <Icon name="trash" size={12} />
+              Eliminar
+            </button>
+          {/if}
+
+          {#if isServer}
+            <button class="btn btn-danger-ghost" onclick={() => ondelete(selected.profileId)}>
+              <Icon name="trash" size={12} />
+              Eliminar
+            </button>
+          {/if}
+        </div>
       </div>
 
       {#if selected.comment}
@@ -916,344 +1086,442 @@
       {/if}
     </header>
 
-    <div class="min-h-0 flex-1 overflow-auto p-5">
-      {#if properties.length > 0}
-        <dl class="mb-5 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
-          {#each properties as [label, value] (label)}
-            <dt class="muted">{label}</dt>
-            <dd class="truncate">{value}</dd>
-          {/each}
-        </dl>
-      {/if}
-
-      {#if isTable}
-        <div class="card mb-5 overflow-hidden">
-          <div class="divider-b flex items-center gap-2 px-3 py-1.5">
-            <span class="text-xs font-medium">Columnas</span>
-            {#if shape}
+    {#if isServer && !selected.connected}
+      <Empty
+        icon="server"
+        title="El servidor está sin conectar"
+        hint="Conectate para explorar sus bases, esquemas y objetos."
+      >
+        <button class="btn btn-primary" onclick={() => onconnect(selected.profileId)}>
+          Conectar
+        </button>
+      </Empty>
+    {:else if isFolder && sections.length === 0}
+      <Empty
+        icon="folder"
+        title="Una carpeta del árbol"
+        hint="Agrupa objetos del mismo tipo; no tiene un DDL propio. Abrila en el árbol para ver lo que contiene."
+      />
+    {:else if sections.length === 0}
+      <Empty icon="info" title="Sin detalle" hint="Este nodo no tiene propiedades para mostrar." />
+    {:else}
+      {#if sections.length > 1}
+        <div class="divider-b flex items-center gap-2 px-4 py-1.5">
+          <div class="seg" role="tablist">
+            {#each sections as item (item.id)}
               <button
-                class="btn btn-ghost ml-auto px-2 py-0.5 text-xs"
-                onclick={() => (columnDialog = { column: null })}
+                class="seg-item"
+                role="tab"
+                aria-selected={section === item.id}
+                onclick={() => (section = item.id)}
               >
-                <Icon name="plus" size={12} />
-                Columna
+                {item.label}
+                {#if item.count !== null}
+                  <span class="seg-count">{item.count}</span>
+                {/if}
               </button>
-            {/if}
+            {/each}
           </div>
-
-          {#if shapeLoading}
-            <p class="px-3 py-4 text-sm muted">Leyendo columnas…</p>
-          {:else if shapeError}
-            <p class="px-3 py-4 text-sm text-rose-600 dark:text-rose-400">{shapeError}</p>
-          {:else if shape}
-            <table class="w-full text-left text-sm">
-              <tbody>
-                {#each shape.columns as column (column.name)}
-                  <tr class="divider-t">
-                    <td class="px-3 py-1.5">
-                      {column.name}
-                      {#if column.notNull}
-                        <span class="ml-1 text-xs muted">NOT NULL</span>
-                      {/if}
-                    </td>
-                    <td class="px-3 py-1.5 font-mono text-xs muted">{column.typeName}</td>
-                    <td class="truncate px-3 py-1.5 text-xs muted">
-                      {column.default ?? (column.generated ? "generada por el servidor" : "")}
-                    </td>
-                    <td class="px-3 py-1.5 text-right whitespace-nowrap">
-                      {#if !column.generated}
-                        <button
-                          class="btn btn-ghost px-2 py-0.5 text-xs"
-                          onclick={() => (columnDialog = { column })}
-                        >
-                          Editar
-                        </button>
-                      {/if}
-                      <button
-                        class="btn btn-ghost px-2 py-0.5 text-xs"
-                        onclick={() => (dropTarget = { kind: "column", label: column.name })}
-                      >
-                        Eliminar
-                      </button>
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          {/if}
-        </div>
-
-        <div class="card mb-5 overflow-hidden">
-          <div class="divider-b flex items-center gap-2 px-3 py-1.5">
-            <span class="text-xs font-medium">Índices</span>
-            {#if shape}
-              <button
-                class="btn btn-ghost ml-auto px-2 py-0.5 text-xs"
-                onclick={() => (newIndex = true)}
-              >
-                <Icon name="plus" size={12} />
-                Índice
-              </button>
-            {/if}
-          </div>
-
-          {#if indexesLoading}
-            <p class="px-3 py-4 text-sm muted">Leyendo índices…</p>
-          {:else if indexesError}
-            <p class="px-3 py-4 text-sm text-rose-600 dark:text-rose-400">{indexesError}</p>
-          {:else if indexes && indexes.length === 0}
-            <p class="px-3 py-4 text-sm muted">No tiene índices propios.</p>
-          {:else if indexes}
-            <table class="w-full text-left text-sm">
-              <tbody>
-                {#each indexes as index (index.oid)}
-                  <tr class="divider-t">
-                    <td class="px-3 py-1.5">
-                      {index.name}
-                      {#if index.primary}
-                        <span class="ml-1 text-xs muted">primario</span>
-                      {:else if index.unique}
-                        <span class="ml-1 text-xs muted">único</span>
-                      {/if}
-                      {#if !index.valid}
-                        <span class="ml-1 text-xs text-rose-600 dark:text-rose-400">inválido</span>
-                      {/if}
-                    </td>
-                    <td class="truncate px-3 py-1.5 font-mono text-xs muted" title={index.definition}>
-                      {index.definition}
-                    </td>
-                    <td class="px-3 py-1.5 text-right whitespace-nowrap">
-                      <button
-                        class="btn btn-ghost px-2 py-0.5 text-xs"
-                        onclick={() => (dropTarget = { kind: "index", label: index.name })}
-                      >
-                        Eliminar
-                      </button>
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          {/if}
-        </div>
-
-        <div class="card mb-5 overflow-hidden">
-          <div class="divider-b flex items-center gap-2 px-3 py-1.5">
-            <span class="text-xs font-medium">Restricciones</span>
-            {#if shape}
-              <button
-                class="btn btn-ghost ml-auto px-2 py-0.5 text-xs"
-                onclick={() => (newConstraint = true)}
-              >
-                <Icon name="plus" size={12} />
-                Restricción
-              </button>
-            {/if}
-          </div>
-
-          {#if constraintsLoading}
-            <p class="px-3 py-4 text-sm muted">Leyendo restricciones…</p>
-          {:else if constraintsError}
-            <p class="px-3 py-4 text-sm text-rose-600 dark:text-rose-400">{constraintsError}</p>
-          {:else if constraints && constraints.length === 0}
-            <p class="px-3 py-4 text-sm muted">No tiene restricciones propias.</p>
-          {:else if constraints}
-            <table class="w-full text-left text-sm">
-              <tbody>
-                {#each constraints as constraint (constraint.oid)}
-                  <tr class="divider-t">
-                    <td class="px-3 py-1.5">
-                      {constraint.name}
-                      <span class="ml-1 text-xs muted">{constraint.kind}</span>
-                    </td>
-                    <td
-                      class="truncate px-3 py-1.5 font-mono text-xs muted"
-                      title={constraint.definition}
-                    >
-                      {constraint.definition}
-                    </td>
-                    <td class="px-3 py-1.5 text-right whitespace-nowrap">
-                      <button
-                        class="btn btn-ghost px-2 py-0.5 text-xs"
-                        onclick={() => (dropTarget = { kind: "constraint", label: constraint.name })}
-                      >
-                        Eliminar
-                      </button>
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          {/if}
-        </div>
-
-        <div class="card mb-5 overflow-hidden">
-          <div class="divider-b flex items-center gap-2 px-3 py-1.5">
-            <span class="text-xs font-medium">Triggers</span>
-            {#if shape}
-              <button
-                class="btn btn-ghost ml-auto px-2 py-0.5 text-xs"
-                onclick={() => (triggerDialog = { existing: null })}
-              >
-                <Icon name="plus" size={12} />
-                Trigger
-              </button>
-            {/if}
-          </div>
-
-          {#if triggersLoading}
-            <p class="px-3 py-4 text-sm muted">Leyendo triggers…</p>
-          {:else if triggersError}
-            <p class="px-3 py-4 text-sm text-rose-600 dark:text-rose-400">{triggersError}</p>
-          {:else if triggers && triggers.length === 0}
-            <p class="px-3 py-4 text-sm muted">No tiene triggers propios.</p>
-          {:else if triggers}
-            <table class="w-full text-left text-sm">
-              <tbody>
-                {#each triggers as trigger (trigger.oid)}
-                  <tr class="divider-t">
-                    <td class="px-3 py-1.5">
-                      {trigger.name}
-                      <span class="ml-1 text-xs muted">{triggerSummary(trigger)}</span>
-                    </td>
-                    <td class="truncate px-3 py-1.5 font-mono text-xs muted">
-                      {trigger.functionSchema}.{trigger.functionName}()
-                    </td>
-                    <td class="px-3 py-1.5 text-right whitespace-nowrap">
-                      <button
-                        class="btn btn-ghost px-2 py-0.5 text-xs"
-                        onclick={() => (triggerDialog = { existing: trigger })}
-                      >
-                        Editar
-                      </button>
-                      <button
-                        class="btn btn-ghost px-2 py-0.5 text-xs"
-                        onclick={() => (dropTarget = { kind: "trigger", label: trigger.name })}
-                      >
-                        Eliminar
-                      </button>
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          {/if}
-        </div>
-
-        <div class="card mb-5 overflow-hidden">
-          <div class="divider-b flex items-center gap-2 px-3 py-1.5">
-            <span class="text-xs font-medium">Privilegios</span>
-            <button
-              class="btn btn-ghost ml-auto px-2 py-0.5 text-xs"
-              onclick={() => (privilegeDialog = { existing: null })}
-            >
-              <Icon name="plus" size={12} />
-              Privilegio
-            </button>
-          </div>
-          {@render privilegeRows()}
         </div>
       {/if}
 
-      {#if isSchema}
-        <div class="card mb-5 overflow-hidden">
-          <div class="divider-b flex items-center gap-2 px-3 py-1.5">
-            <span class="text-xs font-medium">Privilegios</span>
-            <button
-              class="btn btn-ghost ml-auto px-2 py-0.5 text-xs"
-              onclick={() => (privilegeDialog = { existing: null })}
-            >
-              <Icon name="plus" size={12} />
-              Privilegio
-            </button>
+      <div class="min-h-0 flex-1 overflow-auto p-4">
+        {#if section === "info"}
+          <div class="card overflow-hidden">
+            <div class="card-head"><span class="card-title">Propiedades</span></div>
+            <table class="list-table">
+              <tbody>
+                {#each properties as row (row.label)}
+                  <tr>
+                    <td class="w-56 muted">{row.label}</td>
+                    <td class={row.bad ? "text-amber-700 dark:text-amber-400" : ""}>{row.value}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
           </div>
-          {@render privilegeRows()}
-        </div>
-      {/if}
+        {:else if section === "columns"}
+          <div class="card overflow-hidden">
+            <div class="card-head">
+              <span class="card-title">Columnas</span>
+              {#if shape}
+                <button
+                  class="btn btn-sm ml-auto"
+                  onclick={() => (columnDialog = { column: null })}
+                >
+                  <Icon name="plus" size={11} />
+                  Columna
+                </button>
+              {/if}
+            </div>
 
-      {#snippet privilegeRows()}
-        {#if privilegesLoading}
-          <p class="px-3 py-4 text-sm muted">Leyendo privilegios…</p>
-        {:else if privilegesError}
-          <p class="px-3 py-4 text-sm text-rose-600 dark:text-rose-400">{privilegesError}</p>
-        {:else if privilegeGroups.length === 0}
-          <p class="px-3 py-4 text-sm muted">
-            Nadie tiene privilegios propios: rige el default (el dueño puede todo).
-          </p>
-        {:else}
-          <table class="w-full text-left text-sm">
-            <tbody>
-              {#each privilegeGroups as group (group.grantee)}
-                <tr class="divider-t">
-                  <td class="px-3 py-1.5">{group.grantee}</td>
-                  <td class="truncate px-3 py-1.5 font-mono text-xs muted">
-                    {group.privileges.join(", ").toUpperCase()}
-                    {#if group.grantable}
-                      <span class="ml-1 text-xs muted">(con GRANT OPTION)</span>
-                    {/if}
-                  </td>
-                  <td class="px-3 py-1.5 text-right whitespace-nowrap">
-                    <button
-                      class="btn btn-ghost px-2 py-0.5 text-xs"
-                      onclick={() =>
-                        (privilegeDialog = {
-                          existing: {
-                            grantee: group.grantee,
-                            privileges: group.privileges,
-                            grantable: group.grantable,
-                          },
-                        })}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      class="btn btn-ghost px-2 py-0.5 text-xs"
-                      onclick={() =>
-                        (revokeTarget = { grantee: group.grantee, privileges: group.privileges })}
-                    >
-                      Revocar todo
-                    </button>
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+            {#if shapeLoading}
+              {@render pending("Leyendo columnas…")}
+            {:else if shapeError}
+              <Alert tone="bad" box class="m-3">{shapeError}</Alert>
+            {:else if shape}
+              <table class="list-table">
+                <thead>
+                  <tr>
+                    <th class="w-px whitespace-nowrap">Nombre</th>
+                    <th class="w-px whitespace-nowrap">Tipo</th>
+                    <th class="w-full">Valor por omisión</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each shape.columns as column (column.name)}
+                    <tr class="group">
+                      <td class="w-px font-medium whitespace-nowrap">
+                        {column.name}
+                        {#if column.notNull}
+                          <span class="tag tag-neutral ml-1">NOT NULL</span>
+                        {/if}
+                      </td>
+                      <td class="w-px font-mono text-xs whitespace-nowrap muted">
+                        {column.typeName}
+                      </td>
+                      <td class="max-w-0 truncate text-xs muted">
+                        {column.default ?? (column.generated ? "generada por el servidor" : "—")}
+                      </td>
+                      <td class="w-28">
+                        <div class="row-actions">
+                          {#if !column.generated}
+                            <button
+                              class="btn btn-ghost btn-icon size-6"
+                              title="Editar la columna"
+                              aria-label="Editar la columna"
+                              onclick={() => (columnDialog = { column })}
+                            >
+                              <Icon name="edit" size={12} />
+                            </button>
+                          {/if}
+                          <button
+                            class="btn btn-danger-ghost btn-icon size-6"
+                            title="Eliminar la columna"
+                            aria-label="Eliminar la columna"
+                            onclick={() => (dropTarget = { kind: "column", label: column.name })}
+                          >
+                            <Icon name="trash" size={12} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </div>
+        {:else if section === "indexes"}
+          <div class="card overflow-hidden">
+            <div class="card-head">
+              <span class="card-title">Índices</span>
+              {#if shape}
+                <button class="btn btn-sm ml-auto" onclick={() => (newIndex = true)}>
+                  <Icon name="plus" size={11} />
+                  Índice
+                </button>
+              {/if}
+            </div>
+
+            {#if indexesLoading}
+              {@render pending("Leyendo índices…")}
+            {:else if indexesError}
+              <Alert tone="bad" box class="m-3">{indexesError}</Alert>
+            {:else if indexes && indexes.length === 0}
+              {@render nothing("No tiene índices propios.")}
+            {:else if indexes}
+              <table class="list-table">
+                <thead>
+                  <tr>
+                    <th class="w-px whitespace-nowrap">Nombre</th>
+                    <th class="w-full">Definición</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each indexes as index (index.oid)}
+                    <tr class="group">
+                      <td class="w-px font-medium whitespace-nowrap">
+                        {index.name}
+                        {#if index.primary}
+                          <span class="tag tag-info ml-1">primario</span>
+                        {:else if index.unique}
+                          <span class="tag tag-info ml-1">único</span>
+                        {/if}
+                        {#if !index.valid}
+                          <span class="tag tag-bad ml-1">inválido</span>
+                        {/if}
+                      </td>
+                      <td class="max-w-0 truncate font-mono text-xs muted" title={index.definition}>
+                        {index.definition}
+                      </td>
+                      <td class="w-16">
+                        <div class="row-actions">
+                          <button
+                            class="btn btn-danger-ghost btn-icon size-6"
+                            title="Eliminar el índice"
+                            aria-label="Eliminar el índice"
+                            onclick={() => (dropTarget = { kind: "index", label: index.name })}
+                          >
+                            <Icon name="trash" size={12} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </div>
+        {:else if section === "constraints"}
+          <div class="card overflow-hidden">
+            <div class="card-head">
+              <span class="card-title">Restricciones</span>
+              {#if shape}
+                <button class="btn btn-sm ml-auto" onclick={() => (newConstraint = true)}>
+                  <Icon name="plus" size={11} />
+                  Restricción
+                </button>
+              {/if}
+            </div>
+
+            {#if constraintsLoading}
+              {@render pending("Leyendo restricciones…")}
+            {:else if constraintsError}
+              <Alert tone="bad" box class="m-3">{constraintsError}</Alert>
+            {:else if constraints && constraints.length === 0}
+              {@render nothing("No tiene restricciones propias.")}
+            {:else if constraints}
+              <table class="list-table">
+                <thead>
+                  <tr>
+                    <th class="w-px whitespace-nowrap">Nombre</th>
+                    <th class="w-full">Definición</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each constraints as constraint (constraint.oid)}
+                    <tr class="group">
+                      <td class="w-px font-medium whitespace-nowrap">
+                        {constraint.name}
+                        <span class="tag tag-neutral ml-1">{constraint.kind}</span>
+                      </td>
+                      <td
+                        class="max-w-0 truncate font-mono text-xs muted"
+                        title={constraint.definition}
+                      >
+                        {constraint.definition}
+                      </td>
+                      <td class="w-16">
+                        <div class="row-actions">
+                          <button
+                            class="btn btn-danger-ghost btn-icon size-6"
+                            title="Eliminar la restricción"
+                            aria-label="Eliminar la restricción"
+                            onclick={() =>
+                              (dropTarget = { kind: "constraint", label: constraint.name })}
+                          >
+                            <Icon name="trash" size={12} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </div>
+        {:else if section === "triggers"}
+          <div class="card overflow-hidden">
+            <div class="card-head">
+              <span class="card-title">Triggers</span>
+              {#if shape}
+                <button
+                  class="btn btn-sm ml-auto"
+                  onclick={() => (triggerDialog = { existing: null })}
+                >
+                  <Icon name="plus" size={11} />
+                  Trigger
+                </button>
+              {/if}
+            </div>
+
+            {#if triggersLoading}
+              {@render pending("Leyendo triggers…")}
+            {:else if triggersError}
+              <Alert tone="bad" box class="m-3">{triggersError}</Alert>
+            {:else if triggers && triggers.length === 0}
+              {@render nothing("No tiene triggers propios.")}
+            {:else if triggers}
+              <table class="list-table">
+                <thead>
+                  <tr>
+                    <th class="w-px whitespace-nowrap">Nombre</th>
+                    <th class="w-px whitespace-nowrap">Cuándo</th>
+                    <th class="w-full">Ejecuta</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each triggers as trigger (trigger.oid)}
+                    <tr class="group">
+                      <td class="w-px font-medium whitespace-nowrap">{trigger.name}</td>
+                      <td class="w-px text-xs whitespace-nowrap muted">{triggerSummary(trigger)}</td>
+                      <td class="max-w-0 truncate font-mono text-xs muted">
+                        {trigger.functionSchema}.{trigger.functionName}()
+                      </td>
+                      <td class="w-24">
+                        <div class="row-actions">
+                          <button
+                            class="btn btn-ghost btn-icon size-6"
+                            title="Editar el trigger"
+                            aria-label="Editar el trigger"
+                            onclick={() => (triggerDialog = { existing: trigger })}
+                          >
+                            <Icon name="edit" size={12} />
+                          </button>
+                          <button
+                            class="btn btn-danger-ghost btn-icon size-6"
+                            title="Eliminar el trigger"
+                            aria-label="Eliminar el trigger"
+                            onclick={() => (dropTarget = { kind: "trigger", label: trigger.name })}
+                          >
+                            <Icon name="trash" size={12} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </div>
+        {:else if section === "privileges"}
+          <div class="card overflow-hidden">
+            <div class="card-head">
+              <span class="card-title">Privilegios</span>
+              <button
+                class="btn btn-sm ml-auto"
+                onclick={() => (privilegeDialog = { existing: null })}
+              >
+                <Icon name="plus" size={11} />
+                Privilegio
+              </button>
+            </div>
+
+            {#if privilegesLoading}
+              {@render pending("Leyendo privilegios…")}
+            {:else if privilegesError}
+              <Alert tone="bad" box class="m-3">{privilegesError}</Alert>
+            {:else if privilegeGroups.length === 0}
+              {@render nothing(
+                "Nadie tiene privilegios propios: rige el default (el dueño puede todo).",
+              )}
+            {:else}
+              <table class="list-table">
+                <thead>
+                  <tr>
+                    <th class="w-px whitespace-nowrap">Rol</th>
+                    <th class="w-full">Privilegios</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each privilegeGroups as group (group.grantee)}
+                    <tr class="group">
+                      <td class="w-px font-medium whitespace-nowrap">{group.grantee}</td>
+                      <td>
+                        <span class="flex flex-wrap gap-1">
+                          <!-- Un mismo privilegio puede venir dos veces con otorgantes distintos:
+                               la clave es la posición y no el nombre. -->
+                          {#each group.privileges as privilege, position (position)}
+                            <span class="tag tag-neutral font-mono">{privilege.toUpperCase()}</span>
+                          {/each}
+                          {#if group.grantable}
+                            <span class="tag tag-info">con GRANT OPTION</span>
+                          {/if}
+                        </span>
+                      </td>
+                      <td class="w-24">
+                        <div class="row-actions">
+                          <button
+                            class="btn btn-ghost btn-icon size-6"
+                            title="Editar los privilegios"
+                            aria-label="Editar los privilegios"
+                            onclick={() =>
+                              (privilegeDialog = {
+                                existing: {
+                                  grantee: group.grantee,
+                                  privileges: group.privileges,
+                                  grantable: group.grantable,
+                                },
+                              })}
+                          >
+                            <Icon name="edit" size={12} />
+                          </button>
+                          <button
+                            class="btn btn-danger-ghost btn-icon size-6"
+                            title="Revocar todo"
+                            aria-label="Revocar todo"
+                            onclick={() =>
+                              (revokeTarget = {
+                                grantee: group.grantee,
+                                privileges: group.privileges,
+                              })}
+                          >
+                            <Icon name="trash" size={12} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </div>
+        {:else if section === "ddl"}
+          <div class="card overflow-hidden">
+            <div class="card-head">
+              <span class="card-title">DDL</span>
+              {#if ddl}
+                <span class="text-xs muted">
+                  {ddl.source === "pgDump" ? "reconstruido con pg_dump" : "generado por PostgreSQL"}
+                </span>
+                <button class="btn btn-sm ml-auto" onclick={copy}>
+                  <Icon name={copied ? "check" : "copy"} size={11} />
+                  {copied ? "Copiado" : "Copiar"}
+                </button>
+              {/if}
+            </div>
+
+            {#if loading}
+              {@render pending("Generando DDL…")}
+            {:else if ddlError}
+              <Alert tone="bad" box class="m-3">{ddlError}</Alert>
+            {:else if ddl}
+              <pre
+                class="overflow-auto px-4 py-3 font-mono text-xs leading-relaxed
+                       select-text">{ddl.sql}</pre>
+            {/if}
+          </div>
         {/if}
-      {/snippet}
-
-      {#if isServer && !selected.connected}
-        <p class="text-sm muted">Conectá el servidor para explorar sus objetos.</p>
-      {:else if !hasDdl && !isServer && !isTablesFolder}
-        <p class="text-sm muted">Este nodo agrupa otros objetos; no tiene un DDL propio.</p>
-      {:else if hasDdl}
-        <div class="card overflow-hidden">
-          <div class="divider-b flex items-center gap-2 px-3 py-1.5">
-            <span class="text-xs font-medium">DDL</span>
-            {#if ddl}
-              <span class="text-xs muted">
-                {ddl.source === "pgDump" ? "reconstruido con pg_dump" : "generado por PostgreSQL"}
-              </span>
-              <button class="btn btn-ghost ml-auto px-2 py-0.5 text-xs" onclick={copy}>
-                <Icon name="copy" size={12} />
-                {copied ? "Copiado" : "Copiar"}
-              </button>
-            {/if}
-          </div>
-
-          {#if loading}
-            <p class="px-3 py-4 text-sm muted">Generando DDL…</p>
-          {:else if ddlError}
-            <p class="px-3 py-4 text-sm text-rose-600 dark:text-rose-400">{ddlError}</p>
-          {:else if ddl}
-            <pre
-              class="max-h-[60vh] overflow-auto px-3 py-3 font-mono text-xs leading-relaxed
-                     select-text">{ddl.sql}</pre>
-          {/if}
-        </div>
-      {/if}
-    </div>
+      </div>
+    {/if}
   {/if}
 </div>
+
+{#snippet pending(text: string)}
+  <p class="flex items-center gap-2 px-3 py-4 text-sm muted">
+    <span class="spinner"></span>
+    {text}
+  </p>
+{/snippet}
+
+{#snippet nothing(text: string)}
+  <p class="px-3 py-4 text-sm muted">{text}</p>
+{/snippet}
 
 {#if newTable && selected && node?.schema}
   <TableDialog
@@ -1359,115 +1627,70 @@
 {/if}
 
 {#if revokeTarget}
-  <div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
-    <div class="card w-full max-w-sm p-4 shadow-xl" role="alertdialog" aria-modal="true">
-      <p class="text-sm">
-        ¿Revocarle todos los privilegios a {revokeTarget.grantee}
-        ({revokeTarget.privileges.join(", ").toUpperCase()})?
-      </p>
-      <label class="check mt-3 text-xs">
-        <input type="checkbox" bind:checked={revokeCascade} />
-        CASCADE (también revoca lo que depende de esto)
-      </label>
-      {#if revokeError}
-        <p class="mt-2 text-sm text-rose-600 dark:text-rose-400">{revokeError}</p>
-      {/if}
-      <div class="mt-4 flex justify-end gap-2">
-        <button
-          class="btn"
-          disabled={revoking}
-          onclick={() => {
-            revokeTarget = null;
-            revokeCascade = false;
-            revokeError = null;
-          }}
-        >
-          Cancelar
-        </button>
-        <button class="btn btn-primary" disabled={revoking} onclick={confirmRevoke}>
-          Revocar
-        </button>
-      </div>
-    </div>
-  </div>
+  <Confirm
+    title="Revocar privilegios"
+    message="¿Revocarle todos los privilegios a {revokeTarget.grantee} ({revokeTarget.privileges
+      .join(', ')
+      .toUpperCase()})?"
+    confirmLabel="Revocar"
+    busy={revoking}
+    error={revokeError}
+    onconfirm={confirmRevoke}
+    onclose={() => {
+      revokeTarget = null;
+      revokeCascade = false;
+      revokeError = null;
+    }}
+  >
+    <label class="check">
+      <input type="checkbox" bind:checked={revokeCascade} />
+      CASCADE (también revoca lo que depende de esto)
+    </label>
+  </Confirm>
 {/if}
 
 {#if refreshTarget}
-  <div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
-    <div class="card w-full max-w-sm p-4 shadow-xl" role="alertdialog" aria-modal="true">
-      <p class="text-sm">¿Refrescar {refreshTarget.name}?</p>
-      <label class="check mt-3 text-xs">
-        <input type="checkbox" bind:checked={refreshConcurrently} />
-        CONCURRENTLY (no bloquea a los lectores; necesita un índice único)
-      </label>
-      {#if refreshError}
-        <p class="mt-2 text-sm text-rose-600 dark:text-rose-400">{refreshError}</p>
-      {/if}
-      <div class="mt-4 flex justify-end gap-2">
-        <button
-          class="btn"
-          disabled={refreshing}
-          onclick={() => {
-            refreshTarget = null;
-            refreshConcurrently = false;
-            refreshError = null;
-          }}
-        >
-          Cancelar
-        </button>
-        <button class="btn btn-primary" disabled={refreshing} onclick={confirmRefresh}>
-          Refrescar
-        </button>
-      </div>
-    </div>
-  </div>
+  <Confirm
+    title="Refrescar la vista materializada"
+    message="¿Volver a calcular los datos de {refreshTarget.name}? Puede tardar tanto como la consulta que la define."
+    confirmLabel="Refrescar"
+    danger={false}
+    busy={refreshing}
+    error={refreshError}
+    onconfirm={confirmRefresh}
+    onclose={() => {
+      refreshTarget = null;
+      refreshConcurrently = false;
+      refreshError = null;
+    }}
+  >
+    <label class="check">
+      <input type="checkbox" bind:checked={refreshConcurrently} />
+      CONCURRENTLY (no bloquea a los lectores; necesita un índice único)
+    </label>
+  </Confirm>
 {/if}
 
 {#if dropTarget}
-  <div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
-    <div class="card w-full max-w-sm p-4 shadow-xl" role="alertdialog" aria-modal="true">
-      <p class="text-sm">
-        {#if dropTarget.kind === "table"}
-          ¿Eliminar la tabla {dropTarget.label}?
-        {:else if dropTarget.kind === "column"}
-          ¿Eliminar la columna {dropTarget.label}?
-        {:else if dropTarget.kind === "index"}
-          ¿Eliminar el índice {dropTarget.label}?
-        {:else if dropTarget.kind === "constraint"}
-          ¿Eliminar la restricción {dropTarget.label}?
-        {:else if dropTarget.kind === "trigger"}
-          ¿Eliminar el trigger {dropTarget.label}?
-        {:else if dropTarget.kind === "view"}
-          ¿Eliminar la vista {dropTarget.label}?
-        {:else if dropTarget.kind === "materializedView"}
-          ¿Eliminar la vista materializada {dropTarget.label}?
-        {:else if dropTarget.kind === "function"}
-          ¿Eliminar {dropTarget.procedure ? "el procedimiento" : "la función"}
-          {dropTarget.name}({dropTarget.args})?
-        {:else if dropTarget.kind === "role"}
-          ¿Eliminar el rol {dropTarget.label}?
-        {/if}
-      </p>
-      {#if dropTarget.kind === "index"}
-        <label class="check mt-3 text-xs">
-          <input type="checkbox" bind:checked={dropConcurrently} />
-          CONCURRENTLY (no bloquea la tabla; no se puede combinar con CASCADE)
-        </label>
-      {:else if dropTarget.kind !== "role"}
-        <label class="check mt-3 text-xs">
-          <input type="checkbox" bind:checked={dropCascade} />
-          CASCADE (también borra lo que depende de esto)
-        </label>
-      {/if}
-      {#if dropError}
-        <p class="mt-2 text-sm text-rose-600 dark:text-rose-400">{dropError}</p>
-      {/if}
-      <div class="mt-4 flex justify-end gap-2">
-        <button class="btn" disabled={dropping} onclick={closeDropDialog}>Cancelar</button>
-        <button class="btn btn-primary" disabled={dropping} onclick={confirmDrop}>
-          Eliminar
-        </button>
-      </div>
-    </div>
-  </div>
+  <Confirm
+    title="Eliminar"
+    message={dropQuestion}
+    confirmLabel="Eliminar"
+    busy={dropping}
+    error={dropError}
+    onconfirm={confirmDrop}
+    onclose={closeDropDialog}
+  >
+    {#if dropTarget.kind === "index"}
+      <label class="check">
+        <input type="checkbox" bind:checked={dropConcurrently} />
+        CONCURRENTLY (no bloquea la tabla; no se puede combinar con CASCADE)
+      </label>
+    {:else if dropTarget.kind !== "role"}
+      <label class="check">
+        <input type="checkbox" bind:checked={dropCascade} />
+        CASCADE (también borra lo que depende de esto)
+      </label>
+    {/if}
+  </Confirm>
 {/if}

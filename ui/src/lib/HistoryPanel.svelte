@@ -1,7 +1,16 @@
 <script lang="ts">
+  import Alert from "./Alert.svelte";
+  import Confirm from "./Confirm.svelte";
+  import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
-  import { decimal } from "./format";
-  import { describeError, historyClear, historyRecent, historySearch, type HistoryEntry } from "./ipc";
+  import { count, decimal } from "./format";
+  import {
+    describeError,
+    historyClear,
+    historyRecent,
+    historySearch,
+    type HistoryEntry,
+  } from "./ipc";
 
   let {
     profileId,
@@ -62,7 +71,7 @@
       />
       <input
         class="field w-full py-1 pl-7"
-        placeholder="Buscar en el historial"
+        placeholder="Buscar en el historial y confirmar con Enter"
         bind:value={search}
         onkeydown={(event) => {
           if (event.key === "Enter") load();
@@ -74,28 +83,33 @@
       />
     </div>
 
-    <label class="check">
+    <label class="check" title="La búsqueda por texto siempre mira el historial completo">
       <input type="checkbox" bind:checked={onlyThisServer} disabled={search.trim() !== ""} />
       Solo este servidor
     </label>
 
-    <button class="btn btn-ghost px-2 py-0.5 text-xs" onclick={() => (confirmClear = true)}>
+    <button class="btn btn-sm btn-danger-ghost" onclick={() => (confirmClear = true)}>
+      <Icon name="trash" size={11} />
       Vaciar
     </button>
   </div>
 
   {#if error}
-    <p class="px-3 py-2 text-sm text-rose-600 dark:text-rose-400">{error}</p>
+    <Alert tone="bad" onclose={() => (error = null)}>{error}</Alert>
   {:else if entries.length === 0}
-    <p class="p-4 text-sm muted">
-      {search.trim() === "" ? "Todavía no ejecutaste ninguna consulta." : "Sin coincidencias."}
-    </p>
+    <Empty
+      icon="clock"
+      title={search.trim() === "" ? "Todavía no ejecutaste ninguna consulta" : "Sin coincidencias"}
+      hint={search.trim() === ""
+        ? "Cada consulta que ejecutes queda acá, con su duración y cuántas filas devolvió."
+        : "Probá con otra parte del texto de la consulta."}
+    />
   {:else}
     <ul class="min-h-0 flex-1 overflow-auto">
       {#each entries as entry (entry.id)}
         <li>
           <button
-            class="flex w-full items-baseline gap-2 px-3 py-1.5 text-left
+            class="group flex w-full items-baseline gap-2 px-3 py-1.5 text-left
                    hover:bg-zinc-100 dark:hover:bg-zinc-800/70"
             title="Traer esta consulta al editor"
             onclick={() => onpick(entry.sql)}
@@ -109,10 +123,10 @@
             </span>
             <span class="shrink-0 text-xs tabular-nums muted">
               {#if entry.succeeded}
-                {#if entry.rowCount !== null}{entry.rowCount} filas ·{/if}
+                {#if entry.rowCount !== null}{count(entry.rowCount)} filas ·{/if}
                 {decimal(entry.seconds * 1000, 0)} ms
               {:else}
-                falló
+                <span class="tag tag-bad">falló</span>
               {/if}
             </span>
           </button>
@@ -123,30 +137,19 @@
 </div>
 
 {#if confirmClear}
-  <div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
-    <div class="card w-full max-w-sm p-5 shadow-xl">
-      <h2 class="text-base font-medium">Vaciar el historial</h2>
-      <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
-        Se borran todas las consultas registradas, de todos los servidores. No se toca nada en la
-        base de datos.
-      </p>
-      <div class="mt-4 flex justify-end gap-2">
-        <button class="btn" onclick={() => (confirmClear = false)}>Cancelar</button>
-        <button
-          class="btn btn-primary border-rose-600 bg-rose-600 hover:bg-rose-700"
-          onclick={async () => {
-            confirmClear = false;
-            try {
-              await historyClear();
-            } catch (failure) {
-              error = describeError(failure);
-            }
-            await load();
-          }}
-        >
-          Vaciar
-        </button>
-      </div>
-    </div>
-  </div>
+  <Confirm
+    title="Vaciar el historial"
+    message="Se borran todas las consultas registradas, de todos los servidores. No se toca nada en la base de datos."
+    confirmLabel="Vaciar"
+    onconfirm={async () => {
+      confirmClear = false;
+      try {
+        await historyClear();
+      } catch (failure) {
+        error = describeError(failure);
+      }
+      await load();
+    }}
+    onclose={() => (confirmClear = false)}
+  />
 {/if}

@@ -1,6 +1,8 @@
 <script lang="ts">
+  import Alert from "./Alert.svelte";
   import DataGrid, { type Column } from "./DataGrid.svelte";
   import Icon from "./Icon.svelte";
+  import Modal from "./Modal.svelte";
   import type { DataTab, Row } from "./data.svelte";
 
   let { tab }: { tab: DataTab } = $props();
@@ -48,6 +50,12 @@
         width: 44,
         align: "right",
         value: (row) => marca(row),
+        tone: (row) => {
+          if (row.deleted) return "text-rose-600 dark:text-rose-400";
+          if (row.isNew) return "text-emerald-600 dark:text-emerald-400";
+          if (row.edited.size > 0) return "text-amber-600 dark:text-amber-400";
+          return "text-zinc-400 dark:text-zinc-600";
+        },
       },
       ...cells,
     ];
@@ -84,33 +92,38 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <header class="divider-b flex flex-wrap items-center gap-1.5 px-2 py-1.5">
+  <header class="toolbar">
     <button class="btn" disabled={tab.loading || tab.saving} onclick={() => tab.load()}>
       <Icon name="refresh" size={12} />
       Refrescar
     </button>
 
     {#if tab.editable}
-      <span class="mx-1 h-4 w-px bg-zinc-200 dark:bg-zinc-800"></span>
+      <span class="toolbar-sep"></span>
 
       <button class="btn" disabled={tab.saving} onclick={() => tab.addRow()}>
         <Icon name="plus" size={12} />
         Fila
       </button>
       <button
-        class="btn"
+        class="btn {selectedRow?.deleted ? '' : 'btn-danger-ghost'}"
         disabled={selectedRow === null || tab.saving}
         title="Marca la fila elegida para borrarla al guardar"
         onclick={() => selectedRow && tab.toggleDelete(selectedRow)}
       >
+        <Icon name="trash" size={12} />
         {selectedRow?.deleted ? "No borrar" : "Borrar fila"}
       </button>
+
+      <span class="toolbar-sep"></span>
+
       <button
         class="btn"
         disabled={tab.pending === 0 || tab.saving}
         title="Muestra el SQL exacto que se va a ejecutar"
         onclick={() => tab.showPreview()}
       >
+        <Icon name="sql" size={12} />
         Ver el SQL
       </button>
       <button class="btn" disabled={tab.pending === 0 || tab.saving} onclick={() => tab.discard()}>
@@ -121,51 +134,45 @@
         disabled={tab.pending === 0 || tab.saving}
         onclick={() => tab.save()}
       >
-        Guardar{tab.pending > 0 ? ` (${tab.pending})` : ""}
+        {#if tab.saving}<span class="spinner"></span>{/if}
+        Guardar
+        {#if tab.pending > 0}
+          <span class="rounded bg-white/20 px-1 text-[11px] tabular-nums">{tab.pending}</span>
+        {/if}
       </button>
     {/if}
 
     <span class="ml-auto flex items-center gap-2 text-xs muted">
-      {#if tab.loading || tab.saving}
+      {#if tab.loading}
         <span class="spinner"></span>
       {/if}
-      <span>
+      <span class="tabular-nums">
         {tab.rows.length}
-        {tab.rows.length === 1 ? "fila" : "filas"}{tab.complete ? "" : "…"}
+        {tab.rows.length === 1 ? "fila" : "filas"}{tab.complete ? "" : " o más"}
       </span>
       {#if shape?.key}
-        <span title="Con esta clave se identifica cada fila">
-          {shape.key.kind === "primary" ? "clave primaria" : "índice único"}: {shape.key.columns.join(", ")}
+        <span class="tag tag-neutral" title="Con esta clave se identifica cada fila al guardar">
+          <Icon name="key" size={10} />
+          {shape.key.columns.join(", ")}
         </span>
       {/if}
     </span>
   </header>
 
   {#if shape?.readOnly}
-    <div
-      class="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2 text-sm
-             text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300"
-    >
-      <span class="mt-0.5">⚠</span>
-      <span>{shape.readOnly}</span>
-    </div>
+    <Alert tone="warn">{shape.readOnly}</Alert>
   {/if}
 
   {#if tab.error}
-    <div
-      class="flex items-start gap-2 border-b border-rose-200 bg-rose-50 px-3 py-2 text-sm
-             text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300"
-    >
-      <span class="flex-1">{tab.error}</span>
-      <button class="btn btn-ghost px-1.5 py-0.5" onclick={() => (tab.error = null)}>
-        <Icon name="close" size={12} />
-      </button>
-    </div>
+    <Alert tone="bad" onclose={() => (tab.error = null)}>{tab.error}</Alert>
   {/if}
 
   <div class="min-h-0 flex-1">
     {#if !shape}
-      <p class="p-4 text-sm muted">Abriendo la tabla…</p>
+      <p class="flex items-center gap-2 p-4 text-sm muted">
+        <span class="spinner"></span>
+        Abriendo la tabla…
+      </p>
     {:else}
       <DataGrid
         columns={definitions}
@@ -188,45 +195,46 @@
   </div>
 
   {#if tab.editable && tab.rows.length > 0}
-    <p class="divider-t px-3 py-1 text-xs muted">
-      Doble clic en una celda para editarla · ∅ pone NULL · nada se escribe hasta que se guarda
+    <p class="divider-t flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1 text-xs muted">
+      <span><span class="kbd">Doble clic</span> en una celda para editarla</span>
+      <span><span class="kbd">∅</span> pone NULL</span>
+      <span><span class="kbd">Enter</span> confirma · <span class="kbd">Esc</span> descarta</span>
+      <span class="ml-auto">Nada se escribe en la base hasta que se guarda.</span>
     </p>
   {/if}
 </div>
 
 {#if tab.preview}
-  <div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
-    <div class="card flex max-h-[80vh] w-full max-w-3xl flex-col p-5 shadow-xl">
-      <h2 class="text-base font-medium">Esto es lo que se va a ejecutar</h2>
-      <p class="mt-1 text-xs muted">
-        Las {tab.preview.length}
-        {tab.preview.length === 1 ? "sentencia va" : "sentencias van"} en una sola transacción: si alguna
-        falla, no se aplica ninguna.
-      </p>
-
-      <div class="mt-3 min-h-0 flex-1 overflow-auto">
-        {#each tab.preview as statement, index (index)}
-          <div class="mb-2 rounded border border-zinc-200 p-2 dark:border-zinc-800">
-            <pre class="font-mono text-xs whitespace-pre-wrap select-text">{statement.sql}</pre>
-            {#if statement.params.length > 0}
-              <div class="mt-1 flex flex-wrap gap-1.5 text-[11px] muted">
-                {#each statement.params as param, position (position)}
-                  <span class="rounded bg-zinc-100 px-1.5 py-px font-mono dark:bg-zinc-800">
-                    ${position + 1} = {param === null ? "NULL" : param}
-                  </span>
-                {/each}
-              </div>
-            {/if}
+  <Modal
+    title="Esto es lo que se va a ejecutar"
+    subtitle="Las {tab.preview.length} {tab.preview.length === 1
+      ? 'sentencia va'
+      : 'sentencias van'} en una sola transacción: si alguna falla, no se aplica ninguna."
+    size="xl"
+    busy={tab.saving}
+    onclose={() => (tab.preview = null)}
+  >
+    {#each tab.preview as statement, index (index)}
+      <div class="mb-2 rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
+        <pre class="font-mono text-xs whitespace-pre-wrap select-text">{statement.sql}</pre>
+        {#if statement.params.length > 0}
+          <div class="mt-1 flex flex-wrap gap-1.5 text-[11px] muted">
+            {#each statement.params as param, position (position)}
+              <span class="rounded bg-zinc-100 px-1.5 py-px font-mono dark:bg-zinc-800">
+                ${position + 1} = {param === null ? "NULL" : param}
+              </span>
+            {/each}
           </div>
-        {/each}
+        {/if}
       </div>
+    {/each}
 
-      <div class="mt-4 flex justify-end gap-2">
-        <button class="btn" onclick={() => (tab.preview = null)}>Cerrar</button>
-        <button class="btn btn-primary" disabled={tab.saving} onclick={() => tab.save()}>
-          Guardar
-        </button>
-      </div>
-    </div>
-  </div>
+    {#snippet footer()}
+      <button class="btn ml-auto" onclick={() => (tab.preview = null)}>Cerrar</button>
+      <button class="btn btn-primary" disabled={tab.saving} onclick={() => tab.save()}>
+        {#if tab.saving}<span class="spinner"></span>{/if}
+        Guardar
+      </button>
+    {/snippet}
+  </Modal>
 {/if}

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Alert from "./Alert.svelte";
+  import Modal from "./Modal.svelte";
   import { duration } from "./format";
   import {
     Channel,
@@ -53,6 +55,12 @@
   const targetLabel = $derived(
     target.kind === "table" ? `${target.schema}.${target.name}` : `base ${target.name}`,
   );
+
+  const KINDS: { value: Kind; label: string; hint: string }[] = [
+    { value: "vacuum", label: "VACUUM", hint: "recupera el espacio de las filas muertas" },
+    { value: "analyze", label: "ANALYZE", hint: "actualiza las estadísticas del planificador" },
+    { value: "reindex", label: "REINDEX", hint: "reconstruye los índices" },
+  ];
 
   // La sentencia exacta se pide al núcleo en vez de armarla acá: así lo que se muestra es
   // literalmente lo que se va a ejecutar, no una reconstrucción parecida.
@@ -121,92 +129,86 @@
   }
 </script>
 
-<div class="fixed inset-0 z-10 flex items-center justify-center bg-black/40 p-4">
-  <div
-    class="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-lg bg-white shadow-xl dark:bg-zinc-900"
-    role="dialog"
-    aria-modal="true"
-    aria-label="Mantenimiento"
-  >
-    <h2 class="border-b border-zinc-200 px-5 py-3 text-base font-medium dark:border-zinc-800">
-      Mantenimiento de {targetLabel}
-    </h2>
-
-    <div class="space-y-3 px-5 py-4 text-sm">
-      <div class="flex gap-2">
-        {#each [["vacuum", "VACUUM"], ["analyze", "ANALYZE"], ["reindex", "REINDEX"]] as [value, text] (value)}
-          <button
-            class="btn {kind === value ? 'btn-primary' : ''}"
-            disabled={running}
-            onclick={() => (kind = value as Kind)}
-          >
-            {text}
-          </button>
-        {/each}
-      </div>
-
-      {#if kind === "vacuum"}
-        <div class="flex flex-wrap gap-4 text-xs text-zinc-600 dark:text-zinc-300">
-          <label class="flex items-center gap-1.5">
-            <input type="checkbox" bind:checked={full} disabled={running} /> FULL
-          </label>
-          <label class="flex items-center gap-1.5">
-            <input type="checkbox" bind:checked={freeze} disabled={running} /> FREEZE
-          </label>
-          <label class="flex items-center gap-1.5">
-            <input type="checkbox" bind:checked={analyze} disabled={running} /> ANALYZE
-          </label>
-        </div>
-      {:else if kind === "reindex"}
-        <label class="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300">
-          <input type="checkbox" bind:checked={concurrently} disabled={running} />
-          CONCURRENTLY (no bloquea las escrituras)
-        </label>
-      {/if}
-
-      {#if warning}
-        <p
-          class="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900
-                 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
-        >
-          {warning}
-        </p>
-      {/if}
-
-      {#if planError}
-        <p class="text-xs text-rose-600 dark:text-rose-400">{planError}</p>
-      {:else}
-        <pre
-          class="select-text overflow-x-auto rounded bg-zinc-100 px-3 py-2 font-mono text-xs
-                 dark:bg-zinc-800">{sql}</pre>
-      {/if}
-
-      {#if log.length > 0 || outcome}
-        <div
-          class="max-h-56 select-text overflow-auto rounded border border-zinc-200 px-3 py-2
-                 font-mono text-xs dark:border-zinc-800"
-        >
-          {#each log as line, index (index)}
-            <div class="whitespace-pre-wrap">{line}</div>
-          {/each}
-          {#if outcome}
-            <div class={failed ? "text-rose-600 dark:text-rose-400" : "text-emerald-600"}>
-              {outcome}
-            </div>
-          {/if}
-        </div>
-      {/if}
-    </div>
-
-    <div
-      class="flex justify-end gap-2 border-t border-zinc-200 px-5 py-3 dark:border-zinc-800"
-    >
-      <button class="btn" onclick={onclose} disabled={running}>Cerrar</button>
-      {#if running}
-        <button class="btn" onclick={cancel}>Cancelar la tarea</button>
-      {:else}
-        <button class="btn btn-primary" onclick={run} disabled={!sql}>Ejecutar</button>
-      {/if}
-    </div>
+<Modal title="Mantenimiento" subtitle={targetLabel} size="lg" busy={running} {onclose}>
+  <div class="seg" role="tablist">
+    {#each KINDS as item (item.value)}
+      <button
+        class="seg-item"
+        role="tab"
+        aria-selected={kind === item.value}
+        title={item.hint}
+        disabled={running}
+        onclick={() => (kind = item.value)}
+      >
+        {item.label}
+      </button>
+    {/each}
   </div>
-</div>
+  <p class="mt-1 text-xs muted">{KINDS.find((item) => item.value === kind)?.hint}</p>
+
+  {#if kind === "vacuum"}
+    <div class="mt-3 flex flex-wrap gap-4">
+      <label class="check">
+        <input type="checkbox" bind:checked={full} disabled={running} /> FULL
+      </label>
+      <label class="check">
+        <input type="checkbox" bind:checked={freeze} disabled={running} /> FREEZE
+      </label>
+      <label class="check">
+        <input type="checkbox" bind:checked={analyze} disabled={running} /> ANALYZE
+      </label>
+    </div>
+  {:else if kind === "reindex"}
+    <label class="check mt-3">
+      <input type="checkbox" bind:checked={concurrently} disabled={running} />
+      CONCURRENTLY (no bloquea las escrituras)
+    </label>
+  {/if}
+
+  {#if warning}
+    <Alert tone="warn" box class="mt-3">{warning}</Alert>
+  {/if}
+
+  {#if planError}
+    <Alert tone="bad" box class="mt-3">{planError}</Alert>
+  {:else}
+    <pre
+      class="mt-3 overflow-x-auto rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono
+             text-xs select-text dark:border-zinc-800 dark:bg-zinc-800/50">{sql}</pre>
+  {/if}
+
+  {#if log.length > 0 || outcome}
+    <div
+      class="mt-3 max-h-56 overflow-auto rounded-md border border-zinc-200 px-3 py-2 font-mono
+             text-xs select-text dark:border-zinc-800"
+    >
+      {#each log as line, index (index)}
+        <div class="whitespace-pre-wrap">{line}</div>
+      {/each}
+      {#if outcome}
+        <div
+          class={failed
+            ? "text-rose-600 dark:text-rose-400"
+            : "text-emerald-600 dark:text-emerald-400"}
+        >
+          {outcome}
+        </div>
+      {/if}
+    </div>
+  {/if}
+
+  {#snippet footer()}
+    {#if running}
+      <span class="flex items-center gap-2 text-xs muted">
+        <span class="spinner"></span>
+        en curso…
+      </span>
+    {/if}
+    <button class="btn ml-auto" onclick={onclose} disabled={running}>Cerrar</button>
+    {#if running}
+      <button class="btn btn-danger" onclick={cancel}>Cancelar la tarea</button>
+    {:else}
+      <button class="btn btn-primary" onclick={run} disabled={!sql}>Ejecutar</button>
+    {/if}
+  {/snippet}
+</Modal>

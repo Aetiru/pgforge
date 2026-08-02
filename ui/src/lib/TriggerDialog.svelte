@@ -1,5 +1,8 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import Alert from "./Alert.svelte";
+  import Modal from "./Modal.svelte";
+  import SqlPreview from "./SqlPreview.svelte";
   import {
     describeError,
     triggerApply,
@@ -121,96 +124,92 @@
   }
 </script>
 
-<div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
-  <div
-    class="card flex max-h-[85vh] w-full max-w-lg flex-col shadow-xl"
-    role="dialog"
-    aria-modal="true"
-    aria-label={existing ? "Editar trigger" : "Nuevo trigger"}
-  >
-    <h2 class="divider-b px-5 py-3 text-base font-medium">
-      {existing ? `Editar ${existing.name}` : `Nuevo trigger en ${table}`}
-    </h2>
+<Modal
+  title={existing ? `Editar el trigger ${existing.name}` : "Nuevo trigger"}
+  subtitle="{schema}.{table}"
+  busy={saving}
+  {onclose}
+>
+  {#if existing}
+    <p class="mb-3 text-xs muted">
+      PostgreSQL no permite alterar un trigger: se borra y se vuelve a crear con lo que quede acá,
+      todo dentro de la misma transacción.
+    </p>
+  {/if}
 
-    <div class="min-h-0 flex-1 overflow-auto px-5 py-4 text-sm">
-      <div class="grid grid-cols-2 gap-3">
-        <label class="flex flex-col gap-1">
-          <span class="text-xs muted">Nombre</span>
-          <input class="field" bind:value={name} />
+  <div class="grid grid-cols-2 gap-3">
+    <label class="flex flex-col gap-1">
+      <span class="label">Nombre</span>
+      <input class="field" data-autofocus bind:value={name} />
+    </label>
+
+    <label class="flex flex-col gap-1">
+      <span class="label">Momento</span>
+      <select class="field" bind:value={timing}>
+        {#each TIMING_OPTIONS as option (option.value)}
+          <option value={option.value}>{option.label}</option>
+        {/each}
+      </select>
+    </label>
+  </div>
+
+  <div class="mt-3">
+    <span class="label">Eventos</span>
+    <div class="mt-1 flex flex-wrap gap-3">
+      {#each EVENT_OPTIONS as option (option.value)}
+        <label class="check">
+          <input
+            type="checkbox"
+            checked={events.includes(option.value)}
+            onchange={() => toggleEvent(option.value)}
+          />
+          {option.label}
         </label>
-
-        <label class="flex flex-col gap-1">
-          <span class="text-xs muted">Momento</span>
-          <select class="field" bind:value={timing}>
-            {#each TIMING_OPTIONS as option (option.value)}
-              <option value={option.value}>{option.label}</option>
-            {/each}
-          </select>
-        </label>
-      </div>
-
-      <div class="mt-3">
-        <span class="text-xs muted">Eventos</span>
-        <div class="mt-1 flex flex-wrap gap-3">
-          {#each EVENT_OPTIONS as option (option.value)}
-            <label class="check text-xs">
-              <input
-                type="checkbox"
-                checked={events.includes(option.value)}
-                onchange={() => toggleEvent(option.value)}
-              />
-              {option.label}
-            </label>
-          {/each}
-        </div>
-      </div>
-
-      <div class="mt-3 grid grid-cols-2 gap-3">
-        <label class="flex flex-col gap-1">
-          <span class="text-xs muted">Nivel</span>
-          <select class="field" bind:value={level}>
-            {#each LEVEL_OPTIONS as option (option.value)}
-              <option value={option.value}>{option.label}</option>
-            {/each}
-          </select>
-        </label>
-      </div>
-
-      <label class="mt-3 flex flex-col gap-1">
-        <span class="text-xs muted">WHEN (opcional)</span>
-        <input class="field" bind:value={whenText} placeholder="condición SQL, p. ej. NEW.activo" />
-      </label>
-
-      <div class="mt-3 grid grid-cols-2 gap-3">
-        <label class="flex flex-col gap-1">
-          <span class="text-xs muted">Esquema de la función</span>
-          <input class="field" bind:value={functionSchema} />
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-xs muted">Función a ejecutar</span>
-          <input class="field" bind:value={functionName} />
-        </label>
-      </div>
-
-      {#if error}
-        <p class="mt-3 text-sm text-rose-600 dark:text-rose-400">{error}</p>
-      {/if}
-
-      {#if preview}
-        <pre
-          class="mt-3 max-h-40 overflow-auto rounded bg-zinc-100 p-2 font-mono text-xs
-                 whitespace-pre-wrap select-text dark:bg-zinc-800">{preview}</pre>
-      {/if}
-    </div>
-
-    <div class="divider-t flex items-center gap-2 px-5 py-3">
-      <button class="btn btn-ghost text-xs" onclick={showPreview} disabled={saving}>
-        Ver SQL
-      </button>
-      <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
-      <button class="btn btn-primary" onclick={submit} disabled={saving}>
-        {existing ? "Guardar" : "Crear trigger"}
-      </button>
+      {/each}
     </div>
   </div>
-</div>
+
+  <div class="mt-3 grid grid-cols-2 gap-3">
+    <label class="flex flex-col gap-1">
+      <span class="label">Nivel</span>
+      <select class="field" bind:value={level}>
+        {#each LEVEL_OPTIONS as option (option.value)}
+          <option value={option.value}>{option.label}</option>
+        {/each}
+      </select>
+    </label>
+  </div>
+
+  <label class="mt-3 flex flex-col gap-1">
+    <span class="label">WHEN (opcional)</span>
+    <input class="field" bind:value={whenText} placeholder="condición SQL, p. ej. NEW.activo" />
+  </label>
+
+  <div class="mt-3 grid grid-cols-2 gap-3">
+    <label class="flex flex-col gap-1">
+      <span class="label">Esquema de la función</span>
+      <input class="field" bind:value={functionSchema} />
+    </label>
+    <label class="flex flex-col gap-1">
+      <span class="label">Función a ejecutar</span>
+      <input class="field" bind:value={functionName} />
+    </label>
+  </div>
+
+  {#if error}
+    <Alert tone="bad" box class="mt-3">{error}</Alert>
+  {/if}
+
+  {#if preview}
+    <SqlPreview sql={preview} />
+  {/if}
+
+  {#snippet footer()}
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-primary" onclick={submit} disabled={saving}>
+      {#if saving}<span class="spinner"></span>{/if}
+      {existing ? "Guardar" : "Crear trigger"}
+    </button>
+  {/snippet}
+</Modal>

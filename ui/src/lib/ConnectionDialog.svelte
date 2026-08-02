@@ -1,5 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import Alert from "./Alert.svelte";
+  import Modal from "./Modal.svelte";
   import { describeError, saveProfile, type ConnectionProfile, type SslMode } from "./ipc";
 
   let {
@@ -60,76 +62,79 @@
   }
 </script>
 
-<div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
-  <div
-    class="card w-full max-w-lg shadow-xl"
-    role="dialog"
-    aria-modal="true"
-    aria-label="Datos del servidor"
-  >
-    <h2 class="divider-b px-5 py-3 text-base font-medium">
-      {profile ? "Editar servidor" : "Nuevo servidor"}
-    </h2>
+<Modal
+  title={profile ? "Editar servidor" : "Nuevo servidor"}
+  subtitle="{form.user}@{form.host}:{form.port}/{form.database}"
+  busy={saving}
+  {onclose}
+>
+  <div class="grid grid-cols-2 gap-3">
+    <label class="col-span-2 flex flex-col gap-1">
+      <span class="label">Nombre</span>
+      <input class="field" data-autofocus bind:value={form.name} placeholder="Producción" />
+    </label>
 
-    <div class="grid grid-cols-2 gap-3 px-5 py-4 text-sm">
-      <label class="col-span-2 flex flex-col gap-1">
-        <span class="text-xs muted">Nombre</span>
-        <input class="field" bind:value={form.name} placeholder="Producción" />
-      </label>
+    <label class="flex flex-col gap-1">
+      <span class="label">Servidor</span>
+      <input class="field" bind:value={form.host} />
+    </label>
 
-      <label class="flex flex-col gap-1">
-        <span class="text-xs muted">Servidor</span>
-        <input class="field" bind:value={form.host} />
-      </label>
+    <label class="flex flex-col gap-1">
+      <span class="label">Puerto</span>
+      <input class="field" type="number" bind:value={form.port} />
+    </label>
 
-      <label class="flex flex-col gap-1">
-        <span class="text-xs muted">Puerto</span>
-        <input class="field" type="number" bind:value={form.port} />
-      </label>
+    <label class="flex flex-col gap-1">
+      <span class="label">Base de datos</span>
+      <input class="field" bind:value={form.database} />
+    </label>
 
-      <label class="flex flex-col gap-1">
-        <span class="text-xs muted">Base de datos</span>
-        <input class="field" bind:value={form.database} />
-      </label>
+    <label class="flex flex-col gap-1">
+      <span class="label">Usuario</span>
+      <input class="field" bind:value={form.user} />
+    </label>
 
-      <label class="flex flex-col gap-1">
-        <span class="text-xs muted">Usuario</span>
-        <input class="field" bind:value={form.user} />
-      </label>
+    <label class="flex flex-col gap-1">
+      <span class="label">Contraseña</span>
+      <input
+        class="field"
+        type="password"
+        bind:value={password}
+        autocomplete="off"
+        onkeydown={(event) => {
+          if (event.key === "Enter") submit(true);
+        }}
+      />
+    </label>
 
-      <label class="flex flex-col gap-1">
-        <span class="text-xs muted">Contraseña</span>
-        <input class="field" type="password" bind:value={password} autocomplete="off" />
-      </label>
+    <label class="flex flex-col gap-1">
+      <span class="label">Cifrado</span>
+      <select class="field" bind:value={form.sslMode}>
+        {#each SSL_MODES as mode (mode.value)}
+          <option value={mode.value}>{mode.label}</option>
+        {/each}
+      </select>
+    </label>
 
-      <label class="flex flex-col gap-1">
-        <span class="text-xs muted">Cifrado</span>
-        <select class="field" bind:value={form.sslMode}>
-          {#each SSL_MODES as mode (mode.value)}
-            <option value={mode.value}>{mode.label}</option>
-          {/each}
-        </select>
-      </label>
-
-      <label class="check col-span-2">
-        <input type="checkbox" bind:checked={form.savePassword} />
-        Recordar la contraseña en el almacén de credenciales del sistema
-      </label>
-
-      {#if error}
-        <p class="col-span-2 text-sm text-rose-600 dark:text-rose-400">{error}</p>
-      {/if}
-    </div>
-
-    <div class="divider-t flex items-center gap-2 px-5 py-3">
-      <span class="text-xs muted">
-        La contraseña nunca se guarda en los archivos de la aplicación.
-      </span>
-      <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
-      <button class="btn" onclick={() => submit(false)} disabled={saving}>Guardar</button>
-      <button class="btn btn-primary" onclick={() => submit(true)} disabled={saving}>
-        Guardar y conectar
-      </button>
-    </div>
+    <label class="check col-span-2">
+      <input type="checkbox" bind:checked={form.savePassword} />
+      Recordar la contraseña en el almacén de credenciales del sistema
+    </label>
   </div>
-</div>
+
+  {#if error}
+    <Alert tone="bad" box class="mt-3">{error}</Alert>
+  {/if}
+
+  {#snippet footer()}
+    <span class="basis-full text-xs muted">
+      La contraseña nunca se guarda en los archivos de la aplicación.
+    </span>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn" onclick={() => submit(false)} disabled={saving}>Guardar</button>
+    <button class="btn btn-primary" onclick={() => submit(true)} disabled={saving}>
+      {#if saving}<span class="spinner"></span>{/if}
+      Guardar y conectar
+    </button>
+  {/snippet}
+</Modal>

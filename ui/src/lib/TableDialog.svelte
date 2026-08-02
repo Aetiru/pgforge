@@ -1,5 +1,8 @@
 <script lang="ts">
+  import Alert from "./Alert.svelte";
   import Icon from "./Icon.svelte";
+  import Modal from "./Modal.svelte";
+  import SqlPreview from "./SqlPreview.svelte";
   import {
     ddlApply,
     ddlPreview,
@@ -129,97 +132,101 @@
   }
 </script>
 
-<div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
-  <div
-    class="card flex max-h-[85vh] w-full max-w-2xl flex-col shadow-xl"
-    role="dialog"
-    aria-modal="true"
-    aria-label="Nueva tabla"
-  >
-    <h2 class="divider-b px-5 py-3 text-base font-medium">Nueva tabla en {schema}</h2>
+<Modal title="Nueva tabla" subtitle="en el esquema {schema}" size="lg" busy={saving} {onclose}>
+  <label class="flex flex-col gap-1">
+    <span class="label">Nombre</span>
+    <input class="field" data-autofocus bind:value={name} placeholder="clientes" />
+  </label>
 
-    <div class="min-h-0 flex-1 overflow-auto px-5 py-4 text-sm">
-      <label class="flex flex-col gap-1">
-        <span class="text-xs muted">Nombre</span>
-        <input class="field" bind:value={name} placeholder="clientes" />
-      </label>
+  <div class="mt-4 flex items-center justify-between">
+    <span class="label">Columnas</span>
+    <button class="btn btn-sm" onclick={addColumn}>
+      <Icon name="plus" size={11} />
+      Columna
+    </button>
+  </div>
 
-      <div class="mt-4 flex items-center justify-between">
-        <span class="text-xs font-medium muted">Columnas</span>
-        <button class="btn btn-ghost px-2 py-0.5 text-xs" onclick={addColumn}>
-          <Icon name="plus" size={12} />
-          Columna
+  <!-- Los rótulos van una sola vez arriba y no repetidos en cada fila: con seis columnas, el
+       formulario se leía como una lista de etiquetas y no como una tabla. -->
+  <div class="mt-2 grid grid-cols-[8rem_10rem_8rem_9rem_auto_1.75rem] gap-1.5 px-2 text-[11px] muted">
+    <span>Nombre</span>
+    <span>Tipo</span>
+    <span>Identidad</span>
+    <span>Default</span>
+    <span></span>
+    <span></span>
+  </div>
+
+  <div class="mt-1 flex flex-col gap-1.5">
+    {#each columns as column (column.key)}
+      <div
+        class="grid grid-cols-[8rem_10rem_8rem_9rem_auto_1.75rem] items-center gap-1.5 rounded-md
+               border border-zinc-200 p-1.5 dark:border-zinc-800"
+      >
+        <input class="field" placeholder="nombre" bind:value={column.name} />
+        <input
+          class="field"
+          placeholder="tipo"
+          list="pgforge-common-types"
+          bind:value={column.typeName}
+        />
+        <select
+          class="field"
+          value={column.identity ?? ""}
+          onchange={(event) => {
+            const value = event.currentTarget.value;
+            column.identity = value === "" ? null : (value as Identity);
+            if (column.identity) column.default = null;
+          }}
+        >
+          {#each IDENTITY_OPTIONS as option (option.value)}
+            <option value={option.value}>{option.label}</option>
+          {/each}
+        </select>
+        <input
+          class="field"
+          placeholder="default"
+          disabled={column.identity !== null}
+          value={column.default ?? ""}
+          oninput={(event) => (column.default = event.currentTarget.value || null)}
+        />
+        <label class="check justify-self-start">
+          <input type="checkbox" bind:checked={column.notNull} />
+          NOT NULL
+        </label>
+        <button
+          class="btn btn-ghost btn-icon size-7"
+          title="Quitar la columna"
+          aria-label="Quitar la columna"
+          disabled={columns.length === 1}
+          onclick={() => removeColumn(column.key)}
+        >
+          <Icon name="close" size={11} />
         </button>
       </div>
-
-      <div class="mt-2 flex flex-col gap-2">
-        {#each columns as column (column.key)}
-          <div class="flex flex-wrap items-center gap-1.5 rounded border border-zinc-200 p-2 dark:border-zinc-800">
-            <input class="field w-32" placeholder="nombre" bind:value={column.name} />
-            <input
-              class="field w-40"
-              placeholder="tipo"
-              list="pgforge-common-types"
-              bind:value={column.typeName}
-            />
-            <select
-              class="field w-32"
-              value={column.identity ?? ""}
-              onchange={(event) => {
-                const value = event.currentTarget.value;
-                column.identity = value === "" ? null : (value as Identity);
-                if (column.identity) column.default = null;
-              }}
-            >
-              {#each IDENTITY_OPTIONS as option (option.value)}
-                <option value={option.value}>{option.label}</option>
-              {/each}
-            </select>
-            <input
-              class="field w-36"
-              placeholder="default"
-              disabled={column.identity !== null}
-              value={column.default ?? ""}
-              oninput={(event) => (column.default = event.currentTarget.value || null)}
-            />
-            <label class="check text-xs">
-              <input type="checkbox" bind:checked={column.notNull} />
-              NOT NULL
-            </label>
-            <button
-              class="btn btn-ghost ml-auto px-2 py-0.5 text-xs"
-              disabled={columns.length === 1}
-              onclick={() => removeColumn(column.key)}
-            >
-              <Icon name="close" size={10} />
-            </button>
-          </div>
-        {/each}
-      </div>
-
-      <datalist id="pgforge-common-types">
-        {#each COMMON_TYPES as type (type)}
-          <option value={type}></option>
-        {/each}
-      </datalist>
-
-      {#if error}
-        <p class="mt-3 text-sm text-rose-600 dark:text-rose-400">{error}</p>
-      {/if}
-
-      {#if preview}
-        <pre
-          class="mt-3 max-h-40 overflow-auto rounded bg-zinc-100 p-2 font-mono text-xs
-                 whitespace-pre-wrap select-text dark:bg-zinc-800">{preview}</pre>
-      {/if}
-    </div>
-
-    <div class="divider-t flex items-center gap-2 px-5 py-3">
-      <button class="btn btn-ghost text-xs" onclick={showPreview} disabled={saving}>
-        Ver SQL
-      </button>
-      <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
-      <button class="btn btn-primary" onclick={submit} disabled={saving}>Crear tabla</button>
-    </div>
+    {/each}
   </div>
-</div>
+
+  <datalist id="pgforge-common-types">
+    {#each COMMON_TYPES as type (type)}
+      <option value={type}></option>
+    {/each}
+  </datalist>
+
+  {#if error}
+    <Alert tone="bad" box class="mt-3">{error}</Alert>
+  {/if}
+
+  {#if preview}
+    <SqlPreview sql={preview} />
+  {/if}
+
+  {#snippet footer()}
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-primary" onclick={submit} disabled={saving}>
+      {#if saving}<span class="spinner"></span>{/if}
+      Crear tabla
+    </button>
+  {/snippet}
+</Modal>

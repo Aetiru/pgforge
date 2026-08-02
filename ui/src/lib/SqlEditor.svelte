@@ -36,8 +36,9 @@
 
   /**
    * Los colores salen de variables CSS y no de dos temas conmutables porque el resto de la
-   * aplicación resuelve el modo oscuro con `prefers-color-scheme`: un tema propio acá sería una
-   * segunda fuente de verdad que se desincroniza.
+   * aplicación resuelve el tema con el atributo `data-theme` del documento: un tema propio acá
+   * sería una segunda fuente de verdad que se desincroniza. Cambiar de claro a oscuro repinta el
+   * editor sin recrearlo, porque lo único que cambia son las variables.
    */
   const highlight = HighlightStyle.define([
     { tag: tags.keyword, color: "var(--cm-keyword)", fontWeight: "500" },
@@ -53,11 +54,20 @@
     "&": { height: "100%", fontSize: "13px", backgroundColor: "transparent" },
     "&.cm-focused": { outline: "none" },
     ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "1.6" },
+    ".cm-content": { paddingBlock: "8px" },
     ".cm-gutters": {
       backgroundColor: "transparent",
       border: "none",
       color: "var(--cm-gutter)",
     },
+    ".cm-lineNumbers .cm-gutterElement": { paddingLeft: "10px", minWidth: "34px" },
+    /* El panel de búsqueda de CodeMirror viene con su propio gris: se lo iguala al de la ventana. */
+    ".cm-panels": {
+      backgroundColor: "var(--cm-tooltip-bg)",
+      color: "inherit",
+      borderColor: "var(--cm-tooltip-border)",
+    },
+    ".cm-panels input, .cm-panels button": { fontFamily: "var(--font-sans)", fontSize: "12px" },
     ".cm-activeLine, .cm-activeLineGutter": { backgroundColor: "var(--cm-active-line)" },
     ".cm-cursor": { borderLeftColor: "var(--cm-caret)" },
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {

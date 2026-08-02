@@ -58,6 +58,8 @@
         width: 56,
         align: "right",
         value: (row) => String(row.index + 1),
+        // Ordenar por esta columna devuelve el resultado al orden en que lo mandó el servidor.
+        sort: (row) => row.index,
       },
       ...cells,
     ];
@@ -69,9 +71,14 @@
   }
 </script>
 
+<!--
+  El resultado ya está entero en memoria, así que ordenarlo acá no vuelve a consultar nada: es la
+  forma más rápida de mirar lo mismo por otro criterio sin escribir un ORDER BY y volver a esperar.
+-->
 <DataGrid
   columns={definitions}
   rows={numbered}
   rowKey={(row) => row.index}
+  sortable
   empty="La consulta no devolvió ninguna fila."
 />

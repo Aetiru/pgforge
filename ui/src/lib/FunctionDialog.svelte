@@ -1,5 +1,8 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import Alert from "./Alert.svelte";
+  import Modal from "./Modal.svelte";
+  import SqlEditor from "./SqlEditor.svelte";
   import { describeError, functionApply } from "./ipc";
 
   let {
@@ -41,34 +44,32 @@
   }
 </script>
 
-<div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
-  <div
-    class="card flex max-h-[85vh] w-full max-w-3xl flex-col shadow-xl"
-    role="dialog"
-    aria-modal="true"
-    aria-label="Función o procedimiento"
-  >
-    <h2 class="divider-b px-5 py-3 text-base font-medium">Función o procedimiento</h2>
+<Modal
+  title="Función o procedimiento"
+  subtitle="Se ejecuta tal cual está escrito, contra {database}"
+  size="xl"
+  busy={saving}
+  {onclose}
+>
+  <p class="mb-2 text-xs muted">
+    Si el texto dice <code class="kbd">CREATE OR REPLACE</code>, reemplaza la que ya existe; si dice
+    <code class="kbd">CREATE</code> a secas, crea una nueva.
+  </p>
 
-    <div class="min-h-0 flex-1 overflow-auto px-5 py-4 text-sm">
-      <p class="mb-2 text-xs muted">
-        Se ejecuta tal cual: si el texto dice <code>CREATE OR REPLACE</code>, reemplaza la que ya
-        existe; si dice <code>CREATE</code> a secas, crea una nueva.
-      </p>
-      <textarea
-        class="field h-full min-h-[320px] w-full font-mono text-xs"
-        bind:value={text}
-        spellcheck="false"
-      ></textarea>
-
-      {#if error}
-        <p class="mt-3 text-sm text-rose-600 dark:text-rose-400">{error}</p>
-      {/if}
-    </div>
-
-    <div class="divider-t flex items-center gap-2 px-5 py-3">
-      <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
-      <button class="btn btn-primary" onclick={submit} disabled={saving}>Ejecutar</button>
-    </div>
+  <!-- El cuerpo de una función es código: va en el editor de SQL, no en un cuadro de texto. -->
+  <div class="h-[420px] overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800">
+    <SqlEditor bind:value={text} />
   </div>
-</div>
+
+  {#if error}
+    <Alert tone="bad" box class="mt-3">{error}</Alert>
+  {/if}
+
+  {#snippet footer()}
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-primary" onclick={submit} disabled={saving}>
+      {#if saving}<span class="spinner"></span>{/if}
+      Ejecutar
+    </button>
+  {/snippet}
+</Modal>

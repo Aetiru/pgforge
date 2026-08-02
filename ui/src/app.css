@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/**
+ * El modo oscuro lo decide un atributo del documento y no `prefers-color-scheme` a secas: así el
+ * usuario puede forzar claro u oscuro desde la barra. `theme.svelte.ts` resuelve «automático» a uno
+ * de los dos y escribe siempre `data-theme` en el `<html>`, de modo que todo —Tailwind, CodeMirror
+ * y los gráficos— lee un único lugar.
+ */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 @theme {
   --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --font-mono: "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
@@ -11,11 +19,72 @@ body,
   height: 100%;
 }
 
+html {
+  color-scheme: light;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
 body {
   @apply bg-white text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
   /* La ventana es una aplicación, no una página: nada de rebote ni de selección accidental. */
   overscroll-behavior: none;
   user-select: none;
+}
+
+/* Lo que sí se puede seleccionar (SQL, DDL, valores) lo pide explícitamente con `select-text`. */
+::selection {
+  @apply bg-blue-500/25;
+}
+
+/* --------------------------------------------------------------------------
+   Foco
+
+   Una aplicación de escritorio se maneja mucho con el teclado. El anillo se muestra solo cuando el
+   foco llegó por teclado, para no ensuciar el clic.
+   -------------------------------------------------------------------------- */
+
+:focus-visible {
+  @apply outline-2 outline-offset-1 outline-blue-500;
+}
+
+/* --------------------------------------------------------------------------
+   Barras de desplazamiento
+
+   Las nativas de Windows son anchas y opacas; en una interfaz con árbol, grilla y editor a la vez
+   ocupaban más lugar del que informaban.
+   -------------------------------------------------------------------------- */
+
+* {
+  scrollbar-color: var(--color-zinc-300) transparent;
+}
+
+[data-theme="dark"] * {
+  scrollbar-color: var(--color-zinc-700) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply rounded-full border-[3px] border-solid border-transparent bg-zinc-300 bg-clip-content
+    dark:bg-zinc-700;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-zinc-400 dark:bg-zinc-600;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* --------------------------------------------------------------------------
@@ -42,8 +111,28 @@ body {
   @apply rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900;
 }
 
+/* Encabezado de tarjeta: el título de una sección y sus acciones, siempre a la misma altura. */
+.card-head {
+  @apply flex h-9 items-center gap-2 border-b border-zinc-200 px-3 dark:border-zinc-800;
+}
+
+.card-title {
+  @apply text-xs font-semibold tracking-wide text-zinc-600 uppercase dark:text-zinc-400;
+}
+
 .muted {
   @apply text-zinc-500 dark:text-zinc-400;
+}
+
+/* Barra de herramientas: el patrón que repiten el editor, la grilla y el monitor. */
+.toolbar {
+  @apply flex flex-wrap items-center gap-1.5 border-b border-zinc-200 px-2 py-1.5
+    dark:border-zinc-800;
+}
+
+/* Separador vertical entre grupos de una barra. */
+.toolbar-sep {
+  @apply mx-1 h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-800;
 }
 
 /* --------------------------------------------------------------------------
@@ -52,14 +141,32 @@ body {
 
 .btn {
   @apply inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1
-    text-sm text-zinc-700 transition-colors
-    hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-40
-    dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700;
+    text-sm whitespace-nowrap text-zinc-700 transition-colors
+    hover:bg-zinc-100 active:bg-zinc-200 disabled:pointer-events-none disabled:opacity-40
+    dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700
+    dark:active:bg-zinc-600;
 }
 
 .btn-primary {
-  @apply border-blue-600 bg-blue-600 text-white hover:bg-blue-700
-    dark:border-blue-600 dark:bg-blue-600 dark:text-white dark:hover:bg-blue-500;
+  @apply border-blue-600 bg-blue-600 text-white shadow-sm shadow-blue-600/20
+    hover:bg-blue-500 active:bg-blue-700
+    dark:border-blue-600 dark:bg-blue-600 dark:text-white dark:hover:bg-blue-500
+    dark:active:bg-blue-700;
+}
+
+/* Lo que borra o corta algo. Se ve distinto desde antes de leerlo. */
+.btn-danger {
+  @apply border-rose-600 bg-rose-600 text-white shadow-sm shadow-rose-600/20
+    hover:bg-rose-500 active:bg-rose-700
+    dark:border-rose-600 dark:bg-rose-600 dark:text-white dark:hover:bg-rose-500;
+}
+
+/* La versión discreta de lo destructivo: se usa en las filas de una lista, donde un botón rojo
+   sólido por fila gritaría más que el contenido. */
+.btn-danger-ghost {
+  @apply border-transparent bg-transparent text-rose-600
+    hover:bg-rose-50 hover:text-rose-700
+    dark:bg-transparent dark:text-rose-400 dark:hover:bg-rose-950 dark:hover:text-rose-300;
 }
 
 .btn-ghost {
@@ -72,11 +179,28 @@ body {
   @apply grid size-7 place-items-center rounded-md p-0;
 }
 
+.btn-sm {
+  @apply gap-1 px-2 py-0.5 text-xs;
+}
+
 .field {
   @apply rounded-md border border-zinc-200 bg-white px-2 py-1 text-sm text-zinc-900
-    outline-none transition-colors
+    outline-none transition-colors placeholder:text-zinc-400
     focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20
-    dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100;
+    disabled:opacity-50
+    dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500;
+}
+
+/* Los campos de un formulario son texto que se escribe: ahí sí se puede seleccionar. */
+.field,
+input,
+textarea {
+  user-select: text;
+}
+
+/* Etiqueta de campo en los formularios de los diálogos. */
+.label {
+  @apply text-xs font-medium text-zinc-600 dark:text-zinc-400;
 }
 
 /* Control segmentado: la forma más compacta de mostrar unas pocas vistas excluyentes. */
@@ -85,7 +209,8 @@ body {
 }
 
 .seg-item {
-  @apply rounded-md px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors
+  @apply flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium whitespace-nowrap
+    text-zinc-600 transition-colors
     hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100;
 }
 
@@ -93,23 +218,48 @@ body {
   @apply bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50;
 }
 
+/* Contador al lado del nombre de una sección: cuántas filas hay sin tener que abrirla. */
+.seg-count {
+  @apply rounded bg-zinc-200/70 px-1 text-[10px] tabular-nums dark:bg-zinc-900/60;
+}
+
+.seg-item[aria-selected="true"] .seg-count {
+  @apply bg-zinc-100 dark:bg-zinc-800;
+}
+
 .check {
   @apply flex items-center gap-1.5 text-xs text-zinc-500 select-none dark:text-zinc-400;
 }
 
+.check input {
+  @apply size-3.5 accent-blue-600;
+}
+
+/* Tecla del teclado, para que un atajo se vea como lo que es. */
+.kbd {
+  @apply rounded border border-zinc-300 bg-zinc-100 px-1 font-sans text-[10px] leading-4
+    text-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400;
+}
+
 /* Pestañas del panel principal: el detalle del objeto y las consultas abiertas. */
 .tab-wrap {
-  @apply flex shrink-0 items-center border-b-2 border-transparent;
+  @apply relative flex shrink-0 items-center rounded-t-md transition-colors
+    hover:bg-zinc-100 dark:hover:bg-zinc-800/60;
 }
 
+/* La barra activa la pinta el contenedor y no el botón, así abarca también la cruz de cerrar. */
 .tab-wrap:has([aria-selected="true"]) {
-  @apply border-blue-600 dark:border-blue-400;
+  @apply bg-zinc-100 dark:bg-zinc-800/80;
 }
 
-/* El subrayado lo pinta el contenedor y no el botón, así abarca también la cruz de cerrar. */
+.tab-wrap:has([aria-selected="true"])::after {
+  @apply absolute inset-x-1 bottom-0 h-0.5 rounded-full bg-blue-600 dark:bg-blue-400;
+  content: "";
+}
+
 .tab {
-  @apply flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-xs font-medium whitespace-nowrap
-    text-zinc-500 transition-colors hover:text-zinc-900 dark:text-zinc-400
+  @apply flex max-w-56 shrink items-center gap-1.5 px-3 py-1.5 text-xs font-medium
+    whitespace-nowrap text-zinc-500 transition-colors hover:text-zinc-900 dark:text-zinc-400
     dark:hover:text-zinc-100;
 }
 
@@ -118,12 +268,8 @@ body {
 }
 
 .tab-close {
-  @apply rounded p-1 text-zinc-400 transition-colors hover:bg-zinc-200 hover:text-zinc-700
+  @apply mr-1 rounded p-1 text-zinc-400 transition-colors hover:bg-zinc-200 hover:text-zinc-700
     dark:hover:bg-zinc-700 dark:hover:text-zinc-100;
-}
-
-.check input {
-  @apply size-3.5 accent-blue-600;
 }
 
 /* --------------------------------------------------------------------------
@@ -135,7 +281,7 @@ body {
 }
 
 .dot-on {
-  @apply bg-emerald-500;
+  @apply bg-emerald-500 shadow-[0_0_0_2px] shadow-emerald-500/20;
 }
 
 .dot-off {
@@ -149,7 +295,8 @@ body {
 
 /* Etiqueta de estado, para lo que hay que mirar dos veces. */
 .tag {
-  @apply rounded px-1.5 py-px text-[11px] font-medium;
+  @apply inline-flex items-center gap-1 rounded px-1.5 py-px text-[11px] font-medium
+    whitespace-nowrap;
 }
 
 .tag-warn {
@@ -160,16 +307,83 @@ body {
   @apply bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300;
 }
 
+.tag-ok {
+  @apply bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300;
+}
+
+.tag-info {
+  @apply bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300;
+}
+
 .tag-neutral {
   @apply bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400;
+}
+
+/* --------------------------------------------------------------------------
+   Avisos
+
+   Un aviso interrumpe la lectura, así que los tres tonos comparten forma: franja de color a la
+   izquierda, texto que ocupa el ancho y las acciones al final.
+   -------------------------------------------------------------------------- */
+
+.alert {
+  @apply flex items-start gap-2 border-b border-l-4 px-3 py-2 text-sm;
+}
+
+.alert-bad {
+  @apply border-rose-200 border-l-rose-500 bg-rose-50 text-rose-800
+    dark:border-rose-900 dark:border-l-rose-500 dark:bg-rose-950/60 dark:text-rose-200;
+}
+
+.alert-warn {
+  @apply border-amber-200 border-l-amber-500 bg-amber-50 text-amber-900
+    dark:border-amber-900 dark:border-l-amber-500 dark:bg-amber-950/60 dark:text-amber-200;
+}
+
+.alert-ok {
+  @apply border-emerald-200 border-l-emerald-500 bg-emerald-50 text-emerald-800
+    dark:border-emerald-900 dark:border-l-emerald-500 dark:bg-emerald-950/60 dark:text-emerald-200;
+}
+
+/* Versión en bloque, para los errores dentro de un formulario. */
+.alert-box {
+  @apply flex items-start gap-2 rounded-md border border-l-4 px-3 py-2 text-sm;
+}
+
+/* --------------------------------------------------------------------------
+   Filas de una lista o de una tabla
+   -------------------------------------------------------------------------- */
+
+/* Tabla de una tarjeta: encabezado tenue, filas separadas y acciones que aparecen al pasar. */
+.list-table {
+  @apply w-full text-left text-sm;
+}
+
+.list-table thead th {
+  @apply border-b border-zinc-200 px-3 py-1.5 text-[11px] font-semibold tracking-wide
+    text-zinc-500 uppercase dark:border-zinc-800 dark:text-zinc-500;
+}
+
+.list-table tbody tr {
+  @apply border-t border-zinc-200 transition-colors hover:bg-zinc-50
+    dark:border-zinc-800 dark:hover:bg-zinc-800/50;
+}
+
+.list-table tbody td {
+  @apply px-3 py-1.5 align-middle;
+}
+
+/* Las acciones de una fila no compiten con el contenido hasta que el mouse llega a la fila. */
+.row-actions {
+  @apply flex justify-end gap-1 opacity-0 transition-opacity
+    focus-within:opacity-100 group-hover:opacity-100;
 }
 
 /* --------------------------------------------------------------------------
    Editor SQL
 
    CodeMirror no usa clases de Tailwind: se le pasan colores. Se declaran acá como variables para
-   que el modo oscuro lo siga decidiendo `prefers-color-scheme` en un solo lugar, igual que el
-   resto de la aplicación.
+   que el tema lo siga decidiendo un solo lugar, igual que el resto de la aplicación.
    -------------------------------------------------------------------------- */
 
 :root {
@@ -188,24 +402,29 @@ body {
   --cm-error: var(--color-rose-500);
   --cm-tooltip-bg: var(--color-white);
   --cm-tooltip-border: var(--color-zinc-200);
+
+  /* Los gráficos del monitor tampoco reciben clases: leen estos valores al dibujarse. */
+  --plot-axis: var(--color-zinc-400);
+  --plot-grid: color-mix(in srgb, var(--color-zinc-500) 14%, transparent);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --cm-keyword: var(--color-blue-400);
-    --cm-string: var(--color-emerald-400);
-    --cm-number: var(--color-violet-400);
-    --cm-comment: var(--color-zinc-500);
-    --cm-type: var(--color-amber-400);
-    --cm-function: var(--color-sky-400);
-    --cm-operator: var(--color-zinc-400);
+[data-theme="dark"] {
+  --cm-keyword: var(--color-blue-400);
+  --cm-string: var(--color-emerald-400);
+  --cm-number: var(--color-violet-400);
+  --cm-comment: var(--color-zinc-500);
+  --cm-type: var(--color-amber-400);
+  --cm-function: var(--color-sky-400);
+  --cm-operator: var(--color-zinc-400);
 
-    --cm-gutter: var(--color-zinc-600);
-    --cm-caret: var(--color-blue-400);
-    --cm-selection: color-mix(in srgb, var(--color-blue-400) 28%, transparent);
-    --cm-active-line: color-mix(in srgb, var(--color-zinc-400) 8%, transparent);
-    --cm-error: var(--color-rose-400);
-    --cm-tooltip-bg: var(--color-zinc-900);
-    --cm-tooltip-border: var(--color-zinc-700);
-  }
+  --cm-gutter: var(--color-zinc-600);
+  --cm-caret: var(--color-blue-400);
+  --cm-selection: color-mix(in srgb, var(--color-blue-400) 28%, transparent);
+  --cm-active-line: color-mix(in srgb, var(--color-zinc-400) 8%, transparent);
+  --cm-error: var(--color-rose-400);
+  --cm-tooltip-bg: var(--color-zinc-900);
+  --cm-tooltip-border: var(--color-zinc-700);
+
+  --plot-axis: var(--color-zinc-500);
+  --plot-grid: color-mix(in srgb, var(--color-zinc-400) 16%, transparent);
 }

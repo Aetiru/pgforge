@@ -1,5 +1,8 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import Alert from "./Alert.svelte";
+  import Modal from "./Modal.svelte";
+  import SqlPreview from "./SqlPreview.svelte";
   import {
     describeError,
     roleApply,
@@ -186,88 +189,84 @@
   }
 </script>
 
-<div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
-  <div
-    class="card flex max-h-[85vh] w-full max-w-lg flex-col shadow-xl"
-    role="dialog"
-    aria-modal="true"
-    aria-label={existing ? "Editar rol" : "Nuevo rol"}
-  >
-    <h2 class="divider-b px-5 py-3 text-base font-medium">
-      {existing ? `Editar ${existing.name}` : "Nuevo rol"}
-    </h2>
+<Modal
+  title={existing ? `Editar el rol ${existing.name}` : "Nuevo rol"}
+  subtitle="Los roles son del servidor entero, no de una base"
+  busy={saving}
+  {onclose}
+>
+  <label class="flex flex-col gap-1">
+    <span class="label">Nombre</span>
+    <input class="field" data-autofocus bind:value={name} />
+  </label>
 
-    <div class="min-h-0 flex-1 overflow-auto px-5 py-4 text-sm">
-      <label class="flex flex-col gap-1">
-        <span class="text-xs muted">Nombre</span>
-        <input class="field" bind:value={name} />
-      </label>
-
-      <div class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5">
-        <label class="check text-xs"><input type="checkbox" bind:checked={login} /> LOGIN</label>
-        <label class="check text-xs"><input type="checkbox" bind:checked={superuser} /> SUPERUSER</label>
-        <label class="check text-xs"><input type="checkbox" bind:checked={createdb} /> CREATEDB</label>
-        <label class="check text-xs"><input type="checkbox" bind:checked={createrole} /> CREATEROLE</label>
-        <label class="check text-xs"><input type="checkbox" bind:checked={inherit} /> INHERIT</label>
-        <label class="check text-xs"><input type="checkbox" bind:checked={replication} /> REPLICATION</label>
-        <label class="check text-xs"><input type="checkbox" bind:checked={bypassRls} /> BYPASSRLS</label>
-      </div>
-
-      <div class="mt-3 grid grid-cols-2 gap-3">
-        <label class="flex flex-col gap-1">
-          <span class="text-xs muted">Límite de conexiones</span>
-          <input class="field" bind:value={connectionLimitText} placeholder="sin límite" />
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-xs muted">Válido hasta</span>
-          <input class="field" bind:value={validUntil} placeholder="sin vencimiento" />
-        </label>
-      </div>
-
-      <label class="mt-3 flex flex-col gap-1">
-        <span class="text-xs muted">
-          Contraseña {existing ? "(vacía = no cambiarla)" : "(opcional)"}
-        </span>
-        <input class="field" type="password" bind:value={password} autocomplete="off" />
-      </label>
-
-      <label class="mt-3 flex flex-col gap-1">
-        <span class="text-xs muted">Miembro de (separados por coma)</span>
-        {#if loadingMemberships}
-          <p class="rounded border border-zinc-200 px-2 py-2 text-xs muted dark:border-zinc-800">
-            Cargando…
-          </p>
-        {:else}
-          <input class="field" bind:value={memberOfText} placeholder="lectores, escritores" />
-        {/if}
-      </label>
-
-      {#if existing}
-        <label class="check mt-2 text-xs">
-          <input type="checkbox" bind:checked={adminOption} />
-          Las membresías nuevas quedan con ADMIN OPTION
-        </label>
-      {/if}
-
-      {#if error}
-        <p class="mt-3 text-sm text-rose-600 dark:text-rose-400">{error}</p>
-      {/if}
-
-      {#if preview}
-        <pre
-          class="mt-3 max-h-40 overflow-auto rounded bg-zinc-100 p-2 font-mono text-xs
-                 whitespace-pre-wrap select-text dark:bg-zinc-800">{preview}</pre>
-      {/if}
-    </div>
-
-    <div class="divider-t flex items-center gap-2 px-5 py-3">
-      <button class="btn btn-ghost text-xs" onclick={showPreview} disabled={saving}>
-        Ver SQL
-      </button>
-      <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
-      <button class="btn btn-primary" onclick={submit} disabled={saving}>
-        {existing ? "Guardar" : "Crear rol"}
-      </button>
+  <div class="mt-3">
+    <span class="label">Atributos</span>
+    <div class="mt-1 grid grid-cols-2 gap-x-4 gap-y-1.5">
+      <label class="check"><input type="checkbox" bind:checked={login} /> LOGIN</label>
+      <label class="check"><input type="checkbox" bind:checked={superuser} /> SUPERUSER</label>
+      <label class="check"><input type="checkbox" bind:checked={createdb} /> CREATEDB</label>
+      <label class="check"><input type="checkbox" bind:checked={createrole} /> CREATEROLE</label>
+      <label class="check"><input type="checkbox" bind:checked={inherit} /> INHERIT</label>
+      <label class="check"><input type="checkbox" bind:checked={replication} /> REPLICATION</label>
+      <label class="check"><input type="checkbox" bind:checked={bypassRls} /> BYPASSRLS</label>
     </div>
   </div>
-</div>
+
+  <div class="mt-3 grid grid-cols-2 gap-3">
+    <label class="flex flex-col gap-1">
+      <span class="label">Límite de conexiones</span>
+      <input class="field" bind:value={connectionLimitText} placeholder="sin límite" />
+    </label>
+    <label class="flex flex-col gap-1">
+      <span class="label">Válido hasta</span>
+      <input class="field" bind:value={validUntil} placeholder="sin vencimiento" />
+    </label>
+  </div>
+
+  <label class="mt-3 flex flex-col gap-1">
+    <span class="label">
+      Contraseña {existing ? "(vacía = no cambiarla)" : "(opcional)"}
+    </span>
+    <input class="field" type="password" bind:value={password} autocomplete="off" />
+  </label>
+
+  <label class="mt-3 flex flex-col gap-1">
+    <span class="label">Miembro de (separados por coma)</span>
+    {#if loadingMemberships}
+      <p
+        class="flex items-center gap-2 rounded-md border border-zinc-200 px-2 py-2 text-xs muted
+               dark:border-zinc-800"
+      >
+        <span class="spinner"></span>
+        Leyendo las membresías…
+      </p>
+    {:else}
+      <input class="field" bind:value={memberOfText} placeholder="lectores, escritores" />
+    {/if}
+  </label>
+
+  {#if existing}
+    <label class="check mt-2">
+      <input type="checkbox" bind:checked={adminOption} />
+      Las membresías nuevas quedan con ADMIN OPTION
+    </label>
+  {/if}
+
+  {#if error}
+    <Alert tone="bad" box class="mt-3">{error}</Alert>
+  {/if}
+
+  {#if preview}
+    <SqlPreview sql={preview} />
+  {/if}
+
+  {#snippet footer()}
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-primary" onclick={submit} disabled={saving}>
+      {#if saving}<span class="spinner"></span>{/if}
+      {existing ? "Guardar" : "Crear rol"}
+    </button>
+  {/snippet}
+</Modal>
