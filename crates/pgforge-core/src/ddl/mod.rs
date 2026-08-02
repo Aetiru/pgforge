@@ -191,7 +191,10 @@ async fn view_ddl(handle: &ServerHandle, node: &TreeNode, materialized: bool) ->
     let oid = require_oid(node)?;
     let client = handle.client(&node.database).await?;
     let row = client
-        .query_one("SELECT pg_catalog.pg_get_viewdef($1, true)", &[&oid])
+        // `::oid`: sin el cast explícito, Postgres no sabe con qué sobrecarga resolver el
+        // parámetro sin tipo —`pg_get_viewdef` tiene una versión que toma `oid` y otra que toma
+        // `text`— y termina eligiendo la de `text`, que un OID de verdad no puede satisfacer.
+        .query_one("SELECT pg_catalog.pg_get_viewdef($1::oid, true)", &[&oid])
         .await?;
     let body: String = row.get(0);
 
@@ -259,12 +262,14 @@ async fn sequence_ddl(handle: &ServerHandle, node: &TreeNode) -> Result<Ddl> {
     let client = handle.client(&node.database).await?;
     let row = client
         .query_one(
+            // `pg_get_serial_sequence` espera (tabla, columna) — `a.attrelid` es la tabla dueña de
+            // la columna que posee la secuencia, no `s.seqrelid` (la secuencia misma): pasarle el
+            // nombre de la secuencia ahí buscaría una columna suya, que nunca existe.
             "SELECT pg_catalog.format_type(s.seqtypid, NULL),
                     s.seqstart, s.seqincrement, s.seqmin, s.seqmax, s.seqcache, s.seqcycle,
                     pg_catalog.pg_get_serial_sequence(
-                        c.oid::regclass::text, a.attname)
+                        a.attrelid::regclass::text, a.attname)
                FROM pg_catalog.pg_sequence s
-               JOIN pg_catalog.pg_class c ON c.oid = s.seqrelid
                LEFT JOIN pg_catalog.pg_depend d
                       ON d.objid = s.seqrelid AND d.deptype IN ('a', 'i')
                LEFT JOIN pg_catalog.pg_attribute a

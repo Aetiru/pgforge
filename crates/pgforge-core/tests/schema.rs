@@ -36,7 +36,7 @@ CREATE TABLE {s}.clientes (
     creado    timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX clientes_activos ON {s}.clientes (nombre) WHERE estado = 'activo';
+CREATE INDEX clientes_activos_idx ON {s}.clientes (nombre) WHERE estado = 'activo';
 
 CREATE TABLE {s}.reservas (
     id      bigserial PRIMARY KEY,
@@ -225,8 +225,8 @@ async fn assertions(handle: &ServerHandle, schema_name: &str) {
     );
     assert_eq!(
         folder(&folders, Folder::Sequences).detail.as_deref(),
-        Some("2"),
-        "la secuencia propia más la del bigserial de reservas"
+        Some("3"),
+        "la secuencia propia, más la de la identidad de clientes y la del bigserial de reservas"
     );
     assert_eq!(
         folder(&folders, Folder::Types).detail.as_deref(),
@@ -272,7 +272,7 @@ async fn assertions(handle: &ServerHandle, schema_name: &str) {
 
     // Índice parcial.
     let indexes = expand(handle, folder(&clientes_folders, Folder::Indexes)).await;
-    let parcial = find(&indexes, "clientes_activos").clone();
+    let parcial = find(&indexes, "clientes_activos_idx").clone();
     let index_ddl = ddl::object_ddl(handle, &parcial).await.unwrap();
     assert_eq!(index_ddl.source, DdlSource::Catalog);
     assert!(

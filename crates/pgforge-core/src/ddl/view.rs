@@ -175,8 +175,11 @@ pub async fn apply(handle: &ServerHandle, database: &str, changes: &[ViewChange]
 /// armar el DDL completo que se muestra en el panel de detalle.
 pub async fn query_of(handle: &ServerHandle, database: &str, oid: u32) -> Result<String> {
     let client = handle.client(database).await?;
+    // `::oid`: `pg_get_viewdef` tiene una sobrecarga que toma `oid` y otra que toma `text`; sin el
+    // cast, un parámetro sin tipo declarado se resuelve contra la de `text`, que un OID de verdad
+    // no puede satisfacer. Mismo motivo que en `ddl::object_ddl`.
     let row = client
-        .query_one("SELECT pg_catalog.pg_get_viewdef($1, true)", &[&oid])
+        .query_one("SELECT pg_catalog.pg_get_viewdef($1::oid, true)", &[&oid])
         .await?;
     let body: String = row.get(0);
     Ok(body.trim_end().to_owned())

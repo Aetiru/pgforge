@@ -63,7 +63,13 @@ pub fn select(shape: &TableShape, cursor: Option<&Cursor>, limit: usize) -> Resu
     );
 
     let key = shape.key_columns();
-    let mut sql = format!("SELECT {columns} FROM {table}");
+    // El alias importa, no es cosmético: `"id"::text` sin alias explícito queda nombrada `id` en
+    // la salida, igual que la columna de origen. Un `ORDER BY id` sin calificar se ata a esa
+    // columna de salida — ya casteada a texto — y termina ordenando alfabéticamente en vez de por
+    // el tipo real (`10` antes que `9`). Calificar con `t.` fuerza la referencia a la tabla, que es
+    // lo único que ve un `WHERE` de todos modos; acá se calfica también por prolijidad y para que
+    // no dependa de esa asimetría entre cláusulas.
+    let mut sql = format!("SELECT {columns} FROM {table} AS t");
 
     match cursor {
         Some(Cursor::After { key: values }) => {
@@ -83,7 +89,7 @@ pub fn select(shape: &TableShape, cursor: Option<&Cursor>, limit: usize) -> Resu
             // La comparación va por fila entera y no columna por columna: con una clave compuesta,
             // `a > $1 AND b > $2` se saltea filas legítimas —las que tienen el mismo `a` y un `b`
             // menor— y además no puede aprovechar el índice.
-            let names = join(key.iter().map(|name| quote_ident(name)));
+            let names = join(key.iter().map(|name| format!("t.{}", quote_ident(name))));
             let placeholders = join(
                 key.iter()
                     .enumerate()
@@ -99,7 +105,7 @@ pub fn select(shape: &TableShape, cursor: Option<&Cursor>, limit: usize) -> Resu
         // mismas filas en otro orden y una fila aparecería dos veces o ninguna.
         sql.push_str(&format!(
             " ORDER BY {}",
-            join(key.iter().map(|name| quote_ident(name)))
+            join(key.iter().map(|name| format!("t.{}", quote_ident(name))))
         ));
     }
 
@@ -256,8 +262,19 @@ mod tests {
         assert_eq!(
             sql,
             "SELECT id::text, nombre::text, creado::text \
-             FROM public.clientes ORDER BY id LIMIT 200"
+             FROM public.clientes AS t ORDER BY t.id LIMIT 200"
         );
+    }
+
+    #[test]
+    fn el_order_by_se_califica_para_no_atarse_a_la_columna_ya_casteada() {
+        // Sin el alias `t.`, `ORDER BY id` se ataría a la salida `id::text` (que Postgres nombra
+        // igual que la columna de origen) y ordenaría alfabéticamente en vez de por el tipo real.
+        // Es justo el bug que este test existe para no dejar volver.
+        let sql = select(&con_clave(), None, 200).unwrap();
+        assert!(sql.contains("FROM public.clientes AS t"), "{sql}");
+        assert!(sql.contains("ORDER BY t.id"), "{sql}");
+        assert!(!sql.contains("ORDER BY id"), "{sql}");
     }
 
     #[test]
@@ -267,8 +284,8 @@ mod tests {
         };
         let sql = select(&con_clave(), Some(&cursor), 200).unwrap();
 
-        assert!(sql.contains("WHERE (id) > ($1::text::bigint)"), "{sql}");
-        assert!(sql.contains("ORDER BY id"), "{sql}");
+        assert!(sql.contains("WHERE (t.id) > ($1::text::bigint)"), "{sql}");
+        assert!(sql.contains("ORDER BY t.id"), "{sql}");
         assert!(!sql.contains("OFFSET"), "el keyset no usa OFFSET: {sql}");
     }
 
@@ -280,10 +297,10 @@ mod tests {
         let sql = select(&con_clave_compuesta(), Some(&cursor), 50).unwrap();
 
         assert!(
-            sql.contains("WHERE (id, nombre) > ($1::text::bigint, $2::text::text)"),
+            sql.contains("WHERE (t.id, t.nombre) > ($1::text::bigint, $2::text::text)"),
             "comparar columna por columna se saltea filas con el mismo id: {sql}"
         );
-        assert!(sql.contains("ORDER BY id, nombre"), "{sql}");
+        assert!(sql.contains("ORDER BY t.id, t.nombre"), "{sql}");
     }
 
     #[test]
