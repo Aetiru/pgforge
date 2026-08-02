@@ -700,6 +700,37 @@ export const viewApply = (id: string, changes: ViewChange[], database?: string) 
 export const viewQuery = (id: string, oid: number, database?: string) =>
   invoke<string>("view_query", { id, oid, database: database ?? null });
 
+// ---------------------------------------------------------------------------
+// Funciones y procedimientos
+// ---------------------------------------------------------------------------
+
+/** Ejecuta la sentencia `CREATE [OR REPLACE] FUNCTION`/`PROCEDURE` tal cual la escribió el usuario. */
+export const functionApply = (id: string, sql: string, database?: string) =>
+  invoke<void>("function_apply", { id, sql, database: database ?? null });
+
+export const functionDrop = (
+  id: string,
+  schema: string,
+  name: string,
+  args: string,
+  procedure: boolean,
+  cascade: boolean,
+  database?: string,
+) =>
+  invoke<void>("function_drop", {
+    id,
+    schema,
+    name,
+    args,
+    procedure,
+    cascade,
+    database: database ?? null,
+  });
+
+/** La lista de tipos de argumento, para armar el `DROP FUNCTION`/`DROP PROCEDURE`. */
+export const functionArgs = (id: string, oid: number, database?: string) =>
+  invoke<string>("function_args", { id, oid, database: database ?? null });
+
 export { Channel };
 
 /** `160004` se muestra como `16.4`. */

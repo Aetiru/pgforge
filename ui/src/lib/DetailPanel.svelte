@@ -1,6 +1,7 @@
 <script lang="ts">
   import ColumnDialog from "./ColumnDialog.svelte";
   import ConstraintDialog from "./ConstraintDialog.svelte";
+  import FunctionDialog from "./FunctionDialog.svelte";
   import Icon from "./Icon.svelte";
   import IndexDialog from "./IndexDialog.svelte";
   import TableDialog from "./TableDialog.svelte";
@@ -13,6 +14,8 @@
     describeError,
     folderOf,
     formatVersion,
+    functionArgs,
+    functionDrop,
     indexDrop,
     objectDdl,
     tableConstraints,
@@ -142,8 +145,16 @@
   const isMaterializedView = $derived(node?.kind === "materializedView");
   const isViewsFolder = $derived(node !== null && folderOf(node.kind) === "views");
   const isMatViewsFolder = $derived(node !== null && folderOf(node.kind) === "materializedViews");
+
+  const isFunction = $derived(node?.kind === "function");
+  const isProcedure = $derived(node?.kind === "procedure");
+  const isFunctionsFolder = $derived(node !== null && folderOf(node.kind) === "functions");
+  const isProceduresFolder = $derived(node !== null && folderOf(node.kind) === "procedures");
+
   /** Cualquiera de los botones "+" de carpeta: solo puede haber uno a la vez para un mismo nodo. */
-  const hasCreateFolderButton = $derived(isTablesFolder || isViewsFolder || isMatViewsFolder);
+  const hasCreateFolderButton = $derived(
+    isTablesFolder || isViewsFolder || isMatViewsFolder || isFunctionsFolder || isProceduresFolder,
+  );
 
   // -------------------------------------------------------------------------
   // Estructura: columnas de la tabla seleccionada
@@ -241,8 +252,10 @@
   let refreshConcurrently = $state(false);
   let refreshing = $state(false);
   let refreshError = $state<string | null>(null);
+  let functionDialog = $state<{ sql: string; isEdit: boolean } | null>(null);
   let dropTarget = $state<
-    { kind: "table" | "column" | "index" | "constraint" | "view" | "materializedView"; label: string }
+    | { kind: "table" | "column" | "index" | "constraint" | "view" | "materializedView"; label: string }
+    | { kind: "function"; schema: string; name: string; args: string; procedure: boolean }
     | null
   >(null);
   let dropCascade = $state(false);
@@ -279,6 +292,34 @@
     dropCascade = false;
     dropConcurrently = false;
     dropError = null;
+  }
+
+  /** Un punto de partida mínimo: mejor que una pantalla en blanco, sin fingir saber qué necesita. */
+  function functionSkeleton(schema: string, procedure: boolean): string {
+    return procedure
+      ? `CREATE PROCEDURE ${schema}.nombre()\nLANGUAGE plpgsql\nAS $$\nBEGIN\nEND;\n$$;`
+      : `CREATE FUNCTION ${schema}.nombre()\nRETURNS void\nLANGUAGE plpgsql\nAS $$\nBEGIN\nEND;\n$$;`;
+  }
+
+  function afterFunctionSaved() {
+    const wasCreate = functionDialog !== null && !functionDialog.isEdit;
+    functionDialog = null;
+    if (wasCreate) {
+      if (selected) explorer.reload(selected);
+    } else {
+      refreshDdl();
+    }
+  }
+
+  /** Busca la firma completa antes de confirmar: sin ella no se puede armar el DROP FUNCTION. */
+  async function askDropFunction() {
+    if (!selected || !node?.oid || !node.schema) return;
+    try {
+      const args = await functionArgs(selected.profileId, node.oid, node.database);
+      dropTarget = { kind: "function", schema: node.schema, name: node.label, args, procedure: isProcedure };
+    } catch (error) {
+      ddlError = describeError(error);
+    }
   }
 
   /** Recarga el nodo carpeta que pasó a tener un objeto nuevo, o refresca el DDL tras editarlo. */
@@ -411,6 +452,22 @@
           }
           explorer.selected = null;
           break;
+        case "function":
+          await functionDrop(
+            selected.profileId,
+            dropTarget.schema,
+            dropTarget.name,
+            dropTarget.args,
+            dropTarget.procedure,
+            dropCascade,
+            node.database,
+          );
+          {
+            const parent = parentOf(explorer.roots, selected);
+            if (parent) await explorer.reload(parent);
+          }
+          explorer.selected = null;
+          break;
       }
       closeDropDialog();
     } catch (error) {
@@ -493,6 +550,26 @@
           </button>
         {/if}
 
+        {#if isFunctionsFolder && node?.schema}
+          <button
+            class="btn ml-auto shrink-0"
+            onclick={() => (functionDialog = { sql: functionSkeleton(node!.schema!, false), isEdit: false })}
+          >
+            <Icon name="plus" size={12} />
+            Función
+          </button>
+        {/if}
+
+        {#if isProceduresFolder && node?.schema}
+          <button
+            class="btn ml-auto shrink-0"
+            onclick={() => (functionDialog = { sql: functionSkeleton(node!.schema!, true), isEdit: false })}
+          >
+            <Icon name="plus" size={12} />
+            Procedimiento
+          </button>
+        {/if}
+
         {#if dataTarget !== null && queryTarget}
           <button
             class="btn shrink-0 {hasCreateFolderButton ? '' : 'ml-auto'}"
@@ -558,6 +635,18 @@
             onclick={() => (dropTarget = { kind: "materializedView", label: node!.label })}
           >
             Eliminar vista materializada
+          </button>
+        {/if}
+
+        {#if (isFunction || isProcedure) && ddl}
+          <button
+            class="btn shrink-0"
+            onclick={() => (functionDialog = { sql: ddl!.sql, isEdit: true })}
+          >
+            Editar
+          </button>
+          <button class="btn shrink-0" onclick={askDropFunction}>
+            Eliminar {isProcedure ? "procedimiento" : "función"}
           </button>
         {/if}
 
@@ -847,6 +936,16 @@
   />
 {/if}
 
+{#if functionDialog && selected}
+  <FunctionDialog
+    profileId={selected.profileId}
+    database={node?.database ?? ""}
+    sql={functionDialog.sql}
+    onclose={() => (functionDialog = null)}
+    onsaved={afterFunctionSaved}
+  />
+{/if}
+
 {#if refreshTarget}
   <div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
     <div class="card w-full max-w-sm p-4 shadow-xl" role="alertdialog" aria-modal="true">
@@ -892,8 +991,11 @@
           ¿Eliminar la restricción {dropTarget.label}?
         {:else if dropTarget.kind === "view"}
           ¿Eliminar la vista {dropTarget.label}?
-        {:else}
+        {:else if dropTarget.kind === "materializedView"}
           ¿Eliminar la vista materializada {dropTarget.label}?
+        {:else if dropTarget.kind === "function"}
+          ¿Eliminar {dropTarget.procedure ? "el procedimiento" : "la función"}
+          {dropTarget.name}({dropTarget.args})?
         {/if}
       </p>
       {#if dropTarget.kind === "index"}

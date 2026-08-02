@@ -5,6 +5,7 @@
 //! es la que el propio servidor considera correcta. Para las tablas, que no tienen equivalente, se
 //! delega en `pg_dump`; ver [`pg_dump`] para el razonamiento.
 
+pub mod function;
 pub mod index;
 pub mod pg_dump;
 pub mod table;

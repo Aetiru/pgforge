@@ -1,5 +1,7 @@
-//! Estructura de tablas: crear, cambiar y borrar tablas, columnas, índices, constraints y vistas.
+//! Estructura de tablas: crear, cambiar y borrar tablas, columnas, índices, constraints, vistas y
+//! funciones.
 
+use pgforge_core::ddl::function;
 use pgforge_core::ddl::index::{self, IndexDef, IndexInfo};
 use pgforge_core::ddl::table::{self, ConstraintInfo, Statement, TableChange};
 use pgforge_core::ddl::view::{self, ViewChange};
@@ -126,4 +128,50 @@ pub async fn view_query(
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
     view::query_of(&handle, &database, oid).await
+}
+
+/// Ejecuta la sentencia `CREATE [OR REPLACE] FUNCTION`/`CREATE [OR REPLACE] PROCEDURE` tal cual.
+#[tauri::command]
+pub async fn function_apply(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    sql: String,
+) -> Result<()> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    function::apply(&handle, &database, &sql).await
+}
+
+/// Borra una función o un procedimiento.
+#[tauri::command]
+pub async fn function_drop(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    schema: String,
+    name: String,
+    args: String,
+    procedure: bool,
+    cascade: bool,
+) -> Result<()> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    function::drop(&handle, &database, &schema, &name, &args, procedure, cascade).await
+}
+
+/// La lista de tipos de argumento, para poder armar el `DROP FUNCTION`/`DROP PROCEDURE`.
+#[tauri::command]
+pub async fn function_args(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    oid: u32,
+) -> Result<String> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    function::identity_args(&handle, &database, oid).await
 }
