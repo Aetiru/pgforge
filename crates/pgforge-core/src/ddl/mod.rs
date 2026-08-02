@@ -5,10 +5,12 @@
 //! es la que el propio servidor considera correcta. Para las tablas, que no tienen equivalente, se
 //! delega en `pg_dump`; ver [`pg_dump`] para el razonamiento.
 
+pub mod index;
 pub mod pg_dump;
 pub mod table;
 
-pub use table::{ColumnDef, Identity, Statement as TableStatement, TableChange};
+pub use index::IndexDef;
+pub use table::{ColumnDef, ConstraintDef, Identity, RefAction, Statement as TableStatement, TableChange};
 
 use serde::{Deserialize, Serialize};
 

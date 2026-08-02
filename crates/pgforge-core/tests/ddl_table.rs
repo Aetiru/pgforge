@@ -7,8 +7,9 @@
 use std::sync::Arc;
 
 use pgforge_core::conn::{ConnectionManager, ConnectionProfile, ServerHandle};
-use pgforge_core::ddl::table::{self, ColumnDef, Identity, TableChange};
 use pgforge_core::data;
+use pgforge_core::ddl::index::{self, IndexDef};
+use pgforge_core::ddl::table::{self, ColumnDef, ConstraintDef, Identity, RefAction, TableChange};
 
 fn test_urls() -> Vec<String> {
     std::env::var("PGFORGE_TEST_URLS")
@@ -97,6 +98,8 @@ async fn crea_cambia_y_borra_una_tabla_contra_servidores_reales() {
             let schema = schema.clone();
             tokio::spawn(async move {
                 crea_la_tabla(&handle, &schema).await;
+                agrega_constraints(&handle, &schema).await;
+                crea_y_borra_indices(&handle, &schema).await;
                 cambia_columnas(&handle, &schema).await;
                 renombra_tabla_y_columna(&handle, &schema).await;
                 un_lote_fallido_no_deja_nada(&handle, &schema).await;
@@ -152,6 +155,186 @@ async fn crea_la_tabla(handle: &ServerHandle, schema: &str) {
         shape.column("activo").unwrap().default.as_deref(),
         Some("true")
     );
+}
+
+async fn agrega_constraints(handle: &ServerHandle, schema: &str) {
+    let database = handle.default_database().to_owned();
+
+    // "clientes" tiene identidad en `id` pero todavía ninguna clave declarada: sin esta constraint,
+    // la grilla de datos de la Fase 4 la abriría en solo lectura.
+    table::apply(
+        handle,
+        &database,
+        &[TableChange::AddConstraint {
+            schema: schema.to_owned(),
+            table: "clientes".into(),
+            name: "clientes_pkey".into(),
+            definition: ConstraintDef::PrimaryKey {
+                columns: vec!["id".into()],
+            },
+        }],
+    )
+    .await
+    .expect("tenía que agregar la primary key");
+
+    let oid = oid_of(handle, schema, "clientes").await.unwrap();
+    let shape = data::shape(handle, &database, oid).await.unwrap();
+    assert_eq!(shape.key_columns(), ["id"]);
+    assert!(
+        shape.editable(),
+        "una tabla con primary key tiene que quedar editable en la grilla de datos"
+    );
+
+    // Una tabla aparte para poder probar una foreign key de verdad.
+    table::apply(
+        handle,
+        &database,
+        &[
+            TableChange::CreateTable {
+                schema: schema.to_owned(),
+                name: "categorias".into(),
+                columns: vec![
+                    ColumnDef {
+                        identity: Some(Identity::Always),
+                        ..plain("id", "bigint")
+                    },
+                    plain("nombre", "text"),
+                ],
+            },
+            TableChange::AddColumn {
+                schema: schema.to_owned(),
+                table: "clientes".into(),
+                column: plain("categoria_id", "bigint"),
+            },
+        ],
+    )
+    .await
+    .expect("tenía que crear la tabla de categorías y la columna que la referencia");
+
+    table::apply(
+        handle,
+        &database,
+        &[
+            TableChange::AddConstraint {
+                schema: schema.to_owned(),
+                table: "categorias".into(),
+                name: "categorias_pkey".into(),
+                definition: ConstraintDef::PrimaryKey {
+                    columns: vec!["id".into()],
+                },
+            },
+            TableChange::AddConstraint {
+                schema: schema.to_owned(),
+                table: "clientes".into(),
+                name: "clientes_categoria_fkey".into(),
+                definition: ConstraintDef::ForeignKey {
+                    columns: vec!["categoria_id".into()],
+                    ref_schema: schema.to_owned(),
+                    ref_table: "categorias".into(),
+                    ref_columns: vec!["id".into()],
+                    on_delete: Some(RefAction::SetNull),
+                    on_update: None,
+                },
+            },
+            TableChange::AddConstraint {
+                schema: schema.to_owned(),
+                table: "clientes".into(),
+                name: "clientes_id_check".into(),
+                definition: ConstraintDef::Check {
+                    expression: "id > 0".into(),
+                },
+            },
+        ],
+    )
+    .await
+    .expect("tenía que agregar la clave de categorías, la foreign key y el check en un lote");
+
+    let listadas = table::constraints(handle, &database, oid).await.unwrap();
+    assert!(listadas.iter().any(|c| c.name == "clientes_pkey" && c.kind == "primaria"));
+    assert!(
+        listadas
+            .iter()
+            .any(|c| c.name == "clientes_categoria_fkey" && c.kind == "foránea")
+    );
+    assert!(
+        listadas
+            .iter()
+            .any(|c| c.name == "clientes_id_check" && c.kind == "verificación")
+    );
+
+    table::apply(
+        handle,
+        &database,
+        &[TableChange::DropConstraint {
+            schema: schema.to_owned(),
+            table: "clientes".into(),
+            name: "clientes_id_check".into(),
+            cascade: false,
+        }],
+    )
+    .await
+    .expect("tenía que borrar el check");
+
+    let listadas = table::constraints(handle, &database, oid).await.unwrap();
+    assert!(!listadas.iter().any(|c| c.name == "clientes_id_check"));
+}
+
+async fn crea_y_borra_indices(handle: &ServerHandle, schema: &str) {
+    let database = handle.default_database().to_owned();
+
+    index::create(
+        handle,
+        &database,
+        &IndexDef {
+            schema: schema.to_owned(),
+            table: "clientes".into(),
+            name: Some("clientes_nombre_idx".into()),
+            unique: false,
+            method: None,
+            columns: vec!["nombre".into()],
+            where_clause: None,
+            concurrently: false,
+        },
+    )
+    .await
+    .expect("tenía que crear el índice simple");
+
+    index::create(
+        handle,
+        &database,
+        &IndexDef {
+            schema: schema.to_owned(),
+            table: "clientes".into(),
+            name: Some("clientes_categoria_idx".into()),
+            unique: false,
+            method: None,
+            columns: vec!["categoria_id".into()],
+            where_clause: Some("categoria_id IS NOT NULL".into()),
+            concurrently: true,
+        },
+    )
+    .await
+    .expect("tenía que crear el índice parcial CONCURRENTLY");
+
+    let oid = oid_of(handle, schema, "clientes").await.unwrap();
+    let listados = index::indexes(handle, &database, oid).await.unwrap();
+    assert!(
+        listados
+            .iter()
+            .any(|i| i.name == "clientes_nombre_idx" && i.valid)
+    );
+    assert!(
+        listados
+            .iter()
+            .any(|i| i.name == "clientes_categoria_idx" && i.valid)
+    );
+
+    index::drop_index(handle, &database, schema, "clientes_categoria_idx", false, true)
+        .await
+        .expect("tenía que borrar el índice CONCURRENTLY");
+
+    let listados = index::indexes(handle, &database, oid).await.unwrap();
+    assert!(!listados.iter().any(|i| i.name == "clientes_categoria_idx"));
 }
 
 async fn cambia_columnas(handle: &ServerHandle, schema: &str) {

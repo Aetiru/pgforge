@@ -40,6 +40,54 @@ pub struct ColumnDef {
     pub identity: Option<Identity>,
 }
 
+/// Qué hacer con las filas del otro lado cuando la referenciada cambia o desaparece.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RefAction {
+    Cascade,
+    SetNull,
+    SetDefault,
+    Restrict,
+    NoAction,
+}
+
+impl RefAction {
+    fn sql(self) -> &'static str {
+        match self {
+            RefAction::Cascade => "CASCADE",
+            RefAction::SetNull => "SET NULL",
+            RefAction::SetDefault => "SET DEFAULT",
+            RefAction::Restrict => "RESTRICT",
+            RefAction::NoAction => "NO ACTION",
+        }
+    }
+}
+
+/// Postgres no tiene un "ALTER CONSTRAINT" que cambie su definición: se borra y se crea de nuevo,
+/// así que acá no hace falta nada parecido a `AlterColumnType`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ConstraintDef {
+    PrimaryKey {
+        columns: Vec<String>,
+    },
+    Unique {
+        columns: Vec<String>,
+    },
+    ForeignKey {
+        columns: Vec<String>,
+        ref_schema: String,
+        ref_table: String,
+        ref_columns: Vec<String>,
+        on_delete: Option<RefAction>,
+        on_update: Option<RefAction>,
+    },
+    /// SQL crudo, misma frontera de confianza que el `default` de una columna.
+    Check {
+        expression: String,
+    },
+}
+
 /// Un cambio de estructura pendiente.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -94,6 +142,18 @@ pub enum TableChange {
         table: String,
         column: String,
         default: Option<String>,
+    },
+    AddConstraint {
+        schema: String,
+        table: String,
+        name: String,
+        definition: ConstraintDef,
+    },
+    DropConstraint {
+        schema: String,
+        table: String,
+        name: String,
+        cascade: bool,
     },
 }
 
@@ -212,7 +272,77 @@ fn one(change: &TableChange) -> Result<Statement> {
                 None => "DROP DEFAULT".to_owned(),
             }
         ))),
+        TableChange::AddConstraint {
+            schema,
+            table,
+            name,
+            definition,
+        } => Ok(statement(format!(
+            "ALTER TABLE {} ADD CONSTRAINT {} {}",
+            qualified(schema, table),
+            quote_ident(name),
+            constraint_sql(definition)?
+        ))),
+        TableChange::DropConstraint {
+            schema,
+            table,
+            name,
+            cascade,
+        } => Ok(statement(format!(
+            "ALTER TABLE {} DROP CONSTRAINT {}{}",
+            qualified(schema, table),
+            quote_ident(name),
+            if *cascade { " CASCADE" } else { "" }
+        ))),
     }
+}
+
+fn constraint_sql(definition: &ConstraintDef) -> Result<String> {
+    match definition {
+        ConstraintDef::PrimaryKey { columns } => {
+            Ok(format!("PRIMARY KEY ({})", column_list(columns)?))
+        }
+        ConstraintDef::Unique { columns } => Ok(format!("UNIQUE ({})", column_list(columns)?)),
+        ConstraintDef::ForeignKey {
+            columns,
+            ref_schema,
+            ref_table,
+            ref_columns,
+            on_delete,
+            on_update,
+        } => {
+            let mut sql = format!(
+                "FOREIGN KEY ({}) REFERENCES {} ({})",
+                column_list(columns)?,
+                qualified(ref_schema, ref_table),
+                column_list(ref_columns)?
+            );
+            if let Some(action) = on_delete {
+                sql.push_str(&format!(" ON DELETE {}", action.sql()));
+            }
+            if let Some(action) = on_update {
+                sql.push_str(&format!(" ON UPDATE {}", action.sql()));
+            }
+            Ok(sql)
+        }
+        ConstraintDef::Check { expression } => {
+            if expression.trim().is_empty() {
+                return Err(Error::Config(
+                    "un CHECK necesita una expresión".to_owned(),
+                ));
+            }
+            Ok(format!("CHECK ({expression})"))
+        }
+    }
+}
+
+fn column_list(columns: &[String]) -> Result<String> {
+    if columns.is_empty() {
+        return Err(Error::Config(
+            "una constraint necesita al menos una columna".to_owned(),
+        ));
+    }
+    Ok(columns.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", "))
 }
 
 fn create_table(schema: &str, name: &str, columns: &[ColumnDef]) -> Result<Statement> {
@@ -280,6 +410,64 @@ pub async fn apply(handle: &ServerHandle, database: &str, changes: &[TableChange
 
     transaction.commit().await?;
     Ok(())
+}
+
+/// Una constraint tal como ya existe, para mostrarla y ofrecer borrarla. No hay nada que editar en
+/// el lugar: cambiarla es borrarla y agregar una nueva (ver el comentario en [`ConstraintDef`]).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConstraintInfo {
+    pub oid: u32,
+    pub name: String,
+    /// Etiqueta para mostrar ("primaria", "foránea", ...), no un valor para volver a interpretar.
+    pub kind: String,
+    pub definition: String,
+}
+
+const CONSTRAINTS_SQL: &str = "
+    SELECT con.oid,
+           con.conname::text,
+           con.contype::text,
+           pg_catalog.pg_get_constraintdef(con.oid, true)
+      FROM pg_catalog.pg_constraint con
+     WHERE con.conrelid = $1
+     ORDER BY con.conname
+";
+
+/// Las constraints que ya tiene una tabla. Misma consulta que usa el árbol para mostrarlas
+/// (`introspect::constraints`), pero en una estructura en vez de un `TreeNode` con el texto ya
+/// armado: acá hace falta el nombre y el oid por separado para poder borrarlas desde la interfaz.
+pub async fn constraints(
+    handle: &ServerHandle,
+    database: &str,
+    oid: u32,
+) -> Result<Vec<ConstraintInfo>> {
+    let client = handle.client(database).await?;
+    let rows = client.query(CONSTRAINTS_SQL, &[&oid]).await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let contype: String = row.get(2);
+            ConstraintInfo {
+                oid: row.get(0),
+                name: row.get(1),
+                kind: constraint_kind_label(&contype).to_owned(),
+                definition: row.get(3),
+            }
+        })
+        .collect())
+}
+
+fn constraint_kind_label(contype: &str) -> &'static str {
+    match contype {
+        "p" => "primaria",
+        "f" => "foránea",
+        "u" => "única",
+        "c" => "verificación",
+        "x" => "exclusión",
+        _ => "restricción",
+    }
 }
 
 #[cfg(test)]
@@ -561,5 +749,166 @@ mod tests {
             column: column("nombre", ""),
         }])
         .is_err());
+    }
+
+    #[test]
+    fn agrega_una_primary_key() {
+        let statement = one_statement(TableChange::AddConstraint {
+            schema: "public".into(),
+            table: "clientes".into(),
+            name: "clientes_pkey".into(),
+            definition: ConstraintDef::PrimaryKey {
+                columns: vec!["id".into()],
+            },
+        });
+        assert_eq!(
+            statement.sql,
+            "ALTER TABLE public.clientes ADD CONSTRAINT clientes_pkey PRIMARY KEY (id)"
+        );
+    }
+
+    #[test]
+    fn agrega_un_unique_con_clave_compuesta() {
+        let statement = one_statement(TableChange::AddConstraint {
+            schema: "public".into(),
+            table: "clientes".into(),
+            name: "clientes_codigo_key".into(),
+            definition: ConstraintDef::Unique {
+                columns: vec!["codigo".into(), "sucursal".into()],
+            },
+        });
+        assert_eq!(
+            statement.sql,
+            "ALTER TABLE public.clientes ADD CONSTRAINT clientes_codigo_key \
+             UNIQUE (codigo, sucursal)"
+        );
+    }
+
+    #[test]
+    fn agrega_una_foreign_key_con_acciones() {
+        let statement = one_statement(TableChange::AddConstraint {
+            schema: "public".into(),
+            table: "ventas".into(),
+            name: "ventas_cliente_fkey".into(),
+            definition: ConstraintDef::ForeignKey {
+                columns: vec!["cliente_id".into()],
+                ref_schema: "public".into(),
+                ref_table: "clientes".into(),
+                ref_columns: vec!["id".into()],
+                on_delete: Some(RefAction::Cascade),
+                on_update: Some(RefAction::NoAction),
+            },
+        });
+        assert_eq!(
+            statement.sql,
+            "ALTER TABLE public.ventas ADD CONSTRAINT ventas_cliente_fkey \
+             FOREIGN KEY (cliente_id) REFERENCES public.clientes (id) \
+             ON DELETE CASCADE ON UPDATE NO ACTION"
+        );
+    }
+
+    #[test]
+    fn una_foreign_key_sin_acciones_no_las_menciona() {
+        let statement = one_statement(TableChange::AddConstraint {
+            schema: "public".into(),
+            table: "ventas".into(),
+            name: "ventas_cliente_fkey".into(),
+            definition: ConstraintDef::ForeignKey {
+                columns: vec!["cliente_id".into()],
+                ref_schema: "public".into(),
+                ref_table: "clientes".into(),
+                ref_columns: vec!["id".into()],
+                on_delete: None,
+                on_update: None,
+            },
+        });
+        assert_eq!(
+            statement.sql,
+            "ALTER TABLE public.ventas ADD CONSTRAINT ventas_cliente_fkey \
+             FOREIGN KEY (cliente_id) REFERENCES public.clientes (id)"
+        );
+    }
+
+    #[test]
+    fn agrega_un_check() {
+        let statement = one_statement(TableChange::AddConstraint {
+            schema: "public".into(),
+            table: "clientes".into(),
+            name: "clientes_total_check".into(),
+            definition: ConstraintDef::Check {
+                expression: "total >= 0".into(),
+            },
+        });
+        assert_eq!(
+            statement.sql,
+            "ALTER TABLE public.clientes ADD CONSTRAINT clientes_total_check \
+             CHECK (total >= 0)"
+        );
+    }
+
+    #[test]
+    fn un_check_sin_expresion_no_se_genera() {
+        assert!(statements(&[TableChange::AddConstraint {
+            schema: "public".into(),
+            table: "clientes".into(),
+            name: "x".into(),
+            definition: ConstraintDef::Check {
+                expression: "  ".into(),
+            },
+        }])
+        .is_err());
+    }
+
+    #[test]
+    fn una_constraint_sin_columnas_no_se_genera() {
+        assert!(statements(&[TableChange::AddConstraint {
+            schema: "public".into(),
+            table: "clientes".into(),
+            name: "x".into(),
+            definition: ConstraintDef::Unique { columns: vec![] },
+        }])
+        .is_err());
+    }
+
+    #[test]
+    fn borra_una_constraint_con_y_sin_cascade() {
+        let statement = one_statement(TableChange::DropConstraint {
+            schema: "public".into(),
+            table: "clientes".into(),
+            name: "clientes_pkey".into(),
+            cascade: false,
+        });
+        assert_eq!(
+            statement.sql,
+            "ALTER TABLE public.clientes DROP CONSTRAINT clientes_pkey"
+        );
+
+        let statement = one_statement(TableChange::DropConstraint {
+            schema: "public".into(),
+            table: "clientes".into(),
+            name: "clientes_pkey".into(),
+            cascade: true,
+        });
+        assert_eq!(
+            statement.sql,
+            "ALTER TABLE public.clientes DROP CONSTRAINT clientes_pkey CASCADE"
+        );
+    }
+
+    #[test]
+    fn cita_los_nombres_de_columna_de_una_constraint() {
+        let statement = one_statement(TableChange::AddConstraint {
+            schema: "public".into(),
+            table: "clientes".into(),
+            name: "pk".into(),
+            definition: ConstraintDef::PrimaryKey {
+                columns: vec!["id de cliente".into()],
+            },
+        });
+        assert!(
+            statement.sql.contains("PRIMARY KEY (\"id de cliente\")"),
+            "{}",
+            statement.sql
+        );
     }
 }

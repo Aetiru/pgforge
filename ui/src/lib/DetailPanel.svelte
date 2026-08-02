@@ -1,6 +1,8 @@
 <script lang="ts">
   import ColumnDialog from "./ColumnDialog.svelte";
+  import ConstraintDialog from "./ConstraintDialog.svelte";
   import Icon from "./Icon.svelte";
+  import IndexDialog from "./IndexDialog.svelte";
   import TableDialog from "./TableDialog.svelte";
   import { kindLabel, lookOf } from "./badges";
   import { explorer, type Row } from "./explorer.svelte";
@@ -10,8 +12,13 @@
     describeError,
     folderOf,
     formatVersion,
+    indexDrop,
     objectDdl,
+    tableConstraints,
+    tableIndexes,
+    type ConstraintInfo,
     type Ddl,
+    type IndexInfo,
     type TableColumn,
     type TableShape,
   } from "./ipc";
@@ -135,10 +142,52 @@
     }
   }
 
+  let indexes = $state<IndexInfo[] | null>(null);
+  let indexesError = $state<string | null>(null);
+  let indexesLoading = $state(false);
+
+  async function loadIndexes() {
+    if (!isTable || !node?.oid || !selected) {
+      indexes = null;
+      return;
+    }
+    indexesLoading = true;
+    indexesError = null;
+    try {
+      indexes = await tableIndexes(selected.profileId, node.oid, node.database);
+    } catch (error) {
+      indexesError = describeError(error);
+    } finally {
+      indexesLoading = false;
+    }
+  }
+
+  let constraints = $state<ConstraintInfo[] | null>(null);
+  let constraintsError = $state<string | null>(null);
+  let constraintsLoading = $state(false);
+
+  async function loadConstraints() {
+    if (!isTable || !node?.oid || !selected) {
+      constraints = null;
+      return;
+    }
+    constraintsLoading = true;
+    constraintsError = null;
+    try {
+      constraints = await tableConstraints(selected.profileId, node.oid, node.database);
+    } catch (error) {
+      constraintsError = describeError(error);
+    } finally {
+      constraintsLoading = false;
+    }
+  }
+
   $effect(() => {
     // Depender de `node` (y no llamar directo) es lo que dispara de nuevo al cambiar de tabla.
     void node;
     loadShape();
+    loadIndexes();
+    loadConstraints();
   });
 
   /** Busca la fila del árbol que tiene a `target` entre sus hijos, para refrescarla tras un cambio. */
@@ -154,9 +203,15 @@
   }
 
   let newTable = $state(false);
+  let newIndex = $state(false);
+  let newConstraint = $state(false);
   let columnDialog = $state<{ column: TableColumn | null } | null>(null);
-  let dropTarget = $state<{ kind: "table" | "column"; label: string } | null>(null);
+  let dropTarget = $state<{ kind: "table" | "column" | "index" | "constraint"; label: string } | null>(
+    null,
+  );
   let dropCascade = $state(false);
+  /** Solo se usa para índices: CASCADE y CONCURRENTLY son mutuamente excluyentes en Postgres. */
+  let dropConcurrently = $state(false);
   let dropping = $state(false);
   let dropError = $state<string | null>(null);
 
@@ -170,38 +225,90 @@
     loadShape();
   }
 
+  function afterIndexCreated() {
+    newIndex = false;
+    loadIndexes();
+  }
+
+  function afterConstraintCreated() {
+    newConstraint = false;
+    loadConstraints();
+    // Agregar una primary key o un unique puede cambiar si la grilla de datos de la tabla es
+    // editable: se relee la forma para que ese estado no quede desactualizado en el panel.
+    loadShape();
+  }
+
+  function closeDropDialog() {
+    dropTarget = null;
+    dropCascade = false;
+    dropConcurrently = false;
+    dropError = null;
+  }
+
   async function confirmDrop() {
     if (!dropTarget || !selected || !node || !shape) return;
     dropping = true;
     dropError = null;
     try {
-      if (dropTarget.kind === "table") {
-        await ddlApply(
-          selected.profileId,
-          [{ kind: "dropTable", schema: shape.schema, name: shape.name, cascade: dropCascade }],
-          node.database,
-        );
-        const parent = parentOf(explorer.roots, selected);
-        if (parent) await explorer.reload(parent);
-        explorer.selected = null;
-      } else {
-        await ddlApply(
-          selected.profileId,
-          [
-            {
-              kind: "dropColumn",
-              schema: shape.schema,
-              table: shape.name,
-              column: dropTarget.label,
-              cascade: dropCascade,
-            },
-          ],
-          node.database,
-        );
-        await loadShape();
+      switch (dropTarget.kind) {
+        case "table":
+          await ddlApply(
+            selected.profileId,
+            [{ kind: "dropTable", schema: shape.schema, name: shape.name, cascade: dropCascade }],
+            node.database,
+          );
+          {
+            const parent = parentOf(explorer.roots, selected);
+            if (parent) await explorer.reload(parent);
+          }
+          explorer.selected = null;
+          break;
+        case "column":
+          await ddlApply(
+            selected.profileId,
+            [
+              {
+                kind: "dropColumn",
+                schema: shape.schema,
+                table: shape.name,
+                column: dropTarget.label,
+                cascade: dropCascade,
+              },
+            ],
+            node.database,
+          );
+          await loadShape();
+          break;
+        case "index":
+          await indexDrop(
+            selected.profileId,
+            shape.schema,
+            dropTarget.label,
+            dropCascade,
+            dropConcurrently,
+            node.database,
+          );
+          await loadIndexes();
+          break;
+        case "constraint":
+          await ddlApply(
+            selected.profileId,
+            [
+              {
+                kind: "dropConstraint",
+                schema: shape.schema,
+                table: shape.name,
+                name: dropTarget.label,
+                cascade: dropCascade,
+              },
+            ],
+            node.database,
+          );
+          await loadConstraints();
+          await loadShape();
+          break;
       }
-      dropTarget = null;
-      dropCascade = false;
+      closeDropDialog();
     } catch (error) {
       dropError = describeError(error);
     } finally {
@@ -382,6 +489,110 @@
             </table>
           {/if}
         </div>
+
+        <div class="card mb-5 overflow-hidden">
+          <div class="divider-b flex items-center gap-2 px-3 py-1.5">
+            <span class="text-xs font-medium">Índices</span>
+            {#if shape}
+              <button
+                class="btn btn-ghost ml-auto px-2 py-0.5 text-xs"
+                onclick={() => (newIndex = true)}
+              >
+                <Icon name="plus" size={12} />
+                Índice
+              </button>
+            {/if}
+          </div>
+
+          {#if indexesLoading}
+            <p class="px-3 py-4 text-sm muted">Leyendo índices…</p>
+          {:else if indexesError}
+            <p class="px-3 py-4 text-sm text-rose-600 dark:text-rose-400">{indexesError}</p>
+          {:else if indexes && indexes.length === 0}
+            <p class="px-3 py-4 text-sm muted">No tiene índices propios.</p>
+          {:else if indexes}
+            <table class="w-full text-left text-sm">
+              <tbody>
+                {#each indexes as index (index.oid)}
+                  <tr class="divider-t">
+                    <td class="px-3 py-1.5">
+                      {index.name}
+                      {#if index.primary}
+                        <span class="ml-1 text-xs muted">primario</span>
+                      {:else if index.unique}
+                        <span class="ml-1 text-xs muted">único</span>
+                      {/if}
+                      {#if !index.valid}
+                        <span class="ml-1 text-xs text-rose-600 dark:text-rose-400">inválido</span>
+                      {/if}
+                    </td>
+                    <td class="truncate px-3 py-1.5 font-mono text-xs muted" title={index.definition}>
+                      {index.definition}
+                    </td>
+                    <td class="px-3 py-1.5 text-right whitespace-nowrap">
+                      <button
+                        class="btn btn-ghost px-2 py-0.5 text-xs"
+                        onclick={() => (dropTarget = { kind: "index", label: index.name })}
+                      >
+                        Eliminar
+                      </button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+        </div>
+
+        <div class="card mb-5 overflow-hidden">
+          <div class="divider-b flex items-center gap-2 px-3 py-1.5">
+            <span class="text-xs font-medium">Restricciones</span>
+            {#if shape}
+              <button
+                class="btn btn-ghost ml-auto px-2 py-0.5 text-xs"
+                onclick={() => (newConstraint = true)}
+              >
+                <Icon name="plus" size={12} />
+                Restricción
+              </button>
+            {/if}
+          </div>
+
+          {#if constraintsLoading}
+            <p class="px-3 py-4 text-sm muted">Leyendo restricciones…</p>
+          {:else if constraintsError}
+            <p class="px-3 py-4 text-sm text-rose-600 dark:text-rose-400">{constraintsError}</p>
+          {:else if constraints && constraints.length === 0}
+            <p class="px-3 py-4 text-sm muted">No tiene restricciones propias.</p>
+          {:else if constraints}
+            <table class="w-full text-left text-sm">
+              <tbody>
+                {#each constraints as constraint (constraint.oid)}
+                  <tr class="divider-t">
+                    <td class="px-3 py-1.5">
+                      {constraint.name}
+                      <span class="ml-1 text-xs muted">{constraint.kind}</span>
+                    </td>
+                    <td
+                      class="truncate px-3 py-1.5 font-mono text-xs muted"
+                      title={constraint.definition}
+                    >
+                      {constraint.definition}
+                    </td>
+                    <td class="px-3 py-1.5 text-right whitespace-nowrap">
+                      <button
+                        class="btn btn-ghost px-2 py-0.5 text-xs"
+                        onclick={() => (dropTarget = { kind: "constraint", label: constraint.name })}
+                      >
+                        Eliminar
+                      </button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+        </div>
       {/if}
 
       {#if isServer && !selected.connected}
@@ -440,33 +651,60 @@
   />
 {/if}
 
+{#if newIndex && selected && shape}
+  <IndexDialog
+    profileId={selected.profileId}
+    database={node?.database ?? ""}
+    schema={shape.schema}
+    table={shape.name}
+    columns={shape.columns}
+    onclose={() => (newIndex = false)}
+    oncreated={afterIndexCreated}
+  />
+{/if}
+
+{#if newConstraint && selected && shape}
+  <ConstraintDialog
+    profileId={selected.profileId}
+    database={node?.database ?? ""}
+    schema={shape.schema}
+    table={shape.name}
+    columns={shape.columns}
+    onclose={() => (newConstraint = false)}
+    oncreated={afterConstraintCreated}
+  />
+{/if}
+
 {#if dropTarget}
   <div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
     <div class="card w-full max-w-sm p-4 shadow-xl" role="alertdialog" aria-modal="true">
       <p class="text-sm">
-        {dropTarget.kind === "table"
-          ? `¿Eliminar la tabla ${dropTarget.label}?`
-          : `¿Eliminar la columna ${dropTarget.label}?`}
+        {#if dropTarget.kind === "table"}
+          ¿Eliminar la tabla {dropTarget.label}?
+        {:else if dropTarget.kind === "column"}
+          ¿Eliminar la columna {dropTarget.label}?
+        {:else if dropTarget.kind === "index"}
+          ¿Eliminar el índice {dropTarget.label}?
+        {:else}
+          ¿Eliminar la restricción {dropTarget.label}?
+        {/if}
       </p>
-      <label class="check mt-3 text-xs">
-        <input type="checkbox" bind:checked={dropCascade} />
-        CASCADE (también borra lo que depende de esto)
-      </label>
+      {#if dropTarget.kind === "index"}
+        <label class="check mt-3 text-xs">
+          <input type="checkbox" bind:checked={dropConcurrently} />
+          CONCURRENTLY (no bloquea la tabla; no se puede combinar con CASCADE)
+        </label>
+      {:else}
+        <label class="check mt-3 text-xs">
+          <input type="checkbox" bind:checked={dropCascade} />
+          CASCADE (también borra lo que depende de esto)
+        </label>
+      {/if}
       {#if dropError}
         <p class="mt-2 text-sm text-rose-600 dark:text-rose-400">{dropError}</p>
       {/if}
       <div class="mt-4 flex justify-end gap-2">
-        <button
-          class="btn"
-          disabled={dropping}
-          onclick={() => {
-            dropTarget = null;
-            dropCascade = false;
-            dropError = null;
-          }}
-        >
-          Cancelar
-        </button>
+        <button class="btn" disabled={dropping} onclick={closeDropDialog}>Cancelar</button>
         <button class="btn btn-primary" disabled={dropping} onclick={confirmDrop}>
           Eliminar
         </button>

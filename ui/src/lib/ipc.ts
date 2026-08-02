@@ -551,6 +551,25 @@ export interface ColumnDef {
   identity: Identity | null;
 }
 
+/** Qué hacer del otro lado de una foreign key cuando la fila referenciada cambia o desaparece. */
+export type RefAction = "cascade" | "setNull" | "setDefault" | "restrict" | "noAction";
+
+/** Postgres no tiene un "ALTER CONSTRAINT": cambiarla es borrarla y agregar una nueva. */
+export type ConstraintDef =
+  | { kind: "primaryKey"; columns: string[] }
+  | { kind: "unique"; columns: string[] }
+  | {
+      kind: "foreignKey";
+      columns: string[];
+      refSchema: string;
+      refTable: string;
+      refColumns: string[];
+      onDelete: RefAction | null;
+      onUpdate: RefAction | null;
+    }
+  /** Expresión SQL cruda, misma frontera de confianza que el `default` de una columna. */
+  | { kind: "check"; expression: string };
+
 export type TableChange =
   | { kind: "createTable"; schema: string; name: string; columns: ColumnDef[] }
   | { kind: "dropTable"; schema: string; name: string; cascade: boolean }
@@ -568,7 +587,9 @@ export type TableChange =
       using: string | null;
     }
   | { kind: "setColumnNotNull"; schema: string; table: string; column: string; notNull: boolean }
-  | { kind: "setColumnDefault"; schema: string; table: string; column: string; default: string | null };
+  | { kind: "setColumnDefault"; schema: string; table: string; column: string; default: string | null }
+  | { kind: "addConstraint"; schema: string; table: string; name: string; definition: ConstraintDef }
+  | { kind: "dropConstraint"; schema: string; table: string; name: string; cascade: boolean };
 
 /** El DDL no admite parámetros: a diferencia de `PreviewStatement`, el texto ya está completo. */
 export interface DdlStatement {
@@ -580,6 +601,61 @@ export const ddlPreview = (changes: TableChange[]) =>
 
 export const ddlApply = (id: string, changes: TableChange[], database?: string) =>
   invoke<void>("ddl_apply", { id, changes, database: database ?? null });
+
+/** Una constraint tal como ya existe. Solo se puede borrar: no hay "editarla" (ver `ConstraintDef`). */
+export interface ConstraintInfo {
+  oid: number;
+  name: string;
+  /** Etiqueta para mostrar ("primaria", "foránea", ...). */
+  kind: string;
+  definition: string;
+}
+
+export const tableConstraints = (id: string, oid: number, database?: string) =>
+  invoke<ConstraintInfo[]>("table_constraints", { id, oid, database: database ?? null });
+
+export interface IndexDef {
+  schema: string;
+  table: string;
+  /** Si se deja vacío, Postgres lo nombra solo. */
+  name: string | null;
+  unique: boolean;
+  /** `btree` si se deja vacío. */
+  method: string | null;
+  columns: string[];
+  /** Predicado crudo de un índice parcial. */
+  whereClause: string | null;
+  /** No bloquea la tabla mientras se construye; no se puede combinar con un lote transaccional. */
+  concurrently: boolean;
+}
+
+export interface IndexInfo {
+  oid: number;
+  name: string;
+  definition: string;
+  primary: boolean;
+  unique: boolean;
+  /** `false` si quedó de un CREATE INDEX CONCURRENTLY que falló. */
+  valid: boolean;
+  method: string;
+}
+
+export const indexPreview = (def: IndexDef) => invoke<DdlStatement>("index_preview", { def });
+
+export const indexCreate = (id: string, def: IndexDef, database?: string) =>
+  invoke<void>("index_create", { id, def, database: database ?? null });
+
+export const indexDrop = (
+  id: string,
+  schema: string,
+  name: string,
+  cascade: boolean,
+  concurrently: boolean,
+  database?: string,
+) => invoke<void>("index_drop", { id, schema, name, cascade, concurrently, database: database ?? null });
+
+export const tableIndexes = (id: string, oid: number, database?: string) =>
+  invoke<IndexInfo[]>("table_indexes", { id, oid, database: database ?? null });
 
 export { Channel };
 
