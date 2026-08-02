@@ -1,8 +1,9 @@
 //! Estructura de tablas: crear, cambiar y borrar tablas, columnas, índices, constraints, vistas,
-//! funciones y triggers.
+//! funciones, triggers y roles.
 
 use pgforge_core::ddl::function;
 use pgforge_core::ddl::index::{self, IndexDef, IndexInfo};
+use pgforge_core::ddl::role::{self, RoleChange, RoleInfo};
 use pgforge_core::ddl::table::{self, ConstraintInfo, Statement, TableChange};
 use pgforge_core::ddl::trigger::{self, TriggerChange, TriggerInfo};
 use pgforge_core::ddl::view::{self, ViewChange};
@@ -209,4 +210,52 @@ pub async fn table_triggers(
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
     trigger::triggers(&handle, &database, oid).await
+}
+
+/// El SQL que se ejecutaría, sin ejecutar nada.
+#[tauri::command]
+pub fn role_preview(changes: Vec<RoleChange>) -> Result<Vec<Statement>> {
+    role::statements(&changes)
+}
+
+/// Aplica los cambios pendientes en una sola transacción.
+#[tauri::command]
+pub async fn role_apply(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    changes: Vec<RoleChange>,
+) -> Result<()> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    role::apply(&handle, &database, &changes).await
+}
+
+/// El rol tal como ya existe, para precargar el diálogo de edición.
+#[tauri::command]
+pub async fn role_info(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    oid: u32,
+) -> Result<RoleInfo> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    role::role(&handle, &database, oid).await
+}
+
+/// De qué roles es miembro, para precargar "miembro de" en el diálogo de edición.
+#[tauri::command]
+pub async fn role_memberships(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    name: String,
+) -> Result<Vec<String>> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    role::role_memberships(&handle, &database, &name).await
 }

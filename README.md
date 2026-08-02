@@ -20,7 +20,7 @@ de forma incremental y cada etapa entrega algo usable por sí sola:
 | 3 | Editor SQL + EXPLAIN | listo |
 | 4 | Grilla de datos editable | listo |
 | 5 | Gestión de objetos DDL | listo |
-| 6 | Roles y permisos | siguiente |
+| 6 | Roles y permisos | en curso (roles: listo; GRANT/REVOKE y Row-Level Security: pendiente) |
 | 7+ | Backup/restore, replicación, configuración del servidor | pendiente |
 
 La visión completa está en [`plan-proyecto-pgtool-rust.md`](plan-proyecto-pgtool-rust.md).

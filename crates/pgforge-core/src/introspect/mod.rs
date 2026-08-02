@@ -29,12 +29,17 @@ pub async fn children(
     options: TreeOptions,
 ) -> Result<Vec<TreeNode>> {
     let Some(parent) = parent else {
-        return databases(handle).await;
+        // "Roles" es del clúster entero, así que va como hermana de las bases en la raíz y no
+        // colgando de ninguna de ellas.
+        let mut nodes = vec![roles_folder(handle, options).await?];
+        nodes.extend(databases(handle).await?);
+        return Ok(nodes);
     };
 
     match parent.kind {
         NodeKind::Database => Ok(vec![schemas_folder(handle, parent, options).await?]),
         NodeKind::Folder(Folder::Schemas) => schemas(handle, parent, options).await,
+        NodeKind::Folder(Folder::Roles) => roles(handle, parent, options).await,
         NodeKind::Schema => schema_folders(handle, parent).await,
         NodeKind::Folder(folder) => objects(handle, parent, folder).await,
         NodeKind::Table
@@ -55,6 +60,50 @@ async fn databases(handle: &ServerHandle) -> Result<Vec<TreeNode>> {
             let mut node = TreeNode::database(db.name);
             node.detail = Some(db.owner);
             node
+        })
+        .collect())
+}
+
+/// La carpeta "Roles", hermana de las bases en la raíz. Cualquier base sirve para leerla: los
+/// roles son del clúster, no de una base en particular.
+async fn roles_folder(handle: &ServerHandle, options: TreeOptions) -> Result<TreeNode> {
+    let database = handle.default_database();
+    let client = handle.client(database).await?;
+    let row = client
+        .query_one(
+            "SELECT count(*)::int8 FROM pg_catalog.pg_roles r
+              WHERE $1 OR r.rolname NOT LIKE 'pg\\_%'",
+            &[&options.show_system_schemas],
+        )
+        .await?;
+    Ok(TreeNode::root_folder(database, Folder::Roles, row.get(0)))
+}
+
+/// Los roles internos de Postgres (`pg_signal_backend` y el resto de los predefinidos) se ocultan
+/// con el mismo interruptor que ya oculta `pg_catalog`/`information_schema`, en vez de agregar una
+/// opción nueva.
+async fn roles(handle: &ServerHandle, parent: &TreeNode, options: TreeOptions) -> Result<Vec<TreeNode>> {
+    let client = handle.client(&parent.database).await?;
+    let rows = client
+        .query(
+            "SELECT r.oid, r.rolname::text, r.rolcanlogin, r.rolsuper
+               FROM pg_catalog.pg_roles r
+              WHERE $1 OR r.rolname NOT LIKE 'pg\\_%'
+              ORDER BY r.rolname",
+            &[&options.show_system_schemas],
+        )
+        .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let can_login: bool = row.get(2);
+            let is_super: bool = row.get(3);
+            let mut detail = if can_login { "login" } else { "grupo" }.to_owned();
+            if is_super {
+                detail.push_str(" · superusuario");
+            }
+            TreeNode::object(parent, NodeKind::Role, row.get(0), row.get(1), Some(detail), false)
         })
         .collect())
 }
@@ -175,7 +224,9 @@ async fn objects(
         Folder::Indexes => indexes(handle, parent).await,
         Folder::Constraints => constraints(handle, parent).await,
         Folder::Triggers => triggers(handle, parent).await,
-        Folder::Schemas => Ok(Vec::new()),
+        // Se resuelven antes, en el `match` de `children()`: `Schemas` no tiene un padre de este
+        // tipo, y `Roles` va por su propia función porque no cuelga de una base.
+        Folder::Schemas | Folder::Roles => Ok(Vec::new()),
     }
 }
 

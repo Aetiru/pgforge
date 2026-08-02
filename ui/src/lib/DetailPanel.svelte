@@ -4,6 +4,7 @@
   import FunctionDialog from "./FunctionDialog.svelte";
   import Icon from "./Icon.svelte";
   import IndexDialog from "./IndexDialog.svelte";
+  import RoleDialog from "./RoleDialog.svelte";
   import TableDialog from "./TableDialog.svelte";
   import TriggerDialog from "./TriggerDialog.svelte";
   import ViewDialog from "./ViewDialog.svelte";
@@ -19,6 +20,8 @@
     functionDrop,
     indexDrop,
     objectDdl,
+    roleApply,
+    roleInfo,
     tableConstraints,
     tableIndexes,
     tableTriggers,
@@ -27,6 +30,7 @@
     type ConstraintInfo,
     type Ddl,
     type IndexInfo,
+    type RoleInfo,
     type TableColumn,
     type TableShape,
     type TriggerInfo,
@@ -155,9 +159,18 @@
   const isFunctionsFolder = $derived(node !== null && folderOf(node.kind) === "functions");
   const isProceduresFolder = $derived(node !== null && folderOf(node.kind) === "procedures");
 
+  const isRole = $derived(node?.kind === "role");
+  /** La única carpeta que no cuelga de una base: es hermana de todas ellas en la raíz. */
+  const isRolesFolder = $derived(node !== null && folderOf(node.kind) === "roles");
+
   /** Cualquiera de los botones "+" de carpeta: solo puede haber uno a la vez para un mismo nodo. */
   const hasCreateFolderButton = $derived(
-    isTablesFolder || isViewsFolder || isMatViewsFolder || isFunctionsFolder || isProceduresFolder,
+    isTablesFolder ||
+      isViewsFolder ||
+      isMatViewsFolder ||
+      isFunctionsFolder ||
+      isProceduresFolder ||
+      isRolesFolder,
   );
 
   // -------------------------------------------------------------------------
@@ -279,9 +292,18 @@
   let refreshError = $state<string | null>(null);
   let functionDialog = $state<{ sql: string; isEdit: boolean } | null>(null);
   let triggerDialog = $state<{ existing: TriggerInfo | null } | null>(null);
+  let roleDialog = $state<{ existing: RoleInfo | null } | null>(null);
   let dropTarget = $state<
     | {
-        kind: "table" | "column" | "index" | "constraint" | "view" | "materializedView" | "trigger";
+        kind:
+          | "table"
+          | "column"
+          | "index"
+          | "constraint"
+          | "view"
+          | "materializedView"
+          | "trigger"
+          | "role";
         label: string;
       }
     | { kind: "function"; schema: string; name: string; args: string; procedure: boolean }
@@ -311,6 +333,33 @@
   function afterTriggerSaved() {
     triggerDialog = null;
     loadTriggers();
+  }
+
+  /** Trae el rol tal como ya existe antes de abrir la edición: acá no hay nada precargado, a
+   * diferencia de una columna, que ya viene con `shape`. */
+  async function openEditRole() {
+    if (!selected || !node?.oid) return;
+    try {
+      const info = await roleInfo(selected.profileId, node.oid, node.database);
+      roleDialog = { existing: info };
+    } catch (error) {
+      ddlError = describeError(error);
+    }
+  }
+
+  function afterRoleSaved() {
+    const wasCreate = roleDialog !== null && roleDialog.existing === null;
+    roleDialog = null;
+    if (!selected) return;
+    if (wasCreate) {
+      explorer.reload(selected);
+    } else {
+      // Renombrar cambia lo que el árbol muestra: se recarga la carpeta "Roles" y se limpia la
+      // selección, porque la fila que estaba elegida ya no coincide con el rol que quedó.
+      const parent = parentOf(explorer.roots, selected);
+      if (parent) explorer.reload(parent);
+      explorer.selected = null;
+    }
   }
 
   const TIMING_LABEL: Record<TriggerInfo["timing"], string> = {
@@ -535,6 +584,14 @@
           }
           explorer.selected = null;
           break;
+        case "role":
+          await roleApply(selected.profileId, [{ kind: "dropRole", name: dropTarget.label }], node.database);
+          {
+            const parent = parentOf(explorer.roots, selected);
+            if (parent) await explorer.reload(parent);
+          }
+          explorer.selected = null;
+          break;
       }
       closeDropDialog();
     } catch (error) {
@@ -637,6 +694,13 @@
           </button>
         {/if}
 
+        {#if isRolesFolder}
+          <button class="btn ml-auto shrink-0" onclick={() => (roleDialog = { existing: null })}>
+            <Icon name="plus" size={12} />
+            Rol
+          </button>
+        {/if}
+
         {#if dataTarget !== null && queryTarget}
           <button
             class="btn shrink-0 {hasCreateFolderButton ? '' : 'ml-auto'}"
@@ -714,6 +778,16 @@
           </button>
           <button class="btn shrink-0" onclick={askDropFunction}>
             Eliminar {isProcedure ? "procedimiento" : "función"}
+          </button>
+        {/if}
+
+        {#if isRole}
+          <button class="btn shrink-0" onclick={openEditRole}>Editar</button>
+          <button
+            class="btn shrink-0"
+            onclick={() => (dropTarget = { kind: "role", label: selected.label })}
+          >
+            Eliminar rol
           </button>
         {/if}
 
@@ -1078,6 +1152,16 @@
   />
 {/if}
 
+{#if roleDialog && selected}
+  <RoleDialog
+    profileId={selected.profileId}
+    database={node?.database ?? ""}
+    existing={roleDialog.existing}
+    onclose={() => (roleDialog = null)}
+    onsaved={afterRoleSaved}
+  />
+{/if}
+
 {#if refreshTarget}
   <div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
     <div class="card w-full max-w-sm p-4 shadow-xl" role="alertdialog" aria-modal="true">
@@ -1130,6 +1214,8 @@
         {:else if dropTarget.kind === "function"}
           ¿Eliminar {dropTarget.procedure ? "el procedimiento" : "la función"}
           {dropTarget.name}({dropTarget.args})?
+        {:else if dropTarget.kind === "role"}
+          ¿Eliminar el rol {dropTarget.label}?
         {/if}
       </p>
       {#if dropTarget.kind === "index"}
@@ -1137,7 +1223,7 @@
           <input type="checkbox" bind:checked={dropConcurrently} />
           CONCURRENTLY (no bloquea la tabla; no se puede combinar con CASCADE)
         </label>
-      {:else}
+      {:else if dropTarget.kind !== "role"}
         <label class="check mt-3 text-xs">
           <input type="checkbox" bind:checked={dropCascade} />
           CASCADE (también borra lo que depende de esto)

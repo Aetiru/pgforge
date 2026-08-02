@@ -19,6 +19,7 @@ const CODE = "text-violet-600 dark:text-violet-400";
 const INTEGRITY = "text-rose-500 dark:text-rose-400";
 const VALUE = "text-amber-600 dark:text-amber-400";
 const STRUCTURE = "text-zinc-400 dark:text-zinc-500";
+const SECURITY = "text-cyan-600 dark:text-cyan-400";
 
 export function lookOf(kind: NodeKind | null): NodeLook {
   if (kind === null) return { icon: "server", tone: STRUCTURE };
@@ -55,6 +56,8 @@ export function lookOf(kind: NodeKind | null): NodeLook {
       return { icon: "constraint", tone: INTEGRITY };
     case "trigger":
       return { icon: "trigger", tone: CODE };
+    case "role":
+      return { icon: "role", tone: SECURITY };
     default:
       return { icon: "folder", tone: STRUCTURE };
   }
@@ -81,6 +84,7 @@ export function kindLabel(kind: NodeKind | null): string {
     index: "Índice",
     constraint: "Restricción",
     trigger: "Disparador",
+    role: "Rol",
   };
   return names[kind as string] ?? String(kind);
 }

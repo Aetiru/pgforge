@@ -23,6 +23,8 @@ pub enum NodeKind {
     Index,
     Constraint,
     Trigger,
+    /// Del clúster entero, no de una base: vive como hermano de las bases en la raíz del árbol.
+    Role,
 }
 
 /// Agrupaciones que se muestran como carpetas.
@@ -42,6 +44,8 @@ pub enum Folder {
     Indexes,
     Constraints,
     Triggers,
+    /// Del clúster entero: única carpeta que aparece en la raíz, junto a las bases.
+    Roles,
 }
 
 impl Folder {
@@ -60,6 +64,7 @@ impl Folder {
             Folder::Indexes => "Índices",
             Folder::Constraints => "Restricciones",
             Folder::Triggers => "Disparadores",
+            Folder::Roles => "Roles",
         }
     }
 
@@ -79,6 +84,7 @@ impl Folder {
             Folder::Indexes => "indexes",
             Folder::Constraints => "constraints",
             Folder::Triggers => "triggers",
+            Folder::Roles => "roles",
         }
     }
 }
@@ -120,6 +126,23 @@ impl TreeNode {
             kind: NodeKind::Database,
             has_children: true,
             database: name,
+            schema: None,
+            oid: None,
+            comment: None,
+        }
+    }
+
+    /// Una carpeta sin padre: hace falta para "Roles", que no cuelga de ninguna base sino que es
+    /// hermana de todas ellas en la raíz. `database` es la que se usa para conectar y leer el
+    /// catálogo — cualquiera sirve, `pg_roles` se ve igual desde todas.
+    pub(crate) fn root_folder(database: impl Into<String>, folder: Folder, count: i64) -> Self {
+        Self {
+            id: format!("f:{}", folder.slug()),
+            label: folder.label().to_owned(),
+            detail: Some(count.to_string()),
+            kind: NodeKind::Folder(folder),
+            has_children: count > 0,
+            database: database.into(),
             schema: None,
             oid: None,
             comment: None,

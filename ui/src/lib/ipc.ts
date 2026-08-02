@@ -64,7 +64,8 @@ export type FolderKind =
   | "columns"
   | "indexes"
   | "constraints"
-  | "triggers";
+  | "triggers"
+  | "roles";
 
 export type NodeKind =
   | "database"
@@ -82,6 +83,7 @@ export type NodeKind =
   | "index"
   | "constraint"
   | "trigger"
+  | "role"
   | { folder: FolderKind };
 
 export interface TreeNode {
@@ -772,6 +774,59 @@ export const triggerApply = (id: string, changes: TriggerChange[], database?: st
 
 export const tableTriggers = (id: string, oid: number, database?: string) =>
   invoke<TriggerInfo[]>("table_triggers", { id, oid, database: database ?? null });
+
+// ---------------------------------------------------------------------------
+// Roles
+// ---------------------------------------------------------------------------
+
+/** `undefined`/ausente en un campo significa "no tocar": para crear se manda todo, para editar solo lo que cambió. */
+export interface RoleAttributes {
+  superuser?: boolean;
+  createdb?: boolean;
+  createrole?: boolean;
+  inherit?: boolean;
+  login?: boolean;
+  replication?: boolean;
+  bypassRls?: boolean;
+  connectionLimit?: number;
+  /** `undefined` en edición: Postgres nunca devuelve la contraseña, así que no hay con qué precargarla. */
+  password?: string;
+  validUntil?: string;
+}
+
+export type RoleChange =
+  | { kind: "createRole"; name: string; attributes: RoleAttributes; memberOf: string[] }
+  | { kind: "alterRole"; name: string; attributes: RoleAttributes }
+  | { kind: "renameRole"; name: string; newName: string }
+  | { kind: "dropRole"; name: string }
+  | { kind: "grantMembership"; role: string; member: string; adminOption: boolean }
+  | { kind: "revokeMembership"; role: string; member: string };
+
+export interface RoleInfo {
+  oid: number;
+  name: string;
+  superuser: boolean;
+  createdb: boolean;
+  createrole: boolean;
+  inherit: boolean;
+  login: boolean;
+  replication: boolean;
+  bypassRls: boolean;
+  connectionLimit: number;
+  validUntil: string | null;
+}
+
+export const rolePreview = (changes: RoleChange[]) =>
+  invoke<DdlStatement[]>("role_preview", { changes });
+
+export const roleApply = (id: string, changes: RoleChange[], database?: string) =>
+  invoke<void>("role_apply", { id, changes, database: database ?? null });
+
+export const roleInfo = (id: string, oid: number, database?: string) =>
+  invoke<RoleInfo>("role_info", { id, oid, database: database ?? null });
+
+export const roleMemberships = (id: string, name: string, database?: string) =>
+  invoke<string[]>("role_memberships", { id, name, database: database ?? null });
 
 export { Channel };
 

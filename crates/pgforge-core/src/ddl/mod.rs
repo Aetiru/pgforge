@@ -8,6 +8,7 @@
 pub mod function;
 pub mod index;
 pub mod pg_dump;
+pub mod role;
 pub mod table;
 pub mod trigger;
 pub mod view;
@@ -152,10 +153,17 @@ pub async fn object_ddl(handle: &ServerHandle, node: &TreeNode) -> Result<Ddl> {
         NodeKind::Type => type_ddl(handle, node).await,
         NodeKind::Column => column_ddl(handle, node).await,
         NodeKind::Schema => schema_ddl(handle, node).await,
+        NodeKind::Role => role_ddl(handle, node).await,
         NodeKind::Database | NodeKind::Folder(_) => {
             Err(Error::Config("este nodo no tiene un DDL propio".to_owned()))
         }
     }
+}
+
+async fn role_ddl(handle: &ServerHandle, node: &TreeNode) -> Result<Ddl> {
+    let oid = require_oid(node)?;
+    let info = role::role(handle, &node.database, oid).await?;
+    Ok(Ddl::catalog(role::describe(&info)))
 }
 
 async fn table_ddl(handle: &ServerHandle, node: &TreeNode) -> Result<Ddl> {
