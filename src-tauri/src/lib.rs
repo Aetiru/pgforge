@@ -57,6 +57,9 @@ pub fn run() {
             commands::ddl::index_create,
             commands::ddl::index_drop,
             commands::ddl::table_indexes,
+            commands::ddl::view_preview,
+            commands::ddl::view_apply,
+            commands::ddl::view_query,
             commands::query::explain_warning,
         ])
         .run(tauri::generate_context!())

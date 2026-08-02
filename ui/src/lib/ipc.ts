@@ -657,6 +657,49 @@ export const indexDrop = (
 export const tableIndexes = (id: string, oid: number, database?: string) =>
   invoke<IndexInfo[]>("table_indexes", { id, oid, database: database ?? null });
 
+// ---------------------------------------------------------------------------
+// Vistas
+// ---------------------------------------------------------------------------
+
+export type ViewChange =
+  | {
+      kind: "createView";
+      schema: string;
+      name: string;
+      columns: string[];
+      query: string;
+      /** `CREATE OR REPLACE VIEW` en vez de `CREATE VIEW`. */
+      replace: boolean;
+    }
+  | { kind: "dropView"; schema: string; name: string; cascade: boolean }
+  | {
+      kind: "createMaterializedView";
+      schema: string;
+      name: string;
+      columns: string[];
+      query: string;
+      /** `false` deja la vista vacía hasta el próximo refresh (`WITH NO DATA`). */
+      withData: boolean;
+    }
+  | { kind: "dropMaterializedView"; schema: string; name: string; cascade: boolean }
+  | {
+      kind: "refreshMaterializedView";
+      schema: string;
+      name: string;
+      /** No bloquea a los lectores mientras se refresca; necesita un índice único. */
+      concurrently: boolean;
+    };
+
+export const viewPreview = (changes: ViewChange[]) =>
+  invoke<DdlStatement[]>("view_preview", { changes });
+
+export const viewApply = (id: string, changes: ViewChange[], database?: string) =>
+  invoke<void>("view_apply", { id, changes, database: database ?? null });
+
+/** El cuerpo del SELECT, sin el `CREATE VIEW ... AS` alrededor: para precargar el editor. */
+export const viewQuery = (id: string, oid: number, database?: string) =>
+  invoke<string>("view_query", { id, oid, database: database ?? null });
+
 export { Channel };
 
 /** `160004` se muestra como `16.4`. */

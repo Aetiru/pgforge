@@ -4,6 +4,7 @@
   import Icon from "./Icon.svelte";
   import IndexDialog from "./IndexDialog.svelte";
   import TableDialog from "./TableDialog.svelte";
+  import ViewDialog from "./ViewDialog.svelte";
   import { kindLabel, lookOf } from "./badges";
   import { explorer, type Row } from "./explorer.svelte";
   import {
@@ -16,6 +17,7 @@
     objectDdl,
     tableConstraints,
     tableIndexes,
+    viewApply,
     type ConstraintInfo,
     type Ddl,
     type IndexInfo,
@@ -83,6 +85,24 @@
     };
   });
 
+  /**
+   * Re-lee el DDL del nodo actual sin esperar a que cambie de nodo. Hace falta después de editar
+   * una vista: el nodo sigue siendo el mismo, así que el efecto de arriba no se vuelve a disparar
+   * solo.
+   */
+  async function refreshDdl() {
+    if (!node || !hasDdl || !selected) return;
+    loading = true;
+    ddlError = null;
+    try {
+      ddl = await objectDdl(selected.profileId, node);
+    } catch (error) {
+      ddlError = describeError(error);
+    } finally {
+      loading = false;
+    }
+  }
+
   async function copy() {
     if (!ddl) return;
     await navigator.clipboard.writeText(ddl.sql);
@@ -117,6 +137,13 @@
   const isTable = $derived(node?.kind === "table" || node?.kind === "partitionedTable");
   /** El nodo carpeta "Tablas" de un esquema, donde vive el botón para crear una tabla nueva. */
   const isTablesFolder = $derived(node !== null && folderOf(node.kind) === "tables");
+
+  const isView = $derived(node?.kind === "view");
+  const isMaterializedView = $derived(node?.kind === "materializedView");
+  const isViewsFolder = $derived(node !== null && folderOf(node.kind) === "views");
+  const isMatViewsFolder = $derived(node !== null && folderOf(node.kind) === "materializedViews");
+  /** Cualquiera de los botones "+" de carpeta: solo puede haber uno a la vez para un mismo nodo. */
+  const hasCreateFolderButton = $derived(isTablesFolder || isViewsFolder || isMatViewsFolder);
 
   // -------------------------------------------------------------------------
   // Estructura: columnas de la tabla seleccionada
@@ -206,9 +233,18 @@
   let newIndex = $state(false);
   let newConstraint = $state(false);
   let columnDialog = $state<{ column: TableColumn | null } | null>(null);
-  let dropTarget = $state<{ kind: "table" | "column" | "index" | "constraint"; label: string } | null>(
-    null,
-  );
+  let viewDialog = $state<{
+    materialized: boolean;
+    existing: { oid: number; name: string } | null;
+  } | null>(null);
+  let refreshTarget = $state<{ schema: string; name: string } | null>(null);
+  let refreshConcurrently = $state(false);
+  let refreshing = $state(false);
+  let refreshError = $state<string | null>(null);
+  let dropTarget = $state<
+    { kind: "table" | "column" | "index" | "constraint" | "view" | "materializedView"; label: string }
+    | null
+  >(null);
   let dropCascade = $state(false);
   /** Solo se usa para índices: CASCADE y CONCURRENTLY son mutuamente excluyentes en Postgres. */
   let dropConcurrently = $state(false);
@@ -245,8 +281,45 @@
     dropError = null;
   }
 
+  /** Recarga el nodo carpeta que pasó a tener un objeto nuevo, o refresca el DDL tras editarlo. */
+  function afterViewSaved() {
+    const wasCreate = viewDialog !== null && viewDialog.existing === null;
+    viewDialog = null;
+    if (wasCreate) {
+      if (selected) explorer.reload(selected);
+    } else {
+      refreshDdl();
+    }
+  }
+
+  async function confirmRefresh() {
+    if (!refreshTarget || !selected) return;
+    refreshing = true;
+    refreshError = null;
+    try {
+      await viewApply(
+        selected.profileId,
+        [
+          {
+            kind: "refreshMaterializedView",
+            schema: refreshTarget.schema,
+            name: refreshTarget.name,
+            concurrently: refreshConcurrently,
+          },
+        ],
+        node?.database,
+      );
+      refreshTarget = null;
+      refreshConcurrently = false;
+    } catch (error) {
+      refreshError = describeError(error);
+    } finally {
+      refreshing = false;
+    }
+  }
+
   async function confirmDrop() {
-    if (!dropTarget || !selected || !node || !shape) return;
+    if (!dropTarget || !selected || !node) return;
     dropping = true;
     dropError = null;
     try {
@@ -254,7 +327,7 @@
         case "table":
           await ddlApply(
             selected.profileId,
-            [{ kind: "dropTable", schema: shape.schema, name: shape.name, cascade: dropCascade }],
+            [{ kind: "dropTable", schema: shape!.schema, name: shape!.name, cascade: dropCascade }],
             node.database,
           );
           {
@@ -269,8 +342,8 @@
             [
               {
                 kind: "dropColumn",
-                schema: shape.schema,
-                table: shape.name,
+                schema: shape!.schema,
+                table: shape!.name,
                 column: dropTarget.label,
                 cascade: dropCascade,
               },
@@ -282,7 +355,7 @@
         case "index":
           await indexDrop(
             selected.profileId,
-            shape.schema,
+            shape!.schema,
             dropTarget.label,
             dropCascade,
             dropConcurrently,
@@ -296,8 +369,8 @@
             [
               {
                 kind: "dropConstraint",
-                schema: shape.schema,
-                table: shape.name,
+                schema: shape!.schema,
+                table: shape!.name,
                 name: dropTarget.label,
                 cascade: dropCascade,
               },
@@ -306,6 +379,37 @@
           );
           await loadConstraints();
           await loadShape();
+          break;
+        case "view":
+          await viewApply(
+            selected.profileId,
+            [{ kind: "dropView", schema: node.schema!, name: dropTarget.label, cascade: dropCascade }],
+            node.database,
+          );
+          {
+            const parent = parentOf(explorer.roots, selected);
+            if (parent) await explorer.reload(parent);
+          }
+          explorer.selected = null;
+          break;
+        case "materializedView":
+          await viewApply(
+            selected.profileId,
+            [
+              {
+                kind: "dropMaterializedView",
+                schema: node.schema!,
+                name: dropTarget.label,
+                cascade: dropCascade,
+              },
+            ],
+            node.database,
+          );
+          {
+            const parent = parentOf(explorer.roots, selected);
+            if (parent) await explorer.reload(parent);
+          }
+          explorer.selected = null;
           break;
       }
       closeDropDialog();
@@ -369,9 +473,29 @@
           </button>
         {/if}
 
+        {#if isViewsFolder && node?.schema}
+          <button
+            class="btn ml-auto shrink-0"
+            onclick={() => (viewDialog = { materialized: false, existing: null })}
+          >
+            <Icon name="plus" size={12} />
+            Vista
+          </button>
+        {/if}
+
+        {#if isMatViewsFolder && node?.schema}
+          <button
+            class="btn ml-auto shrink-0"
+            onclick={() => (viewDialog = { materialized: true, existing: null })}
+          >
+            <Icon name="plus" size={12} />
+            Vista materializada
+          </button>
+        {/if}
+
         {#if dataTarget !== null && queryTarget}
           <button
-            class="btn shrink-0 {isTablesFolder ? '' : 'ml-auto'}"
+            class="btn shrink-0 {hasCreateFolderButton ? '' : 'ml-auto'}"
             title={`Abre los datos de ${selected.label}`}
             onclick={() => ondata(selected.profileId, queryTarget.database, queryTarget.title, dataTarget)}
           >
@@ -382,7 +506,7 @@
 
         {#if queryTarget}
           <button
-            class="btn shrink-0 {dataTarget === null && !isTablesFolder ? 'ml-auto' : ''}"
+            class="btn shrink-0 {dataTarget === null && !hasCreateFolderButton ? 'ml-auto' : ''}"
             title={`Abre una consulta contra ${queryTarget.database}`}
             onclick={() =>
               onquery(selected.profileId, queryTarget.database, queryTarget.title)}
@@ -398,6 +522,42 @@
             onclick={() => (dropTarget = { kind: "table", label: shape!.name })}
           >
             Eliminar tabla
+          </button>
+        {/if}
+
+        {#if isView && node}
+          <button
+            class="btn shrink-0"
+            onclick={() => (viewDialog = { materialized: false, existing: { oid: node!.oid!, name: node!.label } })}
+          >
+            Editar
+          </button>
+          <button
+            class="btn shrink-0"
+            onclick={() => (dropTarget = { kind: "view", label: node!.label })}
+          >
+            Eliminar vista
+          </button>
+        {/if}
+
+        {#if isMaterializedView && node}
+          <button
+            class="btn shrink-0"
+            onclick={() => (viewDialog = { materialized: true, existing: { oid: node!.oid!, name: node!.label } })}
+          >
+            Editar
+          </button>
+          <button
+            class="btn shrink-0"
+            onclick={() => (refreshTarget = { schema: node!.schema!, name: node!.label })}
+          >
+            Refrescar
+          </button>
+          <button
+            class="btn shrink-0"
+            onclick={() => (dropTarget = { kind: "materializedView", label: node!.label })}
+          >
+            Eliminar vista materializada
           </button>
         {/if}
 
@@ -675,6 +835,49 @@
   />
 {/if}
 
+{#if viewDialog && selected && node?.schema}
+  <ViewDialog
+    profileId={selected.profileId}
+    database={node.database}
+    schema={node.schema}
+    materialized={viewDialog.materialized}
+    existing={viewDialog.existing}
+    onclose={() => (viewDialog = null)}
+    onsaved={afterViewSaved}
+  />
+{/if}
+
+{#if refreshTarget}
+  <div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
+    <div class="card w-full max-w-sm p-4 shadow-xl" role="alertdialog" aria-modal="true">
+      <p class="text-sm">¿Refrescar {refreshTarget.name}?</p>
+      <label class="check mt-3 text-xs">
+        <input type="checkbox" bind:checked={refreshConcurrently} />
+        CONCURRENTLY (no bloquea a los lectores; necesita un índice único)
+      </label>
+      {#if refreshError}
+        <p class="mt-2 text-sm text-rose-600 dark:text-rose-400">{refreshError}</p>
+      {/if}
+      <div class="mt-4 flex justify-end gap-2">
+        <button
+          class="btn"
+          disabled={refreshing}
+          onclick={() => {
+            refreshTarget = null;
+            refreshConcurrently = false;
+            refreshError = null;
+          }}
+        >
+          Cancelar
+        </button>
+        <button class="btn btn-primary" disabled={refreshing} onclick={confirmRefresh}>
+          Refrescar
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 {#if dropTarget}
   <div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
     <div class="card w-full max-w-sm p-4 shadow-xl" role="alertdialog" aria-modal="true">
@@ -685,8 +888,12 @@
           ¿Eliminar la columna {dropTarget.label}?
         {:else if dropTarget.kind === "index"}
           ¿Eliminar el índice {dropTarget.label}?
-        {:else}
+        {:else if dropTarget.kind === "constraint"}
           ¿Eliminar la restricción {dropTarget.label}?
+        {:else if dropTarget.kind === "view"}
+          ¿Eliminar la vista {dropTarget.label}?
+        {:else}
+          ¿Eliminar la vista materializada {dropTarget.label}?
         {/if}
       </p>
       {#if dropTarget.kind === "index"}

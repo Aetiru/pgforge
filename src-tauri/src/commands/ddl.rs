@@ -1,7 +1,8 @@
-//! Estructura de tablas: crear, cambiar y borrar tablas, columnas, índices y constraints.
+//! Estructura de tablas: crear, cambiar y borrar tablas, columnas, índices, constraints y vistas.
 
 use pgforge_core::ddl::index::{self, IndexDef, IndexInfo};
 use pgforge_core::ddl::table::{self, ConstraintInfo, Statement, TableChange};
+use pgforge_core::ddl::view::{self, ViewChange};
 use pgforge_core::{ProfileId, Result};
 use tauri::State;
 
@@ -91,4 +92,38 @@ pub async fn table_indexes(
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
     index::indexes(&handle, &database, oid).await
+}
+
+/// El SQL que se ejecutaría, sin ejecutar nada.
+#[tauri::command]
+pub fn view_preview(changes: Vec<ViewChange>) -> Result<Vec<Statement>> {
+    view::statements(&changes)
+}
+
+/// Aplica los cambios pendientes en una sola transacción.
+#[tauri::command]
+pub async fn view_apply(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    changes: Vec<ViewChange>,
+) -> Result<()> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    view::apply(&handle, &database, &changes).await
+}
+
+/// El cuerpo del `SELECT` de una vista, para precargar el editor al abrir "Editar".
+#[tauri::command]
+pub async fn view_query(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    oid: u32,
+) -> Result<String> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    view::query_of(&handle, &database, oid).await
 }

@@ -8,9 +8,11 @@
 pub mod index;
 pub mod pg_dump;
 pub mod table;
+pub mod view;
 
 pub use index::IndexDef;
 pub use table::{ColumnDef, ConstraintDef, Identity, RefAction, Statement as TableStatement, TableChange};
+pub use view::ViewChange;
 
 use serde::{Deserialize, Serialize};
 
