@@ -1,9 +1,10 @@
-//! Estructura de tablas: crear, cambiar y borrar tablas, columnas, índices, constraints, vistas y
-//! funciones.
+//! Estructura de tablas: crear, cambiar y borrar tablas, columnas, índices, constraints, vistas,
+//! funciones y triggers.
 
 use pgforge_core::ddl::function;
 use pgforge_core::ddl::index::{self, IndexDef, IndexInfo};
 use pgforge_core::ddl::table::{self, ConstraintInfo, Statement, TableChange};
+use pgforge_core::ddl::trigger::{self, TriggerChange, TriggerInfo};
 use pgforge_core::ddl::view::{self, ViewChange};
 use pgforge_core::{ProfileId, Result};
 use tauri::State;
@@ -174,4 +175,38 @@ pub async fn function_args(
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
     function::identity_args(&handle, &database, oid).await
+}
+
+/// El SQL que se ejecutaría, sin ejecutar nada.
+#[tauri::command]
+pub fn trigger_preview(changes: Vec<TriggerChange>) -> Result<Vec<Statement>> {
+    trigger::statements(&changes)
+}
+
+/// Aplica los cambios pendientes en una sola transacción.
+#[tauri::command]
+pub async fn trigger_apply(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    changes: Vec<TriggerChange>,
+) -> Result<()> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    trigger::apply(&handle, &database, &changes).await
+}
+
+/// Los triggers que ya tiene una tabla.
+#[tauri::command]
+pub async fn table_triggers(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    oid: u32,
+) -> Result<Vec<TriggerInfo>> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    trigger::triggers(&handle, &database, oid).await
 }

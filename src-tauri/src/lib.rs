@@ -63,6 +63,9 @@ pub fn run() {
             commands::ddl::function_apply,
             commands::ddl::function_drop,
             commands::ddl::function_args,
+            commands::ddl::trigger_preview,
+            commands::ddl::trigger_apply,
+            commands::ddl::table_triggers,
             commands::query::explain_warning,
         ])
         .run(tauri::generate_context!())

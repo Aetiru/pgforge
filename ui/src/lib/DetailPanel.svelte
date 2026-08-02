@@ -5,6 +5,7 @@
   import Icon from "./Icon.svelte";
   import IndexDialog from "./IndexDialog.svelte";
   import TableDialog from "./TableDialog.svelte";
+  import TriggerDialog from "./TriggerDialog.svelte";
   import ViewDialog from "./ViewDialog.svelte";
   import { kindLabel, lookOf } from "./badges";
   import { explorer, type Row } from "./explorer.svelte";
@@ -20,12 +21,15 @@
     objectDdl,
     tableConstraints,
     tableIndexes,
+    tableTriggers,
+    triggerApply,
     viewApply,
     type ConstraintInfo,
     type Ddl,
     type IndexInfo,
     type TableColumn,
     type TableShape,
+    type TriggerInfo,
   } from "./ipc";
 
   let {
@@ -220,12 +224,33 @@
     }
   }
 
+  let triggers = $state<TriggerInfo[] | null>(null);
+  let triggersError = $state<string | null>(null);
+  let triggersLoading = $state(false);
+
+  async function loadTriggers() {
+    if (!isTable || !node?.oid || !selected) {
+      triggers = null;
+      return;
+    }
+    triggersLoading = true;
+    triggersError = null;
+    try {
+      triggers = await tableTriggers(selected.profileId, node.oid, node.database);
+    } catch (error) {
+      triggersError = describeError(error);
+    } finally {
+      triggersLoading = false;
+    }
+  }
+
   $effect(() => {
     // Depender de `node` (y no llamar directo) es lo que dispara de nuevo al cambiar de tabla.
     void node;
     loadShape();
     loadIndexes();
     loadConstraints();
+    loadTriggers();
   });
 
   /** Busca la fila del árbol que tiene a `target` entre sus hijos, para refrescarla tras un cambio. */
@@ -253,8 +278,12 @@
   let refreshing = $state(false);
   let refreshError = $state<string | null>(null);
   let functionDialog = $state<{ sql: string; isEdit: boolean } | null>(null);
+  let triggerDialog = $state<{ existing: TriggerInfo | null } | null>(null);
   let dropTarget = $state<
-    | { kind: "table" | "column" | "index" | "constraint" | "view" | "materializedView"; label: string }
+    | {
+        kind: "table" | "column" | "index" | "constraint" | "view" | "materializedView" | "trigger";
+        label: string;
+      }
     | { kind: "function"; schema: string; name: string; args: string; procedure: boolean }
     | null
   >(null);
@@ -277,6 +306,28 @@
   function afterIndexCreated() {
     newIndex = false;
     loadIndexes();
+  }
+
+  function afterTriggerSaved() {
+    triggerDialog = null;
+    loadTriggers();
+  }
+
+  const TIMING_LABEL: Record<TriggerInfo["timing"], string> = {
+    before: "BEFORE",
+    after: "AFTER",
+    insteadOf: "INSTEAD OF",
+  };
+  const EVENT_LABEL: Record<TriggerInfo["events"][number], string> = {
+    insert: "INSERT",
+    update: "UPDATE",
+    delete: "DELETE",
+    truncate: "TRUNCATE",
+  };
+
+  function triggerSummary(t: TriggerInfo): string {
+    const events = t.events.map((event) => EVENT_LABEL[event]).join(" OR ");
+    return `${TIMING_LABEL[t.timing]} ${events} · ${t.level === "row" ? "ROW" : "STATEMENT"}`;
   }
 
   function afterConstraintCreated() {
@@ -420,6 +471,22 @@
           );
           await loadConstraints();
           await loadShape();
+          break;
+        case "trigger":
+          await triggerApply(
+            selected.profileId,
+            [
+              {
+                kind: "dropTrigger",
+                schema: shape!.schema,
+                table: shape!.name,
+                name: dropTarget.label,
+                cascade: dropCascade,
+              },
+            ],
+            node.database,
+          );
+          await loadTriggers();
           break;
         case "view":
           await viewApply(
@@ -842,6 +909,59 @@
             </table>
           {/if}
         </div>
+
+        <div class="card mb-5 overflow-hidden">
+          <div class="divider-b flex items-center gap-2 px-3 py-1.5">
+            <span class="text-xs font-medium">Triggers</span>
+            {#if shape}
+              <button
+                class="btn btn-ghost ml-auto px-2 py-0.5 text-xs"
+                onclick={() => (triggerDialog = { existing: null })}
+              >
+                <Icon name="plus" size={12} />
+                Trigger
+              </button>
+            {/if}
+          </div>
+
+          {#if triggersLoading}
+            <p class="px-3 py-4 text-sm muted">Leyendo triggers…</p>
+          {:else if triggersError}
+            <p class="px-3 py-4 text-sm text-rose-600 dark:text-rose-400">{triggersError}</p>
+          {:else if triggers && triggers.length === 0}
+            <p class="px-3 py-4 text-sm muted">No tiene triggers propios.</p>
+          {:else if triggers}
+            <table class="w-full text-left text-sm">
+              <tbody>
+                {#each triggers as trigger (trigger.oid)}
+                  <tr class="divider-t">
+                    <td class="px-3 py-1.5">
+                      {trigger.name}
+                      <span class="ml-1 text-xs muted">{triggerSummary(trigger)}</span>
+                    </td>
+                    <td class="truncate px-3 py-1.5 font-mono text-xs muted">
+                      {trigger.functionSchema}.{trigger.functionName}()
+                    </td>
+                    <td class="px-3 py-1.5 text-right whitespace-nowrap">
+                      <button
+                        class="btn btn-ghost px-2 py-0.5 text-xs"
+                        onclick={() => (triggerDialog = { existing: trigger })}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        class="btn btn-ghost px-2 py-0.5 text-xs"
+                        onclick={() => (dropTarget = { kind: "trigger", label: trigger.name })}
+                      >
+                        Eliminar
+                      </button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+        </div>
       {/if}
 
       {#if isServer && !selected.connected}
@@ -924,6 +1044,18 @@
   />
 {/if}
 
+{#if triggerDialog && selected && shape}
+  <TriggerDialog
+    profileId={selected.profileId}
+    database={node?.database ?? ""}
+    schema={shape.schema}
+    table={shape.name}
+    existing={triggerDialog.existing}
+    onclose={() => (triggerDialog = null)}
+    onsaved={afterTriggerSaved}
+  />
+{/if}
+
 {#if viewDialog && selected && node?.schema}
   <ViewDialog
     profileId={selected.profileId}
@@ -989,6 +1121,8 @@
           ¿Eliminar el índice {dropTarget.label}?
         {:else if dropTarget.kind === "constraint"}
           ¿Eliminar la restricción {dropTarget.label}?
+        {:else if dropTarget.kind === "trigger"}
+          ¿Eliminar el trigger {dropTarget.label}?
         {:else if dropTarget.kind === "view"}
           ¿Eliminar la vista {dropTarget.label}?
         {:else if dropTarget.kind === "materializedView"}

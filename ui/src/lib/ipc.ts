@@ -731,6 +731,48 @@ export const functionDrop = (
 export const functionArgs = (id: string, oid: number, database?: string) =>
   invoke<string>("function_args", { id, oid, database: database ?? null });
 
+// ---------------------------------------------------------------------------
+// Triggers
+// ---------------------------------------------------------------------------
+
+export type Timing = "before" | "after" | "insteadOf";
+/** No se llama `Event`: choca con el tipo `Event` del DOM. */
+export type TriggerEvent = "insert" | "update" | "delete" | "truncate";
+export type TriggerLevel = "row" | "statement";
+
+export interface TriggerDef {
+  timing: Timing;
+  events: TriggerEvent[];
+  level: TriggerLevel;
+  when: string | null;
+  functionSchema: string;
+  functionName: string;
+}
+
+export type TriggerChange =
+  | { kind: "createTrigger"; schema: string; table: string; name: string; definition: TriggerDef }
+  | { kind: "dropTrigger"; schema: string; table: string; name: string; cascade: boolean };
+
+export interface TriggerInfo {
+  oid: number;
+  name: string;
+  timing: Timing;
+  events: TriggerEvent[];
+  level: TriggerLevel;
+  when: string | null;
+  functionSchema: string;
+  functionName: string;
+}
+
+export const triggerPreview = (changes: TriggerChange[]) =>
+  invoke<DdlStatement[]>("trigger_preview", { changes });
+
+export const triggerApply = (id: string, changes: TriggerChange[], database?: string) =>
+  invoke<void>("trigger_apply", { id, changes, database: database ?? null });
+
+export const tableTriggers = (id: string, oid: number, database?: string) =>
+  invoke<TriggerInfo[]>("table_triggers", { id, oid, database: database ?? null });
+
 export { Channel };
 
 /** `160004` se muestra como `16.4`. */
