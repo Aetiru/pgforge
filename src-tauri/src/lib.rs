@@ -70,6 +70,10 @@ pub fn run() {
             commands::ddl::role_apply,
             commands::ddl::role_info,
             commands::ddl::role_memberships,
+            commands::ddl::privilege_preview,
+            commands::ddl::privilege_apply,
+            commands::ddl::table_privileges,
+            commands::ddl::schema_privileges,
             commands::query::explain_warning,
         ])
         .run(tauri::generate_context!())

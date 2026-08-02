@@ -8,6 +8,7 @@
 pub mod function;
 pub mod index;
 pub mod pg_dump;
+pub mod privilege;
 pub mod role;
 pub mod table;
 pub mod trigger;

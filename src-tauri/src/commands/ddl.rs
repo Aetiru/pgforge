@@ -1,8 +1,9 @@
 //! Estructura de tablas: crear, cambiar y borrar tablas, columnas, índices, constraints, vistas,
-//! funciones, triggers y roles.
+//! funciones, triggers, roles y privilegios.
 
 use pgforge_core::ddl::function;
 use pgforge_core::ddl::index::{self, IndexDef, IndexInfo};
+use pgforge_core::ddl::privilege::{self, PrivilegeChange, PrivilegeGrant};
 use pgforge_core::ddl::role::{self, RoleChange, RoleInfo};
 use pgforge_core::ddl::table::{self, ConstraintInfo, Statement, TableChange};
 use pgforge_core::ddl::trigger::{self, TriggerChange, TriggerInfo};
@@ -258,4 +259,52 @@ pub async fn role_memberships(
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
     role::role_memberships(&handle, &database, &name).await
+}
+
+/// El SQL que se ejecutaría, sin ejecutar nada.
+#[tauri::command]
+pub fn privilege_preview(changes: Vec<PrivilegeChange>) -> Result<Vec<Statement>> {
+    privilege::statements(&changes)
+}
+
+/// Aplica los cambios pendientes en una sola transacción.
+#[tauri::command]
+pub async fn privilege_apply(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    changes: Vec<PrivilegeChange>,
+) -> Result<()> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    privilege::apply(&handle, &database, &changes).await
+}
+
+/// Los privilegios que ya tiene una tabla.
+#[tauri::command]
+pub async fn table_privileges(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    oid: u32,
+) -> Result<Vec<PrivilegeGrant>> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    privilege::table_privileges(&handle, &database, oid).await
+}
+
+/// Los privilegios que ya tiene un esquema.
+#[tauri::command]
+pub async fn schema_privileges(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    oid: u32,
+) -> Result<Vec<PrivilegeGrant>> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    privilege::schema_privileges(&handle, &database, oid).await
 }

@@ -4,6 +4,7 @@
   import FunctionDialog from "./FunctionDialog.svelte";
   import Icon from "./Icon.svelte";
   import IndexDialog from "./IndexDialog.svelte";
+  import PrivilegeDialog from "./PrivilegeDialog.svelte";
   import RoleDialog from "./RoleDialog.svelte";
   import TableDialog from "./TableDialog.svelte";
   import TriggerDialog from "./TriggerDialog.svelte";
@@ -20,18 +21,24 @@
     functionDrop,
     indexDrop,
     objectDdl,
+    privilegeApply,
     roleApply,
     roleInfo,
+    schemaPrivileges,
     tableConstraints,
     tableIndexes,
+    tablePrivileges,
     tableTriggers,
     triggerApply,
     viewApply,
     type ConstraintInfo,
     type Ddl,
     type IndexInfo,
+    type PrivilegeGrant,
     type RoleInfo,
+    type SchemaPrivilege,
     type TableColumn,
+    type TablePrivilege,
     type TableShape,
     type TriggerInfo,
   } from "./ipc";
@@ -163,6 +170,9 @@
   /** La única carpeta que no cuelga de una base: es hermana de todas ellas en la raíz. */
   const isRolesFolder = $derived(node !== null && folderOf(node.kind) === "roles");
 
+  /** Tablas y esquemas son los dos únicos tipos de objeto que tienen privilegios en este recorte. */
+  const isSchema = $derived(node?.kind === "schema");
+
   /** Cualquiera de los botones "+" de carpeta: solo puede haber uno a la vez para un mismo nodo. */
   const hasCreateFolderButton = $derived(
     isTablesFolder ||
@@ -257,6 +267,47 @@
     }
   }
 
+  let privileges = $state<PrivilegeGrant[] | null>(null);
+  let privilegesError = $state<string | null>(null);
+  let privilegesLoading = $state(false);
+
+  async function loadPrivileges() {
+    if (!node?.oid || !selected || !(isTable || isSchema)) {
+      privileges = null;
+      return;
+    }
+    privilegesLoading = true;
+    privilegesError = null;
+    try {
+      privileges = isTable
+        ? await tablePrivileges(selected.profileId, node.oid, node.database)
+        : await schemaPrivileges(selected.profileId, node.oid, node.database);
+    } catch (error) {
+      privilegesError = describeError(error);
+    } finally {
+      privilegesLoading = false;
+    }
+  }
+
+  /** Una fila de `aclexplode` por privilegio: se agrupan por `grantee` para mostrar una sola línea. */
+  const privilegeGroups = $derived.by<{ grantee: string; privileges: string[]; grantable: boolean }[]>(
+    () => {
+      if (!privileges) return [];
+      const byGrantee = new Map<string, { grantee: string; privileges: string[]; grantable: boolean }>();
+      for (const grant of privileges) {
+        const group = byGrantee.get(grant.grantee);
+        const privilege = grant.privilege.toLowerCase();
+        if (group) {
+          group.privileges.push(privilege);
+          if (grant.grantable) group.grantable = true;
+        } else {
+          byGrantee.set(grant.grantee, { grantee: grant.grantee, privileges: [privilege], grantable: grant.grantable });
+        }
+      }
+      return [...byGrantee.values()];
+    },
+  );
+
   $effect(() => {
     // Depender de `node` (y no llamar directo) es lo que dispara de nuevo al cambiar de tabla.
     void node;
@@ -264,6 +315,7 @@
     loadIndexes();
     loadConstraints();
     loadTriggers();
+    loadPrivileges();
   });
 
   /** Busca la fila del árbol que tiene a `target` entre sus hijos, para refrescarla tras un cambio. */
@@ -293,6 +345,13 @@
   let functionDialog = $state<{ sql: string; isEdit: boolean } | null>(null);
   let triggerDialog = $state<{ existing: TriggerInfo | null } | null>(null);
   let roleDialog = $state<{ existing: RoleInfo | null } | null>(null);
+  let privilegeDialog = $state<{
+    existing: { grantee: string; privileges: string[]; grantable: boolean } | null;
+  } | null>(null);
+  let revokeTarget = $state<{ grantee: string; privileges: string[] } | null>(null);
+  let revokeCascade = $state(false);
+  let revoking = $state(false);
+  let revokeError = $state<string | null>(null);
   let dropTarget = $state<
     | {
         kind:
@@ -377,6 +436,50 @@
   function triggerSummary(t: TriggerInfo): string {
     const events = t.events.map((event) => EVENT_LABEL[event]).join(" OR ");
     return `${TIMING_LABEL[t.timing]} ${events} · ${t.level === "row" ? "ROW" : "STATEMENT"}`;
+  }
+
+  function afterPrivilegeSaved() {
+    privilegeDialog = null;
+    loadPrivileges();
+  }
+
+  async function confirmRevoke() {
+    if (!revokeTarget || !selected || !node?.schema) return;
+    revoking = true;
+    revokeError = null;
+    try {
+      await privilegeApply(
+        selected.profileId,
+        [
+          isTable
+            ? {
+                kind: "revokeTable",
+                schema: node.schema,
+                table: node.label,
+                privileges: revokeTarget.privileges as TablePrivilege[],
+                grantee: revokeTarget.grantee,
+                grantOptionOnly: false,
+                cascade: revokeCascade,
+              }
+            : {
+                kind: "revokeSchema",
+                schema: node.schema,
+                privileges: revokeTarget.privileges as SchemaPrivilege[],
+                grantee: revokeTarget.grantee,
+                grantOptionOnly: false,
+                cascade: revokeCascade,
+              },
+        ],
+        node.database,
+      );
+      revokeTarget = null;
+      revokeCascade = false;
+      await loadPrivileges();
+    } catch (error) {
+      revokeError = describeError(error);
+    } finally {
+      revoking = false;
+    }
   }
 
   function afterConstraintCreated() {
@@ -1036,7 +1139,87 @@
             </table>
           {/if}
         </div>
+
+        <div class="card mb-5 overflow-hidden">
+          <div class="divider-b flex items-center gap-2 px-3 py-1.5">
+            <span class="text-xs font-medium">Privilegios</span>
+            <button
+              class="btn btn-ghost ml-auto px-2 py-0.5 text-xs"
+              onclick={() => (privilegeDialog = { existing: null })}
+            >
+              <Icon name="plus" size={12} />
+              Privilegio
+            </button>
+          </div>
+          {@render privilegeRows()}
+        </div>
       {/if}
+
+      {#if isSchema}
+        <div class="card mb-5 overflow-hidden">
+          <div class="divider-b flex items-center gap-2 px-3 py-1.5">
+            <span class="text-xs font-medium">Privilegios</span>
+            <button
+              class="btn btn-ghost ml-auto px-2 py-0.5 text-xs"
+              onclick={() => (privilegeDialog = { existing: null })}
+            >
+              <Icon name="plus" size={12} />
+              Privilegio
+            </button>
+          </div>
+          {@render privilegeRows()}
+        </div>
+      {/if}
+
+      {#snippet privilegeRows()}
+        {#if privilegesLoading}
+          <p class="px-3 py-4 text-sm muted">Leyendo privilegios…</p>
+        {:else if privilegesError}
+          <p class="px-3 py-4 text-sm text-rose-600 dark:text-rose-400">{privilegesError}</p>
+        {:else if privilegeGroups.length === 0}
+          <p class="px-3 py-4 text-sm muted">
+            Nadie tiene privilegios propios: rige el default (el dueño puede todo).
+          </p>
+        {:else}
+          <table class="w-full text-left text-sm">
+            <tbody>
+              {#each privilegeGroups as group (group.grantee)}
+                <tr class="divider-t">
+                  <td class="px-3 py-1.5">{group.grantee}</td>
+                  <td class="truncate px-3 py-1.5 font-mono text-xs muted">
+                    {group.privileges.join(", ").toUpperCase()}
+                    {#if group.grantable}
+                      <span class="ml-1 text-xs muted">(con GRANT OPTION)</span>
+                    {/if}
+                  </td>
+                  <td class="px-3 py-1.5 text-right whitespace-nowrap">
+                    <button
+                      class="btn btn-ghost px-2 py-0.5 text-xs"
+                      onclick={() =>
+                        (privilegeDialog = {
+                          existing: {
+                            grantee: group.grantee,
+                            privileges: group.privileges,
+                            grantable: group.grantable,
+                          },
+                        })}
+                    >
+                      Editar
+                    </button>
+                    <button
+                      class="btn btn-ghost px-2 py-0.5 text-xs"
+                      onclick={() =>
+                        (revokeTarget = { grantee: group.grantee, privileges: group.privileges })}
+                    >
+                      Revocar todo
+                    </button>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      {/snippet}
 
       {#if isServer && !selected.connected}
         <p class="text-sm muted">Conectá el servidor para explorar sus objetos.</p>
@@ -1160,6 +1343,53 @@
     onclose={() => (roleDialog = null)}
     onsaved={afterRoleSaved}
   />
+{/if}
+
+{#if privilegeDialog && selected && node?.schema}
+  <PrivilegeDialog
+    profileId={selected.profileId}
+    database={node.database}
+    kind={isTable ? "table" : "schema"}
+    schema={node.schema}
+    table={isTable ? node.label : undefined}
+    existing={privilegeDialog.existing}
+    onclose={() => (privilegeDialog = null)}
+    onsaved={afterPrivilegeSaved}
+  />
+{/if}
+
+{#if revokeTarget}
+  <div class="fixed inset-0 z-10 grid place-items-center bg-black/40 p-4">
+    <div class="card w-full max-w-sm p-4 shadow-xl" role="alertdialog" aria-modal="true">
+      <p class="text-sm">
+        ¿Revocarle todos los privilegios a {revokeTarget.grantee}
+        ({revokeTarget.privileges.join(", ").toUpperCase()})?
+      </p>
+      <label class="check mt-3 text-xs">
+        <input type="checkbox" bind:checked={revokeCascade} />
+        CASCADE (también revoca lo que depende de esto)
+      </label>
+      {#if revokeError}
+        <p class="mt-2 text-sm text-rose-600 dark:text-rose-400">{revokeError}</p>
+      {/if}
+      <div class="mt-4 flex justify-end gap-2">
+        <button
+          class="btn"
+          disabled={revoking}
+          onclick={() => {
+            revokeTarget = null;
+            revokeCascade = false;
+            revokeError = null;
+          }}
+        >
+          Cancelar
+        </button>
+        <button class="btn btn-primary" disabled={revoking} onclick={confirmRevoke}>
+          Revocar
+        </button>
+      </div>
+    </div>
+  </div>
 {/if}
 
 {#if refreshTarget}

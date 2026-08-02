@@ -828,6 +828,77 @@ export const roleInfo = (id: string, oid: number, database?: string) =>
 export const roleMemberships = (id: string, name: string, database?: string) =>
   invoke<string[]>("role_memberships", { id, name, database: database ?? null });
 
+// ---------------------------------------------------------------------------
+// Privilegios
+// ---------------------------------------------------------------------------
+
+export type TablePrivilege =
+  | "select"
+  | "insert"
+  | "update"
+  | "delete"
+  | "truncate"
+  | "references"
+  | "trigger";
+
+export type SchemaPrivilege = "usage" | "create";
+
+export type PrivilegeChange =
+  | {
+      kind: "grantTable";
+      schema: string;
+      table: string;
+      privileges: TablePrivilege[];
+      grantee: string;
+      grantOption: boolean;
+    }
+  | {
+      kind: "revokeTable";
+      schema: string;
+      table: string;
+      privileges: TablePrivilege[];
+      grantee: string;
+      /** `REVOKE GRANT OPTION FOR ...`: revoca solo el permiso de volver a otorgar. */
+      grantOptionOnly: boolean;
+      cascade: boolean;
+    }
+  | {
+      kind: "grantSchema";
+      schema: string;
+      privileges: SchemaPrivilege[];
+      grantee: string;
+      grantOption: boolean;
+    }
+  | {
+      kind: "revokeSchema";
+      schema: string;
+      privileges: SchemaPrivilege[];
+      grantee: string;
+      grantOptionOnly: boolean;
+      cascade: boolean;
+    };
+
+/** Un privilegio ya otorgado, tal como sale de `aclexplode`. */
+export interface PrivilegeGrant {
+  /** Nombre del rol, o `"PUBLIC"`. */
+  grantee: string;
+  /** Tal como lo devuelve el servidor: `"SELECT"`, `"INSERT"`, ... */
+  privilege: string;
+  grantable: boolean;
+}
+
+export const privilegePreview = (changes: PrivilegeChange[]) =>
+  invoke<DdlStatement[]>("privilege_preview", { changes });
+
+export const privilegeApply = (id: string, changes: PrivilegeChange[], database?: string) =>
+  invoke<void>("privilege_apply", { id, changes, database: database ?? null });
+
+export const tablePrivileges = (id: string, oid: number, database?: string) =>
+  invoke<PrivilegeGrant[]>("table_privileges", { id, oid, database: database ?? null });
+
+export const schemaPrivileges = (id: string, oid: number, database?: string) =>
+  invoke<PrivilegeGrant[]>("schema_privileges", { id, oid, database: database ?? null });
+
 export { Channel };
 
 /** `160004` se muestra como `16.4`. */
