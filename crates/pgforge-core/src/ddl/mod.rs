@@ -8,6 +8,7 @@
 pub mod function;
 pub mod index;
 pub mod pg_dump;
+pub mod policy;
 pub mod privilege;
 pub mod role;
 pub mod table;
@@ -15,7 +16,9 @@ pub mod trigger;
 pub mod view;
 
 pub use index::IndexDef;
-pub use table::{ColumnDef, ConstraintDef, Identity, RefAction, Statement as TableStatement, TableChange};
+pub use table::{
+    ColumnDef, ConstraintDef, Identity, RefAction, Statement as TableStatement, TableChange,
+};
 pub use view::ViewChange;
 
 use serde::{Deserialize, Serialize};
@@ -134,6 +137,22 @@ pub(crate) fn qualified(schema: &str, name: &str) -> String {
     format!("{}.{}", quote_ident(schema), quote_ident(name))
 }
 
+/// Escribe el nombre de un rol donde una sentencia espera uno.
+///
+/// `PUBLIC`, `CURRENT_USER` y `SESSION_USER` son palabras clave, no identificadores: citarlas
+/// buscaría un rol llamado literalmente así, que no es lo que quiso decir quien las escribió.
+/// `GRANT`/`REVOKE` y `CREATE POLICY` aceptan las tres por igual, así que la regla vive acá y no en
+/// cada módulo.
+pub(crate) fn role_name(name: &str) -> String {
+    const KEYWORDS: &[&str] = &["public", "current_user", "session_user"];
+
+    if KEYWORDS.iter().any(|word| name.eq_ignore_ascii_case(word)) {
+        name.to_uppercase()
+    } else {
+        quote_ident(name)
+    }
+}
+
 /// Devuelve el DDL del objeto que representa el nodo.
 pub async fn object_ddl(handle: &ServerHandle, node: &TreeNode) -> Result<Ddl> {
     match node.kind {
@@ -150,6 +169,7 @@ pub async fn object_ddl(handle: &ServerHandle, node: &TreeNode) -> Result<Ddl> {
             simple_def(handle, node, "pg_catalog.pg_get_functiondef($1)").await
         }
         NodeKind::Constraint => constraint_ddl(handle, node).await,
+        NodeKind::Policy => policy_ddl(handle, node).await,
         NodeKind::Sequence => sequence_ddl(handle, node).await,
         NodeKind::Type => type_ddl(handle, node).await,
         NodeKind::Column => column_ddl(handle, node).await,
@@ -159,6 +179,16 @@ pub async fn object_ddl(handle: &ServerHandle, node: &TreeNode) -> Result<Ddl> {
             Err(Error::Config("este nodo no tiene un DDL propio".to_owned()))
         }
     }
+}
+
+/// El DDL de una política. No existe un `pg_get_policydef`, así que se arma con el mismo generador
+/// que la vista previa, sobre las expresiones que sí devuelve el servidor con `pg_get_expr` —mismo
+/// criterio que [`role_ddl`], que también reconstruye la sentencia a partir del catálogo.
+async fn policy_ddl(handle: &ServerHandle, node: &TreeNode) -> Result<Ddl> {
+    let oid = require_oid(node)?;
+    Ok(Ddl::catalog(
+        policy::describe(handle, &node.database, oid).await?,
+    ))
 }
 
 async fn role_ddl(handle: &ServerHandle, node: &TreeNode) -> Result<Ddl> {

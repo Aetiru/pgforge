@@ -56,6 +56,8 @@ export function lookOf(kind: NodeKind | null): NodeLook {
       return { icon: "constraint", tone: INTEGRITY };
     case "trigger":
       return { icon: "trigger", tone: CODE };
+    case "policy":
+      return { icon: "policy", tone: SECURITY };
     case "role":
       return { icon: "role", tone: SECURITY };
     default:
@@ -84,6 +86,7 @@ export function kindLabel(kind: NodeKind | null): string {
     index: "Índice",
     constraint: "Restricción",
     trigger: "Disparador",
+    policy: "Política",
     role: "Rol",
   };
   return names[kind as string] ?? String(kind);

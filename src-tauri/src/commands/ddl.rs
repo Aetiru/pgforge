@@ -1,9 +1,12 @@
 //! Estructura de tablas: crear, cambiar y borrar tablas, columnas, índices, constraints, vistas,
-//! funciones, triggers, roles y privilegios.
+//! funciones, triggers, roles, privilegios y políticas de seguridad por fila.
 
 use pgforge_core::ddl::function;
 use pgforge_core::ddl::index::{self, IndexDef, IndexInfo};
-use pgforge_core::ddl::privilege::{self, PrivilegeChange, PrivilegeGrant};
+use pgforge_core::ddl::policy::{self, PolicyChange, TableSecurity};
+use pgforge_core::ddl::privilege::{
+    self, ColumnGrant, DefaultGrant, PrivilegeChange, PrivilegeGrant,
+};
 use pgforge_core::ddl::role::{self, RoleChange, RoleInfo};
 use pgforge_core::ddl::table::{self, ConstraintInfo, Statement, TableChange};
 use pgforge_core::ddl::trigger::{self, TriggerChange, TriggerInfo};
@@ -162,7 +165,10 @@ pub async fn function_drop(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
-    function::drop(&handle, &database, &schema, &name, &args, procedure, cascade).await
+    function::drop(
+        &handle, &database, &schema, &name, &args, procedure, cascade,
+    )
+    .await
 }
 
 /// La lista de tipos de argumento, para poder armar el `DROP FUNCTION`/`DROP PROCEDURE`.
@@ -281,9 +287,9 @@ pub async fn privilege_apply(
     privilege::apply(&handle, &database, &changes).await
 }
 
-/// Los privilegios que ya tiene una tabla.
+/// Los privilegios de una tabla, una vista, una vista materializada o una secuencia.
 #[tauri::command]
-pub async fn table_privileges(
+pub async fn relation_privileges(
     state: State<'_, AppState>,
     id: ProfileId,
     database: Option<String>,
@@ -292,7 +298,62 @@ pub async fn table_privileges(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
-    privilege::table_privileges(&handle, &database, oid).await
+    privilege::relation_privileges(&handle, &database, oid).await
+}
+
+/// Los privilegios de una función o un procedimiento.
+#[tauri::command]
+pub async fn function_privileges(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    oid: u32,
+) -> Result<Vec<PrivilegeGrant>> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    privilege::function_privileges(&handle, &database, oid).await
+}
+
+/// Los privilegios de una base. Se busca por nombre y no por oid: es lo que tiene a mano el árbol.
+#[tauri::command]
+pub async fn database_privileges(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    name: String,
+) -> Result<Vec<PrivilegeGrant>> {
+    let handle = state.manager.require(id).await?;
+    let connected = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    privilege::database_privileges(&handle, &connected, &name).await
+}
+
+/// Los privilegios acotados a columnas de una tabla.
+#[tauri::command]
+pub async fn column_privileges(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    oid: u32,
+) -> Result<Vec<ColumnGrant>> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    privilege::column_privileges(&handle, &database, oid).await
+}
+
+/// Los privilegios por omisión definidos en la base.
+#[tauri::command]
+pub async fn default_privileges(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+) -> Result<Vec<DefaultGrant>> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    privilege::default_privileges(&handle, &database).await
 }
 
 /// Los privilegios que ya tiene un esquema.
@@ -307,4 +368,38 @@ pub async fn schema_privileges(
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
     privilege::schema_privileges(&handle, &database, oid).await
+}
+
+/// El SQL que se ejecutaría, sin ejecutar nada.
+#[tauri::command]
+pub fn policy_preview(changes: Vec<PolicyChange>) -> Result<Vec<Statement>> {
+    policy::statements(&changes)
+}
+
+/// Aplica los cambios pendientes en una sola transacción.
+#[tauri::command]
+pub async fn policy_apply(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    changes: Vec<PolicyChange>,
+) -> Result<()> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    policy::apply(&handle, &database, &changes).await
+}
+
+/// El estado de Row-Level Security de una tabla: el interruptor y sus políticas.
+#[tauri::command]
+pub async fn table_security(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    oid: u32,
+) -> Result<TableSecurity> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    policy::table_security(&handle, &database, oid).await
 }

@@ -82,7 +82,11 @@ async fn roles_folder(handle: &ServerHandle, options: TreeOptions) -> Result<Tre
 /// Los roles internos de Postgres (`pg_signal_backend` y el resto de los predefinidos) se ocultan
 /// con el mismo interruptor que ya oculta `pg_catalog`/`information_schema`, en vez de agregar una
 /// opción nueva.
-async fn roles(handle: &ServerHandle, parent: &TreeNode, options: TreeOptions) -> Result<Vec<TreeNode>> {
+async fn roles(
+    handle: &ServerHandle,
+    parent: &TreeNode,
+    options: TreeOptions,
+) -> Result<Vec<TreeNode>> {
     let client = handle.client(&parent.database).await?;
     let rows = client
         .query(
@@ -103,7 +107,14 @@ async fn roles(handle: &ServerHandle, parent: &TreeNode, options: TreeOptions) -
             if is_super {
                 detail.push_str(" · superusuario");
             }
-            TreeNode::object(parent, NodeKind::Role, row.get(0), row.get(1), Some(detail), false)
+            TreeNode::object(
+                parent,
+                NodeKind::Role,
+                row.get(0),
+                row.get(1),
+                Some(detail),
+                false,
+            )
         })
         .collect())
 }
@@ -224,6 +235,7 @@ async fn objects(
         Folder::Indexes => indexes(handle, parent).await,
         Folder::Constraints => constraints(handle, parent).await,
         Folder::Triggers => triggers(handle, parent).await,
+        Folder::Policies => policies(handle, parent).await,
         // Se resuelven antes, en el `match` de `children()`: `Schemas` no tiene un padre de este
         // tipo, y `Roles` va por su propia función porque no cuelga de una base.
         Folder::Schemas | Folder::Roles => Ok(Vec::new()),
@@ -400,6 +412,8 @@ const RELATION_COUNTS_SQL: &str = "
     SELECT 'constraints', count(*) FROM pg_catalog.pg_constraint WHERE conrelid = $1
     UNION ALL
     SELECT 'triggers',    count(*) FROM pg_catalog.pg_trigger    WHERE tgrelid = $1 AND NOT tgisinternal
+    UNION ALL
+    SELECT 'policies',    count(*) FROM pg_catalog.pg_policy     WHERE polrelid = $1
 ";
 
 async fn relation_folders(handle: &ServerHandle, parent: &TreeNode) -> Result<Vec<TreeNode>> {
@@ -433,6 +447,11 @@ async fn relation_folders(handle: &ServerHandle, parent: &TreeNode) -> Result<Ve
                 parent,
                 Folder::Triggers,
                 count("triggers"),
+            ));
+            folders.push(TreeNode::folder(
+                parent,
+                Folder::Policies,
+                count("policies"),
             ));
         }
     }
@@ -614,6 +633,63 @@ async fn triggers(handle: &ServerHandle, parent: &TreeNode) -> Result<Vec<TreeNo
                 row.get(0),
                 row.get(1),
                 Some(detail.to_owned()),
+                false,
+            )
+        })
+        .collect())
+}
+
+/// Las políticas de Row-Level Security de una tabla.
+///
+/// El detalle incluye si el filtro de la tabla está apagado, porque una política sobre una tabla
+/// sin `ROW LEVEL SECURITY` no hace absolutamente nada y desde el árbol no hay otra forma de
+/// enterarse.
+async fn policies(handle: &ServerHandle, parent: &TreeNode) -> Result<Vec<TreeNode>> {
+    let oid = parent.oid.ok_or_else(|| missing_oid("relación"))?;
+    let client = handle.client(&parent.database).await?;
+    let rows = client
+        .query(
+            "SELECT p.oid,
+                    p.polname::text,
+                    p.polcmd::text,
+                    p.polpermissive,
+                    c.relrowsecurity
+               FROM pg_catalog.pg_policy p
+               JOIN pg_catalog.pg_class c ON c.oid = p.polrelid
+              WHERE p.polrelid = $1
+              ORDER BY p.polname",
+            &[&oid],
+        )
+        .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let polcmd: String = row.get(2);
+            let command = match polcmd.as_str() {
+                "r" => "SELECT",
+                "a" => "INSERT",
+                "w" => "UPDATE",
+                "d" => "DELETE",
+                _ => "ALL",
+            };
+            let permissive: bool = row.get(3);
+            let enabled: bool = row.get(4);
+
+            let mut detail = command.to_owned();
+            if !permissive {
+                detail.push_str(" · restrictiva");
+            }
+            if !enabled {
+                detail.push_str(" · el filtro de la tabla está apagado");
+            }
+
+            TreeNode::object(
+                parent,
+                NodeKind::Policy,
+                row.get(0),
+                row.get(1),
+                Some(detail),
                 false,
             )
         })

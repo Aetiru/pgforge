@@ -8,7 +8,11 @@
   import FunctionDialog from "./FunctionDialog.svelte";
   import Icon from "./Icon.svelte";
   import IndexDialog from "./IndexDialog.svelte";
-  import PrivilegeDialog from "./PrivilegeDialog.svelte";
+  import PolicyDialog from "./PolicyDialog.svelte";
+  import PrivilegeDialog, {
+    type Existing as PrivilegeExisting,
+    type Subject as PrivilegeSubject,
+  } from "./PrivilegeDialog.svelte";
   import RoleDialog from "./RoleDialog.svelte";
   import TableDialog from "./TableDialog.svelte";
   import TriggerDialog from "./TriggerDialog.svelte";
@@ -24,25 +28,36 @@
     functionArgs,
     functionDrop,
     indexDrop,
+    columnPrivileges,
+    databasePrivileges,
+    defaultPrivileges,
+    functionPrivileges,
     objectDdl,
+    policyApply,
     privilegeApply,
+    relationPrivileges,
     roleApply,
     roleInfo,
     schemaPrivileges,
     tableConstraints,
     tableIndexes,
-    tablePrivileges,
+    tableSecurity,
     tableTriggers,
     triggerApply,
     viewApply,
+    type ColumnGrant,
     type ConstraintInfo,
     type Ddl,
+    type DefaultGrant,
+    type Grantable,
     type IndexInfo,
+    type PolicyChange,
+    type PolicyInfo,
     type PrivilegeGrant,
+    type RoleChange,
     type RoleInfo,
-    type SchemaPrivilege,
     type TableColumn,
-    type TablePrivilege,
+    type TableSecurity,
     type TableShape,
     type TriggerInfo,
   } from "./ipc";
@@ -167,6 +182,7 @@
 
   const isFunction = $derived(node?.kind === "function");
   const isProcedure = $derived(node?.kind === "procedure");
+  const isRoutine = $derived(isFunction || isProcedure);
   const isFunctionsFolder = $derived(node !== null && folderOf(node.kind) === "functions");
   const isProceduresFolder = $derived(node !== null && folderOf(node.kind) === "procedures");
 
@@ -174,8 +190,17 @@
   /** La única carpeta que no cuelga de una base: es hermana de todas ellas en la raíz. */
   const isRolesFolder = $derived(node !== null && folderOf(node.kind) === "roles");
 
-  /** Tablas y esquemas son los dos únicos tipos de objeto que tienen privilegios en este recorte. */
   const isSchema = $derived(node?.kind === "schema");
+  const isSequence = $derived(node?.kind === "sequence");
+  const isDatabase = $derived(node?.kind === "database");
+
+  /**
+   * Los tipos de objeto que tienen privilegios propios. Los índices y las restricciones no están:
+   * no tienen ACL, heredan el de la tabla.
+   */
+  const hasPrivileges = $derived(
+    isTable || isSchema || isSequence || isDatabase || isView || isMaterializedView || isRoutine,
+  );
 
   const isFolder = $derived(node !== null && folderOf(node.kind) !== null);
 
@@ -263,27 +288,108 @@
     }
   }
 
+  let security = $state<TableSecurity | null>(null);
+  let securityError = $state<string | null>(null);
+  let securityLoading = $state(false);
+
+  async function loadSecurity() {
+    if (!isTable || !node?.oid || !selected) {
+      security = null;
+      return;
+    }
+    securityLoading = true;
+    securityError = null;
+    try {
+      security = await tableSecurity(selected.profileId, node.oid, node.database);
+    } catch (error) {
+      securityError = describeError(error);
+    } finally {
+      securityLoading = false;
+    }
+  }
+
+  /** Prende, apaga o fuerza el filtro sin salir de la sección: es un solo ALTER TABLE. */
+  async function applySwitch(change: PolicyChange) {
+    if (!selected || !node) return;
+    securityError = null;
+    try {
+      await policyApply(selected.profileId, [change], node.database);
+      await loadSecurity();
+    } catch (error) {
+      securityError = describeError(error);
+    }
+  }
+
   let privileges = $state<PrivilegeGrant[] | null>(null);
+  let columnGrants = $state<ColumnGrant[]>([]);
+  let defaultGrants = $state<DefaultGrant[]>([]);
   let privilegesError = $state<string | null>(null);
   let privilegesLoading = $state(false);
+  /** Los argumentos de la función, que son parte de cómo se la nombra en un `GRANT`. */
+  let routineArgs = $state("");
 
   async function loadPrivileges() {
-    if (!node?.oid || !selected || !(isTable || isSchema)) {
+    if (!selected || !node || !hasPrivileges) {
       privileges = null;
+      columnGrants = [];
+      defaultGrants = [];
       return;
     }
     privilegesLoading = true;
     privilegesError = null;
     try {
-      privileges = isTable
-        ? await tablePrivileges(selected.profileId, node.oid, node.database)
-        : await schemaPrivileges(selected.profileId, node.oid, node.database);
+      const { profileId } = selected;
+      const { oid, database } = node;
+
+      if (isDatabase) {
+        // Sin pasar la base: `pg_database` es un catálogo compartido, y abrir un pool contra la
+        // base que se está mirando fallaría justamente cuando no se tiene CONNECT sobre ella.
+        privileges = await databasePrivileges(profileId, node.label);
+      } else if (oid === undefined) {
+        privileges = null;
+      } else if (isSchema) {
+        privileges = await schemaPrivileges(profileId, oid, database);
+        // Los privilegios por omisión no son de ningún objeto: se guardan por esquema, así que es
+        // acá donde alguien los va a buscar.
+        defaultGrants = (await defaultPrivileges(profileId, database)).filter(
+          (grant) => grant.schema === node.label,
+        );
+      } else if (isRoutine) {
+        privileges = await functionPrivileges(profileId, oid, database);
+        routineArgs = await functionArgs(profileId, oid, database);
+      } else {
+        privileges = await relationPrivileges(profileId, oid, database);
+        if (isTable) columnGrants = await columnPrivileges(profileId, oid, database);
+      }
     } catch (error) {
       privilegesError = describeError(error);
     } finally {
       privilegesLoading = false;
     }
   }
+
+  /** El objeto del que habla el diálogo de privilegios, con el vocabulario que le corresponde. */
+  const privilegeSubject = $derived.by<PrivilegeSubject | null>(() => {
+    if (!node) return null;
+    if (isDatabase) return { on: "database", database: node.label };
+    if (isSchema) return { on: "schema", schema: node.label };
+    if (!node.schema) return null;
+    if (isSequence) return { on: "sequence", schema: node.schema, sequence: node.label };
+    if (isRoutine) {
+      return {
+        on: "function",
+        schema: node.schema,
+        name: node.label,
+        args: routineArgs,
+        procedure: isProcedure,
+      };
+    }
+    // Las vistas y las materializadas comparten el vocabulario de una tabla.
+    if (isTable || isView || isMaterializedView) {
+      return { on: "table", schema: node.schema, table: node.label };
+    }
+    return null;
+  });
 
   /** Una fila de `aclexplode` por privilegio: se agrupan por `grantee` para mostrar una sola línea. */
   const privilegeGroups = $derived.by<
@@ -311,6 +417,35 @@
     return [...byGrantee.values()];
   });
 
+  /**
+   * La clave de una fila de privilegios por columna. Va por JSON y no concatenando con un
+   * separador: un nombre de columna puede tener cualquier cosa adentro, incluido el separador.
+   */
+  function pairKey(column: string, grantee: string): string {
+    return JSON.stringify([column, grantee]);
+  }
+
+  /** Lo mismo que `privilegeGroups`, pero la fila es la combinación de columna y destinatario. */
+  const columnGroups = $derived.by<{ column: string; grantee: string; privileges: string[] }[]>(
+    () => {
+      const byPair = new Map<string, { column: string; grantee: string; privileges: string[] }>();
+      for (const grant of columnGrants) {
+        const key = pairKey(grant.column, grant.grantee);
+        const group = byPair.get(key);
+        if (group) {
+          group.privileges.push(grant.privilege);
+        } else {
+          byPair.set(key, {
+            column: grant.column,
+            grantee: grant.grantee,
+            privileges: [grant.privilege],
+          });
+        }
+      }
+      return [...byPair.values()];
+    },
+  );
+
   $effect(() => {
     // Depender de `node` (y no llamar directo) es lo que dispara de nuevo al cambiar de tabla.
     void node;
@@ -318,6 +453,7 @@
     loadIndexes();
     loadConstraints();
     loadTriggers();
+    loadSecurity();
     loadPrivileges();
   });
 
@@ -335,12 +471,20 @@
     | "indexes"
     | "constraints"
     | "triggers"
+    | "security"
     | "privileges"
     | "ddl";
 
+  const privilegeSection = $derived({
+    id: "privileges" as const,
+    label: "Privilegios",
+    count: privileges ? privilegeGroups.length : null,
+  });
+
   const sections = $derived.by<{ id: SectionId; label: string; count: number | null }[]>(() => {
-    if (isServer || node?.kind === "database") {
-      return [{ id: "info", label: "Propiedades", count: null }];
+    if (isServer) return [{ id: "info", label: "Propiedades", count: null }];
+    if (isDatabase) {
+      return [{ id: "info", label: "Propiedades", count: null }, privilegeSection];
     }
     if (isTable) {
       return [
@@ -348,16 +492,12 @@
         { id: "indexes", label: "Índices", count: indexes?.length ?? null },
         { id: "constraints", label: "Restricciones", count: constraints?.length ?? null },
         { id: "triggers", label: "Triggers", count: triggers?.length ?? null },
-        { id: "privileges", label: "Privilegios", count: privileges ? privilegeGroups.length : null },
+        { id: "security", label: "Seguridad por fila", count: security?.policies.length ?? null },
+        privilegeSection,
         { id: "ddl", label: "DDL", count: null },
       ];
     }
-    if (isSchema) {
-      return [
-        { id: "privileges", label: "Privilegios", count: privileges ? privilegeGroups.length : null },
-        { id: "ddl", label: "DDL", count: null },
-      ];
-    }
+    if (hasPrivileges && hasDdl) return [privilegeSection, { id: "ddl", label: "DDL", count: null }];
     if (hasDdl) return [{ id: "ddl", label: "DDL", count: null }];
     return [];
   });
@@ -399,10 +539,9 @@
   let refreshError = $state<string | null>(null);
   let functionDialog = $state<{ sql: string; isEdit: boolean } | null>(null);
   let triggerDialog = $state<{ existing: TriggerInfo | null } | null>(null);
+  let policyDialog = $state<{ existing: PolicyInfo | null } | null>(null);
   let roleDialog = $state<{ existing: RoleInfo | null } | null>(null);
-  let privilegeDialog = $state<{
-    existing: { grantee: string; privileges: string[]; grantable: boolean } | null;
-  } | null>(null);
+  let privilegeDialog = $state<{ existing: PrivilegeExisting | null } | null>(null);
   let revokeTarget = $state<{ grantee: string; privileges: string[] } | null>(null);
   let revokeCascade = $state(false);
   let revoking = $state(false);
@@ -417,6 +556,7 @@
           | "view"
           | "materializedView"
           | "trigger"
+          | "policy"
           | "role";
         label: string;
       }
@@ -426,6 +566,13 @@
   let dropCascade = $state(false);
   /** Solo se usa para índices: CASCADE y CONCURRENTLY son mutuamente excluyentes en Postgres. */
   let dropConcurrently = $state(false);
+  /**
+   * Solo para roles: un rol dueño de algo no se puede borrar, y Postgres no tiene
+   * `DROP ROLE ... CASCADE`. Esto ofrece el camino que hay: pasarle sus objetos a otro y soltar los
+   * privilegios que le hayan otorgado, todo en la misma transacción que el borrado.
+   */
+  let reassignFirst = $state(false);
+  let reassignTo = $state("CURRENT_USER");
   let dropping = $state(false);
   let dropError = $state<string | null>(null);
 
@@ -447,6 +594,11 @@
   function afterTriggerSaved() {
     triggerDialog = null;
     loadTriggers();
+  }
+
+  function afterPolicySaved() {
+    policyDialog = null;
+    loadSecurity();
   }
 
   /** Trae el rol tal como ya existe antes de abrir la edición: acá no hay nada precargado, a
@@ -499,31 +651,22 @@
   }
 
   async function confirmRevoke() {
-    if (!revokeTarget || !selected || !node?.schema) return;
+    if (!revokeTarget || !selected || !node || !privilegeSubject) return;
     revoking = true;
     revokeError = null;
     try {
       await privilegeApply(
         selected.profileId,
         [
-          isTable
-            ? {
-                kind: "revokeTable",
-                schema: node.schema,
-                table: node.label,
-                privileges: revokeTarget.privileges as TablePrivilege[],
-                grantee: revokeTarget.grantee,
-                grantOptionOnly: false,
-                cascade: revokeCascade,
-              }
-            : {
-                kind: "revokeSchema",
-                schema: node.schema,
-                privileges: revokeTarget.privileges as SchemaPrivilege[],
-                grantee: revokeTarget.grantee,
-                grantOptionOnly: false,
-                cascade: revokeCascade,
-              },
+          {
+            kind: "revoke",
+            // Los privilegios salen de lo que devolvió el catálogo para este mismo objeto, así que
+            // pertenecen a su vocabulario por construcción.
+            target: { ...privilegeSubject, privileges: revokeTarget.privileges } as Grantable,
+            grantee: revokeTarget.grantee,
+            grantOptionOnly: false,
+            cascade: revokeCascade,
+          },
         ],
         node.database,
       );
@@ -549,6 +692,8 @@
     dropTarget = null;
     dropCascade = false;
     dropConcurrently = false;
+    reassignFirst = false;
+    reassignTo = "CURRENT_USER";
     dropError = null;
   }
 
@@ -755,10 +900,37 @@
           }
           explorer.selected = null;
           break;
+        case "policy":
+          await policyApply(
+            selected.profileId,
+            [
+              {
+                kind: "dropPolicy",
+                schema: shape!.schema,
+                table: shape!.name,
+                name: dropTarget.label,
+              },
+            ],
+            node.database,
+          );
+          await loadSecurity();
+          break;
         case "role":
           await roleApply(
             selected.profileId,
-            [{ kind: "dropRole", name: dropTarget.label }],
+            [
+              ...(reassignFirst
+                ? ([
+                    {
+                      kind: "reassignOwned",
+                      from: dropTarget.label,
+                      to: reassignTo.trim() || "CURRENT_USER",
+                    },
+                    { kind: "dropOwned", role: dropTarget.label, cascade: false },
+                  ] as RoleChange[])
+                : []),
+              { kind: "dropRole", name: dropTarget.label },
+            ],
             node.database,
           );
           {
@@ -795,6 +967,8 @@
         return `¿Eliminar la vista materializada ${dropTarget.label}? Se pierden los datos guardados.`;
       case "function":
         return `¿Eliminar ${dropTarget.procedure ? "el procedimiento" : "la función"} ${dropTarget.name}(${dropTarget.args})?`;
+      case "policy":
+        return `¿Eliminar la política ${dropTarget.label}? Si es la única que dejaba ver filas, la tabla queda sin nada visible.`;
       case "role":
         return `¿Eliminar el rol ${dropTarget.label}?`;
     }
@@ -1398,6 +1572,135 @@
               </table>
             {/if}
           </div>
+        {:else if section === "security"}
+          <div class="card overflow-hidden">
+            <div class="card-head">
+              <span class="card-title">Seguridad por fila</span>
+              {#if shape}
+                <button
+                  class="btn btn-sm ml-auto"
+                  onclick={() => (policyDialog = { existing: null })}
+                >
+                  <Icon name="plus" size={11} />
+                  Política
+                </button>
+              {/if}
+            </div>
+
+            {#if securityLoading}
+              {@render pending("Leyendo las políticas…")}
+            {:else if securityError}
+              <Alert tone="bad" box class="m-3">{securityError}</Alert>
+            {:else if security}
+              <div class="flex flex-col gap-2 border-b border-zinc-200 p-3 dark:border-zinc-800">
+                <label class="check">
+                  <input
+                    type="checkbox"
+                    checked={security.enabled}
+                    onchange={() =>
+                      applySwitch({
+                        kind: "setRowSecurity",
+                        schema: shape!.schema,
+                        table: shape!.name,
+                        enabled: !security!.enabled,
+                      })}
+                  />
+                  Filtrar las filas según las políticas
+                </label>
+                <label class="check">
+                  <input
+                    type="checkbox"
+                    checked={security.forced}
+                    disabled={!security.enabled}
+                    onchange={() =>
+                      applySwitch({
+                        kind: "setForceRowSecurity",
+                        schema: shape!.schema,
+                        table: shape!.name,
+                        forced: !security!.forced,
+                      })}
+                  />
+                  Aplicarlo también al dueño de la tabla
+                </label>
+              </div>
+
+              <!-- Las tres combinaciones que engañan: filtro sin políticas no deja pasar nada,
+                   políticas sin filtro no hacen nada, y el dueño se saltea todo si no se fuerza. -->
+              {#if security.enabled && security.policies.length === 0}
+                <Alert tone="warn" box class="m-3">
+                  El filtro está activo y no hay ninguna política: la tabla no devuelve ninguna fila.
+                </Alert>
+              {:else if !security.enabled && security.policies.length > 0}
+                <Alert tone="warn" box class="m-3">
+                  Hay políticas definidas pero el filtro está apagado: no se aplica ninguna.
+                </Alert>
+              {:else if security.enabled && !security.forced}
+                <Alert tone="ok" box class="m-3">
+                  El dueño de la tabla se saltea el filtro. Para probar las políticas hay que
+                  conectarse con otro rol, o marcar la segunda casilla.
+                </Alert>
+              {/if}
+
+              {#if security.policies.length === 0}
+                {@render nothing("No tiene políticas.")}
+              {:else}
+                <table class="list-table">
+                  <thead>
+                    <tr>
+                      <th class="w-px whitespace-nowrap">Nombre</th>
+                      <th class="w-px whitespace-nowrap">Comando</th>
+                      <th class="w-px whitespace-nowrap">Roles</th>
+                      <th class="w-full">Condición</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each security.policies as policy (policy.oid)}
+                      <tr class="group">
+                        <td class="w-px font-medium whitespace-nowrap">{policy.name}</td>
+                        <td class="w-px whitespace-nowrap">
+                          <span class="tag tag-neutral font-mono">
+                            {policy.command.toUpperCase()}
+                          </span>
+                          {#if policy.kind === "restrictive"}
+                            <span class="tag tag-info">restrictiva</span>
+                          {/if}
+                        </td>
+                        <td class="w-px text-xs whitespace-nowrap muted">
+                          {policy.roles.length === 0 ? "PUBLIC" : policy.roles.join(", ")}
+                        </td>
+                        <td class="max-w-0 truncate font-mono text-xs muted">
+                          {policy.using ?? ""}{policy.using && policy.check ? " · " : ""}{policy.check
+                            ? `CHECK ${policy.check}`
+                            : ""}
+                        </td>
+                        <td class="w-24">
+                          <div class="row-actions">
+                            <button
+                              class="btn btn-ghost btn-icon size-6"
+                              title="Editar la política"
+                              aria-label="Editar la política"
+                              onclick={() => (policyDialog = { existing: policy })}
+                            >
+                              <Icon name="edit" size={12} />
+                            </button>
+                            <button
+                              class="btn btn-danger-ghost btn-icon size-6"
+                              title="Eliminar la política"
+                              aria-label="Eliminar la política"
+                              onclick={() => (dropTarget = { kind: "policy", label: policy.name })}
+                            >
+                              <Icon name="trash" size={12} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              {/if}
+            {/if}
+          </div>
         {:else if section === "privileges"}
           <div class="card overflow-hidden">
             <div class="card-head">
@@ -1456,6 +1759,9 @@
                                   grantee: group.grantee,
                                   privileges: group.privileges,
                                   grantable: group.grantable,
+                                  columns: columnGrants.filter(
+                                    (grant) => grant.grantee === group.grantee,
+                                  ),
                                 },
                               })}
                           >
@@ -1481,6 +1787,73 @@
               </table>
             {/if}
           </div>
+
+          {#if columnGroups.length > 0}
+            <div class="card mt-3 overflow-hidden">
+              <div class="card-head">
+                <span class="card-title">Acotados a columnas</span>
+                <span class="seg-count">{columnGroups.length}</span>
+              </div>
+              <table class="list-table">
+                <thead>
+                  <tr>
+                    <th class="w-px whitespace-nowrap">Columna</th>
+                    <th class="w-px whitespace-nowrap">Rol</th>
+                    <th class="w-full">Privilegios</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each columnGroups as group (pairKey(group.column, group.grantee))}
+                    <tr>
+                      <td class="w-px font-mono whitespace-nowrap">{group.column}</td>
+                      <td class="w-px font-medium whitespace-nowrap">{group.grantee}</td>
+                      <td>
+                        <span class="flex flex-wrap gap-1">
+                          {#each group.privileges as privilege, position (position)}
+                            <span class="tag tag-neutral font-mono">{privilege}</span>
+                          {/each}
+                        </span>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
+
+          {#if isSchema && defaultGrants.length > 0}
+            <div class="card mt-3 overflow-hidden">
+              <div class="card-head">
+                <span class="card-title">Por omisión</span>
+                <span class="text-xs muted">lo que van a recibir los objetos que se creen acá</span>
+              </div>
+              <table class="list-table">
+                <thead>
+                  <tr>
+                    <th class="w-px whitespace-nowrap">Cuando crea</th>
+                    <th class="w-px whitespace-nowrap">Sobre</th>
+                    <th class="w-px whitespace-nowrap">Rol</th>
+                    <th class="w-full">Privilegio</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each defaultGrants as grant, position (position)}
+                    <tr>
+                      <td class="w-px whitespace-nowrap">{grant.owner}</td>
+                      <td class="w-px whitespace-nowrap">{grant.objects}</td>
+                      <td class="w-px font-medium whitespace-nowrap">{grant.grantee}</td>
+                      <td>
+                        <span class="tag tag-neutral font-mono">{grant.privilege}</span>
+                        {#if grant.grantable}
+                          <span class="tag tag-info">con GRANT OPTION</span>
+                        {/if}
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
         {:else if section === "ddl"}
           <div class="card overflow-hidden">
             <div class="card-head">
@@ -1581,6 +1954,18 @@
   />
 {/if}
 
+{#if policyDialog && selected && shape}
+  <PolicyDialog
+    profileId={selected.profileId}
+    database={node?.database ?? ""}
+    schema={shape.schema}
+    table={shape.name}
+    existing={policyDialog.existing}
+    onclose={() => (policyDialog = null)}
+    onsaved={afterPolicySaved}
+  />
+{/if}
+
 {#if viewDialog && selected && node?.schema}
   <ViewDialog
     profileId={selected.profileId}
@@ -1613,13 +1998,12 @@
   />
 {/if}
 
-{#if privilegeDialog && selected && node?.schema}
+{#if privilegeDialog && selected && node && privilegeSubject}
   <PrivilegeDialog
     profileId={selected.profileId}
     database={node.database}
-    kind={isTable ? "table" : "schema"}
-    schema={node.schema}
-    table={isTable ? node.label : undefined}
+    subject={privilegeSubject}
+    columns={isTable ? (shape?.columns.map((column) => column.name) ?? []) : []}
     existing={privilegeDialog.existing}
     onclose={() => (privilegeDialog = null)}
     onsaved={afterPrivilegeSaved}
@@ -1686,7 +2070,23 @@
         <input type="checkbox" bind:checked={dropConcurrently} />
         CONCURRENTLY (no bloquea la tabla; no se puede combinar con CASCADE)
       </label>
-    {:else if dropTarget.kind !== "role"}
+    {:else if dropTarget.kind === "role"}
+      <label class="check">
+        <input type="checkbox" bind:checked={reassignFirst} />
+        Reasignar primero lo que el rol posee
+      </label>
+      {#if reassignFirst}
+        <label class="mt-2 flex flex-col gap-1">
+          <span class="label">Nuevo dueño</span>
+          <input class="field" bind:value={reassignTo} placeholder="CURRENT_USER" />
+        </label>
+        <p class="mt-1.5 text-xs muted">
+          Se ejecuta un REASSIGN OWNED y un DROP OWNED, que solo alcanzan a la base conectada
+          ({node?.database}). Si el rol tiene objetos en otra base, hay que repetirlo desde ahí.
+        </p>
+      {/if}
+      <!-- Una política no admite CASCADE: nada puede depender de ella. -->
+    {:else if dropTarget.kind !== "policy"}
       <label class="check">
         <input type="checkbox" bind:checked={dropCascade} />
         CASCADE (también borra lo que depende de esto)

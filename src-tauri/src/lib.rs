@@ -72,8 +72,15 @@ pub fn run() {
             commands::ddl::role_memberships,
             commands::ddl::privilege_preview,
             commands::ddl::privilege_apply,
-            commands::ddl::table_privileges,
+            commands::ddl::relation_privileges,
             commands::ddl::schema_privileges,
+            commands::ddl::function_privileges,
+            commands::ddl::database_privileges,
+            commands::ddl::column_privileges,
+            commands::ddl::default_privileges,
+            commands::ddl::policy_preview,
+            commands::ddl::policy_apply,
+            commands::ddl::table_security,
             commands::query::explain_warning,
         ])
         .run(tauri::generate_context!())

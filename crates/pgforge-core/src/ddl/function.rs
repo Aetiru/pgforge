@@ -18,14 +18,17 @@
 use crate::conn::ServerHandle;
 use crate::error::{Error, Result};
 
-use super::table::Statement;
 use super::qualified;
+use super::table::Statement;
 
 fn statement(sql: String) -> Statement {
     Statement { sql }
 }
 
-fn keyword(procedure: bool) -> &'static str {
+/// `FUNCTION` o `PROCEDURE`. Desde PG 11 no son intercambiables: un `DROP FUNCTION` no borra un
+/// procedimiento y un `GRANT ... ON FUNCTION` no lo alcanza, así que [`super::privilege`] usa la
+/// misma palabra que se usa acá.
+pub(super) fn keyword(procedure: bool) -> &'static str {
     if procedure {
         "PROCEDURE"
     } else {
@@ -57,7 +60,13 @@ pub async fn apply(handle: &ServerHandle, database: &str, sql: &str) -> Result<(
 /// El `DROP FUNCTION`/`DROP PROCEDURE` para borrar `name`. `args` no se cita ni se interpreta: sale
 /// ya formateado del servidor (ver [`identity_args`]), igual que `type_name` en
 /// [`crate::data::shape::Column`].
-pub fn drop_sql(schema: &str, name: &str, args: &str, procedure: bool, cascade: bool) -> Result<Statement> {
+pub fn drop_sql(
+    schema: &str,
+    name: &str,
+    args: &str,
+    procedure: bool,
+    cascade: bool,
+) -> Result<Statement> {
     Ok(statement(format!(
         "DROP {} {}({args}){}",
         keyword(procedure),

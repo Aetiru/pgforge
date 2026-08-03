@@ -21,6 +21,7 @@
     | "index"
     | "constraint"
     | "trigger"
+    | "policy"
     | "role"
     | "plus"
     | "play"
@@ -66,6 +67,9 @@
     index: '<circle cx="8" cy="15" r="4"/><path d="M10.9 12.1L20 3M17 6l2.5 2.5M14 9l2.5 2.5"/>',
     constraint: '<path d="M12 3l8 3v6c0 4.8-3.4 8.4-8 9-4.6-.6-8-4.2-8-9V6z"/>',
     trigger: '<path d="M13 2L4.5 13.5H11L10 22l8.5-11.5H12z"/>',
+    // Escudo con ojo: es un filtro sobre lo que se ve, no una restricción de integridad.
+    policy:
+      '<path d="M12 3l8 3v6c0 4.8-3.4 8.4-8 9-4.6-.6-8-4.2-8-9V6z"/><circle cx="12" cy="11.5" r="2"/><path d="M7.5 11.5c1.4-2 3-3 4.5-3s3.1 1 4.5 3c-1.4 2-3 3-4.5 3s-3.1-1-4.5-3z"/>',
     role: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     play: '<path d="M7 4.8l12 7.2-12 7.2z"/>',

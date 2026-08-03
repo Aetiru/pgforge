@@ -23,6 +23,8 @@ pub enum NodeKind {
     Index,
     Constraint,
     Trigger,
+    /// Una política de Row-Level Security. Cuelga de la tabla que filtra.
+    Policy,
     /// Del clúster entero, no de una base: vive como hermano de las bases en la raíz del árbol.
     Role,
 }
@@ -44,6 +46,7 @@ pub enum Folder {
     Indexes,
     Constraints,
     Triggers,
+    Policies,
     /// Del clúster entero: única carpeta que aparece en la raíz, junto a las bases.
     Roles,
 }
@@ -64,6 +67,7 @@ impl Folder {
             Folder::Indexes => "Índices",
             Folder::Constraints => "Restricciones",
             Folder::Triggers => "Disparadores",
+            Folder::Policies => "Políticas",
             Folder::Roles => "Roles",
         }
     }
@@ -84,6 +88,7 @@ impl Folder {
             Folder::Indexes => "indexes",
             Folder::Constraints => "constraints",
             Folder::Triggers => "triggers",
+            Folder::Policies => "policies",
             Folder::Roles => "roles",
         }
     }

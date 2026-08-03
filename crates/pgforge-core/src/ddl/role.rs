@@ -57,9 +57,24 @@ pub enum RoleChange {
         new_name: String,
     },
     /// Postgres no tiene `DROP ROLE ... CASCADE`: si el rol es dueño de algún objeto, el error del
-    /// servidor lo va a decir, y hay que reasignarlo antes de poder borrarlo.
+    /// servidor lo va a decir, y hay que reasignarlo antes de poder borrarlo — con
+    /// [`RoleChange::ReassignOwned`] o [`RoleChange::DropOwned`].
     DropRole {
         name: String,
+    },
+    /// Le pasa a otro rol todo lo que `from` tiene en la base **conectada**. Las dos sentencias de
+    /// abajo son las únicas de este módulo que no alcanzan al clúster entero: hay que repetirlas en
+    /// cada base donde el rol tenga algo, y no hay forma de saber desde acá cuáles son.
+    ReassignOwned {
+        from: String,
+        to: String,
+    },
+    /// Borra lo que el rol tiene en la base conectada, en vez de pasárselo a otro. Es lo que hace
+    /// falta para los privilegios que le hayan otorgado: `REASSIGN OWNED` mueve la propiedad pero
+    /// deja los `GRANT`, y esos también impiden borrar el rol.
+    DropOwned {
+        role: String,
+        cascade: bool,
     },
     GrantMembership {
         role: String,
@@ -155,6 +170,16 @@ fn one(change: &RoleChange) -> Result<Statement> {
             quote_ident(new_name)
         ))),
         RoleChange::DropRole { name } => Ok(statement(format!("DROP ROLE {}", quote_ident(name)))),
+        RoleChange::ReassignOwned { from, to } => Ok(statement(format!(
+            "REASSIGN OWNED BY {} TO {}",
+            quote_ident(from),
+            super::role_name(to)
+        ))),
+        RoleChange::DropOwned { role, cascade } => Ok(statement(format!(
+            "DROP OWNED BY {}{}",
+            quote_ident(role),
+            if *cascade { " CASCADE" } else { "" }
+        ))),
         RoleChange::GrantMembership {
             role,
             member,
@@ -163,7 +188,11 @@ fn one(change: &RoleChange) -> Result<Statement> {
             "GRANT {} TO {}{}",
             quote_ident(role),
             quote_ident(member),
-            if *admin_option { " WITH ADMIN OPTION" } else { "" }
+            if *admin_option {
+                " WITH ADMIN OPTION"
+            } else {
+                ""
+            }
         ))),
         RoleChange::RevokeMembership { role, member } => Ok(statement(format!(
             "REVOKE {} FROM {}",
@@ -240,7 +269,11 @@ pub async fn role(handle: &ServerHandle, database: &str, oid: u32) -> Result<Rol
 }
 
 /// De qué roles es miembro `name`, para precargar "miembro de" en el diálogo de edición.
-pub async fn role_memberships(handle: &ServerHandle, database: &str, name: &str) -> Result<Vec<String>> {
+pub async fn role_memberships(
+    handle: &ServerHandle,
+    database: &str,
+    name: &str,
+) -> Result<Vec<String>> {
     let client = handle.client(database).await?;
     let rows = client
         .query(
@@ -324,7 +357,10 @@ mod tests {
             attributes: RoleAttributes::default(),
             member_of: vec!["lectores".into(), "escritores".into()],
         });
-        assert_eq!(statement.sql, "CREATE ROLE app IN ROLE lectores, escritores");
+        assert_eq!(
+            statement.sql,
+            "CREATE ROLE app IN ROLE lectores, escritores"
+        );
     }
 
     #[test]
@@ -363,6 +399,35 @@ mod tests {
             name: "lectora".into(),
         });
         assert_eq!(statement.sql, "DROP ROLE lectora");
+    }
+
+    /// Los dos pasos que hay que dar antes de poder borrar un rol que es dueño de algo.
+    #[test]
+    fn reasigna_y_suelta_lo_que_el_rol_tiene() {
+        let statement = one_statement(RoleChange::ReassignOwned {
+            from: "lectora".into(),
+            to: "ana".into(),
+        });
+        assert_eq!(statement.sql, "REASSIGN OWNED BY lectora TO ana");
+
+        let statement = one_statement(RoleChange::DropOwned {
+            role: "lectora".into(),
+            cascade: true,
+        });
+        assert_eq!(statement.sql, "DROP OWNED BY lectora CASCADE");
+    }
+
+    /// `CURRENT_USER` es una palabra clave y no se cita, igual que en un `GRANT`.
+    #[test]
+    fn reasigna_al_usuario_actual() {
+        let statement = one_statement(RoleChange::ReassignOwned {
+            from: "Mi Rol".into(),
+            to: "current_user".into(),
+        });
+        assert_eq!(
+            statement.sql,
+            "REASSIGN OWNED BY \"Mi Rol\" TO CURRENT_USER"
+        );
     }
 
     #[test]
@@ -414,7 +479,11 @@ mod tests {
             },
             member_of: vec![],
         });
-        assert!(statement.sql.contains("VALID UNTIL 'infinity'"), "{}", statement.sql);
+        assert!(
+            statement.sql.contains("VALID UNTIL 'infinity'"),
+            "{}",
+            statement.sql
+        );
     }
 
     #[test]
