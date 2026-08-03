@@ -188,7 +188,9 @@ async fn crea_y_dispara(handle: &ServerHandle, schema: &str) {
 
     let client = handle.client(&database).await.unwrap();
     client
-        .batch_execute(&format!("INSERT INTO {schema}.clientes (nombre) VALUES ('ana')"))
+        .batch_execute(&format!(
+            "INSERT INTO {schema}.clientes (nombre) VALUES ('ana')"
+        ))
         .await
         .expect("el insert tenía que disparar el trigger sin fallar");
 
@@ -240,17 +242,29 @@ async fn reemplaza_y_dispara_distinto(handle: &ServerHandle, schema: &str) {
     // El de INSERT ya no existe: insertar no tiene que sumar nada a la bitácora.
     let antes = bitacora_count(handle, schema).await;
     client
-        .batch_execute(&format!("INSERT INTO {schema}.clientes (nombre) VALUES ('beto')"))
+        .batch_execute(&format!(
+            "INSERT INTO {schema}.clientes (nombre) VALUES ('beto')"
+        ))
         .await
         .unwrap();
-    assert_eq!(bitacora_count(handle, schema).await, antes, "ya no tiene que disparar por INSERT");
+    assert_eq!(
+        bitacora_count(handle, schema).await,
+        antes,
+        "ya no tiene que disparar por INSERT"
+    );
 
     // El de UPDATE es nuevo: actualizar sí tiene que disparar.
     client
-        .batch_execute(&format!("UPDATE {schema}.clientes SET nombre = 'beto2' WHERE nombre = 'beto'"))
+        .batch_execute(&format!(
+            "UPDATE {schema}.clientes SET nombre = 'beto2' WHERE nombre = 'beto'"
+        ))
         .await
         .unwrap();
-    assert_eq!(bitacora_count(handle, schema).await, antes + 1, "tenía que disparar por UPDATE");
+    assert_eq!(
+        bitacora_count(handle, schema).await,
+        antes + 1,
+        "tenía que disparar por UPDATE"
+    );
 }
 
 async fn borra_y_deja_de_dispararse(handle: &ServerHandle, schema: &str) {
@@ -270,7 +284,10 @@ async fn borra_y_deja_de_dispararse(handle: &ServerHandle, schema: &str) {
     .expect("tenía que borrar el trigger");
 
     let oid = oid_of(handle, schema, "clientes").await;
-    assert!(trigger::triggers(handle, &database, oid).await.unwrap().is_empty());
+    assert!(trigger::triggers(handle, &database, oid)
+        .await
+        .unwrap()
+        .is_empty());
 
     let antes = bitacora_count(handle, schema).await;
     let client = handle.client(&database).await.unwrap();
@@ -278,5 +295,9 @@ async fn borra_y_deja_de_dispararse(handle: &ServerHandle, schema: &str) {
         .batch_execute(&format!("UPDATE {schema}.clientes SET nombre = 'beto3'"))
         .await
         .unwrap();
-    assert_eq!(bitacora_count(handle, schema).await, antes, "sin trigger no tiene que disparar nada");
+    assert_eq!(
+        bitacora_count(handle, schema).await,
+        antes,
+        "sin trigger no tiene que disparar nada"
+    );
 }

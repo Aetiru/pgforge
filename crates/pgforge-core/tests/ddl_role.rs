@@ -126,7 +126,9 @@ async fn crea_y_verifica(handle: &ServerHandle, name: &str) {
     .await
     .expect("tenía que crear el rol");
 
-    let oid = oid_of(handle, name).await.expect("el rol tiene que existir");
+    let oid = oid_of(handle, name)
+        .await
+        .expect("el rol tiene que existir");
     let info = role::role(handle, &database, oid).await.unwrap();
     assert!(info.login);
     assert!(!info.superuser);
@@ -238,8 +240,12 @@ async fn borra(handle: &ServerHandle, uno: &str, dos: &str) {
         handle,
         &database,
         &[
-            RoleChange::DropRole { name: uno.to_owned() },
-            RoleChange::DropRole { name: dos.to_owned() },
+            RoleChange::DropRole {
+                name: uno.to_owned(),
+            },
+            RoleChange::DropRole {
+                name: dos.to_owned(),
+            },
         ],
     )
     .await

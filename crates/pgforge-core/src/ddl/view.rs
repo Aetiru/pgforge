@@ -74,7 +74,11 @@ fn column_list(columns: &[String]) -> String {
     } else {
         format!(
             " ({})",
-            columns.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ")
+            columns
+                .iter()
+                .map(|c| quote_ident(c))
+                .collect::<Vec<_>>()
+                .join(", ")
         )
     }
 }
@@ -149,9 +153,7 @@ fn one(change: &ViewChange) -> Result<Statement> {
 fn require_query(query: &str) -> Result<&str> {
     let trimmed = query.trim();
     if trimmed.is_empty() {
-        return Err(Error::Config(
-            "una vista necesita una consulta".to_owned(),
-        ));
+        return Err(Error::Config("una vista necesita una consulta".to_owned()));
     }
     Ok(trimmed)
 }
@@ -220,7 +222,9 @@ mod tests {
             replace: false,
         });
         assert!(
-            statement.sql.starts_with("CREATE VIEW public.resumen (total, cantidad) AS\n"),
+            statement
+                .sql
+                .starts_with("CREATE VIEW public.resumen (total, cantidad) AS\n"),
             "{}",
             statement.sql
         );
@@ -236,7 +240,9 @@ mod tests {
             replace: true,
         });
         assert!(
-            statement.sql.starts_with("CREATE OR REPLACE VIEW public.clientes_activos AS\n"),
+            statement
+                .sql
+                .starts_with("CREATE OR REPLACE VIEW public.clientes_activos AS\n"),
             "{}",
             statement.sql
         );
@@ -345,7 +351,9 @@ mod tests {
             replace: false,
         });
         assert!(
-            statement.sql.contains("\"mi esquema\".\"Vista\" (\"columna uno\")"),
+            statement
+                .sql
+                .contains("\"mi esquema\".\"Vista\" (\"columna uno\")"),
             "{}",
             statement.sql
         );

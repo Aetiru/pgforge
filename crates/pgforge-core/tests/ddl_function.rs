@@ -70,7 +70,12 @@ async fn fn_oid(handle: &ServerHandle, schema: &str, name: &str) -> u32 {
 /// Para el caso con sobrecarga: desambigua por el tipo del primer argumento en vez de adivinar el
 /// formato exacto de `pg_get_function_identity_arguments` (que es justo lo que el propio test
 /// verifica más abajo, así que acá no conviene depender de él).
-async fn fn_oid_by_first_arg(handle: &ServerHandle, schema: &str, name: &str, arg_type: &str) -> u32 {
+async fn fn_oid_by_first_arg(
+    handle: &ServerHandle,
+    schema: &str,
+    name: &str,
+    arg_type: &str,
+) -> u32 {
     let client = handle.client(handle.default_database()).await.unwrap();
     client
         .query_one(
@@ -195,7 +200,9 @@ async fn borra_con_identity_args(handle: &ServerHandle, schema: &str) {
     let database = handle.default_database().to_owned();
 
     let oid = fn_oid(handle, schema, "duplicar").await;
-    let args = function::identity_args(handle, &database, oid).await.unwrap();
+    let args = function::identity_args(handle, &database, oid)
+        .await
+        .unwrap();
     assert!(
         args.contains("integer"),
         "tiene que traer el tipo del argumento: {args}"
@@ -240,9 +247,17 @@ async fn desambigua_sobrecargas(handle: &ServerHandle, schema: &str) {
         .await
         .unwrap();
 
-    function::drop(handle, &database, schema, "combinar", &args_integer, false, false)
-        .await
-        .expect("tenía que borrar solo la sobrecarga de integer");
+    function::drop(
+        handle,
+        &database,
+        schema,
+        "combinar",
+        &args_integer,
+        false,
+        false,
+    )
+    .await
+    .expect("tenía que borrar solo la sobrecarga de integer");
 
     assert_eq!(
         fn_count(handle, schema, "combinar").await,

@@ -250,17 +250,15 @@ async fn agrega_constraints(handle: &ServerHandle, schema: &str) {
     .expect("tenía que agregar la clave de categorías, la foreign key y el check en un lote");
 
     let listadas = table::constraints(handle, &database, oid).await.unwrap();
-    assert!(listadas.iter().any(|c| c.name == "clientes_pkey" && c.kind == "primaria"));
-    assert!(
-        listadas
-            .iter()
-            .any(|c| c.name == "clientes_categoria_fkey" && c.kind == "foránea")
-    );
-    assert!(
-        listadas
-            .iter()
-            .any(|c| c.name == "clientes_id_check" && c.kind == "verificación")
-    );
+    assert!(listadas
+        .iter()
+        .any(|c| c.name == "clientes_pkey" && c.kind == "primaria"));
+    assert!(listadas
+        .iter()
+        .any(|c| c.name == "clientes_categoria_fkey" && c.kind == "foránea"));
+    assert!(listadas
+        .iter()
+        .any(|c| c.name == "clientes_id_check" && c.kind == "verificación"));
 
     table::apply(
         handle,
@@ -318,20 +316,23 @@ async fn crea_y_borra_indices(handle: &ServerHandle, schema: &str) {
 
     let oid = oid_of(handle, schema, "clientes").await.unwrap();
     let listados = index::indexes(handle, &database, oid).await.unwrap();
-    assert!(
-        listados
-            .iter()
-            .any(|i| i.name == "clientes_nombre_idx" && i.valid)
-    );
-    assert!(
-        listados
-            .iter()
-            .any(|i| i.name == "clientes_categoria_idx" && i.valid)
-    );
+    assert!(listados
+        .iter()
+        .any(|i| i.name == "clientes_nombre_idx" && i.valid));
+    assert!(listados
+        .iter()
+        .any(|i| i.name == "clientes_categoria_idx" && i.valid));
 
-    index::drop_index(handle, &database, schema, "clientes_categoria_idx", false, true)
-        .await
-        .expect("tenía que borrar el índice CONCURRENTLY");
+    index::drop_index(
+        handle,
+        &database,
+        schema,
+        "clientes_categoria_idx",
+        false,
+        true,
+    )
+    .await
+    .expect("tenía que borrar el índice CONCURRENTLY");
 
     let listados = index::indexes(handle, &database, oid).await.unwrap();
     assert!(!listados.iter().any(|i| i.name == "clientes_categoria_idx"));
@@ -387,7 +388,11 @@ async fn cambia_columnas(handle: &ServerHandle, schema: &str) {
     assert_eq!(apodo.type_name, "character varying(100)");
     assert!(apodo.not_null);
     assert!(
-        apodo.default.as_deref().unwrap_or_default().contains("sin apodo"),
+        apodo
+            .default
+            .as_deref()
+            .unwrap_or_default()
+            .contains("sin apodo"),
         "{:?}",
         apodo.default
     );

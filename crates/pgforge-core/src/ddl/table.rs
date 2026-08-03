@@ -256,7 +256,11 @@ fn one(change: &TableChange) -> Result<Statement> {
             "ALTER TABLE {} ALTER COLUMN {} {}",
             qualified(schema, table),
             quote_ident(column),
-            if *not_null { "SET NOT NULL" } else { "DROP NOT NULL" }
+            if *not_null {
+                "SET NOT NULL"
+            } else {
+                "DROP NOT NULL"
+            }
         ))),
         TableChange::SetColumnDefault {
             schema,
@@ -327,9 +331,7 @@ fn constraint_sql(definition: &ConstraintDef) -> Result<String> {
         }
         ConstraintDef::Check { expression } => {
             if expression.trim().is_empty() {
-                return Err(Error::Config(
-                    "un CHECK necesita una expresión".to_owned(),
-                ));
+                return Err(Error::Config("un CHECK necesita una expresión".to_owned()));
             }
             Ok(format!("CHECK ({expression})"))
         }
@@ -342,7 +344,11 @@ fn column_list(columns: &[String]) -> Result<String> {
             "una constraint necesita al menos una columna".to_owned(),
         ));
     }
-    Ok(columns.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", "))
+    Ok(columns
+        .iter()
+        .map(|c| quote_ident(c))
+        .collect::<Vec<_>>()
+        .join(", "))
 }
 
 fn create_table(schema: &str, name: &str, columns: &[ColumnDef]) -> Result<Statement> {
@@ -352,10 +358,7 @@ fn create_table(schema: &str, name: &str, columns: &[ColumnDef]) -> Result<State
         ));
     }
 
-    let defined: Vec<String> = columns
-        .iter()
-        .map(column_sql)
-        .collect::<Result<_>>()?;
+    let defined: Vec<String> = columns.iter().map(column_sql).collect::<Result<_>>()?;
 
     Ok(statement(format!(
         "CREATE TABLE {} (\n    {}\n)",
@@ -366,9 +369,7 @@ fn create_table(schema: &str, name: &str, columns: &[ColumnDef]) -> Result<State
 
 fn column_sql(column: &ColumnDef) -> Result<String> {
     if column.name.is_empty() {
-        return Err(Error::Config(
-            "una columna necesita un nombre".to_owned(),
-        ));
+        return Err(Error::Config("una columna necesita un nombre".to_owned()));
     }
     if column.type_name.is_empty() {
         return Err(Error::Config(format!(

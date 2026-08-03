@@ -328,7 +328,9 @@ mod tests {
             definition: d,
         });
         assert!(
-            statement.sql.contains("BEFORE INSERT OR UPDATE OR DELETE\n"),
+            statement
+                .sql
+                .contains("BEFORE INSERT OR UPDATE OR DELETE\n"),
             "{}",
             statement.sql
         );
@@ -368,7 +370,11 @@ mod tests {
             name: "t".into(),
             definition: d,
         });
-        assert!(statement.sql.contains("\n    WHEN (NEW.activo)\n"), "{}", statement.sql);
+        assert!(
+            statement.sql.contains("\n    WHEN (NEW.activo)\n"),
+            "{}",
+            statement.sql
+        );
     }
 
     #[test]
@@ -416,10 +422,7 @@ mod tests {
             name: "clientes_bi".into(),
             cascade: false,
         });
-        assert_eq!(
-            statement.sql,
-            "DROP TRIGGER clientes_bi ON public.clientes"
-        );
+        assert_eq!(statement.sql, "DROP TRIGGER clientes_bi ON public.clientes");
 
         let statement = one_statement(TriggerChange::DropTrigger {
             schema: "public".into(),
@@ -444,9 +447,15 @@ mod tests {
             name: "Mi Trigger".into(),
             definition: d,
         });
-        assert!(statement.sql.contains("CREATE TRIGGER \"Mi Trigger\""), "{}", statement.sql);
         assert!(
-            statement.sql.contains("EXECUTE FUNCTION \"mi esquema\".\"Auditar\"()"),
+            statement.sql.contains("CREATE TRIGGER \"Mi Trigger\""),
+            "{}",
+            statement.sql
+        );
+        assert!(
+            statement
+                .sql
+                .contains("EXECUTE FUNCTION \"mi esquema\".\"Auditar\"()"),
             "{}",
             statement.sql
         );
