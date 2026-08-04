@@ -9,7 +9,7 @@
 
 mod node;
 
-pub use node::{Folder, NodeKind, TreeNode};
+pub use node::{Folder, NodeKind, NodeTag, TreeNode};
 
 use crate::conn::ServerHandle;
 use crate::error::{Error, Result};
@@ -51,6 +51,14 @@ pub async fn children(
     }
 }
 
+/// El dueño de un objeto, salvo que sea el usuario conectado.
+///
+/// Casi todo pertenece a quien está mirando: repetir su nombre en cada fila gasta el ancho del
+/// árbol para no decir nada. Se muestra cuando es otro, que es justo cuando importa.
+fn owner_detail(handle: &ServerHandle, owner: String) -> Option<String> {
+    (owner != handle.caps.current_user).then_some(owner)
+}
+
 async fn databases(handle: &ServerHandle) -> Result<Vec<TreeNode>> {
     let databases = handle.databases().await?;
     Ok(databases
@@ -58,7 +66,7 @@ async fn databases(handle: &ServerHandle) -> Result<Vec<TreeNode>> {
         .filter(|db| db.can_connect && !db.is_template)
         .map(|db| {
             let mut node = TreeNode::database(db.name);
-            node.detail = Some(db.owner);
+            node.detail = owner_detail(handle, db.owner);
             node
         })
         .collect())
@@ -103,18 +111,20 @@ async fn roles(
         .map(|row| {
             let can_login: bool = row.get(2);
             let is_super: bool = row.get(3);
-            let mut detail = if can_login { "login" } else { "grupo" }.to_owned();
+
+            // Poder entrar o no es la distinción que separa a un usuario de un rol de agrupación, y
+            // es lo primero que se busca al mirar la lista: va como etiqueta y no como texto.
+            let mut tags = vec![if can_login {
+                NodeTag::Login
+            } else {
+                NodeTag::Group
+            }];
             if is_super {
-                detail.push_str(" · superusuario");
+                tags.push(NodeTag::Superuser);
             }
-            TreeNode::object(
-                parent,
-                NodeKind::Role,
-                row.get(0),
-                row.get(1),
-                Some(detail),
-                false,
-            )
+
+            TreeNode::object(parent, NodeKind::Role, row.get(0), row.get(1), None, false)
+                .with_tags(tags)
         })
         .collect())
 }
@@ -164,7 +174,13 @@ async fn schemas(
     Ok(rows
         .into_iter()
         .map(|row| {
-            TreeNode::schema(parent, row.get(1), row.get(0), row.get(2)).with_comment(row.get(3))
+            TreeNode::schema(
+                parent,
+                row.get(1),
+                row.get(0),
+                owner_detail(handle, row.get(2)),
+            )
+            .with_comment(row.get(3))
         })
         .collect())
 }
@@ -263,7 +279,8 @@ async fn relations(
                 c.relkind::text,
                 pg_catalog.pg_get_userbyid(c.relowner)::text,
                 pg_catalog.obj_description(c.oid, 'pg_class'),
-                c.relispartition
+                c.relispartition,
+                c.relrowsecurity
            FROM pg_catalog.pg_class c
           WHERE c.relnamespace = $1 AND c.relkind IN ({relkinds})
           ORDER BY c.relname"
@@ -279,6 +296,7 @@ async fn relations(
             let relkind: String = row.get(2);
             let owner: String = row.get(3);
             let is_partition: bool = row.get(5);
+            let has_rls: bool = row.get(6);
 
             let kind = match relkind.as_str() {
                 "r" => NodeKind::Table,
@@ -289,15 +307,22 @@ async fn relations(
                 _ => NodeKind::Sequence,
             };
 
-            let detail = if is_partition {
-                Some(format!("{owner} · partición"))
-            } else {
-                Some(owner)
-            };
+            let detail = owner_detail(handle, owner);
+
+            let mut tags = Vec::new();
+            if is_partition {
+                tags.push(NodeTag::Partition);
+            }
+            // Una tabla con RLS activa devuelve menos filas de las que tiene, y eso explica de
+            // antemano el «no veo mis datos» que si no se descubre recién al consultarla.
+            if has_rls {
+                tags.push(NodeTag::RowSecurity);
+            }
 
             let expandable = !matches!(kind, NodeKind::Sequence);
             TreeNode::object(parent, kind, row.get(0), row.get(1), detail, expandable)
                 .with_comment(row.get(4))
+                .with_tags(tags)
         })
         .collect())
 }

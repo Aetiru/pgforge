@@ -88,6 +88,9 @@ export type NodeKind =
   | "role"
   | { folder: FolderKind };
 
+/** Rasgo de un objeto que se muestra como etiqueta junto al nombre en el árbol. */
+export type NodeTag = "login" | "group" | "superuser" | "partition" | "rowSecurity";
+
 export interface TreeNode {
   id: string;
   label: string;
@@ -98,6 +101,8 @@ export interface TreeNode {
   schema?: string;
   oid?: number;
   comment?: string;
+  /** Ausente cuando no tiene ninguno. */
+  tags?: NodeTag[];
 }
 
 export interface TreeOptions {
@@ -127,6 +132,13 @@ export const saveProfile = (profile: ConnectionProfile, password?: string) =>
   invoke<ConnectionProfile>("save_profile", { profile, password: password || null });
 
 export const deleteProfile = (id: string) => invoke<void>("delete_profile", { id });
+
+/** Las carpetas en las que están repartidos los servidores guardados. */
+export const listGroups = () => invoke<string[]>("list_groups");
+
+/** Renombra una carpeta, o la deshace si no se pasa nombre nuevo. Devuelve cuántos se movieron. */
+export const renameGroup = (from: string, to?: string) =>
+  invoke<number>("rename_group", { from, to: to ?? null });
 
 export const connect = (id: string, password?: string) =>
   invoke<Connected>("connect", { id, password: password || null });

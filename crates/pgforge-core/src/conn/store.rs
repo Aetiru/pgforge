@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::profile::{ConnectionProfile, ProfileId};
+use super::profile::{normalize_group, ConnectionProfile, ProfileId};
 use super::secret::Password;
 use crate::error::{Error, Result};
 
@@ -48,13 +48,51 @@ impl ProfileStore {
         self.profiles.iter().find(|p| p.id == id)
     }
 
+    /// Las carpetas existentes, ordenadas como se muestran. Salen de los perfiles: no hay una lista
+    /// de carpetas aparte que pueda quedar desincronizada con ellos.
+    pub fn groups(&self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .profiles
+            .iter()
+            .filter_map(|profile| profile.group.clone())
+            .collect();
+        names.sort_by_key(|name| name.to_lowercase());
+        names.dedup();
+        names
+    }
+
     /// Agrega el perfil, o reemplaza el existente con el mismo identificador.
-    pub fn upsert(&mut self, profile: ConnectionProfile) -> Result<()> {
+    pub fn upsert(&mut self, mut profile: ConnectionProfile) -> Result<()> {
+        profile.group = normalize_group(profile.group.as_deref());
+
         match self.profiles.iter_mut().find(|p| p.id == profile.id) {
             Some(slot) => *slot = profile,
             None => self.profiles.push(profile),
         }
         self.persist()
+    }
+
+    /// Cambia de nombre una carpeta, o la deshace si `to` es `None`, dejando sus servidores sueltos.
+    /// Devuelve cuántos perfiles se movieron.
+    ///
+    /// Va acá y no en quien la muestra porque toca todos los perfiles de la carpeta y tiene que
+    /// escribirlos de una sola vez: renombrar de a uno dejaría la lista partida en dos carpetas si
+    /// algo falla a mitad de camino.
+    pub fn rename_group(&mut self, from: &str, to: Option<&str>) -> Result<usize> {
+        let to = normalize_group(to);
+        let mut moved = 0;
+
+        for profile in &mut self.profiles {
+            if profile.group.as_deref() == Some(from) {
+                profile.group = to.clone();
+                moved += 1;
+            }
+        }
+
+        if moved > 0 {
+            self.persist()?;
+        }
+        Ok(moved)
     }
 
     /// Elimina el perfil y su contraseña guardada. Dejar la credencial huérfana en el almacén del
@@ -146,6 +184,83 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// Guarda los perfiles indicados, cada uno en la carpeta que se le pasa.
+    fn store_with(name: &str, groups: &[(&str, Option<&str>)]) -> ProfileStore {
+        let path = temp_path(name);
+        let _ = std::fs::remove_file(&path);
+
+        let mut store = ProfileStore::load(&path).unwrap();
+        for (server, group) in groups {
+            let mut profile = ConnectionProfile::new(*server, "localhost", "postgres");
+            profile.group = group.map(str::to_owned);
+            store.upsert(profile).unwrap();
+        }
+        store
+    }
+
+    #[test]
+    fn las_carpetas_salen_de_los_perfiles_y_no_se_repiten() {
+        let store = store_with(
+            "carpetas",
+            &[
+                ("uno", Some("Producción")),
+                ("dos", Some("desarrollo")),
+                ("tres", Some("Producción")),
+                ("cuatro", None),
+            ],
+        );
+
+        // Ordenadas sin distinguir mayúsculas: si no, «Producción» iría antes que «desarrollo».
+        assert_eq!(store.groups(), vec!["desarrollo", "Producción"]);
+        let _ = std::fs::remove_file(store.path());
+    }
+
+    #[test]
+    fn el_nombre_de_la_carpeta_se_normaliza_al_guardar() {
+        let store = store_with(
+            "normalizar",
+            &[("uno", Some("  Producción ")), ("dos", Some("   "))],
+        );
+
+        assert_eq!(store.groups(), vec!["Producción"]);
+        // Una carpeta en blanco no es una carpeta: el servidor queda suelto.
+        assert!(store.profiles()[1].group.is_none());
+        let _ = std::fs::remove_file(store.path());
+    }
+
+    #[test]
+    fn renombrar_una_carpeta_mueve_todos_sus_servidores() {
+        let mut store = store_with(
+            "renombrar-carpeta",
+            &[
+                ("uno", Some("vieja")),
+                ("dos", Some("vieja")),
+                ("tres", Some("otra")),
+            ],
+        );
+
+        assert_eq!(store.rename_group("vieja", Some("nueva")).unwrap(), 2);
+        assert_eq!(store.groups(), vec!["nueva", "otra"]);
+
+        // Y el cambio quedó en disco, no solo en memoria.
+        let releido = ProfileStore::load(store.path()).unwrap();
+        assert_eq!(releido.groups(), vec!["nueva", "otra"]);
+        let _ = std::fs::remove_file(store.path());
+    }
+
+    #[test]
+    fn deshacer_una_carpeta_deja_sus_servidores_sueltos() {
+        let mut store = store_with(
+            "deshacer-carpeta",
+            &[("uno", Some("vieja")), ("dos", Some("otra"))],
+        );
+
+        assert_eq!(store.rename_group("vieja", None).unwrap(), 1);
+        assert_eq!(store.groups(), vec!["otra"]);
+        assert!(store.profiles()[0].group.is_none());
+        let _ = std::fs::remove_file(store.path());
     }
 
     #[test]

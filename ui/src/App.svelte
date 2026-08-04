@@ -2,6 +2,8 @@
   import Alert from "./lib/Alert.svelte";
   import Confirm from "./lib/Confirm.svelte";
   import ConnectionDialog from "./lib/ConnectionDialog.svelte";
+  import GroupDialog from "./lib/GroupDialog.svelte";
+  import NewGroupDialog from "./lib/NewGroupDialog.svelte";
   import Dashboard from "./lib/Dashboard.svelte";
   import DataPanel from "./lib/DataPanel.svelte";
   import DetailPanel from "./lib/DetailPanel.svelte";
@@ -30,6 +32,10 @@
     null,
   );
   let confirmDelete = $state<ConnectionProfile | null>(null);
+  /** La carpeta de conexiones que se está renombrando. */
+  let groupDialog = $state<string | null>(null);
+  /** Abierto mientras se crea una carpeta nueva. */
+  let newGroupDialog = $state(false);
   let banner = $state<string | null>(null);
   let sidebarWidth = $state(300);
   let sidebarOpen = $state(true);
@@ -44,7 +50,7 @@
     explorer.refreshProfiles().catch((error) => (banner = describeError(error)));
   });
 
-  const connectedServers = $derived(explorer.roots.filter((row) => row.connected));
+  const connectedServers = $derived(explorer.servers.filter((row) => row.connected));
 
   const monitorServer = $derived.by(() => {
     if (monitorChoice && explorer.isConnected(monitorChoice)) return monitorChoice;
@@ -93,7 +99,7 @@
   // lado. Se cierra acá y no en cada lugar que desconecta, para que ningún camino se olvide.
   $effect(() => {
     const connected = new Set(
-      explorer.roots.filter((row) => row.connected).map((row) => row.profileId),
+      explorer.servers.filter((row) => row.connected).map((row) => row.profileId),
     );
     for (const tab of tabs.all) {
       if (!connected.has(tab.profileId)) tabs.close(tab.key);
@@ -141,6 +147,9 @@
   const context = $derived.by(() => {
     const selected = explorer.selected;
     if (!selected) return null;
+    if (selected.kind === "group") {
+      return { server: selected.label, connected: false, version: null, path: "carpeta" };
+    }
     const profile = profileOf(selected.profileId);
     const caps = explorer.caps[selected.profileId];
     return {
@@ -276,6 +285,14 @@
             </div>
             <button
               class="btn btn-icon"
+              title="Nueva carpeta"
+              aria-label="Nueva carpeta"
+              onclick={() => (newGroupDialog = true)}
+            >
+              <Icon name="folder" />
+            </button>
+            <button
+              class="btn btn-icon"
               title="Nuevo servidor"
               aria-label="Nuevo servidor"
               onclick={() => (dialog = { profile: null })}
@@ -285,7 +302,11 @@
           </div>
 
           <div class="min-h-0 flex-1 px-1 pb-1">
-            <TreePanel onconnect={connectById} onnew={() => (dialog = { profile: null })} />
+            <TreePanel
+              onconnect={connectById}
+              onnew={() => (dialog = { profile: null })}
+              ongroup={(name) => (groupDialog = name)}
+            />
           </div>
 
           <div class="divider-t px-3 py-2">
@@ -403,6 +424,7 @@
                 if (profile) dialog = { profile };
               }}
               ondelete={(profileId) => (confirmDelete = profileOf(profileId))}
+              ongroup={(name) => (groupDialog = name)}
               onquery={openQuery}
               ondata={openData}
             />
@@ -447,6 +469,14 @@
       }
     }}
   />
+{/if}
+
+{#if groupDialog}
+  <GroupDialog name={groupDialog} onclose={() => (groupDialog = null)} />
+{/if}
+
+{#if newGroupDialog}
+  <NewGroupDialog onclose={() => (newGroupDialog = false)} />
 {/if}
 
 {#if prompt}

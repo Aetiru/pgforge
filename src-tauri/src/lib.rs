@@ -16,6 +16,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
             commands::servers::list_profiles,
+            commands::servers::list_groups,
+            commands::servers::rename_group,
             commands::servers::save_profile,
             commands::servers::delete_profile,
             commands::servers::connect,

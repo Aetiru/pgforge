@@ -29,6 +29,25 @@ pub enum NodeKind {
     Role,
 }
 
+/// Rasgo de un objeto que conviene ver sin abrirlo.
+///
+/// Es un vocabulario cerrado y no texto libre porque la interfaz les da color y forma: `detail`
+/// sirve para lo que solo se puede leer (el dueño, la firma de una función), y esto para lo que se
+/// reconoce de un vistazo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NodeTag {
+    /// El rol puede iniciar sesión.
+    Login,
+    /// El rol no puede iniciar sesión: existe para agrupar privilegios.
+    Group,
+    Superuser,
+    /// La tabla es una partición de otra.
+    Partition,
+    /// La tabla tiene activada la seguridad por fila.
+    RowSecurity,
+}
+
 /// Agrupaciones que se muestran como carpetas.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -119,6 +138,9 @@ pub struct TreeNode {
     pub oid: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
+    /// Rasgos del objeto, para mostrar como etiquetas junto al nombre.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<NodeTag>,
 }
 
 impl TreeNode {
@@ -134,6 +156,7 @@ impl TreeNode {
             schema: None,
             oid: None,
             comment: None,
+            tags: Vec::new(),
         }
     }
 
@@ -151,6 +174,7 @@ impl TreeNode {
             schema: None,
             oid: None,
             comment: None,
+            tags: Vec::new(),
         }
     }
 
@@ -167,20 +191,22 @@ impl TreeNode {
             // Las carpetas de una tabla necesitan recordar de qué tabla cuelgan.
             oid: parent.oid,
             comment: None,
+            tags: Vec::new(),
         }
     }
 
-    pub(crate) fn schema(parent: &TreeNode, name: String, oid: u32, owner: String) -> Self {
+    pub(crate) fn schema(parent: &TreeNode, name: String, oid: u32, owner: Option<String>) -> Self {
         Self {
             id: format!("{}/sch:{name}", parent.id),
             label: name.clone(),
-            detail: Some(owner),
+            detail: owner,
             kind: NodeKind::Schema,
             has_children: true,
             database: parent.database.clone(),
             schema: Some(name),
             oid: Some(oid),
             comment: None,
+            tags: Vec::new(),
         }
     }
 
@@ -202,6 +228,7 @@ impl TreeNode {
             schema: parent.schema.clone(),
             oid: Some(oid),
             comment: None,
+            tags: Vec::new(),
         }
     }
 
@@ -223,11 +250,17 @@ impl TreeNode {
             schema: parent.schema.clone(),
             oid: parent.oid,
             comment: None,
+            tags: Vec::new(),
         }
     }
 
     pub(crate) fn with_comment(mut self, comment: Option<String>) -> Self {
         self.comment = comment;
+        self
+    }
+
+    pub(crate) fn with_tags(mut self, tags: Vec<NodeTag>) -> Self {
+        self.tags = tags;
         self
     }
 }

@@ -96,7 +96,8 @@ pub struct ConnectionProfile {
     #[serde(default)]
     pub id: ProfileId,
     pub name: String,
-    /// Carpeta bajo la cual agrupar el servidor en el árbol.
+    /// Carpeta bajo la cual agrupar el servidor en el árbol. Se normaliza con [`normalize_group`]
+    /// al guardar, porque el nombre es también la clave por la que se agrupa.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
     pub host: String,
@@ -123,6 +124,20 @@ pub struct ConnectionProfile {
 
 fn default_connect_timeout() -> u64 {
     10
+}
+
+/// Normaliza el nombre de una carpeta de conexiones: sin espacios en los bordes, y una cadena
+/// vacía es «ninguna carpeta».
+///
+/// No hay una lista de carpetas guardada aparte: una carpeta es el nombre que comparten unos
+/// perfiles. Por eso el nombre tiene que llegar siempre igual al almacén — `"Producción"` y
+/// `"Producción "` se verían como dos carpetas distintas— y por eso una carpeta desaparece sola
+/// cuando sale de ella el último servidor, sin dejar una entrada vacía que después nadie limpia.
+pub fn normalize_group(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
 }
 
 impl ConnectionProfile {

@@ -20,7 +20,7 @@
   import TableDialog from "./TableDialog.svelte";
   import TriggerDialog from "./TriggerDialog.svelte";
   import ViewDialog from "./ViewDialog.svelte";
-  import { kindLabel, lookOf } from "./badges";
+  import { GROUP_LOOK, kindLabel, lookOf } from "./badges";
   import { explorer, type Row } from "./explorer.svelte";
   import {
     dataOpen,
@@ -69,12 +69,15 @@
     onedit,
     ondelete,
     onconnect,
+    ongroup,
     onquery,
     ondata,
   }: {
     onedit: (profileId: string) => void;
     ondelete: (profileId: string) => void;
     onconnect: (profileId: string) => void;
+    /** Abre el diálogo de la carpeta de conexiones seleccionada. */
+    ongroup: (name: string) => void;
     onquery: (profileId: string, database: string, title: string) => void;
     ondata: (profileId: string, database: string, title: string, oid: number) => void;
   } = $props();
@@ -86,12 +89,17 @@
 
   const selected = $derived(explorer.selected);
   const node = $derived(selected?.node ?? null);
-  const isServer = $derived(selected !== null && selected.node === null);
+  const isServer = $derived(selected?.kind === "server");
+  /** Una carpeta de conexiones: agrupa servidores guardados y no existe en ninguna base. */
+  const isGroup = $derived(selected?.kind === "group");
+  const groupServers = $derived(
+    isGroup ? explorer.servers.filter((row) => row.group === selected!.group) : [],
+  );
   const profile = $derived(
     selected ? (explorer.profiles.find((item) => item.id === selected.profileId) ?? null) : null,
   );
   const caps = $derived(selected ? (explorer.caps[selected.profileId] ?? null) : null);
-  const look = $derived(lookOf(node?.kind ?? null));
+  const look = $derived(isGroup ? GROUP_LOOK : lookOf(node?.kind ?? null));
 
   /** Ni las carpetas, ni las bases, ni la fila del servidor tienen un DDL propio. */
   const hasDdl = $derived(node !== null && folderOf(node.kind) === null && node.kind !== "database");
@@ -1044,7 +1052,9 @@
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
             <h2 class="truncate text-base font-medium">{selected.label}</h2>
-            <span class="tag tag-neutral shrink-0">{kindLabel(node?.kind ?? null)}</span>
+            <span class="tag tag-neutral shrink-0">
+              {isGroup ? "Carpeta de conexiones" : kindLabel(node?.kind ?? null)}
+            </span>
             {#if isServer}
               <span class="tag shrink-0 {selected.connected ? 'tag-ok' : 'tag-neutral'}">
                 {selected.connected ? "conectado" : "sin conectar"}
@@ -1205,6 +1215,13 @@
             </button>
           {/if}
 
+          {#if isGroup}
+            <button class="btn btn-primary" onclick={() => ongroup(selected.group!)}>
+              <Icon name="edit" size={12} />
+              Renombrar
+            </button>
+          {/if}
+
           {#if isServer}
             {#if selected.connected}
               <button class="btn" onclick={() => explorer.disconnect(selected.profileId)}>
@@ -1284,7 +1301,62 @@
       {/if}
     </header>
 
-    {#if isServer && !selected.connected}
+    {#if isGroup}
+      <!--
+        Una carpeta no tiene catálogo que mostrar: lo único que contiene son conexiones, así que el
+        panel es la lista de esas conexiones con lo que se puede hacer con cada una.
+      -->
+      <div class="min-h-0 flex-1 overflow-auto p-4">
+        <div class="card overflow-hidden">
+          <div class="card-head">
+            <span class="card-title">Servidores de la carpeta</span>
+            <span class="ml-auto text-xs muted">
+              Arrastrá un servidor del árbol para meterlo o sacarlo
+            </span>
+          </div>
+
+          <table class="list-table">
+            <tbody>
+              {#each groupServers as server (server.profileId)}
+                <tr class="group">
+                  <td class="w-px whitespace-nowrap">
+                    <span class="flex items-center gap-1.5">
+                      <span class="dot {server.connected ? 'dot-on' : 'dot-off'}"></span>
+                      <span class="font-medium">{server.label}</span>
+                    </span>
+                  </td>
+                  <td class="text-xs muted">{server.detail}</td>
+                  <td class="w-40">
+                    <div class="row-actions">
+                      {#if server.connected}
+                        <button
+                          class="btn btn-sm"
+                          onclick={() => explorer.disconnect(server.profileId)}
+                        >
+                          Desconectar
+                        </button>
+                      {:else}
+                        <button class="btn btn-sm" onclick={() => onconnect(server.profileId)}>
+                          Conectar
+                        </button>
+                      {/if}
+                      <button
+                        class="btn btn-ghost btn-icon size-6"
+                        title="Editar el servidor"
+                        aria-label="Editar el servidor"
+                        onclick={() => onedit(server.profileId)}
+                      >
+                        <Icon name="edit" size={12} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {:else if isServer && !selected.connected}
       <Empty
         icon="server"
         title="El servidor está sin conectar"

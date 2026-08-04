@@ -105,6 +105,12 @@ Las contraseñas nunca van a los archivos de la aplicación: el perfil guarda so
 servidor y la contraseña va al almacén del sistema operativo vía `keyring`, solo si se pide
 recordarla.
 
+Los servidores se agrupan en **carpetas de conexiones**: el campo `group` del perfil. No hay una
+lista de carpetas guardada aparte —una carpeta es el nombre que comparten unos perfiles—, así que
+`ProfileStore::groups()` las deriva, `rename_group` mueve a todos sus miembros de una sola escritura
+y la carpeta desaparece sola cuando sale de ella el último servidor. El nombre pasa siempre por
+`normalize_group` al guardar, porque es también la clave por la que se agrupa.
+
 ### Errores
 
 `pgforge_core::Error` traduce los errores del servidor a variantes con significado: `Canceled` (el
@@ -196,6 +202,11 @@ pide `select-text` explícitamente—, y CodeMirror y uPlot no reciben clases si
 Los íconos son SVG dibujados a mano en `Icon.svelte` (una librería completa pesa más que toda la
 interfaz); el ícono y el color de cada tipo de nodo salen de `lookOf` en `badges.ts`, que agrupa por
 familia. Un tipo de objeto nuevo se agrega en esos dos lugares, no en el componente que lo muestra.
+
+Los rasgos que el árbol muestra como pastillas de color (que un rol pueda iniciar sesión, que una
+tabla tenga RLS activa) son el `NodeTag` del núcleo, un vocabulario cerrado: el `TreeNode` los trae
+en `tags` y `tagLook` en `badges.ts` les pone texto y tono. Van separados de `detail`, que es texto
+libre para leer. Un rasgo nuevo se agrega en esos dos lugares.
 
 #### Diálogos
 

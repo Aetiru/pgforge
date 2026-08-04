@@ -1,5 +1,5 @@
 import type { IconName } from "./Icon.svelte";
-import { folderOf, type NodeKind } from "./ipc";
+import { folderOf, type NodeKind, type NodeTag } from "./ipc";
 
 /**
  * Ícono y color de cada tipo de nodo.
@@ -20,6 +20,13 @@ const INTEGRITY = "text-rose-500 dark:text-rose-400";
 const VALUE = "text-amber-600 dark:text-amber-400";
 const STRUCTURE = "text-zinc-400 dark:text-zinc-500";
 const SECURITY = "text-cyan-600 dark:text-cyan-400";
+
+/**
+ * Una carpeta de conexiones. No pasa por `lookOf` porque no es un nodo del catálogo: es una
+ * agrupación local, y se distingue en amarillo de las carpetas grises que agrupan objetos del
+ * servidor.
+ */
+export const GROUP_LOOK: NodeLook = { icon: "folder", tone: VALUE };
 
 export function lookOf(kind: NodeKind | null): NodeLook {
   if (kind === null) return { icon: "server", tone: STRUCTURE };
@@ -63,6 +70,44 @@ export function lookOf(kind: NodeKind | null): NodeLook {
     default:
       return { icon: "folder", tone: STRUCTURE };
   }
+}
+
+/**
+ * Texto y color de las etiquetas de un nodo.
+ *
+ * Son pocas y de vocabulario cerrado a propósito (`NodeTag` del núcleo): una etiqueta que se
+ * reconoce por el color no se lee, y eso solo funciona si no se multiplican.
+ */
+const TAGS: Record<NodeTag, { label: string; tone: string; title: string }> = {
+  login: {
+    label: "login",
+    tone: "tag-info",
+    title: "El rol puede iniciar sesión",
+  },
+  group: {
+    label: "grupo",
+    tone: "tag-neutral",
+    title: "El rol no puede iniciar sesión: existe para agrupar privilegios",
+  },
+  superuser: {
+    label: "superusuario",
+    tone: "tag-warn",
+    title: "El rol se saltea todos los controles de permisos",
+  },
+  partition: {
+    label: "partición",
+    tone: "tag-neutral",
+    title: "La tabla es una partición de otra",
+  },
+  rowSecurity: {
+    label: "RLS",
+    tone: "tag-info",
+    title: "Seguridad por fila activa: la tabla puede devolver menos filas de las que tiene",
+  },
+};
+
+export function tagLook(tag: NodeTag) {
+  return TAGS[tag];
 }
 
 /** Nombre legible del tipo de nodo, para el panel de propiedades. */

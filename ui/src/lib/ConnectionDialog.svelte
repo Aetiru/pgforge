@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
+  import { explorer } from "./explorer.svelte";
   import { describeError, saveProfile, type ConnectionProfile, type SslMode } from "./ipc";
 
   let {
@@ -69,9 +70,29 @@
   {onclose}
 >
   <div class="grid grid-cols-2 gap-3">
-    <label class="col-span-2 flex flex-col gap-1">
+    <label class="flex flex-col gap-1">
       <span class="label">Nombre</span>
       <input class="field" data-autofocus bind:value={form.name} placeholder="Producción" />
+    </label>
+
+    <!--
+      La carpeta es texto libre con las que ya existen a mano: no hay una lista de carpetas que
+      administrar aparte, una carpeta es el nombre que comparten unos servidores.
+    -->
+    <label class="flex flex-col gap-1">
+      <span class="label">Carpeta</span>
+      <input
+        class="field"
+        list="carpetas-de-conexiones"
+        placeholder="Sin carpeta"
+        title="Agrupa este servidor con los demás que tengan el mismo nombre de carpeta"
+        bind:value={form.group}
+      />
+      <datalist id="carpetas-de-conexiones">
+        {#each explorer.groups as group (group)}
+          <option value={group}></option>
+        {/each}
+      </datalist>
     </label>
 
     <label class="flex flex-col gap-1">

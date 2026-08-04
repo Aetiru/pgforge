@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use pgforge_core::conn::{ConnectionManager, ConnectionProfile, ServerHandle};
 use pgforge_core::ddl::{self, DdlSource};
-use pgforge_core::introspect::{self, Folder, NodeKind, TreeNode, TreeOptions};
+use pgforge_core::introspect::{self, Folder, NodeKind, NodeTag, TreeNode, TreeOptions};
 
 fn test_urls() -> Vec<String> {
     std::env::var("PGFORGE_TEST_URLS")
@@ -75,6 +75,8 @@ $fn$;
 
 CREATE TRIGGER clientes_tocar BEFORE UPDATE ON {s}.clientes
     FOR EACH ROW EXECUTE FUNCTION {s}.tocar();
+
+ALTER TABLE {s}.reservas ENABLE ROW LEVEL SECURITY;
 
 COMMENT ON TABLE {s}.clientes IS 'Padrón de clientes';
 "#;
@@ -185,6 +187,20 @@ async fn assertions(handle: &ServerHandle, schema_name: &str) {
         .expect("no se pudieron listar las bases");
     let db_node = find(&databases, &database).clone();
 
+    // Roles: la carpeta cuelga de la raíz, no de una base. Que un rol pueda entrar o no va como
+    // etiqueta, que es lo que la interfaz muestra sin leer el detalle.
+    let roles_folder = folder(&databases, Folder::Roles).clone();
+    let roles = expand(handle, &roles_folder).await;
+    let propio = find(&roles, &handle.caps.current_user);
+    assert!(
+        propio.tags.contains(&NodeTag::Login),
+        "el rol con el que se conectó el test tiene que poder iniciar sesión"
+    );
+    assert_eq!(
+        propio.tags.contains(&NodeTag::Superuser),
+        handle.caps.is_superuser
+    );
+
     // Base -> carpeta de esquemas -> nuestro esquema.
     let db_children = expand(handle, &db_node).await;
     let schemas_folder = folder(&db_children, Folder::Schemas).clone();
@@ -241,10 +257,18 @@ async fn assertions(handle: &ServerHandle, schema_name: &str) {
     assert_eq!(clientes.comment.as_deref(), Some("Padrón de clientes"));
     assert_eq!(find(&tables, "ventas").kind, NodeKind::PartitionedTable);
     assert!(find(&tables, "ventas_2026")
-        .detail
-        .as_deref()
-        .unwrap_or_default()
-        .contains("partición"));
+        .tags
+        .contains(&NodeTag::Partition));
+
+    // El dueño es el usuario con el que corre el test, así que no se repite en cada fila.
+    assert_eq!(clientes.detail, None);
+    assert!(
+        find(&tables, "reservas")
+            .tags
+            .contains(&NodeTag::RowSecurity),
+        "una tabla con RLS activa tiene que avisarlo antes de consultarla"
+    );
+    assert!(!clientes.tags.contains(&NodeTag::RowSecurity));
 
     // Columnas de la tabla.
     let clientes_folders = expand(handle, &clientes).await;

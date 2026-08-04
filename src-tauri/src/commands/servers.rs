@@ -12,6 +12,22 @@ pub async fn list_profiles(state: State<'_, AppState>) -> Result<Vec<ConnectionP
     Ok(state.store.lock().await.profiles().to_vec())
 }
 
+/// Las carpetas en las que están repartidos los servidores guardados.
+#[tauri::command]
+pub async fn list_groups(state: State<'_, AppState>) -> Result<Vec<String>> {
+    Ok(state.store.lock().await.groups())
+}
+
+/// Renombra una carpeta de conexiones, o la deshace si `to` es `None`.
+#[tauri::command]
+pub async fn rename_group(
+    state: State<'_, AppState>,
+    from: String,
+    to: Option<String>,
+) -> Result<usize> {
+    state.store.lock().await.rename_group(&from, to.as_deref())
+}
+
 /// Guarda el perfil. La contraseña solo llega hasta el almacén de credenciales del sistema, y solo
 /// si el usuario pidió recordarla.
 #[tauri::command]

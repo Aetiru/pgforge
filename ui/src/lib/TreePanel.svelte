@@ -1,16 +1,21 @@
 <script lang="ts">
+  import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
-  import { lookOf } from "./badges";
+  import { GROUP_LOOK, lookOf, tagLook } from "./badges";
   import { explorer, visibleRows, type Row } from "./explorer.svelte";
+  import { describeError, folderOf } from "./ipc";
 
   let {
     onconnect,
     onnew,
+    ongroup,
   }: {
     onconnect: (profileId: string) => void;
     /** Abre el diálogo de servidor nuevo desde el estado vacío. */
     onnew?: () => void;
+    /** Abre el diálogo para renombrar o deshacer una carpeta de conexiones. */
+    ongroup?: (name: string) => void;
   } = $props();
 
   /**
@@ -23,6 +28,11 @@
   let scrollTop = $state(0);
   let viewportHeight = $state(600);
   let viewport = $state<HTMLDivElement | null>(null);
+
+  /** El servidor que se está arrastrando y la carpeta sobre la que caería si se soltara ahora. */
+  let dragging = $state<string | null>(null);
+  let dropGroup = $state<string | null | undefined>(undefined);
+  let moveError = $state<string | null>(null);
 
   const rows = $derived(visibleRows(explorer.roots, explorer.search));
   const start = $derived(Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN));
@@ -108,9 +118,30 @@
       case " ":
         if (!row) return;
         event.preventDefault();
-        activate(row);
+        // Sobre un servidor desconectado no hay nada que expandir: lo que se espera es conectarlo.
+        if (explorer.needsConnection(row)) onconnect(row.profileId);
+        else activate(row);
         break;
     }
+  }
+
+  /**
+   * A qué carpeta va a parar un servidor soltado sobre esta fila. Vale cualquier fila de la
+   * carpeta y no solo su encabezado: apuntar a una línea de 28 píxeles con el mouse apretado es
+   * más difícil de lo que parece.
+   */
+  function dropTargetOf(row: Row): string | null {
+    return row.kind === "group" ? row.group! : (row.group ?? null);
+  }
+
+  function onDrop(group: string | null) {
+    const profileId = dragging;
+    dragging = null;
+    dropGroup = undefined;
+    if (!profileId) return;
+    // Mover un servidor reescribe el archivo de conexiones: si no se pudo, hay que decirlo, o la
+    // fila vuelve a su lugar sin explicación.
+    explorer.moveToGroup(profileId, group).catch((error) => (moveError = describeError(error)));
   }
 
   /**
@@ -135,17 +166,35 @@
   }
 </script>
 
+<!-- El contenedor recibe lo que se suelta fuera de toda carpeta: ahí es donde el servidor queda
+     suelto. Las filas que sí tienen carpeta cortan la propagación antes de llegar acá. -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   bind:this={viewport}
-  class="h-full overflow-auto outline-none"
+  class="h-full overflow-auto outline-none {dragging !== null && dropGroup === null
+    ? 'rounded-md ring-1 ring-blue-500/50'
+    : ''}"
   onscroll={(event) => (scrollTop = event.currentTarget.scrollTop)}
   onkeydown={onKey}
+  ondragover={(event) => {
+    if (dragging === null) return;
+    event.preventDefault();
+    dropGroup = null;
+  }}
+  ondrop={(event) => {
+    event.preventDefault();
+    onDrop(null);
+  }}
   bind:clientHeight={viewportHeight}
   role="tree"
   tabindex="0"
   aria-label="Servidores y objetos"
   aria-activedescendant={explorer.selected ? `tree-${explorer.selected.key}` : undefined}
 >
+  {#if moveError}
+    <Alert tone="bad" onclose={() => (moveError = null)}>{moveError}</Alert>
+  {/if}
+
   {#if explorer.roots.length === 0}
     <Empty
       icon="server"
@@ -175,9 +224,12 @@
 
     <div class="relative" style="height: {rows.length * ROW_HEIGHT}px">
       {#each visible as row, index (start + index)}
-        {@const look = lookOf(row.node?.kind ?? null)}
-        {@const isServer = row.node === null}
+        {@const isGroup = row.kind === "group"}
+        {@const isServer = row.kind === "server"}
+        {@const look = isGroup ? GROUP_LOOK : lookOf(row.node?.kind ?? null)}
+        {@const isFolder = row.node !== null && folderOf(row.node.kind) !== null}
         {@const isSelected = explorer.selected?.key === row.key}
+        {@const isDropTarget = dragging !== null && dropGroup === dropTargetOf(row)}
         <!-- El teclado lo maneja el contenedor: las filas fuera de la ventana no están en el DOM. -->
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <div
@@ -185,7 +237,9 @@
           class="group absolute left-0 flex w-full items-center gap-1.5 rounded-md pr-1 text-sm
                  {isSelected
             ? 'bg-blue-50 text-blue-900 dark:bg-blue-950/60 dark:text-blue-100'
-            : 'hover:bg-zinc-100 dark:hover:bg-zinc-800/70'}"
+            : 'hover:bg-zinc-100 dark:hover:bg-zinc-800/70'}
+                 {isDropTarget && dropGroup !== null ? 'bg-blue-100/70 dark:bg-blue-900/40' : ''}
+                 {dragging === row.profileId ? 'opacity-40' : ''}"
           style="top: {(start + index) * ROW_HEIGHT}px; height: {ROW_HEIGHT}px; padding-left: {4 +
             row.level * 13}px"
           role="treeitem"
@@ -193,6 +247,31 @@
           aria-expanded={row.hasChildren ? row.expanded : undefined}
           aria-selected={isSelected}
           onclick={() => activate(row)}
+          ondblclick={() => {
+            // Doble clic sobre un servidor apagado: lo que se quiere es entrar.
+            if (explorer.needsConnection(row)) onconnect(row.profileId);
+          }}
+          draggable={isServer}
+          ondragstart={(event) => {
+            dragging = row.profileId;
+            event.dataTransfer?.setData("text/plain", row.label);
+            if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+          }}
+          ondragend={() => {
+            dragging = null;
+            dropGroup = undefined;
+          }}
+          ondragover={(event) => {
+            if (dragging === null) return;
+            event.preventDefault();
+            event.stopPropagation();
+            dropGroup = dropTargetOf(row);
+          }}
+          ondrop={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onDrop(dropTargetOf(row));
+          }}
         >
           <!--
             Guías de indentación: en un árbol de cinco niveles, saber de qué esquema cuelga una
@@ -248,7 +327,7 @@
             achica primero: sin esto, un host largo dejaba el nombre del servidor en dos letras.
           -->
           <span
-            class="min-w-0 truncate {isServer ? 'font-medium' : ''}"
+            class="min-w-0 truncate {isServer || isGroup ? 'font-medium' : ''}"
             title={row.comment ?? row.label}
           >
             {#each pieces(row.label) as piece, position (position)}
@@ -260,7 +339,16 @@
             {/each}
           </span>
 
-          {#if row.detail}
+          <!--
+            Los rasgos del objeto van como etiquetas y no como texto: que un rol pueda entrar o que
+            una tabla filtre filas se reconoce por el color, sin leer la fila entera.
+          -->
+          {#each row.node?.tags ?? [] as tag (tag)}
+            {@const badge = tagLook(tag)}
+            <span class="tag {badge.tone} shrink-0" title={badge.title}>{badge.label}</span>
+          {/each}
+
+          {#if row.detail && !isFolder}
             <span class="min-w-0 shrink-[100] truncate text-xs muted" title={row.detail}>
               {row.detail}
             </span>
@@ -276,7 +364,23 @@
           {/if}
 
           <span class="ml-auto flex shrink-0 items-center gap-0.5 pl-1">
-            {#if row.children !== null && row.hasChildren}
+            {#if isGroup && ongroup}
+              <button
+                class="btn btn-ghost btn-icon size-6 opacity-0 focus-visible:opacity-100
+                       group-hover:opacity-100"
+                title="Renombrar o deshacer la carpeta"
+                aria-label="Editar la carpeta"
+                tabindex="-1"
+                onclick={(event) => {
+                  event.stopPropagation();
+                  ongroup(row.group!);
+                }}
+              >
+                <Icon name="edit" size={11} />
+              </button>
+            {/if}
+
+            {#if !isGroup && row.children !== null && row.hasChildren}
               <button
                 class="btn btn-ghost btn-icon size-6 opacity-0 focus-visible:opacity-100
                        group-hover:opacity-100"
@@ -290,6 +394,12 @@
               >
                 <Icon name="refresh" size={11} />
               </button>
+            {/if}
+
+            <!-- El contador de una carpeta va al final y alineado: leerlo en columna es lo que
+                 permite comparar de un vistazo qué esquema tiene qué. -->
+            {#if isFolder && row.detail}
+              <span class="seg-count tabular-nums">{row.detail}</span>
             {/if}
 
             {#if isServer && !row.connected}
