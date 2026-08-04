@@ -409,7 +409,7 @@ export interface RestorePlan {
 export type RestoreEvent =
   | { type: "started"; command: string[] }
   | { type: "progress"; message: string }
-  | { type: "finished"; database: string; seconds: number }
+  | { type: "finished"; database: string; seconds: number; ignoredErrors: number }
   | { type: "failed"; error: CoreError };
 
 export const restorePlan = (id: string, options: RestoreOptions) =>

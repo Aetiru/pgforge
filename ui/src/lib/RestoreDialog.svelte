@@ -66,6 +66,8 @@
   let log = $state<string[]>([]);
   let outcome = $state<string | null>(null);
   let failed = $state(false);
+  // Terminó, pero pg_restore ignoró algún error: ni éxito limpio ni fallo.
+  let finishedWithWarnings = $state(false);
 
   const running = $derived(taskId !== null);
   const isDirectory = $derived(format === "directory");
@@ -129,6 +131,7 @@
     log = [];
     outcome = null;
     failed = false;
+    finishedWithWarnings = false;
 
     const channel = new Channel<RestoreEvent>();
     channel.onmessage = (event) => {
@@ -140,7 +143,14 @@
           log = [...log, event.message];
           break;
         case "finished":
-          outcome = `Restaurado sobre ${event.database} en ${duration(event.seconds)}.`;
+          outcome =
+            `Restaurado sobre ${event.database} en ${duration(event.seconds)}.` +
+            // pg_restore ignora errores por el camino (sin «una sola transacción»): el más común es
+            // un dump de una versión más nueva que el servidor. Se avisa y se deja mirar el registro.
+            (event.ignoredErrors > 0
+              ? ` Se ignoraron ${event.ignoredErrors} ${event.ignoredErrors === 1 ? "error" : "errores"} — revisá el registro de arriba.`
+              : "");
+          finishedWithWarnings = event.ignoredErrors > 0;
           taskId = null;
           break;
         case "failed":
@@ -289,7 +299,9 @@
         <div
           class={failed
             ? "text-rose-600 dark:text-rose-400"
-            : "text-emerald-600 dark:text-emerald-400"}
+            : finishedWithWarnings
+              ? "text-amber-600 dark:text-amber-400"
+              : "text-emerald-600 dark:text-emerald-400"}
         >
           {outcome}
         </div>

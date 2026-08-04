@@ -393,10 +393,17 @@ async fn run_restore(url: &str, mut options: RestoreOptions, dry_run: bool) -> R
     let _ = printer.await;
     let outcome = outcome?;
 
-    println!(
+    print!(
         "listo: se restauró sobre {} en {:.1}s",
         outcome.database, outcome.seconds
     );
+    if outcome.ignored_errors > 0 {
+        print!(
+            " (se ignoraron {} errores; ver el detalle arriba)",
+            outcome.ignored_errors
+        );
+    }
+    println!();
     Ok(())
 }
 

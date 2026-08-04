@@ -388,6 +388,10 @@ impl Tail {
     fn last(&self) -> Option<&str> {
         self.0.last().map(String::as_str)
     }
+
+    fn lines(&self) -> &[String] {
+        &self.0
+    }
 }
 
 fn ssl_mode_env(mode: SslMode) -> &'static str {

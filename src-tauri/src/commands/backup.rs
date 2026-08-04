@@ -156,6 +156,7 @@ pub enum RestoreEvent {
     Finished {
         database: String,
         seconds: f64,
+        ignored_errors: u64,
     },
     Failed {
         error: ErrorPayload,
@@ -202,6 +203,7 @@ pub async fn restore_run(
                 Ok(outcome) => RestoreEvent::Finished {
                     database: outcome.database,
                     seconds: outcome.seconds,
+                    ignored_errors: outcome.ignored_errors,
                 },
                 Err(error) => RestoreEvent::Failed {
                     error: ErrorPayload::from(&error),

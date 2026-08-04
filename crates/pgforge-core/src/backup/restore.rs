@@ -81,6 +81,11 @@ pub struct RestoreOutcome {
     /// escrito quedó en el servidor, no en un archivo.
     pub database: String,
     pub seconds: f64,
+    /// Cuántos errores ignoró `pg_restore` por el camino. Sin `--single-transaction` los va
+    /// salteando y termina con un código de error aunque el grueso se haya cargado; el caso más
+    /// común es restaurar un dump de una versión más nueva que el servidor, que trae un `SET` de un
+    /// parámetro que el servidor viejo no conoce. Cero cuando salió todo limpio.
+    pub ignored_errors: u64,
 }
 
 /// Los argumentos de `pg_restore`, sin el binario.
@@ -260,6 +265,18 @@ pub async fn run(
         Ended::Canceled => Err(Error::Canceled),
         Ended::Done(status, tail) => {
             if !status.success() {
+                // `pg_restore` termina con código de error también cuando llegó hasta el final pero
+                // ignoró errores por el camino: sin `--single-transaction` no aborta, los saltea y
+                // los cuenta. Eso no es un fallo del restore —el grueso se cargó—, así que se reporta
+                // el conteo en vez de tirar todo. Solo es un fallo de verdad cuando no dejó siquiera
+                // ese resumen (no pudo conectarse, el archivo no era un backup, etc.).
+                if let Some(ignored) = ignored_errors(tail.lines()) {
+                    return Ok(RestoreOutcome {
+                        database: options.database.clone(),
+                        seconds: started.elapsed().as_secs_f64(),
+                        ignored_errors: ignored,
+                    });
+                }
                 return Err(Error::Config(format!(
                     "pg_restore terminó con error: {}",
                     tail.last().unwrap_or("sin detalle")
@@ -268,9 +285,21 @@ pub async fn run(
             Ok(RestoreOutcome {
                 database: options.database.clone(),
                 seconds: started.elapsed().as_secs_f64(),
+                ignored_errors: 0,
             })
         }
     }
+}
+
+/// Busca el resumen `errors ignored on restore: N` que `pg_restore` deja como última línea cuando
+/// terminó salteando errores, y devuelve N. `None` si no está —es decir, si el proceso falló sin
+/// llegar a ese punto—.
+fn ignored_errors(lines: &[String]) -> Option<u64> {
+    const MARKER: &str = "errors ignored on restore:";
+    lines.iter().rev().find_map(|line| {
+        let rest = line.split(MARKER).nth(1)?;
+        rest.split_whitespace().next()?.parse().ok()
+    })
 }
 
 #[cfg(test)]
@@ -407,6 +436,19 @@ mod tests {
 
         let args = arguments(&profile, &options(Format::Custom)).unwrap();
         assert!(!args.iter().any(|arg| arg.contains("secreta")), "{args:?}");
+    }
+
+    #[test]
+    fn reconoce_el_resumen_de_errores_ignorados() {
+        let lines = vec![
+            "pg_restore: creating TABLE \"diag.clientes\"".to_owned(),
+            "pg_restore: warning: errors ignored on restore: 3".to_owned(),
+        ];
+        assert_eq!(ignored_errors(&lines), Some(3));
+
+        // Un fallo que ni llegó a ese resumen no cuenta como «restauró con errores ignorados».
+        let fallo = vec!["pg_restore: error: connection to server failed".to_owned()];
+        assert_eq!(ignored_errors(&fallo), None);
     }
 
     #[test]
