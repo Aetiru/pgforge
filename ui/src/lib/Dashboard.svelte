@@ -26,6 +26,7 @@
     type Target,
   } from "./ipc";
   import { monitor } from "./monitor.svelte";
+  import { untrack } from "svelte";
 
   let { profileId }: { profileId: string } = $props();
 
@@ -52,10 +53,13 @@
   let maintenanceTarget = $state<Target | null>(null);
 
   $effect(() => {
-    monitor.start(profileId);
-    return () => {
-      monitor.stop();
-    };
+    // Solo el servidor elegido dispara esto. Sin untrack, start() lee monitor.profileId (en su
+    // guarda) y lo vuelve a escribir al conectar: el efecto quedaría dependiendo de un estado que él
+    // mismo cambia, se reiniciaría en bucle y reconectaría sin parar —el parpadeo de "error
+    // connecting to server" mientras la muestra nunca llega a estabilizarse—.
+    const id = profileId;
+    untrack(() => monitor.start(id));
+    return () => untrack(() => monitor.stop());
   });
 
   $effect(() => monitor.watchVisibility());
