@@ -69,6 +69,10 @@ export function lookOf(kind: NodeKind | null): NodeLook {
       return { icon: "role", tone: SECURITY };
     case "extension":
       return { icon: "extension", tone: CODE };
+    case "foreignDataWrapper":
+      return { icon: "plug", tone: SECURITY };
+    case "foreignServer":
+      return { icon: "server", tone: SECURITY };
     default:
       return { icon: "folder", tone: STRUCTURE };
   }
@@ -136,6 +140,8 @@ export function kindLabel(kind: NodeKind | null): string {
     policy: "Política",
     role: "Rol",
     extension: "Extensión",
+    foreignDataWrapper: "Wrapper foráneo",
+    foreignServer: "Servidor foráneo",
   };
   return names[kind as string] ?? String(kind);
 }

@@ -40,6 +40,8 @@ pub async fn children(
         NodeKind::Database => Ok(vec![
             schemas_folder(handle, parent, options).await?,
             extensions_folder(handle, parent).await?,
+            fdws_folder(handle, parent).await?,
+            foreign_servers_folder(handle, parent).await?,
         ]),
         NodeKind::Folder(Folder::Schemas) => schemas(handle, parent, options).await,
         NodeKind::Folder(Folder::Roles) => roles(handle, parent, options).await,
@@ -197,6 +199,115 @@ async fn extensions(handle: &ServerHandle, parent: &TreeNode) -> Result<Vec<Tree
         .collect())
 }
 
+/// La carpeta "Wrappers foráneos", hermana de "Esquemas" bajo cada base.
+async fn fdws_folder(handle: &ServerHandle, parent: &TreeNode) -> Result<TreeNode> {
+    let client = handle.client(&parent.database).await?;
+    let row = client
+        .query_one(
+            "SELECT count(*)::int8 FROM pg_catalog.pg_foreign_data_wrapper",
+            &[],
+        )
+        .await?;
+    Ok(TreeNode::folder(
+        parent,
+        Folder::ForeignDataWrappers,
+        row.get(0),
+    ))
+}
+
+/// La carpeta "Servidores foráneos", hermana de "Esquemas" bajo cada base.
+async fn foreign_servers_folder(handle: &ServerHandle, parent: &TreeNode) -> Result<TreeNode> {
+    let client = handle.client(&parent.database).await?;
+    let row = client
+        .query_one(
+            "SELECT count(*)::int8 FROM pg_catalog.pg_foreign_server",
+            &[],
+        )
+        .await?;
+    Ok(TreeNode::folder(parent, Folder::ForeignServers, row.get(0)))
+}
+
+async fn fdws(handle: &ServerHandle, parent: &TreeNode) -> Result<Vec<TreeNode>> {
+    let client = handle.client(&parent.database).await?;
+    let rows = client
+        .query(
+            "SELECT w.oid,
+                    w.fdwname::text,
+                    h.proname::text,
+                    pg_catalog.pg_get_userbyid(w.fdwowner)::text
+               FROM pg_catalog.pg_foreign_data_wrapper w
+               LEFT JOIN pg_catalog.pg_proc h ON h.oid = w.fdwhandler
+              ORDER BY w.fdwname",
+            &[],
+        )
+        .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let handler: Option<String> = row.get(2);
+            let owner: String = row.get(3);
+            // Un wrapper sin handler no puede leer nada: es solo una cáscara. Decirlo evita el
+            // «no anda» que si no aparece recién al crearle un servidor.
+            let mut detail = handler.unwrap_or_else(|| "sin handler".to_owned());
+            if let Some(owner) = owner_detail(handle, owner) {
+                detail.push_str(&format!(" · {owner}"));
+            }
+            TreeNode::object(
+                parent,
+                NodeKind::ForeignDataWrapper,
+                row.get(0),
+                row.get(1),
+                Some(detail),
+                false,
+            )
+        })
+        .collect())
+}
+
+async fn foreign_servers(handle: &ServerHandle, parent: &TreeNode) -> Result<Vec<TreeNode>> {
+    let client = handle.client(&parent.database).await?;
+    let rows = client
+        .query(
+            "SELECT s.oid,
+                    s.srvname::text,
+                    w.fdwname::text,
+                    s.srvtype,
+                    s.srvversion
+               FROM pg_catalog.pg_foreign_server s
+               JOIN pg_catalog.pg_foreign_data_wrapper w ON w.oid = s.srvfdw
+              ORDER BY s.srvname",
+            &[],
+        )
+        .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let fdw: String = row.get(2);
+            let server_type: Option<String> = row.get(3);
+            let version: Option<String> = row.get(4);
+
+            let mut detail = fdw;
+            if let Some(server_type) = server_type {
+                detail.push_str(&format!(" · {server_type}"));
+            }
+            if let Some(version) = version {
+                detail.push_str(&format!(" · v{version}"));
+            }
+
+            TreeNode::object(
+                parent,
+                NodeKind::ForeignServer,
+                row.get(0),
+                row.get(1),
+                Some(detail),
+                false,
+            )
+        })
+        .collect())
+}
+
 async fn schemas(
     handle: &ServerHandle,
     parent: &TreeNode,
@@ -300,6 +411,8 @@ async fn objects(
         Folder::Triggers => triggers(handle, parent).await,
         Folder::Policies => policies(handle, parent).await,
         Folder::Extensions => extensions(handle, parent).await,
+        Folder::ForeignDataWrappers => fdws(handle, parent).await,
+        Folder::ForeignServers => foreign_servers(handle, parent).await,
         // Se resuelven antes, en el `match` de `children()`: `Schemas` no tiene un padre de este
         // tipo, y `Roles` va por su propia función porque no cuelga de una base.
         Folder::Schemas | Folder::Roles => Ok(Vec::new()),

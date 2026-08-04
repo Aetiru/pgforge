@@ -8,7 +8,10 @@
   import ConstraintDialog from "./ConstraintDialog.svelte";
   import Empty from "./Empty.svelte";
   import ExtensionDialog from "./ExtensionDialog.svelte";
+  import FdwDialog from "./FdwDialog.svelte";
+  import ForeignServerDialog from "./ForeignServerDialog.svelte";
   import FunctionDialog from "./FunctionDialog.svelte";
+  import UserMappingDialog from "./UserMappingDialog.svelte";
   import Icon from "./Icon.svelte";
   import IndexDialog from "./IndexDialog.svelte";
   import PolicyDialog from "./PolicyDialog.svelte";
@@ -29,6 +32,12 @@
     describeError,
     extensionApply,
     extensionInfo,
+    fdwApply,
+    fdwInfo,
+    foreignServerApply,
+    foreignServerInfo,
+    userMappingApply,
+    userMappings,
     folderOf,
     formatVersion,
     functionArgs,
@@ -60,6 +69,9 @@
     type PolicyChange,
     type PolicyInfo,
     type ExtensionInfo,
+    type FdwInfo,
+    type ServerInfo,
+    type UserMapping,
     type PrivilegeGrant,
     type RoleChange,
     type RoleInfo,
@@ -207,6 +219,11 @@
 
   const isExtension = $derived(node?.kind === "extension");
   const isExtensionsFolder = $derived(node !== null && folderOf(node.kind) === "extensions");
+
+  const isFdw = $derived(node?.kind === "foreignDataWrapper");
+  const isFdwsFolder = $derived(node !== null && folderOf(node.kind) === "fdws");
+  const isForeignServer = $derived(node?.kind === "foreignServer");
+  const isForeignServersFolder = $derived(node !== null && folderOf(node.kind) === "fservers");
 
   const isSchema = $derived(node?.kind === "schema");
   const isSequence = $derived(node?.kind === "sequence");
@@ -491,6 +508,7 @@
     | "triggers"
     | "security"
     | "privileges"
+    | "mappings"
     | "ddl";
 
   const privilegeSection = $derived({
@@ -512,6 +530,12 @@
         { id: "triggers", label: "Triggers", count: triggers?.length ?? null },
         { id: "security", label: "Seguridad por fila", count: security?.policies.length ?? null },
         privilegeSection,
+        { id: "ddl", label: "DDL", count: null },
+      ];
+    }
+    if (isForeignServer) {
+      return [
+        { id: "mappings", label: "Mapeos de usuario", count: mappings.length },
         { id: "ddl", label: "DDL", count: null },
       ];
     }
@@ -560,6 +584,12 @@
   let policyDialog = $state<{ existing: PolicyInfo | null } | null>(null);
   let roleDialog = $state<{ existing: RoleInfo | null } | null>(null);
   let extensionDialog = $state<{ existing: ExtensionInfo | null } | null>(null);
+  let fdwDialog = $state<{ existing: FdwInfo | null } | null>(null);
+  let foreignServerDialog = $state<{ existing: ServerInfo | null } | null>(null);
+  let userMappingDialog = $state<{ existing: UserMapping | null } | null>(null);
+  let mappings = $state<UserMapping[]>([]);
+  let mappingsError = $state<string | null>(null);
+  let mappingDrop = $state<{ user: string } | null>(null);
   let privilegeDialog = $state<{ existing: PrivilegeExisting | null } | null>(null);
   let backupDialog = $state(false);
   let restoreDialog = $state(false);
@@ -579,7 +609,9 @@
           | "trigger"
           | "policy"
           | "role"
-          | "extension";
+          | "extension"
+          | "foreignDataWrapper"
+          | "foreignServer";
         label: string;
       }
     | { kind: "function"; schema: string; name: string; args: string; procedure: boolean }
@@ -673,6 +705,102 @@
       const parent = parentOf(explorer.roots, selected);
       if (parent) explorer.reload(parent);
       explorer.selected = null;
+    }
+  }
+
+  // --- Datos externos (wrappers, servidores foráneos, mapeos) ---
+
+  /** Al abrir el detalle de un servidor foráneo se listan sus mapeos de usuario. */
+  $effect(() => {
+    if (!isForeignServer || !selected || !node) {
+      mappings = [];
+      return;
+    }
+    const profileId = selected.profileId;
+    const database = node.database;
+    const server = node.label;
+    let cancelled = false;
+    mappingsError = null;
+    userMappings(profileId, server, database)
+      .then((result) => {
+        if (!cancelled) mappings = result;
+      })
+      .catch((error) => {
+        if (!cancelled) mappingsError = describeError(error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  async function openEditFdw() {
+    if (!selected || !node) return;
+    try {
+      fdwDialog = { existing: await fdwInfo(selected.profileId, node.label, node.database) };
+    } catch (error) {
+      ddlError = describeError(error);
+    }
+  }
+
+  async function openEditForeignServer() {
+    if (!selected || !node) return;
+    try {
+      foreignServerDialog = {
+        existing: await foreignServerInfo(selected.profileId, node.label, node.database),
+      };
+    } catch (error) {
+      ddlError = describeError(error);
+    }
+  }
+
+  /** Recarga la carpeta del nodo tras crear/editar un wrapper o servidor, y limpia la selección. */
+  function reloadFolderAndClear(wasCreate: boolean) {
+    if (!selected) return;
+    if (wasCreate) {
+      explorer.reload(selected);
+    } else {
+      const parent = parentOf(explorer.roots, selected);
+      if (parent) explorer.reload(parent);
+      explorer.selected = null;
+    }
+  }
+
+  function afterFdwSaved() {
+    const wasCreate = fdwDialog?.existing == null;
+    fdwDialog = null;
+    reloadFolderAndClear(wasCreate);
+  }
+
+  function afterForeignServerSaved() {
+    const wasCreate = foreignServerDialog?.existing == null;
+    foreignServerDialog = null;
+    reloadFolderAndClear(wasCreate);
+  }
+
+  function reloadMappings() {
+    if (!selected || !node) return;
+    userMappings(selected.profileId, node.label, node.database)
+      .then((result) => (mappings = result))
+      .catch((error) => (mappingsError = describeError(error)));
+  }
+
+  function afterMappingSaved() {
+    userMappingDialog = null;
+    reloadMappings();
+  }
+
+  async function confirmMappingDrop() {
+    if (!mappingDrop || !selected || !node) return;
+    try {
+      await userMappingApply(
+        selected.profileId,
+        [{ kind: "drop", server: node.label, user: mappingDrop.user }],
+        node.database,
+      );
+      mappingDrop = null;
+      reloadMappings();
+    } catch (error) {
+      mappingsError = describeError(error);
     }
   }
 
@@ -999,6 +1127,30 @@
           }
           explorer.selected = null;
           break;
+        case "foreignDataWrapper":
+          await fdwApply(
+            selected.profileId,
+            [{ kind: "drop", name: dropTarget.label, cascade: dropCascade }],
+            node.database,
+          );
+          {
+            const parent = parentOf(explorer.roots, selected);
+            if (parent) await explorer.reload(parent);
+          }
+          explorer.selected = null;
+          break;
+        case "foreignServer":
+          await foreignServerApply(
+            selected.profileId,
+            [{ kind: "drop", name: dropTarget.label, cascade: dropCascade }],
+            node.database,
+          );
+          {
+            const parent = parentOf(explorer.roots, selected);
+            if (parent) await explorer.reload(parent);
+          }
+          explorer.selected = null;
+          break;
       }
       closeDropDialog();
     } catch (error) {
@@ -1033,6 +1185,10 @@
         return `¿Eliminar el rol ${dropTarget.label}?`;
       case "extension":
         return `¿Quitar la extensión ${dropTarget.label} de la base?`;
+      case "foreignDataWrapper":
+        return `¿Eliminar el wrapper foráneo ${dropTarget.label}?`;
+      case "foreignServer":
+        return `¿Eliminar el servidor foráneo ${dropTarget.label}? Se pierden sus mapeos de usuario.`;
     }
   });
 
@@ -1182,6 +1338,23 @@
             </button>
           {/if}
 
+          {#if isFdwsFolder}
+            <button class="btn btn-primary" onclick={() => (fdwDialog = { existing: null })}>
+              <Icon name="plus" size={12} />
+              Nuevo wrapper
+            </button>
+          {/if}
+
+          {#if isForeignServersFolder}
+            <button
+              class="btn btn-primary"
+              onclick={() => (foreignServerDialog = { existing: null })}
+            >
+              <Icon name="plus" size={12} />
+              Nuevo servidor foráneo
+            </button>
+          {/if}
+
           {#if dataTarget !== null && queryTarget}
             <button
               class="btn btn-primary"
@@ -1281,6 +1454,20 @@
             </button>
           {/if}
 
+          {#if isFdw}
+            <button class="btn" onclick={openEditFdw}>
+              <Icon name="edit" size={12} />
+              Editar
+            </button>
+          {/if}
+
+          {#if isForeignServer}
+            <button class="btn" onclick={openEditForeignServer}>
+              <Icon name="edit" size={12} />
+              Editar
+            </button>
+          {/if}
+
           {#if isGroup}
             <button class="btn btn-primary" onclick={() => ongroup(selected.group!)}>
               <Icon name="edit" size={12} />
@@ -1360,6 +1547,26 @@
             >
               <Icon name="trash" size={12} />
               Quitar
+            </button>
+          {/if}
+
+          {#if isFdw}
+            <button
+              class="btn btn-danger-ghost"
+              onclick={() => (dropTarget = { kind: "foreignDataWrapper", label: selected.label })}
+            >
+              <Icon name="trash" size={12} />
+              Eliminar
+            </button>
+          {/if}
+
+          {#if isForeignServer}
+            <button
+              class="btn btn-danger-ghost"
+              onclick={() => (dropTarget = { kind: "foreignServer", label: selected.label })}
+            >
+              <Icon name="trash" size={12} />
+              Eliminar
             </button>
           {/if}
 
@@ -2026,6 +2233,71 @@
               </table>
             </div>
           {/if}
+        {:else if section === "mappings"}
+          <div class="card overflow-hidden">
+            <div class="card-head">
+              <span class="card-title">Mapeos de usuario</span>
+              <button
+                class="btn btn-sm ml-auto"
+                onclick={() => (userMappingDialog = { existing: null })}
+              >
+                <Icon name="plus" size={11} />
+                Mapeo
+              </button>
+            </div>
+
+            {#if mappingsError}
+              <Alert tone="bad" box class="m-3">{mappingsError}</Alert>
+            {:else if mappings.length === 0}
+              {@render nothing("No tiene mapeos de usuario.")}
+            {:else}
+              <table class="list-table">
+                <thead>
+                  <tr>
+                    <th class="w-px whitespace-nowrap">Rol</th>
+                    <th class="w-full">Opciones</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each mappings as mapping (mapping.user)}
+                    <tr class="group">
+                      <td class="w-px font-medium whitespace-nowrap">{mapping.user}</td>
+                      <td class="max-w-0 truncate font-mono text-xs muted">
+                        {#if mapping.options === null}
+                          (ocultas)
+                        {:else}
+                          {mapping.options
+                            .map(([key, value]) => (key === "password" ? `${key}=••••` : `${key}=${value}`))
+                            .join(", ") || "—"}
+                        {/if}
+                      </td>
+                      <td class="w-24">
+                        <div class="row-actions">
+                          <button
+                            class="btn btn-ghost btn-icon size-6"
+                            title="Editar el mapeo"
+                            aria-label="Editar el mapeo"
+                            onclick={() => (userMappingDialog = { existing: mapping })}
+                          >
+                            <Icon name="edit" size={12} />
+                          </button>
+                          <button
+                            class="btn btn-danger-ghost btn-icon size-6"
+                            title="Quitar el mapeo"
+                            aria-label="Quitar el mapeo"
+                            onclick={() => (mappingDrop = { user: mapping.user })}
+                          >
+                            <Icon name="trash" size={12} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </div>
         {:else if section === "ddl"}
           <div class="card overflow-hidden">
             <div class="card-head">
@@ -2177,6 +2449,47 @@
     existing={extensionDialog.existing}
     onclose={() => (extensionDialog = null)}
     onsaved={afterExtensionSaved}
+  />
+{/if}
+
+{#if fdwDialog && selected && node}
+  <FdwDialog
+    profileId={selected.profileId}
+    database={node.database}
+    existing={fdwDialog.existing}
+    onclose={() => (fdwDialog = null)}
+    onsaved={afterFdwSaved}
+  />
+{/if}
+
+{#if foreignServerDialog && selected && node}
+  <ForeignServerDialog
+    profileId={selected.profileId}
+    database={node.database}
+    existing={foreignServerDialog.existing}
+    onclose={() => (foreignServerDialog = null)}
+    onsaved={afterForeignServerSaved}
+  />
+{/if}
+
+{#if userMappingDialog && selected && node && isForeignServer}
+  <UserMappingDialog
+    profileId={selected.profileId}
+    database={node.database}
+    server={node.label}
+    existing={userMappingDialog.existing}
+    onclose={() => (userMappingDialog = null)}
+    onsaved={afterMappingSaved}
+  />
+{/if}
+
+{#if mappingDrop}
+  <Confirm
+    title="Quitar el mapeo"
+    message="¿Quitar el mapeo de usuario de {mappingDrop.user}?"
+    confirmLabel="Quitar"
+    onconfirm={confirmMappingDrop}
+    onclose={() => (mappingDrop = null)}
   />
 {/if}
 

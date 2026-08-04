@@ -67,7 +67,9 @@ export type FolderKind =
   | "triggers"
   | "policies"
   | "roles"
-  | "extensions";
+  | "extensions"
+  | "fdws"
+  | "fservers";
 
 export type NodeKind =
   | "database"
@@ -88,6 +90,8 @@ export type NodeKind =
   | "policy"
   | "role"
   | "extension"
+  | "foreignDataWrapper"
+  | "foreignServer"
   | { folder: FolderKind };
 
 /** Rasgo de un objeto que se muestra como etiqueta junto al nombre en el árbol. */
@@ -990,6 +994,109 @@ export const extensionInfo = (id: string, name: string, database?: string) =>
 
 export const availableExtensions = (id: string, database?: string) =>
   invoke<AvailableExtension[]>("available_extensions", { id, database: database ?? null });
+
+// ---------------------------------------------------------------------------
+// Datos externos (wrappers, servidores foráneos, mapeos de usuario)
+// ---------------------------------------------------------------------------
+
+/** Una opción como par [clave, valor]: espeja el `(String, String)` del núcleo. */
+export type FdwOption = [string, string];
+
+/** Qué cambia de la lista de opciones: altas, cambios de valor y bajas. */
+export interface OptionsDelta {
+  add: FdwOption[];
+  set: FdwOption[];
+  drop: string[];
+}
+
+export type FdwChange =
+  | {
+      kind: "create";
+      name: string;
+      handler: string | null;
+      validator: string | null;
+      options: FdwOption[];
+    }
+  | {
+      kind: "alter";
+      name: string;
+      handler: string | null;
+      noHandler: boolean;
+      validator: string | null;
+      noValidator: boolean;
+      options: OptionsDelta;
+    }
+  | { kind: "drop"; name: string; cascade: boolean };
+
+export interface FdwInfo {
+  name: string;
+  handler: string | null;
+  validator: string | null;
+  options: FdwOption[];
+  owner: string;
+}
+
+export type ServerChange =
+  | {
+      kind: "create";
+      name: string;
+      fdw: string;
+      serverType: string | null;
+      version: string | null;
+      options: FdwOption[];
+    }
+  | { kind: "alter"; name: string; version: string | null; options: OptionsDelta }
+  | { kind: "drop"; name: string; cascade: boolean };
+
+export interface ServerInfo {
+  name: string;
+  fdw: string;
+  serverType: string | null;
+  version: string | null;
+  options: FdwOption[];
+  owner: string;
+}
+
+export type UserMappingChange =
+  | { kind: "create"; server: string; user: string; options: FdwOption[] }
+  | { kind: "alter"; server: string; user: string; options: OptionsDelta }
+  | { kind: "drop"; server: string; user: string };
+
+export interface UserMapping {
+  user: string;
+  /** `null` cuando el rol conectado no puede ver las opciones del mapeo. */
+  options: FdwOption[] | null;
+}
+
+export const fdwPreview = (changes: FdwChange[]) =>
+  invoke<DdlStatement[]>("fdw_preview", { changes });
+
+export const fdwApply = (id: string, changes: FdwChange[], database?: string) =>
+  invoke<void>("fdw_apply", { id, changes, database: database ?? null });
+
+export const fdwInfo = (id: string, name: string, database?: string) =>
+  invoke<FdwInfo>("fdw_info", { id, name, database: database ?? null });
+
+export const availableFdws = (id: string, database?: string) =>
+  invoke<string[]>("available_fdws", { id, database: database ?? null });
+
+export const foreignServerPreview = (changes: ServerChange[]) =>
+  invoke<DdlStatement[]>("foreign_server_preview", { changes });
+
+export const foreignServerApply = (id: string, changes: ServerChange[], database?: string) =>
+  invoke<void>("foreign_server_apply", { id, changes, database: database ?? null });
+
+export const foreignServerInfo = (id: string, name: string, database?: string) =>
+  invoke<ServerInfo>("foreign_server_info", { id, name, database: database ?? null });
+
+export const userMappingPreview = (changes: UserMappingChange[]) =>
+  invoke<DdlStatement[]>("user_mapping_preview", { changes });
+
+export const userMappingApply = (id: string, changes: UserMappingChange[], database?: string) =>
+  invoke<void>("user_mapping_apply", { id, changes, database: database ?? null });
+
+export const userMappings = (id: string, server: string, database?: string) =>
+  invoke<UserMapping[]>("user_mappings", { id, server, database: database ?? null });
 
 // ---------------------------------------------------------------------------
 // Privilegios

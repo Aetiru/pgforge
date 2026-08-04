@@ -81,7 +81,10 @@ async fn exec(handle: &ServerHandle, sql: &str) {
 async fn teardown(handle: &ServerHandle, extension: &str, schemas: &[&str]) {
     exec(
         handle,
-        &format!("DROP EXTENSION IF EXISTS {} CASCADE", quote_ident(extension)),
+        &format!(
+            "DROP EXTENSION IF EXISTS {} CASCADE",
+            quote_ident(extension)
+        ),
     )
     .await;
     for schema in schemas {
@@ -168,7 +171,10 @@ async fn instala_en_el_esquema_pedido(handle: &ServerHandle, name: &str, schema:
         .expect("la extensión tiene que existir");
     assert_eq!(info.name, name);
     assert_eq!(info.schema, schema, "tenía que quedar en el esquema pedido");
-    assert!(!info.version.is_empty(), "tiene que traer la versión instalada");
+    assert!(
+        !info.version.is_empty(),
+        "tiene que traer la versión instalada"
+    );
 }
 
 async fn mueve_de_esquema(handle: &ServerHandle, name: &str, other: &str) {
@@ -204,5 +210,8 @@ async fn quita_la_extension(handle: &ServerHandle, name: &str) {
     .expect("tenía que quitar la extensión");
 
     let gone = extension::extension(handle, &database, name).await;
-    assert!(gone.is_err(), "la extensión ya no tendría que estar instalada");
+    assert!(
+        gone.is_err(),
+        "la extensión ya no tendría que estar instalada"
+    );
 }

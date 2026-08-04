@@ -29,6 +29,11 @@ pub enum NodeKind {
     Role,
     /// Una extensión instalada en la base. Cuelga de la carpeta "Extensiones" de cada base.
     Extension,
+    /// Un wrapper de datos externos (`FOREIGN DATA WRAPPER`). Cuelga de "Wrappers foráneos".
+    ForeignDataWrapper,
+    /// Un servidor foráneo (`SERVER`). Cuelga de "Servidores foráneos". Sus mapeos de usuario se
+    /// gestionan en su panel de detalle, no como nodos aparte.
+    ForeignServer,
 }
 
 /// Rasgo de un objeto que conviene ver sin abrirlo.
@@ -72,6 +77,10 @@ pub enum Folder {
     Roles,
     /// De nivel base: hermana de "Esquemas" bajo cada base.
     Extensions,
+    /// De nivel base: los wrappers de datos externos.
+    ForeignDataWrappers,
+    /// De nivel base: los servidores foráneos.
+    ForeignServers,
 }
 
 impl Folder {
@@ -93,6 +102,8 @@ impl Folder {
             Folder::Policies => "Políticas",
             Folder::Roles => "Roles",
             Folder::Extensions => "Extensiones",
+            Folder::ForeignDataWrappers => "Wrappers foráneos",
+            Folder::ForeignServers => "Servidores foráneos",
         }
     }
 
@@ -115,6 +126,8 @@ impl Folder {
             Folder::Policies => "policies",
             Folder::Roles => "roles",
             Folder::Extensions => "extensions",
+            Folder::ForeignDataWrappers => "fdws",
+            Folder::ForeignServers => "fservers",
         }
     }
 }

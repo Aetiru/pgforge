@@ -6,6 +6,7 @@
 //! delega en `pg_dump`; ver [`pg_dump`] para el razonamiento.
 
 pub mod extension;
+pub mod fdw;
 pub mod function;
 pub mod index;
 pub mod pg_dump;
@@ -177,6 +178,14 @@ pub async fn object_ddl(handle: &ServerHandle, node: &TreeNode) -> Result<Ddl> {
         NodeKind::Schema => schema_ddl(handle, node).await,
         NodeKind::Role => role_ddl(handle, node).await,
         NodeKind::Extension => extension_ddl(handle, node).await,
+        NodeKind::ForeignDataWrapper => {
+            let info = fdw::fdw_info(handle, &node.database, &node.label).await?;
+            Ok(Ddl::catalog(fdw::describe_fdw(&info)))
+        }
+        NodeKind::ForeignServer => {
+            let info = fdw::server_info(handle, &node.database, &node.label).await?;
+            Ok(Ddl::catalog(fdw::describe_server(&info)))
+        }
         NodeKind::Database | NodeKind::Folder(_) => {
             Err(Error::Config("este nodo no tiene un DDL propio".to_owned()))
         }

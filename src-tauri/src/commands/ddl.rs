@@ -2,6 +2,9 @@
 //! funciones, triggers, roles, privilegios y políticas de seguridad por fila.
 
 use pgforge_core::ddl::extension::{self, AvailableExtension, ExtensionChange, ExtensionInfo};
+use pgforge_core::ddl::fdw::{
+    self, FdwChange, FdwInfo, ServerChange, ServerInfo, UserMapping, UserMappingChange,
+};
 use pgforge_core::ddl::function;
 use pgforge_core::ddl::index::{self, IndexDef, IndexInfo};
 use pgforge_core::ddl::policy::{self, PolicyChange, TableSecurity};
@@ -436,6 +439,111 @@ pub async fn available_extensions(
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
     extension::available(&handle, &database).await
+}
+
+// --- Datos externos: wrappers, servidores foráneos y mapeos de usuario ---
+
+#[tauri::command]
+pub fn fdw_preview(changes: Vec<FdwChange>) -> Result<Vec<Statement>> {
+    fdw::fdw_statements(&changes)
+}
+
+#[tauri::command]
+pub async fn fdw_apply(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    changes: Vec<FdwChange>,
+) -> Result<()> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+    let statements = fdw::fdw_statements(&changes)?;
+    fdw::apply(&handle, &database, &statements).await
+}
+
+#[tauri::command]
+pub async fn fdw_info(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    name: String,
+) -> Result<FdwInfo> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+    fdw::fdw_info(&handle, &database, &name).await
+}
+
+/// Los wrappers disponibles, para el selector al crear un servidor foráneo.
+#[tauri::command]
+pub async fn available_fdws(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+) -> Result<Vec<String>> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+    fdw::available_fdws(&handle, &database).await
+}
+
+#[tauri::command]
+pub fn foreign_server_preview(changes: Vec<ServerChange>) -> Result<Vec<Statement>> {
+    fdw::server_statements(&changes)
+}
+
+#[tauri::command]
+pub async fn foreign_server_apply(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    changes: Vec<ServerChange>,
+) -> Result<()> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+    let statements = fdw::server_statements(&changes)?;
+    fdw::apply(&handle, &database, &statements).await
+}
+
+#[tauri::command]
+pub async fn foreign_server_info(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    name: String,
+) -> Result<ServerInfo> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+    fdw::server_info(&handle, &database, &name).await
+}
+
+#[tauri::command]
+pub fn user_mapping_preview(changes: Vec<UserMappingChange>) -> Result<Vec<Statement>> {
+    fdw::user_mapping_statements(&changes)
+}
+
+#[tauri::command]
+pub async fn user_mapping_apply(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    changes: Vec<UserMappingChange>,
+) -> Result<()> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+    let statements = fdw::user_mapping_statements(&changes)?;
+    fdw::apply(&handle, &database, &statements).await
+}
+
+/// Los mapeos de usuario de un servidor foráneo, para la sección de su panel de detalle.
+#[tauri::command]
+pub async fn user_mappings(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    server: String,
+) -> Result<Vec<UserMapping>> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+    fdw::user_mappings(&handle, &database, &server).await
 }
 
 /// El estado de Row-Level Security de una tabla: el interruptor y sus políticas.
