@@ -14,6 +14,7 @@ pub mod ddl;
 pub mod error;
 pub mod introspect;
 pub mod monitor;
+pub mod settings;
 pub mod sql;
 
 pub use caps::{ServerCaps, ServerVersion};

@@ -5,6 +5,7 @@
   import GroupDialog from "./lib/GroupDialog.svelte";
   import NewGroupDialog from "./lib/NewGroupDialog.svelte";
   import Dashboard from "./lib/Dashboard.svelte";
+  import ServerConfig from "./lib/ServerConfig.svelte";
   import DataPanel from "./lib/DataPanel.svelte";
   import DetailPanel from "./lib/DetailPanel.svelte";
   import Empty from "./lib/Empty.svelte";
@@ -39,9 +40,11 @@
   let banner = $state<string | null>(null);
   let sidebarWidth = $state(300);
   let sidebarOpen = $state(true);
-  let view = $state<"explorer" | "monitor">("explorer");
+  let view = $state<"explorer" | "monitor" | "config">("explorer");
   /** Servidor elegido a mano en la vista de monitoreo; si es `null` se usa el del árbol. */
   let monitorChoice = $state<string | null>(null);
+  /** Servidor elegido a mano en la vista de configuración. */
+  let configChoice = $state<string | null>(null);
 
   const DEFAULT_SIDEBAR = 300;
 
@@ -54,6 +57,13 @@
 
   const monitorServer = $derived.by(() => {
     if (monitorChoice && explorer.isConnected(monitorChoice)) return monitorChoice;
+    const selected = explorer.selected;
+    if (selected && explorer.isConnected(selected.profileId)) return selected.profileId;
+    return connectedServers[0]?.profileId ?? null;
+  });
+
+  const configServer = $derived.by(() => {
+    if (configChoice && explorer.isConnected(configChoice)) return configChoice;
     const selected = explorer.selected;
     if (selected && explorer.isConnected(selected.profileId)) return selected.profileId;
     return connectedServers[0]?.profileId ?? null;
@@ -141,6 +151,7 @@
   const VIEWS = [
     { value: "explorer", label: "Explorador", icon: "schema" },
     { value: "monitor", label: "Monitoreo", icon: "chart" },
+    { value: "config", label: "Configuración", icon: "sliders" },
   ] as const;
 
   /** Lo que dice la barra de estado: dónde está parado el usuario ahora mismo. */
@@ -207,6 +218,22 @@
       </label>
     {/if}
 
+    {#if view === "config" && connectedServers.length > 0}
+      <label class="check gap-1.5">
+        Servidor
+        <select
+          class="field w-44 py-0.5 text-xs"
+          title="Servidor cuya configuración se está viendo"
+          value={configServer}
+          onchange={(event) => (configChoice = event.currentTarget.value)}
+        >
+          {#each connectedServers as server (server.profileId)}
+            <option value={server.profileId}>{server.label}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
+
     <div class="ml-auto flex items-center gap-2">
       {#if connectedServers.length > 0}
         <span class="flex items-center gap-1.5 text-xs muted" title="Servidores conectados">
@@ -247,6 +274,24 @@
         icon="server"
         title="No hay ningún servidor conectado"
         hint="El monitoreo lee las estadísticas en vivo de una conexión abierta."
+      >
+        <button class="btn btn-primary" onclick={() => (view = "explorer")}>
+          Ir al explorador
+        </button>
+      </Empty>
+    {/if}
+  {:else if view === "config"}
+    {#if configServer}
+      <div class="min-h-0 flex-1">
+        {#key configServer}
+          <ServerConfig profileId={configServer} />
+        {/key}
+      </div>
+    {:else}
+      <Empty
+        icon="server"
+        title="No hay ningún servidor conectado"
+        hint="La configuración se lee de una conexión abierta."
       >
         <button class="btn btn-primary" onclick={() => (view = "explorer")}>
           Ir al explorador
