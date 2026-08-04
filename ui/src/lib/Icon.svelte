@@ -44,7 +44,8 @@
     | "key"
     | "sort"
     | "chart"
-    | "compass";
+    | "compass"
+    | "download";
 
   const PATHS: Record<IconName, string> = {
     server:
@@ -94,6 +95,7 @@
     sort: '<path d="M8 4v16M8 4L4.5 7.5M8 4l3.5 3.5"/><path d="M16 20V4M16 20l-3.5-3.5M16 20l3.5-3.5"/>',
     chart: '<path d="M4 20V4"/><path d="M4 20h16"/><path d="M8 16.5v-4M12.5 16.5v-8M17 16.5v-5.5"/>',
     compass: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
+    download: '<path d="M12 3v12"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M4 20h16"/>',
   };
 
   export function iconPath(name: IconName): string {

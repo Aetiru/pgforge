@@ -6,12 +6,12 @@
 //! herencia. Mientras ese generador propio no exista, `pg_dump` da la respuesta correcta y ya
 //! resuelta, que es mejor que una aproximación escrita a las apuradas.
 
-use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
 use tokio::process::Command;
 
+use crate::backup::tools::{self, Tool};
 use crate::conn::profile::{ConnectionProfile, SslMode};
 use crate::conn::secret::Password;
 use crate::error::{Error, Result};
@@ -19,71 +19,6 @@ use crate::error::{Error, Result};
 /// `pg_dump` de una tabla grande con muchos objetos dependientes puede tardar, pero si pasa esto
 /// hay algo mal y conviene devolver el control antes que dejar la interfaz colgada.
 const TIMEOUT: Duration = Duration::from_secs(30);
-
-/// Ubica el binario de `pg_dump`.
-///
-/// El orden importa: primero lo que el usuario configuró explícitamente, después lo que haya en el
-/// `PATH`, y recién al final las rutas típicas de cada sistema, eligiendo siempre la versión más
-/// alta disponible —`pg_dump` puede leer servidores más viejos que él, pero no más nuevos—.
-pub fn find_binary() -> Option<PathBuf> {
-    if let Some(configured) = std::env::var_os("PGFORGE_PG_DUMP") {
-        let path = PathBuf::from(configured);
-        if path.is_file() {
-            return Some(path);
-        }
-    }
-
-    let file_name = if cfg!(windows) {
-        "pg_dump.exe"
-    } else {
-        "pg_dump"
-    };
-
-    if let Some(paths) = std::env::var_os("PATH") {
-        for dir in std::env::split_paths(&paths) {
-            let candidate = dir.join(file_name);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-
-    let roots: &[&str] = if cfg!(windows) {
-        &[r"C:\Program Files\PostgreSQL"]
-    } else if cfg!(target_os = "macos") {
-        &["/Library/PostgreSQL", "/opt/homebrew/opt", "/usr/local/opt"]
-    } else {
-        &["/usr/lib/postgresql", "/usr/local/pgsql"]
-    };
-
-    let mut best: Option<(u32, PathBuf)> = None;
-    for root in roots {
-        let Ok(entries) = std::fs::read_dir(root) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let candidate = entry.path().join("bin").join(file_name);
-            if !candidate.is_file() {
-                continue;
-            }
-            // El nombre del directorio es la versión mayor en todas las distribuciones que se
-            // instalan así; si no lo es, vale como último recurso.
-            let version = entry
-                .file_name()
-                .to_string_lossy()
-                .chars()
-                .take_while(char::is_ascii_digit)
-                .collect::<String>()
-                .parse::<u32>()
-                .unwrap_or(0);
-            if best.as_ref().is_none_or(|(best, _)| version > *best) {
-                best = Some((version, candidate));
-            }
-        }
-    }
-
-    best.map(|(_, path)| path)
-}
 
 fn ssl_mode_env(mode: SslMode) -> &'static str {
     match mode {
@@ -102,13 +37,7 @@ pub async fn dump_object(
     database: &str,
     pattern: &str,
 ) -> Result<String> {
-    let binary = find_binary().ok_or_else(|| {
-        Error::Config(
-            "no se encontró pg_dump. Instalá las herramientas cliente de PostgreSQL o indicá la \
-             ruta del binario en la variable PGFORGE_PG_DUMP."
-                .to_owned(),
-        )
-    })?;
+    let binary = tools::require(Tool::PgDump)?;
 
     let mut command = Command::new(&binary);
     command

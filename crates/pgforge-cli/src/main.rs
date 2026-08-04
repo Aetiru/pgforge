@@ -7,14 +7,18 @@
 // núcleo, que no debe imprimir: quien lo consume decide cómo presentar los resultados.
 #![allow(clippy::disallowed_macros)]
 
+use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+use pgforge_core::backup::tools::Tool;
+use pgforge_core::backup::{self, BackupOptions, Format};
 use pgforge_core::conn::{ConnectionManager, ConnectionProfile, ServerHandle};
 use pgforge_core::data;
 use pgforge_core::introspect::{self, NodeKind, TreeNode, TreeOptions};
 use pgforge_core::sql::{self, ExplainOptions, Limits, Outcome, QuerySession};
 use pgforge_core::{caps::MIN_SUPPORTED_VERSION_NUM, ddl, Error, Result, ServerVersion};
+use tokio::sync::{mpsc, oneshot};
 
 #[derive(Parser)]
 #[command(name = "pgforge", version, about, long_about = None)]
@@ -90,6 +94,58 @@ enum Command {
         #[arg(long, value_delimiter = ',')]
         after: Option<Vec<String>>,
     },
+
+    /// Hace un backup con pg_dump.
+    Backup {
+        #[arg(long)]
+        url: String,
+        /// Archivo de salida, o directorio con --format directory.
+        #[arg(long)]
+        out: PathBuf,
+        /// Base a respaldar. Por omisión, la del perfil.
+        #[arg(long)]
+        database: Option<String>,
+        #[arg(long, value_enum, default_value_t = FormatArg::Custom)]
+        format: FormatArg,
+        /// Respaldar solo estos esquemas. Se puede repetir.
+        #[arg(long = "schema")]
+        schemas: Vec<String>,
+        /// Respaldar solo estas tablas, como esquema.tabla. Se puede repetir.
+        #[arg(long = "table")]
+        tables: Vec<String>,
+        /// Sin los datos.
+        #[arg(long)]
+        schema_only: bool,
+        /// Sin el esquema.
+        #[arg(long)]
+        data_only: bool,
+        /// Nivel de compresión, de 0 a 9 (formatos custom y directory).
+        #[arg(long)]
+        compress: Option<u8>,
+        /// Muestra la línea de comando y no ejecuta nada.
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+/// Los formatos de `pg_dump`, con los nombres que usa su propia documentación.
+#[derive(Clone, Copy, ValueEnum)]
+enum FormatArg {
+    Plain,
+    Custom,
+    Directory,
+    Tar,
+}
+
+impl From<FormatArg> for Format {
+    fn from(value: FormatArg) -> Self {
+        match value {
+            FormatArg::Plain => Format::Plain,
+            FormatArg::Custom => Format::Custom,
+            FormatArg::Directory => Format::Directory,
+            FormatArg::Tar => Format::Tar,
+        }
+    }
 }
 
 #[tokio::main]
@@ -125,6 +181,39 @@ async fn main() -> ExitCode {
             limit,
             after,
         } => show_data(&url, &table, limit, after).await,
+        Command::Backup {
+            url,
+            out,
+            database,
+            format,
+            schemas,
+            tables,
+            schema_only,
+            data_only,
+            compress,
+            dry_run,
+        } => {
+            run_backup(
+                &url,
+                BackupOptions {
+                    // Se completa con la base del perfil una vez conectados.
+                    database: database.unwrap_or_default(),
+                    format: format.into(),
+                    path: out,
+                    schemas,
+                    exclude_schemas: vec![],
+                    tables,
+                    schema_only,
+                    data_only,
+                    no_owner: false,
+                    no_privileges: false,
+                    compression: compress,
+                    jobs: None,
+                },
+                dry_run,
+            )
+            .await
+        }
     };
 
     match result {
@@ -140,9 +229,69 @@ fn info() {
     let min = ServerVersion::from_num(MIN_SUPPORTED_VERSION_NUM);
     println!("pgforge {}", env!("CARGO_PKG_VERSION"));
     println!("PostgreSQL soportado: {} o superior", min.major());
-    match ddl::pg_dump::find_binary() {
+    match backup::tools::find(Tool::PgDump) {
         Some(path) => println!("pg_dump: {}", path.display()),
-        None => println!("pg_dump: no encontrado (el DDL de tablas no va a estar disponible)"),
+        None => println!("pg_dump: no encontrado (sin DDL de tablas ni backups)"),
+    }
+    match backup::tools::find(Tool::PgRestore) {
+        Some(path) => println!("pg_restore: {}", path.display()),
+        None => println!("pg_restore: no encontrado"),
+    }
+}
+
+async fn run_backup(url: &str, mut options: BackupOptions, dry_run: bool) -> Result<()> {
+    let handle = connect(url).await?;
+    if options.database.is_empty() {
+        options.database = handle.default_database().to_owned();
+    }
+
+    let plan = backup::plan(&handle, &options).await?;
+    println!("{}", plan.command.join(" "));
+    if let Some(warning) = &plan.warning {
+        eprintln!("aviso: {warning}");
+    }
+    if dry_run {
+        return Ok(());
+    }
+
+    // El progreso se imprime a medida que llega, que es de lo que se trata `--verbose`.
+    let (progress, mut lines) = mpsc::channel(64);
+    let printer = tokio::spawn(async move {
+        while let Some(line) = lines.recv().await {
+            eprintln!("{line}");
+        }
+    });
+
+    // La CLI no tiene cómo cancelar: el extremo que envía se suelta acá mismo y la espera nunca se
+    // resuelve, que es exactamente lo que hace falta.
+    let (_cancel, never) = oneshot::channel();
+
+    let outcome = backup::run(&handle, &options, progress, never).await;
+    let _ = printer.await;
+    let outcome = outcome?;
+
+    println!(
+        "listo: {} ({}) en {:.1}s",
+        outcome.path.display(),
+        bytes(outcome.bytes),
+        outcome.seconds
+    );
+    Ok(())
+}
+
+/// Tamaño legible. La interfaz tiene su propia versión en `format.ts`; acá alcanza con esto.
+fn bytes(value: u64) -> String {
+    const UNITS: [&str; 4] = ["B", "kB", "MB", "GB"];
+    let mut size = value as f64;
+    let mut unit = 0;
+    while size >= 1024.0 && unit < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{value} B")
+    } else {
+        format!("{size:.1} {}", UNITS[unit])
     }
 }
 

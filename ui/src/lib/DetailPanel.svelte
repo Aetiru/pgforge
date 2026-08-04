@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
+  import BackupDialog from "./BackupDialog.svelte";
   import ColumnDialog from "./ColumnDialog.svelte";
   import Confirm from "./Confirm.svelte";
   import ConstraintDialog from "./ConstraintDialog.svelte";
@@ -542,6 +543,7 @@
   let policyDialog = $state<{ existing: PolicyInfo | null } | null>(null);
   let roleDialog = $state<{ existing: RoleInfo | null } | null>(null);
   let privilegeDialog = $state<{ existing: PrivilegeExisting | null } | null>(null);
+  let backupDialog = $state(false);
   let revokeTarget = $state<{ grantee: string; privileges: string[] } | null>(null);
   let revokeCascade = $state(false);
   let revoking = $state(false);
@@ -1128,6 +1130,17 @@
             >
               <Icon name="sql" size={12} />
               Consulta
+            </button>
+          {/if}
+
+          {#if isDatabase && node}
+            <button
+              class="btn"
+              title={`Hace un backup de ${node.label} con pg_dump`}
+              onclick={() => (backupDialog = true)}
+            >
+              <Icon name="download" size={12} />
+              Backup
             </button>
           {/if}
 
@@ -2007,6 +2020,14 @@
     existing={privilegeDialog.existing}
     onclose={() => (privilegeDialog = null)}
     onsaved={afterPrivilegeSaved}
+  />
+{/if}
+
+{#if backupDialog && selected && node}
+  <BackupDialog
+    profileId={selected.profileId}
+    database={node.label}
+    onclose={() => (backupDialog = false)}
   />
 {/if}
 

@@ -7,6 +7,7 @@ use tauri::Manager;
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             app.manage(state::AppState::new(config_dir)?);
@@ -82,6 +83,9 @@ pub fn run() {
             commands::ddl::policy_apply,
             commands::ddl::table_security,
             commands::query::explain_warning,
+            commands::backup::backup_plan,
+            commands::backup::backup_run,
+            commands::backup::backup_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("no se pudo iniciar la aplicación");

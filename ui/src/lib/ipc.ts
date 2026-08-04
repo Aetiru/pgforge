@@ -325,6 +325,51 @@ export const maintenanceCancel = (taskId: string) =>
   invoke<void>("maintenance_cancel", { taskId });
 
 // ---------------------------------------------------------------------------
+// Backups
+// ---------------------------------------------------------------------------
+
+export type BackupFormat = "plain" | "custom" | "directory" | "tar";
+
+export interface BackupOptions {
+  database: string;
+  format: BackupFormat;
+  /** Archivo de salida, o directorio en el formato correspondiente. */
+  path: string;
+  /** Vacío quiere decir todos. */
+  schemas: string[];
+  excludeSchemas: string[];
+  /** Como `esquema.tabla`, o solo el nombre. */
+  tables: string[];
+  schemaOnly: boolean;
+  dataOnly: boolean;
+  noOwner: boolean;
+  noPrivileges: boolean;
+  compression: number | null;
+  /** Solo el formato directorio admite más de uno. */
+  jobs: number | null;
+}
+
+export interface BackupPlan {
+  /** El binario y sus argumentos. La contraseña no está acá: viaja por el entorno. */
+  command: string[];
+  warning: string | null;
+}
+
+export type BackupEvent =
+  | { type: "started"; command: string[] }
+  | { type: "progress"; message: string }
+  | { type: "finished"; path: string; bytes: number; seconds: number }
+  | { type: "failed"; error: CoreError };
+
+export const backupPlan = (id: string, options: BackupOptions) =>
+  invoke<BackupPlan>("backup_plan", { id, options });
+
+export const backupRun = (id: string, options: BackupOptions, channel: Channel<BackupEvent>) =>
+  invoke<string>("backup_run", { id, options, channel });
+
+export const backupCancel = (taskId: string) => invoke<void>("backup_cancel", { taskId });
+
+// ---------------------------------------------------------------------------
 // Consultas
 // ---------------------------------------------------------------------------
 

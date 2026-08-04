@@ -6,6 +6,7 @@
 
 #![warn(clippy::disallowed_macros)]
 
+pub mod backup;
 pub mod caps;
 pub mod conn;
 pub mod data;

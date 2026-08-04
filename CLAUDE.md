@@ -66,7 +66,7 @@ tests son `#[tokio::test]` que iteran las URLs en un bucle. Al agregar uno, segu
 ## Arquitectura
 
 ```
-crates/pgforge-core/   Núcleo: conexiones, introspección, SQL, datos, DDL, monitoreo.
+crates/pgforge-core/   Núcleo: conexiones, introspección, SQL, datos, DDL, monitoreo, backups.
 crates/pgforge-cli/    Binario de línea de comandos sobre el core.
 src-tauri/             Aplicación de escritorio: comandos Tauri y estado.
 ui/                    Svelte 5 (runes) + TypeScript + Vite + Tailwind 4.
@@ -134,7 +134,8 @@ cadena vacía), no como tipos nativos de JavaScript.
 
 Toda mutación tiene dos comandos: uno que **genera el SQL** y otro que lo ejecuta — `ddl_preview` /
 `ddl_apply`, `data_preview` / `data_apply`, `index_preview` / `index_create`, `view_preview`,
-`trigger_preview`, `role_preview`, `privilege_preview`, `maintenance_plan` / `maintenance_run`.
+`trigger_preview`, `role_preview`, `privilege_preview`, `maintenance_plan` / `maintenance_run`,
+`backup_plan` / `backup_run` (que en vez de SQL genera la línea de comando de `pg_dump`).
 
 La función generadora es **pura** a propósito: es lo único verificable sin servidor, y garantiza que
 lo que la interfaz muestra es exactamente lo que se va a ejecutar, no una reconstrucción parecida.
@@ -158,6 +159,12 @@ Para el DDL de lectura se prefiere siempre la función del servidor (`pg_get_vie
 que no tienen equivalente, se delegan a `pg_dump`. El campo `DdlSource` dice de cuál de los dos
 salió, porque no es lo mismo lo que afirma el servidor que lo que reconstruyó una herramienta
 externa.
+
+Los binarios externos (`pg_dump`, `pg_restore`) se ubican en un solo lugar, `backup::tools`:
+variable de entorno por herramienta → `PATH` → rutas típicas de cada sistema, quedándose con la
+versión más alta. Antes de usarlos hay que comparar su versión con la del servidor — pueden leer
+servidores más viejos que ellos, nunca más nuevos — y eso conviene detectarlo antes de empezar, no
+a los diez minutos.
 
 ### Interfaz
 

@@ -6,7 +6,7 @@ use pgforge_core::monitor::{ActivityFilter, Monitor};
 use pgforge_core::sql::{HistoryStore, QuerySession};
 use pgforge_core::{ConnectionManager, ProfileId, ProfileStore};
 use tauri::ipc::Channel;
-use tokio::sync::Mutex;
+use tokio::sync::{oneshot, Mutex};
 use tokio::task::JoinHandle;
 use tokio_postgres::CancelToken;
 
@@ -64,6 +64,15 @@ pub struct MaintenanceEntry {
     pub cancel: CancelToken,
 }
 
+/// Un backup en curso.
+///
+/// A diferencia de [`MaintenanceEntry`], acá el trabajo lo hace un proceso hijo de la aplicación y
+/// no el servidor: lo que se guarda es el extremo por el que se le avisa que lo mate, y el núcleo
+/// se encarga de borrar el archivo a medio escribir.
+pub struct BackupEntry {
+    pub cancel: oneshot::Sender<()>,
+}
+
 /// Una pestaña de consulta abierta, con su conexión propia.
 ///
 /// La sesión vive acá y no dentro de la llamada que ejecuta: es lo que hace que un `BEGIN`, un
@@ -84,6 +93,7 @@ pub struct AppState {
     pub store: Mutex<ProfileStore>,
     pub monitors: Mutex<HashMap<ProfileId, MonitorEntry>>,
     pub maintenance: Mutex<HashMap<String, MaintenanceEntry>>,
+    pub backups: Mutex<HashMap<String, BackupEntry>>,
     pub queries: Mutex<HashMap<String, QueryEntry>>,
     pub history: Mutex<HistoryStore>,
 }
@@ -97,6 +107,7 @@ impl AppState {
             history: Mutex::new(HistoryStore::open(config_dir.join("history.db"))?),
             monitors: Mutex::new(HashMap::new()),
             maintenance: Mutex::new(HashMap::new()),
+            backups: Mutex::new(HashMap::new()),
             queries: Mutex::new(HashMap::new()),
         })
     }

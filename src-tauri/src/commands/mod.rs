@@ -4,6 +4,7 @@
 //! haya que pensar vive en el núcleo, donde `pgforge-cli` también lo usa y los tests lo ejercitan
 //! sin necesidad de una ventana.
 
+pub mod backup;
 pub mod data;
 pub mod ddl;
 pub mod monitoring;
