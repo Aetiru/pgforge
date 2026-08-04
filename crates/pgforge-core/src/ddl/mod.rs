@@ -5,6 +5,7 @@
 //! es la que el propio servidor considera correcta. Para las tablas, que no tienen equivalente, se
 //! delega en `pg_dump`; ver [`pg_dump`] para el razonamiento.
 
+pub mod extension;
 pub mod function;
 pub mod index;
 pub mod pg_dump;
@@ -175,10 +176,18 @@ pub async fn object_ddl(handle: &ServerHandle, node: &TreeNode) -> Result<Ddl> {
         NodeKind::Column => column_ddl(handle, node).await,
         NodeKind::Schema => schema_ddl(handle, node).await,
         NodeKind::Role => role_ddl(handle, node).await,
+        NodeKind::Extension => extension_ddl(handle, node).await,
         NodeKind::Database | NodeKind::Folder(_) => {
             Err(Error::Config("este nodo no tiene un DDL propio".to_owned()))
         }
     }
+}
+
+/// El DDL de una extensión. Como los roles y las políticas, se reconstruye a partir del catálogo:
+/// no hay un `pg_get_extensiondef`.
+async fn extension_ddl(handle: &ServerHandle, node: &TreeNode) -> Result<Ddl> {
+    let info = extension::extension(handle, &node.database, &node.label).await?;
+    Ok(Ddl::catalog(extension::describe(&info)))
 }
 
 /// El DDL de una política. No existe un `pg_get_policydef`, así que se arma con el mismo generador

@@ -66,7 +66,8 @@ export type FolderKind =
   | "constraints"
   | "triggers"
   | "policies"
-  | "roles";
+  | "roles"
+  | "extensions";
 
 export type NodeKind =
   | "database"
@@ -86,6 +87,7 @@ export type NodeKind =
   | "trigger"
   | "policy"
   | "role"
+  | "extension"
   | { folder: FolderKind };
 
 /** Rasgo de un objeto que se muestra como etiqueta junto al nombre en el árbol. */
@@ -941,6 +943,53 @@ export const roleInfo = (id: string, oid: number, database?: string) =>
 
 export const roleMemberships = (id: string, name: string, database?: string) =>
   invoke<string[]>("role_memberships", { id, name, database: database ?? null });
+
+// ---------------------------------------------------------------------------
+// Extensiones
+// ---------------------------------------------------------------------------
+
+export type ExtensionChange =
+  | {
+      kind: "create";
+      name: string;
+      schema: string | null;
+      version: string | null;
+      cascade: boolean;
+    }
+  | { kind: "update"; name: string; version: string | null }
+  | { kind: "setSchema"; name: string; schema: string }
+  | { kind: "drop"; name: string; cascade: boolean };
+
+export interface ExtensionInfo {
+  name: string;
+  version: string;
+  schema: string;
+  comment: string | null;
+  /** Solo si es relocatable tiene sentido cambiarla de esquema. */
+  relocatable: boolean;
+  /** Puede ser más nueva que `version`: entonces hay una actualización disponible. */
+  defaultVersion: string | null;
+  availableVersions: string[];
+}
+
+export interface AvailableExtension {
+  name: string;
+  defaultVersion: string | null;
+  installed: boolean;
+  comment: string | null;
+}
+
+export const extensionPreview = (changes: ExtensionChange[]) =>
+  invoke<DdlStatement[]>("extension_preview", { changes });
+
+export const extensionApply = (id: string, changes: ExtensionChange[], database?: string) =>
+  invoke<void>("extension_apply", { id, changes, database: database ?? null });
+
+export const extensionInfo = (id: string, name: string, database?: string) =>
+  invoke<ExtensionInfo>("extension_info", { id, name, database: database ?? null });
+
+export const availableExtensions = (id: string, database?: string) =>
+  invoke<AvailableExtension[]>("available_extensions", { id, database: database ?? null });
 
 // ---------------------------------------------------------------------------
 // Privilegios

@@ -1,6 +1,7 @@
 //! Estructura de tablas: crear, cambiar y borrar tablas, columnas, índices, constraints, vistas,
 //! funciones, triggers, roles, privilegios y políticas de seguridad por fila.
 
+use pgforge_core::ddl::extension::{self, AvailableExtension, ExtensionChange, ExtensionInfo};
 use pgforge_core::ddl::function;
 use pgforge_core::ddl::index::{self, IndexDef, IndexInfo};
 use pgforge_core::ddl::policy::{self, PolicyChange, TableSecurity};
@@ -388,6 +389,53 @@ pub async fn policy_apply(
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
     policy::apply(&handle, &database, &changes).await
+}
+
+/// El SQL que se ejecutaría, sin ejecutar nada.
+#[tauri::command]
+pub fn extension_preview(changes: Vec<ExtensionChange>) -> Result<Vec<Statement>> {
+    extension::statements(&changes)
+}
+
+/// Aplica los cambios pendientes en una sola transacción.
+#[tauri::command]
+pub async fn extension_apply(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    changes: Vec<ExtensionChange>,
+) -> Result<()> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    extension::apply(&handle, &database, &changes).await
+}
+
+/// La extensión instalada tal como está, para precargar el diálogo de edición.
+#[tauri::command]
+pub async fn extension_info(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    name: String,
+) -> Result<ExtensionInfo> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    extension::extension(&handle, &database, &name).await
+}
+
+/// Las extensiones que el paquete ofrece, para el selector al instalar.
+#[tauri::command]
+pub async fn available_extensions(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+) -> Result<Vec<AvailableExtension>> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    extension::available(&handle, &database).await
 }
 
 /// El estado de Row-Level Security de una tabla: el interruptor y sus políticas.

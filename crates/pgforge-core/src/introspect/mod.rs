@@ -37,7 +37,10 @@ pub async fn children(
     };
 
     match parent.kind {
-        NodeKind::Database => Ok(vec![schemas_folder(handle, parent, options).await?]),
+        NodeKind::Database => Ok(vec![
+            schemas_folder(handle, parent, options).await?,
+            extensions_folder(handle, parent).await?,
+        ]),
         NodeKind::Folder(Folder::Schemas) => schemas(handle, parent, options).await,
         NodeKind::Folder(Folder::Roles) => roles(handle, parent, options).await,
         NodeKind::Schema => schema_folders(handle, parent).await,
@@ -150,6 +153,50 @@ async fn schemas_folder(
     Ok(TreeNode::folder(parent, Folder::Schemas, row.get(0)))
 }
 
+/// La carpeta "Extensiones", hermana de "Esquemas" bajo cada base. Las extensiones son de la base
+/// —cada base tiene las suyas—, a diferencia de los roles, que son del clúster.
+async fn extensions_folder(handle: &ServerHandle, parent: &TreeNode) -> Result<TreeNode> {
+    let client = handle.client(&parent.database).await?;
+    let row = client
+        .query_one("SELECT count(*)::int8 FROM pg_catalog.pg_extension", &[])
+        .await?;
+    Ok(TreeNode::folder(parent, Folder::Extensions, row.get(0)))
+}
+
+async fn extensions(handle: &ServerHandle, parent: &TreeNode) -> Result<Vec<TreeNode>> {
+    let client = handle.client(&parent.database).await?;
+    let rows = client
+        .query(
+            "SELECT e.oid,
+                    e.extname::text,
+                    e.extversion,
+                    n.nspname::text,
+                    pg_catalog.obj_description(e.oid, 'pg_extension')
+               FROM pg_catalog.pg_extension e
+               JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace
+              ORDER BY e.extname",
+            &[],
+        )
+        .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let version: String = row.get(2);
+            let schema: String = row.get(3);
+            TreeNode::object(
+                parent,
+                NodeKind::Extension,
+                row.get(0),
+                row.get(1),
+                Some(format!("v{version} · {schema}")),
+                false,
+            )
+            .with_comment(row.get(4))
+        })
+        .collect())
+}
+
 async fn schemas(
     handle: &ServerHandle,
     parent: &TreeNode,
@@ -252,6 +299,7 @@ async fn objects(
         Folder::Constraints => constraints(handle, parent).await,
         Folder::Triggers => triggers(handle, parent).await,
         Folder::Policies => policies(handle, parent).await,
+        Folder::Extensions => extensions(handle, parent).await,
         // Se resuelven antes, en el `match` de `children()`: `Schemas` no tiene un padre de este
         // tipo, y `Roles` va por su propia función porque no cuelga de una base.
         Folder::Schemas | Folder::Roles => Ok(Vec::new()),

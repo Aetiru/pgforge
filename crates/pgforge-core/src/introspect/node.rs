@@ -27,6 +27,8 @@ pub enum NodeKind {
     Policy,
     /// Del clúster entero, no de una base: vive como hermano de las bases en la raíz del árbol.
     Role,
+    /// Una extensión instalada en la base. Cuelga de la carpeta "Extensiones" de cada base.
+    Extension,
 }
 
 /// Rasgo de un objeto que conviene ver sin abrirlo.
@@ -68,6 +70,8 @@ pub enum Folder {
     Policies,
     /// Del clúster entero: única carpeta que aparece en la raíz, junto a las bases.
     Roles,
+    /// De nivel base: hermana de "Esquemas" bajo cada base.
+    Extensions,
 }
 
 impl Folder {
@@ -88,6 +92,7 @@ impl Folder {
             Folder::Triggers => "Disparadores",
             Folder::Policies => "Políticas",
             Folder::Roles => "Roles",
+            Folder::Extensions => "Extensiones",
         }
     }
 
@@ -109,6 +114,7 @@ impl Folder {
             Folder::Triggers => "triggers",
             Folder::Policies => "policies",
             Folder::Roles => "roles",
+            Folder::Extensions => "extensions",
         }
     }
 }

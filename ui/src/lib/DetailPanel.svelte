@@ -7,6 +7,7 @@
   import Confirm from "./Confirm.svelte";
   import ConstraintDialog from "./ConstraintDialog.svelte";
   import Empty from "./Empty.svelte";
+  import ExtensionDialog from "./ExtensionDialog.svelte";
   import FunctionDialog from "./FunctionDialog.svelte";
   import Icon from "./Icon.svelte";
   import IndexDialog from "./IndexDialog.svelte";
@@ -26,6 +27,8 @@
     dataOpen,
     ddlApply,
     describeError,
+    extensionApply,
+    extensionInfo,
     folderOf,
     formatVersion,
     functionArgs,
@@ -56,6 +59,7 @@
     type IndexInfo,
     type PolicyChange,
     type PolicyInfo,
+    type ExtensionInfo,
     type PrivilegeGrant,
     type RoleChange,
     type RoleInfo,
@@ -200,6 +204,9 @@
   const isRole = $derived(node?.kind === "role");
   /** La única carpeta que no cuelga de una base: es hermana de todas ellas en la raíz. */
   const isRolesFolder = $derived(node !== null && folderOf(node.kind) === "roles");
+
+  const isExtension = $derived(node?.kind === "extension");
+  const isExtensionsFolder = $derived(node !== null && folderOf(node.kind) === "extensions");
 
   const isSchema = $derived(node?.kind === "schema");
   const isSequence = $derived(node?.kind === "sequence");
@@ -552,6 +559,7 @@
   let triggerDialog = $state<{ existing: TriggerInfo | null } | null>(null);
   let policyDialog = $state<{ existing: PolicyInfo | null } | null>(null);
   let roleDialog = $state<{ existing: RoleInfo | null } | null>(null);
+  let extensionDialog = $state<{ existing: ExtensionInfo | null } | null>(null);
   let privilegeDialog = $state<{ existing: PrivilegeExisting | null } | null>(null);
   let backupDialog = $state(false);
   let restoreDialog = $state(false);
@@ -570,7 +578,8 @@
           | "materializedView"
           | "trigger"
           | "policy"
-          | "role";
+          | "role"
+          | "extension";
         label: string;
       }
     | { kind: "function"; schema: string; name: string; args: string; procedure: boolean }
@@ -635,6 +644,32 @@
     } else {
       // Renombrar cambia lo que el árbol muestra: se recarga la carpeta "Roles" y se limpia la
       // selección, porque la fila que estaba elegida ya no coincide con el rol que quedó.
+      const parent = parentOf(explorer.roots, selected);
+      if (parent) explorer.reload(parent);
+      explorer.selected = null;
+    }
+  }
+
+  /** Trae la extensión tal como está antes de abrir la edición. */
+  async function openEditExtension() {
+    if (!selected || !node) return;
+    try {
+      const info = await extensionInfo(selected.profileId, node.label, node.database);
+      extensionDialog = { existing: info };
+    } catch (error) {
+      ddlError = describeError(error);
+    }
+  }
+
+  function afterExtensionSaved() {
+    const wasInstall = extensionDialog !== null && extensionDialog.existing === null;
+    extensionDialog = null;
+    if (!selected) return;
+    // Instalar suma un nodo a la carpeta; actualizar o cambiar de esquema cambia el detalle del nodo.
+    // En ambos casos se recarga la carpeta "Extensiones" para reflejarlo.
+    if (wasInstall) {
+      explorer.reload(selected);
+    } else {
       const parent = parentOf(explorer.roots, selected);
       if (parent) explorer.reload(parent);
       explorer.selected = null;
@@ -952,6 +987,18 @@
           }
           explorer.selected = null;
           break;
+        case "extension":
+          await extensionApply(
+            selected.profileId,
+            [{ kind: "drop", name: dropTarget.label, cascade: dropCascade }],
+            node.database,
+          );
+          {
+            const parent = parentOf(explorer.roots, selected);
+            if (parent) await explorer.reload(parent);
+          }
+          explorer.selected = null;
+          break;
       }
       closeDropDialog();
     } catch (error) {
@@ -984,6 +1031,8 @@
         return `¿Eliminar la política ${dropTarget.label}? Si es la única que dejaba ver filas, la tabla queda sin nada visible.`;
       case "role":
         return `¿Eliminar el rol ${dropTarget.label}?`;
+      case "extension":
+        return `¿Quitar la extensión ${dropTarget.label} de la base?`;
     }
   });
 
@@ -1123,6 +1172,16 @@
             </button>
           {/if}
 
+          {#if isExtensionsFolder}
+            <button
+              class="btn btn-primary"
+              onclick={() => (extensionDialog = { existing: null })}
+            >
+              <Icon name="plus" size={12} />
+              Instalar extensión
+            </button>
+          {/if}
+
           {#if dataTarget !== null && queryTarget}
             <button
               class="btn btn-primary"
@@ -1215,6 +1274,13 @@
             </button>
           {/if}
 
+          {#if isExtension}
+            <button class="btn" onclick={openEditExtension}>
+              <Icon name="edit" size={12} />
+              Editar
+            </button>
+          {/if}
+
           {#if isGroup}
             <button class="btn btn-primary" onclick={() => ongroup(selected.group!)}>
               <Icon name="edit" size={12} />
@@ -1284,6 +1350,16 @@
             >
               <Icon name="trash" size={12} />
               Eliminar
+            </button>
+          {/if}
+
+          {#if isExtension}
+            <button
+              class="btn btn-danger-ghost"
+              onclick={() => (dropTarget = { kind: "extension", label: selected.label })}
+            >
+              <Icon name="trash" size={12} />
+              Quitar
             </button>
           {/if}
 
@@ -2091,6 +2167,16 @@
     existing={roleDialog.existing}
     onclose={() => (roleDialog = null)}
     onsaved={afterRoleSaved}
+  />
+{/if}
+
+{#if extensionDialog && selected && node}
+  <ExtensionDialog
+    profileId={selected.profileId}
+    database={node.database}
+    existing={extensionDialog.existing}
+    onclose={() => (extensionDialog = null)}
+    onsaved={afterExtensionSaved}
   />
 {/if}
 
