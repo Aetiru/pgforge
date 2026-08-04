@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import BackupDialog from "./BackupDialog.svelte";
+  import RestoreDialog from "./RestoreDialog.svelte";
   import ColumnDialog from "./ColumnDialog.svelte";
   import Confirm from "./Confirm.svelte";
   import ConstraintDialog from "./ConstraintDialog.svelte";
@@ -544,6 +545,7 @@
   let roleDialog = $state<{ existing: RoleInfo | null } | null>(null);
   let privilegeDialog = $state<{ existing: PrivilegeExisting | null } | null>(null);
   let backupDialog = $state(false);
+  let restoreDialog = $state(false);
   let revokeTarget = $state<{ grantee: string; privileges: string[] } | null>(null);
   let revokeCascade = $state(false);
   let revoking = $state(false);
@@ -1141,6 +1143,14 @@
             >
               <Icon name="download" size={12} />
               Backup
+            </button>
+            <button
+              class="btn"
+              title={`Restaura un backup sobre ${node.label} con pg_restore`}
+              onclick={() => (restoreDialog = true)}
+            >
+              <Icon name="upload" size={12} />
+              Restaurar
             </button>
           {/if}
 
@@ -2028,6 +2038,14 @@
     profileId={selected.profileId}
     database={node.label}
     onclose={() => (backupDialog = false)}
+  />
+{/if}
+
+{#if restoreDialog && selected && node}
+  <RestoreDialog
+    profileId={selected.profileId}
+    database={node.label}
+    onclose={() => (restoreDialog = false)}
   />
 {/if}
 

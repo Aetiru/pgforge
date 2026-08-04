@@ -9,6 +9,7 @@
 //! mismo que hace el mantenimiento con los `NOTICE` del servidor: un backup de media hora sin una
 //! sola señal de vida es indistinguible de uno colgado.
 
+pub mod restore;
 pub mod tools;
 
 use std::path::PathBuf;
@@ -243,9 +244,44 @@ pub async fn run(
     let plan = plan(handle, options).await?;
     let (binary, args) = plan.command.split_first().expect("el plan trae el binario");
 
+    let mut command = base_command(binary, handle);
+    command.args(args);
+
+    let started = Instant::now();
+    match spawn_streaming(command, binary, progress, cancel).await? {
+        // Matar el proceso no alcanza: `pg_dump` deja un archivo a medio escribir que parece válido,
+        // y un backup truncado es peor que no tener backup. El error aparecería el día que hace falta
+        // restaurar, el peor momento posible para descubrirlo.
+        Ended::Canceled => {
+            cleanup(options);
+            Err(Error::Canceled)
+        }
+        Ended::Done(status, tail) => {
+            if !status.success() {
+                cleanup(options);
+                return Err(Error::Config(format!(
+                    "pg_dump terminó con error: {}",
+                    tail.last().unwrap_or("sin detalle")
+                )));
+            }
+            let bytes = size_of(options);
+            Ok(Outcome {
+                path: options.path.clone(),
+                bytes,
+                seconds: started.elapsed().as_secs_f64(),
+            })
+        }
+    }
+}
+
+/// El comando con el entorno de conexión ya puesto, compartido entre backup y restore.
+///
+/// La contraseña va por `PGPASSWORD` y no por argumento: así la línea que la interfaz muestra y deja
+/// copiar no la filtra. stdout se descarta porque tanto `pg_dump` (que escribe con `--file`) como
+/// `pg_restore` (que escribe en el servidor) solo hablan por stderr con `--verbose`.
+fn base_command(binary: &str, handle: &ServerHandle) -> Command {
     let mut command = Command::new(binary);
     command
-        .args(args)
         .env("PGSSLMODE", ssl_mode_env(handle.profile.ssl_mode))
         .env("PGAPPNAME", "pgforge")
         .stdin(Stdio::null())
@@ -258,14 +294,37 @@ pub async fn run(
     if let Some(password) = handle.password() {
         command.env("PGPASSWORD", password.expose());
     }
+    command
+}
 
-    let started = Instant::now();
+/// Cómo terminó un proceso hijo llevado hasta el final por [`spawn_streaming`].
+enum Ended {
+    /// Terminó por su cuenta. Trae el estado de salida y las últimas líneas de stderr, que son las
+    /// que explican un fallo.
+    Done(std::process::ExitStatus, Tail),
+    /// Llegó la señal de cancelación y se mató el proceso. Qué limpiar tras eso es cosa de quien
+    /// llama: un backup borra su archivo, un restore no tiene nada que borrar del disco.
+    Canceled,
+}
+
+/// Lanza `command`, reenvía su stderr por `progress` a medida que llega —esperar al final sería una
+/// barra de progreso falsa durante todo el proceso—, guarda las últimas líneas para poder citar un
+/// error, y mata el proceso si llega algo por `cancel`.
+///
+/// No sabe qué significa el proceso: interpretar el estado de salida y decidir qué hacer con una
+/// cancelación queda para el que llama, que es lo único que difiere entre backup y restore.
+async fn spawn_streaming(
+    mut command: Command,
+    binary: &str,
+    progress: mpsc::Sender<String>,
+    cancel: oneshot::Receiver<()>,
+) -> Result<Ended> {
     let mut child = command
         .spawn()
         .map_err(|e| Error::Config(format!("no se pudo ejecutar {binary}: {e}")))?;
 
     // Las últimas líneas de stderr son las que explican un fallo, así que se guardan además de
-    // transmitirse: cuando `pg_dump` termina mal, su código de salida no dice nada por sí solo.
+    // transmitirse: cuando el proceso termina mal, su código de salida no dice nada por sí solo.
     let stderr = child.stderr.take().expect("stderr pedido como pipe");
     let (tail_tx, mut tail_rx) = mpsc::channel::<String>(16);
     tokio::spawn(async move {
@@ -290,12 +349,11 @@ pub async fn run(
 
             status = child.wait() => break status,
 
-            // Matar el proceso y no solo dejar de esperarlo: si no, `pg_dump` seguiría escribiendo
-            // el archivo que la aplicación ya dio por cancelado.
+            // Matar el proceso y no solo dejar de esperarlo: si no, seguiría trabajando por su
+            // cuenta después de que la aplicación lo dio por cancelado.
             _ = &mut cancel => {
                 let _ = child.kill().await;
-                cleanup(options);
-                return Err(Error::Canceled);
+                return Ok(Ended::Canceled);
             }
         }
     };
@@ -306,22 +364,8 @@ pub async fn run(
         tail.push(line);
     }
 
-    let status = status.map_err(|e| Error::Config(format!("falló la espera de pg_dump: {e}")))?;
-
-    if !status.success() {
-        cleanup(options);
-        return Err(Error::Config(format!(
-            "pg_dump terminó con error: {}",
-            tail.last().unwrap_or("sin detalle")
-        )));
-    }
-
-    let bytes = size_of(options);
-    Ok(Outcome {
-        path: options.path.clone(),
-        bytes,
-        seconds: started.elapsed().as_secs_f64(),
-    })
+    let status = status.map_err(|e| Error::Config(format!("falló la espera de {binary}: {e}")))?;
+    Ok(Ended::Done(status, tail))
 }
 
 /// Las últimas líneas de stderr.

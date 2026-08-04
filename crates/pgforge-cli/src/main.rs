@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use pgforge_core::backup::restore::{self, RestoreOptions};
 use pgforge_core::backup::tools::Tool;
 use pgforge_core::backup::{self, BackupOptions, Format};
 use pgforge_core::conn::{ConnectionManager, ConnectionProfile, ServerHandle};
@@ -126,6 +127,50 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+
+    /// Restaura un backup con pg_restore.
+    Restore {
+        #[arg(long)]
+        url: String,
+        /// El archivo del backup, o el directorio con --format directory.
+        #[arg(long)]
+        source: PathBuf,
+        /// Base destino, o de mantenimiento con --create. Por omisión, la del perfil.
+        #[arg(long)]
+        database: Option<String>,
+        #[arg(long, value_enum, default_value_t = FormatArg::Custom)]
+        format: FormatArg,
+        /// Restaurar solo estos esquemas. Se puede repetir.
+        #[arg(long = "schema")]
+        schemas: Vec<String>,
+        /// Restaurar solo estas tablas, como esquema.tabla. Se puede repetir.
+        #[arg(long = "table")]
+        tables: Vec<String>,
+        /// Sin los datos.
+        #[arg(long)]
+        schema_only: bool,
+        /// Sin el esquema.
+        #[arg(long)]
+        data_only: bool,
+        /// Elimina cada objeto antes de recrearlo.
+        #[arg(long)]
+        clean: bool,
+        /// Que el borrado de --clean no falle si el objeto no existe.
+        #[arg(long)]
+        if_exists: bool,
+        /// Crea la base destino en vez de cargar sobre una existente.
+        #[arg(long)]
+        create: bool,
+        /// Todo o nada: revierte si algo falla.
+        #[arg(long)]
+        single_transaction: bool,
+        /// Trabajos en paralelo (formatos custom y directory).
+        #[arg(long)]
+        jobs: Option<u8>,
+        /// Muestra la línea de comando y no ejecuta nada.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 /// Los formatos de `pg_dump`, con los nombres que usa su propia documentación.
@@ -214,6 +259,45 @@ async fn main() -> ExitCode {
             )
             .await
         }
+        Command::Restore {
+            url,
+            source,
+            database,
+            format,
+            schemas,
+            tables,
+            schema_only,
+            data_only,
+            clean,
+            if_exists,
+            create,
+            single_transaction,
+            jobs,
+            dry_run,
+        } => {
+            run_restore(
+                &url,
+                RestoreOptions {
+                    source,
+                    format: format.into(),
+                    // Se completa con la base del perfil una vez conectados.
+                    database: database.unwrap_or_default(),
+                    schemas,
+                    tables,
+                    schema_only,
+                    data_only,
+                    clean,
+                    if_exists,
+                    create,
+                    no_owner: false,
+                    no_privileges: false,
+                    single_transaction,
+                    jobs,
+                },
+                dry_run,
+            )
+            .await
+        }
     };
 
     match result {
@@ -275,6 +359,43 @@ async fn run_backup(url: &str, mut options: BackupOptions, dry_run: bool) -> Res
         outcome.path.display(),
         bytes(outcome.bytes),
         outcome.seconds
+    );
+    Ok(())
+}
+
+async fn run_restore(url: &str, mut options: RestoreOptions, dry_run: bool) -> Result<()> {
+    let handle = connect(url).await?;
+    if options.database.is_empty() {
+        options.database = handle.default_database().to_owned();
+    }
+
+    let plan = restore::plan(&handle, &options).await?;
+    println!("{}", plan.command.join(" "));
+    if let Some(warning) = &plan.warning {
+        eprintln!("aviso: {warning}");
+    }
+    if dry_run {
+        return Ok(());
+    }
+
+    let (progress, mut lines) = mpsc::channel(64);
+    let printer = tokio::spawn(async move {
+        while let Some(line) = lines.recv().await {
+            eprintln!("{line}");
+        }
+    });
+
+    // La CLI no tiene cómo cancelar: el extremo que envía se suelta acá mismo y la espera nunca se
+    // resuelve, que es exactamente lo que hace falta.
+    let (_cancel, never) = oneshot::channel();
+
+    let outcome = restore::run(&handle, &options, progress, never).await;
+    let _ = printer.await;
+    let outcome = outcome?;
+
+    println!(
+        "listo: se restauró sobre {} en {:.1}s",
+        outcome.database, outcome.seconds
     );
     Ok(())
 }

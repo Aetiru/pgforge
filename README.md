@@ -21,7 +21,7 @@ de forma incremental y cada etapa entrega algo usable por sí sola:
 | 4 | Grilla de datos editable | listo |
 | 5 | Gestión de objetos DDL | listo |
 | 6 | Roles y permisos | listo |
-| 7 | Backup/restore | en curso (backup: listo; restore: pendiente) |
+| 7 | Backup/restore | listo |
 | 8+ | Replicación, extensiones, configuración del servidor | pendiente |
 
 La etapa 6 cubre roles y membresías, GRANT/REVOKE sobre tablas, vistas, secuencias, funciones,
@@ -55,11 +55,13 @@ pgforge ddl    --url postgres://postgres@localhost:5432/postgres public.clientes
 pgforge data   --url postgres://postgres@localhost:5432/postgres public.clientes --limit 20
 pgforge query  --url postgres://postgres@localhost:5432/postgres --sql "SELECT * FROM clientes"
 pgforge query  --url postgres://postgres@localhost:5432/postgres --sql "SELECT …" --explain --analyze
-pgforge backup --url postgres://postgres@localhost:5432/postgres --out copia.dump --format custom
+pgforge backup  --url postgres://postgres@localhost:5432/postgres --out copia.dump --format custom
+pgforge restore --url postgres://postgres@localhost:5432/postgres --source copia.dump --clean
 ```
 
-El backup necesita `pg_dump` instalado. Se busca en el `PATH` y en las rutas habituales de cada
-sistema; si hay varias instalaciones, `PGFORGE_PG_DUMP` manda.
+El backup necesita `pg_dump` y el restore `pg_restore`. Se buscan en el `PATH` y en las rutas
+habituales de cada sistema; si hay varias instalaciones, `PGFORGE_PG_DUMP` y `PGFORGE_PG_RESTORE`
+mandan. El restore no lee el formato plano: ese es un script SQL que se aplica con `psql`.
 
 ## Contraseñas
 

@@ -86,6 +86,9 @@ pub fn run() {
             commands::backup::backup_plan,
             commands::backup::backup_run,
             commands::backup::backup_cancel,
+            commands::backup::restore_plan,
+            commands::backup::restore_run,
+            commands::backup::restore_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("no se pudo iniciar la aplicación");

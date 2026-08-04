@@ -135,7 +135,8 @@ cadena vacía), no como tipos nativos de JavaScript.
 Toda mutación tiene dos comandos: uno que **genera el SQL** y otro que lo ejecuta — `ddl_preview` /
 `ddl_apply`, `data_preview` / `data_apply`, `index_preview` / `index_create`, `view_preview`,
 `trigger_preview`, `role_preview`, `privilege_preview`, `maintenance_plan` / `maintenance_run`,
-`backup_plan` / `backup_run` (que en vez de SQL genera la línea de comando de `pg_dump`).
+`backup_plan` / `backup_run` y `restore_plan` / `restore_run` (que en vez de SQL generan la línea de
+comando de `pg_dump` y `pg_restore`).
 
 La función generadora es **pura** a propósito: es lo único verificable sin servidor, y garantiza que
 lo que la interfaz muestra es exactamente lo que se va a ejecutar, no una reconstrucción parecida.
