@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
+  import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
   import SqlPreview from "./SqlPreview.svelte";
   import {
@@ -37,12 +38,16 @@
   let login = $state(untrack(() => existing?.login ?? false));
   let replication = $state(untrack(() => existing?.replication ?? false));
   let bypassRls = $state(untrack(() => existing?.bypassRls ?? false));
-  let connectionLimitText = $state(
-    untrack(() => (existing && existing.connectionLimit !== -1 ? String(existing.connectionLimit) : "")),
+  // -1 en Postgres es "sin límite"; en el formulario eso es el campo vacío (null).
+  let connectionLimit = $state<number | null>(
+    untrack(() => (existing && existing.connectionLimit !== -1 ? existing.connectionLimit : null)),
   );
   /** Siempre arranca vacía: Postgres nunca devuelve la contraseña para precargarla. */
   let password = $state("");
-  let validUntil = $state(untrack(() => existing?.validUntil ?? ""));
+  let showPassword = $state(false);
+  // `rolvaliduntil` llega como timestamptz en texto ("2025-12-31 00:00:00+00") o "infinity"; el
+  // campo de fecha solo maneja YYYY-MM-DD, así que se recorta a eso y el resto es "sin vencimiento".
+  let validUntil = $state(untrack(() => toDate(existing?.validUntil)));
   let memberOfText = $state("");
   let adminOption = $state(false);
 
@@ -73,8 +78,14 @@
   }
 
   function parsedConnectionLimit(): number {
-    const trimmed = connectionLimitText.trim();
-    return trimmed === "" ? -1 : Number(trimmed);
+    // Vacío (null) es "sin límite", que en Postgres es -1.
+    return connectionLimit ?? -1;
+  }
+
+  /** El vencimiento recortado a la fecha (YYYY-MM-DD); vacío para "infinity", null o sin fecha. */
+  function toDate(value: string | null | undefined): string {
+    const text = (value ?? "").trim();
+    return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : "";
   }
 
   function changes(): RoleChange[] {
@@ -122,7 +133,7 @@
       anyAttr = true;
     }
     const until = validUntil.trim();
-    if (until !== (existing.validUntil ?? "")) {
+    if (until !== toDate(existing.validUntil)) {
       // Vaciar el campo vuelve el rol a "sin vencimiento", que en Postgres es 'infinity'.
       attrs.validUntil = until || "infinity";
       anyAttr = true;
@@ -142,8 +153,8 @@
 
   function validate(): string | null {
     if (!name.trim()) return "Poné un nombre para el rol.";
-    if (connectionLimitText.trim() !== "" && Number.isNaN(Number(connectionLimitText.trim()))) {
-      return "El límite de conexiones tiene que ser un número.";
+    if (connectionLimit !== null && (!Number.isInteger(connectionLimit) || connectionLimit < 0)) {
+      return "El límite de conexiones tiene que ser un número entero no negativo.";
     }
     return null;
   }
@@ -216,11 +227,18 @@
   <div class="mt-3 grid grid-cols-2 gap-3">
     <label class="flex flex-col gap-1">
       <span class="label">Límite de conexiones</span>
-      <input class="field" bind:value={connectionLimitText} placeholder="sin límite" />
+      <input
+        class="field"
+        type="number"
+        min="0"
+        step="1"
+        bind:value={connectionLimit}
+        placeholder="sin límite"
+      />
     </label>
     <label class="flex flex-col gap-1">
       <span class="label">Válido hasta</span>
-      <input class="field" bind:value={validUntil} placeholder="sin vencimiento" />
+      <input class="field" type="date" bind:value={validUntil} />
     </label>
   </div>
 
@@ -228,7 +246,23 @@
     <span class="label">
       Contraseña {existing ? "(vacía = no cambiarla)" : "(opcional)"}
     </span>
-    <input class="field" type="password" bind:value={password} autocomplete="off" />
+    <div class="relative">
+      <input
+        class="field pr-9"
+        type={showPassword ? "text" : "password"}
+        bind:value={password}
+        autocomplete="off"
+      />
+      <button
+        type="button"
+        class="btn-icon absolute top-1/2 right-1 -translate-y-1/2"
+        title={showPassword ? "Ocultar la contraseña" : "Mostrar la contraseña"}
+        aria-label={showPassword ? "Ocultar la contraseña" : "Mostrar la contraseña"}
+        onclick={() => (showPassword = !showPassword)}
+      >
+        <Icon name={showPassword ? "eye-off" : "eye"} size={14} />
+      </button>
+    </div>
   </label>
 
   <label class="mt-3 flex flex-col gap-1">
