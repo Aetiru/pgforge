@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+  import { syntaxHighlighting } from "@codemirror/language";
   import { PostgreSQL, sql, type SQLNamespace } from "@codemirror/lang-sql";
   import { Compartment, EditorState, Prec } from "@codemirror/state";
   import { Decoration, EditorView, keymap, type DecorationSet } from "@codemirror/view";
-  import { tags } from "@lezer/highlight";
   import { basicSetup } from "codemirror";
   import { untrack } from "svelte";
+  import { sqlHighlight } from "./sql-highlight";
   import type { ErrorMark } from "./query.svelte";
 
   let {
@@ -33,22 +33,6 @@
 
   const language = new Compartment();
   const marks = new Compartment();
-
-  /**
-   * Los colores salen de variables CSS y no de dos temas conmutables porque el resto de la
-   * aplicación resuelve el tema con el atributo `data-theme` del documento: un tema propio acá
-   * sería una segunda fuente de verdad que se desincroniza. Cambiar de claro a oscuro repinta el
-   * editor sin recrearlo, porque lo único que cambia son las variables.
-   */
-  const highlight = HighlightStyle.define([
-    { tag: tags.keyword, color: "var(--cm-keyword)", fontWeight: "500" },
-    { tag: [tags.string, tags.special(tags.string)], color: "var(--cm-string)" },
-    { tag: [tags.number, tags.bool, tags.null], color: "var(--cm-number)" },
-    { tag: [tags.comment, tags.lineComment, tags.blockComment], color: "var(--cm-comment)", fontStyle: "italic" },
-    { tag: [tags.typeName, tags.typeOperator], color: "var(--cm-type)" },
-    { tag: [tags.function(tags.variableName), tags.standard(tags.name)], color: "var(--cm-function)" },
-    { tag: tags.operator, color: "var(--cm-operator)" },
-  ]);
 
   const theme = EditorView.theme({
     "&": { height: "100%", fontSize: "13px", backgroundColor: "transparent" },
@@ -160,7 +144,7 @@
           basicSetup,
           language.of(sqlExtension(untrack(() => schema))),
           marks.of(EditorView.decorations.of(Decoration.none)),
-          syntaxHighlighting(highlight),
+          syntaxHighlighting(sqlHighlight),
           theme,
           EditorView.lineWrapping,
           EditorState.readOnly.of(untrack(() => readonly)),

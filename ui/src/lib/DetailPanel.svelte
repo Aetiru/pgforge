@@ -16,6 +16,7 @@
     type Subject as PrivilegeSubject,
   } from "./PrivilegeDialog.svelte";
   import RoleDialog from "./RoleDialog.svelte";
+  import Sql from "./Sql.svelte";
   import TableDialog from "./TableDialog.svelte";
   import TriggerDialog from "./TriggerDialog.svelte";
   import ViewDialog from "./ViewDialog.svelte";
@@ -1897,9 +1898,9 @@
             {:else if ddlError}
               <Alert tone="bad" box class="m-3">{ddlError}</Alert>
             {:else if ddl}
-              <pre
-                class="overflow-auto px-4 py-3 font-mono text-xs leading-relaxed
-                       select-text">{ddl.sql}</pre>
+              <div class="overflow-auto px-4 py-3 leading-relaxed">
+                <Sql code={ddl.sql} />
+              </div>
             {/if}
           </div>
         {/if}
