@@ -255,7 +255,8 @@ export type Operation =
 
 export type Target =
   | { kind: "database"; name: string }
-  | { kind: "table"; schema: string; name: string };
+  | { kind: "table"; schema: string; name: string }
+  | { kind: "index"; schema: string; name: string };
 
 export interface MaintenancePlan {
   sql: string;

@@ -23,6 +23,9 @@ const HISTORY_LIMIT = 180;
 
 class MonitorStore {
   profileId = $state<string | null>(null);
+  /** Base cuyas estadísticas por-base (tablas, índices, sentencias) se están mirando. Las
+   *  sesiones y las métricas del clúster no dependen de ella; el resto sí. */
+  database = $state<string | null>(null);
   starting = $state(false);
   error = $state<string | null>(null);
 
@@ -43,8 +46,8 @@ class MonitorStore {
 
   private channel: Channel<MonitorEvent> | null = null;
 
-  async start(profileId: string) {
-    if (this.profileId === profileId) return;
+  async start(profileId: string, database: string | null = null) {
+    if (this.profileId === profileId && this.database === database) return;
     await this.stop();
 
     this.starting = true;
@@ -52,12 +55,15 @@ class MonitorStore {
     try {
       const channel = new Channel<MonitorEvent>();
       channel.onmessage = (event) => this.receive(event);
-      await monitorStart(profileId, channel, {
-        intervalMs: this.intervalMs,
-        filter: $state.snapshot(this.filter),
-      });
+      await monitorStart(
+        profileId,
+        channel,
+        { intervalMs: this.intervalMs, filter: $state.snapshot(this.filter) },
+        database ?? undefined,
+      );
       this.channel = channel;
       this.profileId = profileId;
+      this.database = database;
     } catch (error) {
       this.error = describeError(error);
     } finally {
@@ -74,6 +80,7 @@ class MonitorStore {
       this.channel = null;
     }
     this.profileId = null;
+    this.database = null;
     this.snapshot = null;
     this.history = [];
     if (previous) {

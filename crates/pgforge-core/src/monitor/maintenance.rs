@@ -18,13 +18,14 @@ use crate::error::{Error, Result};
 pub enum Target {
     Database { name: String },
     Table { schema: String, name: String },
+    Index { schema: String, name: String },
 }
 
 impl Target {
     fn sql(&self) -> String {
         match self {
             Target::Database { name } => quote_ident(name),
-            Target::Table { schema, name } => {
+            Target::Table { schema, name } | Target::Index { schema, name } => {
                 format!("{}.{}", quote_ident(schema), quote_ident(name))
             }
         }
@@ -71,17 +72,19 @@ pub fn statement(operation: Operation, target: &Target, caps: &ServerCaps) -> Re
             if analyze {
                 options.push("ANALYZE");
             }
-            Ok(match target {
+            match target {
                 // `VACUUM` sin objeto recorre toda la base a la que está conectada la sesión.
-                Target::Database { .. } => format!("VACUUM ({})", options.join(", ")),
-                Target::Table { .. } => format!("VACUUM ({}) {name}", options.join(", ")),
-            })
+                Target::Database { .. } => Ok(format!("VACUUM ({})", options.join(", "))),
+                Target::Table { .. } => Ok(format!("VACUUM ({}) {name}", options.join(", "))),
+                Target::Index { .. } => Err(index_operation_error("VACUUM")),
+            }
         }
 
-        Operation::Analyze => Ok(match target {
-            Target::Database { .. } => "ANALYZE (VERBOSE)".to_owned(),
-            Target::Table { .. } => format!("ANALYZE (VERBOSE) {name}"),
-        }),
+        Operation::Analyze => match target {
+            Target::Database { .. } => Ok("ANALYZE (VERBOSE)".to_owned()),
+            Target::Table { .. } => Ok(format!("ANALYZE (VERBOSE) {name}")),
+            Target::Index { .. } => Err(index_operation_error("ANALYZE")),
+        },
 
         Operation::Reindex { concurrently } => {
             if concurrently && !caps.has_reindex_concurrently() {
@@ -94,11 +97,21 @@ pub fn statement(operation: Operation, target: &Target, caps: &ServerCaps) -> Re
             let object = match target {
                 Target::Database { .. } => "DATABASE",
                 Target::Table { .. } => "TABLE",
+                Target::Index { .. } => "INDEX",
             };
             let modifier = if concurrently { " CONCURRENTLY" } else { "" };
             Ok(format!("REINDEX (VERBOSE) {object}{modifier} {name}"))
         }
     }
+}
+
+/// VACUUM y ANALYZE operan sobre tablas o toda la base, nunca sobre un índice suelto: el único
+/// mantenimiento que un índice admite es REINDEX. Se rechaza en la función pura, no solo en la
+/// interfaz, para que quien consuma el núcleo no arme una sentencia inválida.
+fn index_operation_error(operation: &str) -> Error {
+    Error::Config(format!(
+        "{operation} no aplica a un índice; el mantenimiento de un índice es REINDEX"
+    ))
 }
 
 /// Advertencia que corresponde mostrar antes de lanzar la operación, o `None` si no la hay.
@@ -207,6 +220,62 @@ mod tests {
         )
         .unwrap();
         assert_eq!(sql, "REINDEX (VERBOSE) TABLE CONCURRENTLY public.clientes");
+    }
+
+    #[test]
+    fn reindex_sobre_un_indice_puntual() {
+        let indice = Target::Index {
+            schema: "public".into(),
+            name: "clientes_pkey".into(),
+        };
+
+        let concurrente = statement(
+            Operation::Reindex { concurrently: true },
+            &indice,
+            &caps(160_000),
+        )
+        .unwrap();
+        assert_eq!(
+            concurrente,
+            "REINDEX (VERBOSE) INDEX CONCURRENTLY public.clientes_pkey"
+        );
+
+        let directo = statement(
+            Operation::Reindex {
+                concurrently: false,
+            },
+            &Target::Index {
+                schema: "public".into(),
+                name: "Mi Índice".into(),
+            },
+            &caps(160_000),
+        )
+        .unwrap();
+        assert_eq!(directo, "REINDEX (VERBOSE) INDEX public.\"Mi Índice\"");
+    }
+
+    #[test]
+    fn vacuum_y_analyze_sobre_un_indice_son_un_error() {
+        let indice = Target::Index {
+            schema: "public".into(),
+            name: "clientes_pkey".into(),
+        };
+        assert!(matches!(
+            statement(
+                Operation::Vacuum {
+                    full: false,
+                    freeze: false,
+                    analyze: false
+                },
+                &indice,
+                &caps(160_000)
+            ),
+            Err(Error::Config(_))
+        ));
+        assert!(matches!(
+            statement(Operation::Analyze, &indice, &caps(160_000)),
+            Err(Error::Config(_))
+        ));
     }
 
     #[test]

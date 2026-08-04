@@ -18,6 +18,7 @@
     statementStats,
     tableStats,
     terminateBackend,
+    treeChildren,
     type Backend,
     type IndexStat,
     type Lock,
@@ -26,9 +27,35 @@
     type Target,
   } from "./ipc";
   import { monitor } from "./monitor.svelte";
+  import { explorer } from "./explorer.svelte";
   import { untrack } from "svelte";
 
   let { profileId }: { profileId: string } = $props();
+
+  // Las estadísticas de tablas e índices son por base: hay que elegir cuál mirar cuando el servidor
+  // tiene varias. Arranca en la base con la que se conectó el perfil (disponible ya), y la lista de
+  // opciones se completa con las bases del servidor.
+  let databases = $state<string[]>([]);
+  let database = $state<string | null>(
+    untrack(() => explorer.profiles.find((profile) => profile.id === profileId)?.database ?? null),
+  );
+
+  $effect(() => {
+    const id = profileId;
+    let cancelled = false;
+    treeChildren(id, null, { showSystemSchemas: false })
+      .then((nodes) => {
+        if (cancelled) return;
+        databases = nodes.filter((node) => node.kind === "database").map((node) => node.label);
+        // Si la base con la que se conectó el perfil no aparece en la lista, se cae a la primera,
+        // para que el selector nunca quede mostrando una opción vacía.
+        if (!database || !databases.includes(database)) database = databases[0] ?? database;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  });
 
   // Declaradas una sola vez y no en línea: pasarlas como flechas dentro del marcado les cambiaría
   // la identidad en cada muestra, y el gráfico se destruiría y volvería a crearse cada dos segundos.
@@ -50,15 +77,17 @@
   let statementsAvailable = $state<boolean | null>(null);
   let statementsError = $state<string | null>(null);
   let selectedTable = $state<TableStat | null>(null);
+  let selectedIndex = $state<IndexStat | null>(null);
   let maintenanceTarget = $state<Target | null>(null);
 
   $effect(() => {
-    // Solo el servidor elegido dispara esto. Sin untrack, start() lee monitor.profileId (en su
+    // El servidor y la base elegida disparan esto. Sin untrack, start() lee monitor.profileId (en su
     // guarda) y lo vuelve a escribir al conectar: el efecto quedaría dependiendo de un estado que él
     // mismo cambia, se reiniciaría en bucle y reconectaría sin parar —el parpadeo de "error
     // connecting to server" mientras la muestra nunca llega a estabilizarse—.
     const id = profileId;
-    untrack(() => monitor.start(id));
+    const db = database;
+    untrack(() => monitor.start(id, db));
     return () => untrack(() => monitor.stop());
   });
 
@@ -166,6 +195,11 @@
 
   $effect(() => {
     const current = tab;
+    // Se recargan al cambiar de pestaña y cuando el monitor queda listo en otra base: leer
+    // monitor.profileId/database hace que el efecto reaccione a la reapertura de la sesión (que pasa
+    // por null), y saltea el hueco entre parar y arrancar en el que el monitor no está activo.
+    void monitor.database;
+    if (!monitor.profileId) return;
     if (current === "tablas") {
       tableStats(profileId)
         .then((result) => (tables = result))
@@ -458,6 +492,31 @@
       {/each}
     </div>
 
+    {#if databases.length > 1}
+      <label class="check" title="Base cuyas tablas, índices y sentencias se muestran">
+        Base
+        <select
+          class="field py-0.5 text-xs"
+          value={database}
+          onchange={(event) => (database = event.currentTarget.value)}
+        >
+          {#each databases as db (db)}
+            <option value={db}>{db}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
+
+    {#if database}
+      <button
+        class="btn btn-sm"
+        title={`VACUUM, ANALYZE o REINDEX sobre toda la base ${database}`}
+        onclick={() => (maintenanceTarget = { kind: "database", name: database! })}
+      >
+        Mantenimiento de la base
+      </button>
+    {/if}
+
     <label class="check ml-auto">
       <input
         type="checkbox"
@@ -647,11 +706,34 @@
       />
     </div>
   {:else if tab === "indices"}
+    <div class="divider-t divider-b flex items-center gap-2 px-3 py-2">
+      <span class="text-xs muted">
+        Un índice que nunca se usó o que quedó inválido se reconstruye con REINDEX.
+      </span>
+      <button
+        class="btn ml-auto"
+        disabled={!selectedIndex}
+        title={selectedIndex
+          ? `REINDEX sobre ${selectedIndex.schema}.${selectedIndex.index}`
+          : "Elegí un índice de la lista"}
+        onclick={() =>
+          selectedIndex &&
+          (maintenanceTarget = {
+            kind: "index",
+            schema: selectedIndex.schema,
+            name: selectedIndex.index,
+          })}
+      >
+        Mantenimiento
+      </button>
+    </div>
     <div class="min-h-0 flex-1">
       <DataGrid
         columns={indexColumns}
         rows={indexes}
         rowKey={(index) => `${index.schema}.${index.index}`}
+        selectedKey={selectedIndex ? `${selectedIndex.schema}.${selectedIndex.index}` : null}
+        onselect={(index) => (selectedIndex = index)}
         sortable
         empty="No hay estadísticas de índices en esta base."
       />
@@ -696,6 +778,7 @@
   <MaintenanceDialog
     {profileId}
     target={maintenanceTarget}
+    {database}
     onclose={() => (maintenanceTarget = null)}
   />
 {/if}

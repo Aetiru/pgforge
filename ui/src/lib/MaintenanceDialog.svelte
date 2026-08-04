@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
   import { duration } from "./format";
@@ -16,16 +17,26 @@
   let {
     profileId,
     target,
+    database,
     onclose,
   }: {
     profileId: string;
     target: Target;
+    /** Base sobre la que se ejecuta. Para una tabla o un índice es dónde vive el objeto; para la
+     *  base entera es esa misma base. Sin ella, el comando cae en la base por defecto del servidor
+     *  y la operación correría contra la base equivocada. */
+    database: string | null;
     onclose: () => void;
   } = $props();
 
   type Kind = "vacuum" | "analyze" | "reindex";
 
-  let kind = $state<Kind>("vacuum");
+  // Un índice solo admite REINDEX; VACUUM y ANALYZE no aplican y el núcleo los rechaza. El objetivo
+  // no cambia mientras el diálogo está abierto (se recrea en cada apertura), así que se lee una vez.
+  const isIndex = untrack(() => target.kind === "index");
+  const kinds: Kind[] = isIndex ? ["reindex"] : ["vacuum", "analyze", "reindex"];
+
+  let kind = $state<Kind>(isIndex ? "reindex" : "vacuum");
   let full = $state(false);
   let freeze = $state(false);
   let analyze = $state(false);
@@ -53,14 +64,19 @@
 
   const running = $derived(taskId !== null);
   const targetLabel = $derived(
-    target.kind === "table" ? `${target.schema}.${target.name}` : `base ${target.name}`,
+    target.kind === "table"
+      ? `${target.schema}.${target.name}`
+      : target.kind === "index"
+        ? `índice ${target.schema}.${target.name}`
+        : `base ${target.name}`,
   );
 
-  const KINDS: { value: Kind; label: string; hint: string }[] = [
+  const ALL_KINDS: { value: Kind; label: string; hint: string }[] = [
     { value: "vacuum", label: "VACUUM", hint: "recupera el espacio de las filas muertas" },
     { value: "analyze", label: "ANALYZE", hint: "actualiza las estadísticas del planificador" },
     { value: "reindex", label: "REINDEX", hint: "reconstruye los índices" },
   ];
+  const KINDS = ALL_KINDS.filter((item) => kinds.includes(item.value));
 
   // La sentencia exacta se pide al núcleo en vez de armarla acá: así lo que se muestra es
   // literalmente lo que se va a ejecutar, no una reconstrucción parecida.
@@ -111,7 +127,7 @@
     };
 
     try {
-      taskId = await maintenanceRun(profileId, operation, target, channel);
+      taskId = await maintenanceRun(profileId, operation, target, channel, database ?? undefined);
     } catch (error) {
       outcome = describeError(error);
       failed = true;
