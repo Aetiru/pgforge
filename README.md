@@ -5,7 +5,8 @@ Cliente de administración de PostgreSQL, open source, escrito en Rust.
 Arranque instantáneo y bajo consumo de RAM: el núcleo es un crate de Rust y la interfaz corre
 sobre el WebView nativo del sistema (Tauri), no sobre Electron.
 
-**Estado: en desarrollo temprano.** Todavía no hay releases.
+**Estado: funcionalmente completo para las tareas comunes de administración**, en preparación de la
+primera release (`v0.1.0`). Usable, pero todavía sin rodaje en producción.
 
 ## Alcance
 
@@ -22,7 +23,11 @@ de forma incremental y cada etapa entrega algo usable por sí sola:
 | 5 | Gestión de objetos DDL | listo |
 | 6 | Roles y permisos | listo |
 | 7 | Backup/restore | listo |
-| 8+ | Replicación, extensiones, configuración del servidor | pendiente |
+| 8 | Extensiones y datos externos (FDW) | listo |
+| 9 | Configuración del servidor (`pg_settings`) | listo |
+| 10 | Empaquetado y primera release | en curso |
+
+La replicación (física y lógica) queda fuera del alcance inicial.
 
 La etapa 6 cubre roles y membresías, GRANT/REVOKE sobre tablas, vistas, secuencias, funciones,
 esquemas, bases y columnas, privilegios por omisión (`ALTER DEFAULT PRIVILEGES`) y Row-Level
@@ -34,6 +39,20 @@ La visión completa está en [`plan-proyecto-pgtool-rust.md`](plan-proyecto-pgto
 
 PostgreSQL **13 o superior**. Las diferencias de catálogo entre versiones se resuelven en tiempo
 de ejecución (`pgforge-core::caps`), no con consultas escritas contra una versión fija.
+
+## Instalación
+
+Cuando haya una release publicada, los instaladores de cada plataforma estarán en la página de
+[Releases](../../releases):
+
+- **Windows**: `pgforge_x.y.z_x64-setup.exe` (NSIS) o `pgforge_x.y.z_x64_en-US.msi`. Usa el WebView2
+  del sistema, que ya viene con Windows 10/11 al día.
+- **macOS**: `pgforge_x.y.z_*.dmg`.
+- **Linux**: `pgforge_x.y.z_amd64.deb` o `pgforge_x.y.z_amd64.AppImage`.
+
+Para la última versión del código, o mientras no haya release, se compila desde el fuente (ver
+[Desarrollo](#desarrollo)): `pnpm install && pnpm build` deja los instaladores en
+`target/release/bundle/`.
 
 ## Arquitectura
 
