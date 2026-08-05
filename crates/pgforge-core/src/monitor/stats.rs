@@ -130,6 +130,81 @@ pub async fn indexes(client: &Client, limit: i64) -> Result<Vec<IndexStat>> {
         .collect())
 }
 
+/// Bloat estimado de una tabla: espacio que ocupa de más por tuplas muertas y huecos que el vacuum
+/// no devolvió al disco.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableBloat {
+    pub schema: String,
+    pub table: String,
+    pub total_bytes: i64,
+    /// Espacio libre estimado dentro de la tabla, en bytes: reutilizable por filas nuevas, pero no
+    /// devuelto al sistema operativo hasta un `VACUUM FULL`.
+    pub free_bytes: i64,
+    /// Fracción del espacio que está libre (0 a 1), no el porcentaje: se normaliza acá para que la
+    /// interfaz la trate igual que el `dead_ratio` de `TableStat`.
+    pub free_ratio: f64,
+    /// Fracción ocupada por tuplas muertas que el vacuum todavía no limpió (0 a 1).
+    pub dead_ratio: f64,
+}
+
+/// `true` si la extensión `pgstattuple` está instalada en esta base.
+pub async fn has_pgstattuple(client: &Client) -> Result<bool> {
+    let row = client
+        .query_one(
+            "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'pgstattuple')",
+            &[],
+        )
+        .await?;
+    Ok(row.get(0))
+}
+
+/// Bloat de las tablas más grandes, medido con `pgstattuple_approx`.
+///
+/// A diferencia de la proporción de tuplas muertas de [`tables`] —que se deriva de contadores que se
+/// reinician con las estadísticas—, esto es una medición real del espacio: `pgstattuple_approx` mira
+/// el mapa de visibilidad y el de espacio libre en vez de recorrer la tabla entera, así que da un
+/// número honesto sin el costo del `pgstattuple` exacto. Se limita a las tablas más grandes porque
+/// son las únicas donde el bloat pesa y para no llamar a la función sobre miles de relaciones.
+pub async fn bloat(client: &Client, limit: i64) -> Result<Vec<TableBloat>> {
+    let rows = client
+        .query(
+            "WITH grandes AS (
+                 SELECT c.oid, n.nspname, c.relname
+                   FROM pg_catalog.pg_class c
+                   JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                  WHERE c.relkind IN ('r', 'm')
+                    AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+                    AND n.nspname NOT LIKE 'pg_temp%'
+                  ORDER BY pg_catalog.pg_total_relation_size(c.oid) DESC
+                  LIMIT $1
+             )
+             SELECT g.nspname::text,
+                    g.relname::text,
+                    pg_catalog.pg_total_relation_size(g.oid),
+                    a.approx_free_space::int8,
+                    a.approx_free_percent / 100.0,
+                    a.dead_tuple_percent / 100.0
+               FROM grandes g
+               CROSS JOIN LATERAL pgstattuple_approx(g.oid) a
+              ORDER BY a.approx_free_space DESC",
+            &[&limit],
+        )
+        .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| TableBloat {
+            schema: row.get(0),
+            table: row.get(1),
+            total_bytes: row.get(2),
+            free_bytes: row.get(3),
+            free_ratio: row.get(4),
+            dead_ratio: row.get(5),
+        })
+        .collect())
+}
+
 /// Consultas más costosas, si la extensión `pg_stat_statements` está instalada.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

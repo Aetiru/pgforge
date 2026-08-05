@@ -13,9 +13,11 @@
     backendLocks,
     cancelBackend,
     describeError,
+    hasBloatStats,
     hasStatementStats,
     indexStats,
     statementStats,
+    tableBloat,
     tableStats,
     terminateBackend,
     treeChildren,
@@ -23,6 +25,7 @@
     type IndexStat,
     type Lock,
     type StatementStat,
+    type TableBloat,
     type TableStat,
     type Target,
   } from "./ipc";
@@ -62,7 +65,7 @@
   const oneDecimal = (value: number) => value.toFixed(1);
   const asPercent = (value: number) => `${value.toFixed(1)} %`;
 
-  type Tab = "sesiones" | "bloqueos" | "tablas" | "indices" | "consultas";
+  type Tab = "sesiones" | "bloqueos" | "tablas" | "indices" | "bloat" | "consultas";
 
   let tab = $state<Tab>("sesiones");
   let selectedPid = $state<number | null>(null);
@@ -76,8 +79,12 @@
   let statements = $state<StatementStat[]>([]);
   let statementsAvailable = $state<boolean | null>(null);
   let statementsError = $state<string | null>(null);
+  let bloat = $state<TableBloat[]>([]);
+  let bloatAvailable = $state<boolean | null>(null);
+  let bloatError = $state<string | null>(null);
   let selectedTable = $state<TableStat | null>(null);
   let selectedIndex = $state<IndexStat | null>(null);
+  let selectedBloat = $state<TableBloat | null>(null);
   let maintenanceTarget = $state<Target | null>(null);
 
   $effect(() => {
@@ -208,6 +215,14 @@
       indexStats(profileId)
         .then((result) => (indexes = result))
         .catch((error) => (actionMessage = describeError(error)));
+    } else if (current === "bloat") {
+      bloatError = null;
+      hasBloatStats(profileId)
+        .then(async (available) => {
+          bloatAvailable = available;
+          if (available) bloat = await tableBloat(profileId);
+        })
+        .catch((error) => (bloatError = describeError(error)));
     } else if (current === "consultas") {
       hasStatementStats(profileId)
         .then(async (available) => {
@@ -467,7 +482,47 @@
     { value: "bloqueos", label: "Bloqueos" },
     { value: "tablas", label: "Tablas" },
     { value: "indices", label: "Índices" },
+    { value: "bloat", label: "Bloat" },
     { value: "consultas", label: "Consultas lentas" },
+  ];
+
+  const bloatColumns: Column<TableBloat>[] = [
+    { key: "schema", header: "Esquema", width: 130, value: (t) => t.schema },
+    { key: "table", header: "Tabla", width: 200, value: (t) => t.table },
+    {
+      key: "total",
+      header: "Tamaño",
+      width: 110,
+      align: "right",
+      value: (t) => bytes(t.totalBytes),
+      sort: (t) => t.totalBytes,
+    },
+    {
+      key: "free",
+      header: "Libre (est.)",
+      width: 110,
+      align: "right",
+      value: (t) => bytes(t.freeBytes),
+      sort: (t) => t.freeBytes,
+    },
+    {
+      key: "freeRatio",
+      header: "% libre",
+      width: 100,
+      align: "right",
+      value: (t) => percent(t.freeRatio),
+      sort: (t) => t.freeRatio,
+      tone: (t) => (t.freeRatio > 0.3 ? "text-amber-600 dark:text-amber-400" : undefined),
+    },
+    {
+      key: "deadRatio",
+      header: "% muertas",
+      width: 100,
+      align: "right",
+      value: (t) => percent(t.deadRatio),
+      sort: (t) => t.deadRatio,
+      tone: (t) => (t.deadRatio > 0.2 ? "text-amber-600 dark:text-amber-400" : undefined),
+    },
   ];
 
   /** Cuántas sesiones esperan a otra: el número que decide si hay que mirar la pestaña. */
@@ -737,6 +792,50 @@
         sortable
         empty="No hay estadísticas de índices en esta base."
       />
+    </div>
+  {:else if tab === "bloat"}
+    <div class="divider-t divider-b flex items-center gap-2 px-3 py-2">
+      <span class="text-xs muted">
+        Medición aproximada con pgstattuple: el espacio libre se recupera con VACUUM FULL, que
+        bloquea la tabla mientras corre.
+      </span>
+      <button
+        class="btn ml-auto"
+        disabled={!selectedBloat}
+        title={selectedBloat
+          ? `VACUUM sobre ${selectedBloat.schema}.${selectedBloat.table}`
+          : "Elegí una tabla de la lista"}
+        onclick={() =>
+          selectedBloat &&
+          (maintenanceTarget = {
+            kind: "table",
+            schema: selectedBloat.schema,
+            name: selectedBloat.table,
+          })}
+      >
+        Mantenimiento
+      </button>
+    </div>
+    <div class="min-h-0 flex-1">
+      {#if bloatError}
+        <Alert tone="bad">{bloatError}</Alert>
+      {:else if bloatAvailable === false}
+        <Empty
+          icon="info"
+          title="Falta la extensión pgstattuple"
+          hint="Ejecutá CREATE EXTENSION pgstattuple; en esta base para estimar el bloat de las tablas."
+        />
+      {:else}
+        <DataGrid
+          columns={bloatColumns}
+          rows={bloat}
+          rowKey={(table) => `${table.schema}.${table.table}`}
+          selectedKey={selectedBloat ? `${selectedBloat.schema}.${selectedBloat.table}` : null}
+          onselect={(table) => (selectedBloat = table)}
+          sortable
+          empty="No hay tablas con bloat que estimar en esta base."
+        />
+      {/if}
     </div>
   {:else}
     <div class="min-h-0 flex-1">

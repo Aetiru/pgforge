@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use pgforge_core::error::ErrorPayload;
 use pgforge_core::monitor::{
     maintenance, ActivityFilter, IndexStat, Lock, Monitor, Operation, Snapshot, StatementStat,
-    TableStat, Target,
+    TableBloat, TableStat, Target,
 };
 use pgforge_core::{Error, ProfileId, Result};
 use serde::{Deserialize, Serialize};
@@ -227,6 +227,24 @@ pub async fn has_statement_stats(state: State<'_, AppState>, id: ProfileId) -> R
     let monitor = monitor_of(&state, id).await?;
     let available = monitor.lock().await.has_statement_stats().await?;
     Ok(available)
+}
+
+#[tauri::command]
+pub async fn has_bloat_stats(state: State<'_, AppState>, id: ProfileId) -> Result<bool> {
+    let monitor = monitor_of(&state, id).await?;
+    let available = monitor.lock().await.has_bloat_stats().await?;
+    Ok(available)
+}
+
+#[tauri::command]
+pub async fn table_bloat(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    limit: Option<i64>,
+) -> Result<Vec<TableBloat>> {
+    let monitor = monitor_of(&state, id).await?;
+    let bloat = monitor.lock().await.bloat(limit.unwrap_or(50)).await?;
+    Ok(bloat)
 }
 
 #[tauri::command]

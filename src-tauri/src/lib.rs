@@ -36,6 +36,8 @@ pub fn run() {
             commands::monitoring::index_stats,
             commands::monitoring::has_statement_stats,
             commands::monitoring::statement_stats,
+            commands::monitoring::has_bloat_stats,
+            commands::monitoring::table_bloat,
             commands::monitoring::maintenance_plan,
             commands::monitoring::maintenance_run,
             commands::monitoring::maintenance_cancel,

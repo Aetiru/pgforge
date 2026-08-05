@@ -14,7 +14,7 @@ pub mod stats;
 
 pub use activity::{ActivityFilter, Backend, BlockNode, Lock};
 pub use maintenance::{Operation, Target};
-pub use stats::{IndexStat, StatementStat, TableStat};
+pub use stats::{IndexStat, StatementStat, TableBloat, TableStat};
 
 use std::time::Instant;
 
@@ -191,6 +191,21 @@ impl Monitor {
 
     pub async fn has_statement_stats(&self) -> Result<bool> {
         stats::has_statement_stats(self.session.client()).await
+    }
+
+    pub async fn has_bloat_stats(&self) -> Result<bool> {
+        stats::has_pgstattuple(self.session.client()).await
+    }
+
+    pub async fn bloat(&self, limit: i64) -> Result<Vec<TableBloat>> {
+        if !self.has_bloat_stats().await? {
+            return Err(Error::Config(
+                "para estimar el bloat hace falta la extensión pgstattuple, que no está instalada \
+                 en esta base. Se instala con CREATE EXTENSION pgstattuple."
+                    .to_owned(),
+            ));
+        }
+        stats::bloat(self.session.client(), limit).await
     }
 
     pub async fn statements(&self, limit: i64) -> Result<Vec<StatementStat>> {

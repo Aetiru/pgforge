@@ -255,6 +255,18 @@ export interface IndexStat {
   isValid: boolean;
 }
 
+export interface TableBloat {
+  schema: string;
+  table: string;
+  totalBytes: number;
+  /** Espacio libre estimado dentro de la tabla, en bytes. */
+  freeBytes: number;
+  /** Fracción del espacio que está libre (0 a 1). */
+  freeRatio: number;
+  /** Fracción ocupada por tuplas muertas que el vacuum todavía no limpió (0 a 1). */
+  deadRatio: number;
+}
+
 export interface StatementStat {
   queryId: number | null;
   database: string | null;
@@ -321,6 +333,11 @@ export const hasStatementStats = (id: string) => invoke<boolean>("has_statement_
 
 export const statementStats = (id: string, limit?: number) =>
   invoke<StatementStat[]>("statement_stats", { id, limit: limit ?? null });
+
+export const hasBloatStats = (id: string) => invoke<boolean>("has_bloat_stats", { id });
+
+export const tableBloat = (id: string, limit?: number) =>
+  invoke<TableBloat[]>("table_bloat", { id, limit: limit ?? null });
 
 export const maintenancePlan = (id: string, operation: Operation, target: Target) =>
   invoke<MaintenancePlan>("maintenance_plan", { id, operation, target });
