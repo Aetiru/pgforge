@@ -8,15 +8,17 @@
   import ServerConfig from "./lib/ServerConfig.svelte";
   import DataPanel from "./lib/DataPanel.svelte";
   import DetailPanel from "./lib/DetailPanel.svelte";
+  import ErdPanel from "./lib/ErdPanel.svelte";
   import Empty from "./lib/Empty.svelte";
-  import Icon from "./lib/Icon.svelte";
+  import Icon, { type IconName } from "./lib/Icon.svelte";
   import Modal from "./lib/Modal.svelte";
   import QueryPanel from "./lib/QueryPanel.svelte";
   import TreePanel from "./lib/TreePanel.svelte";
   import { openData, DataTab } from "./lib/data.svelte";
+  import { openErd, ErdTab } from "./lib/erd.svelte";
   import { explorer } from "./lib/explorer.svelte";
   import { openQuery, QueryTab } from "./lib/query.svelte";
-  import { tabs } from "./lib/tabs.svelte";
+  import { tabs, type TabKind } from "./lib/tabs.svelte";
   import { theme } from "./lib/theme.svelte";
   import {
     appInfo,
@@ -59,6 +61,12 @@
   let configChoice = $state<string | null>(null);
 
   const DEFAULT_SIDEBAR = 300;
+
+  const TAB_ICON: Record<TabKind, IconName> = {
+    query: "sql",
+    data: "table",
+    erd: "diagram",
+  };
 
   $effect(() => {
     appInfo().then((value) => (info = value));
@@ -456,7 +464,7 @@
                 {#if tab instanceof QueryTab && tab.running}
                   <span class="spinner"></span>
                 {:else}
-                  <Icon name={tab.kind === "query" ? "sql" : "table"} size={12} class="muted" />
+                  <Icon name={TAB_ICON[tab.kind]} size={12} class="muted" />
                 {/if}
                 <span class="truncate">{tab.title}</span>
               </button>
@@ -481,6 +489,10 @@
             {#key tabs.current.key}
               <DataPanel tab={tabs.current} />
             {/key}
+          {:else if tabs.current instanceof ErdTab}
+            {#key tabs.current.key}
+              <ErdPanel tab={tabs.current} />
+            {/key}
           {:else}
             <DetailPanel
               onconnect={connectById}
@@ -492,6 +504,7 @@
               ongroup={(name) => (groupDialog = name)}
               onquery={openQuery}
               ondata={openData}
+              onerd={openErd}
             />
           {/if}
         </div>

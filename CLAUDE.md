@@ -31,6 +31,7 @@ CLI = forma rápida de ejercitar core sin levantar ventana; sirve para comprobar
 
 ```bash
 cargo run -p pgforge-cli -- tree  --url postgres://postgres@localhost:5432/postgres --depth 4
+cargo run -p pgforge-cli -- graph --url postgres://postgres@localhost:5432/postgres public
 cargo run -p pgforge-cli -- ddl   --url postgres://postgres@localhost:5432/postgres public.clientes
 cargo run -p pgforge-cli -- query --url postgres://postgres@localhost:5432/postgres --sql "SELECT 1"
 ```
@@ -116,11 +117,13 @@ Binarios externos (`pg_dump`, `pg_restore`) se ubican en un solo lugar, `backup:
 
 ### Interfaz
 
-Svelte 5 con runes. Estado compartido = clases con campos `$state` exportadas como instancia única desde archivos `*.svelte.ts` (`explorer`, `tabs`, `theme`, y clases `QueryTab`/`DataTab` que extienden `Tab`). No hay stores de Svelte 4 ni librería de estado.
+Svelte 5 con runes. Estado compartido = clases con campos `$state` exportadas como instancia única desde archivos `*.svelte.ts` (`explorer`, `tabs`, `theme`, y clases `QueryTab`/`DataTab`/`ErdTab` que extienden `Tab`). No hay stores de Svelte 4 ni librería de estado.
 
-Pestañas de consulta y de datos conviven en una sola barra (`tabs.svelte.ts`); cerrar una llama a su `dispose()`, donde se suelta la sesión del lado de Rust. Tema resuelto se escribe en `document.documentElement.dataset.theme` para que Tailwind, CodeMirror y uPlot lean un solo atributo.
+Pestañas de consulta, de datos y de diagrama conviven en una sola barra (`tabs.svelte.ts`); cerrar una llama a su `dispose()`, donde se suelta la sesión del lado de Rust —el diagrama no toma ninguna, así que hereda el `dispose()` vacío—. Tema resuelto se escribe en `document.documentElement.dataset.theme` para que Tailwind, CodeMirror y uPlot lean un solo atributo.
 
 Editor SQL: CodeMirror 6 (`@codemirror/lang-sql`). Gráficos: uPlot.
+
+**Diagrama ERD**: `introspect::graph` devuelve tablas y aristas, jamás coordenadas — posición depende del ancho del texto en pantalla y de lo que el usuario arrastre, así que layout vive en `ui/src/lib/erd.ts`, puro y con Vitest (rangos por capas, ciclos de FK que no pueden colgar la interfaz, tope de columnas por caja). `ErdPanel.svelte` solo dibuja el SVG y maneja zoom/pan/arrastre. Excepción anotada a la regla de que lógica vive en core: `erd_export_svg` escribe el archivo desde `src-tauri` porque SVG lo arma la interfaz y sumar el plugin de archivos por un caso costaba más que cinco líneas de `std::fs`.
 
 #### Estilos
 

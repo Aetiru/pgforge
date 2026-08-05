@@ -29,7 +29,7 @@ de forma incremental y cada etapa entrega algo usable por sí sola:
 | 11 | Import/export de datos (`COPY`) | listo |
 | 12 | Túnel SSH (bastión) | listo |
 | 13 | Monitoreo: bloqueos, índices sin uso y bloat | listo |
-| 14 | Diagrama ERD del esquema | pendiente |
+| 14 | Diagrama ERD del esquema | listo |
 | 15 | Red de seguridad: tests de vista previa e IPC | listo |
 
 Las etapas 11 en adelante son la capa de mejoras posterior a la primera release; su plan está en

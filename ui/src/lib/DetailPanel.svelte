@@ -90,6 +90,7 @@
     ongroup,
     onquery,
     ondata,
+    onerd,
   }: {
     onedit: (profileId: string) => void;
     ondelete: (profileId: string) => void;
@@ -98,6 +99,8 @@
     ongroup: (name: string) => void;
     onquery: (profileId: string, database: string, title: string) => void;
     ondata: (profileId: string, database: string, title: string, oid: number) => void;
+    /** Abre el diagrama ERD de un esquema. */
+    onerd: (profileId: string, database: string, schema: string) => void;
   } = $props();
 
   let ddl = $state<Ddl | null>(null);
@@ -1379,6 +1382,17 @@
             >
               <Icon name="sql" size={12} />
               Consulta
+            </button>
+          {/if}
+
+          {#if isSchema && node}
+            <button
+              class="btn"
+              title={`Dibuja las tablas de ${node.label} y sus claves foráneas`}
+              onclick={() => onerd(selected.profileId, node.database, node.label)}
+            >
+              <Icon name="diagram" size={12} />
+              Diagrama
             </button>
           {/if}
 

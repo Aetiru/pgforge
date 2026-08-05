@@ -7,8 +7,10 @@
 //! El árbol se arma por niveles. Un servidor con miles de tablas no puede resolverse de una vez,
 //! así que cada expansión es una consulta acotada al nodo que se abrió.
 
+mod graph;
 mod node;
 
+pub use graph::{schema_graph, GraphColumn, GraphEdge, GraphTable, SchemaGraph};
 pub use node::{Folder, NodeKind, NodeTag, TreeNode};
 
 use crate::conn::ServerHandle;

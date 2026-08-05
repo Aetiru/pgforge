@@ -1,14 +1,14 @@
 /**
  * Las pestañas del panel principal.
  *
- * Hay dos clases de pestaña —una consulta y los datos de una tabla— y las dos conviven en la misma
- * barra, así que la lista vive acá y no dentro de ninguna de las dos. Lo único que comparten es qué
- * son y contra qué base corren; todo lo demás lo pone cada una.
+ * Hay tres clases de pestaña —una consulta, los datos de una tabla y el diagrama de un esquema— y
+ * conviven en la misma barra, así que la lista vive acá y no dentro de ninguna de ellas. Lo único
+ * que comparten es qué son y contra qué base corren; todo lo demás lo pone cada una.
  */
 
 let sequence = 0;
 
-export type TabKind = "query" | "data";
+export type TabKind = "query" | "data" | "erd";
 
 export abstract class Tab {
   /** Identificador local. Existe desde antes que cualquier conexión, que puede tardar o fallar. */

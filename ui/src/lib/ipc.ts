@@ -122,6 +122,45 @@ export interface Ddl {
   source: "catalog" | "pgDump";
 }
 
+export interface GraphColumn {
+  /** `attnum`. Identifica la columna dentro de la tabla, no su posición en la caja. */
+  position: number;
+  name: string;
+  typeName: string;
+  notNull: boolean;
+  primaryKey: boolean;
+  /** Participa de alguna clave foránea saliente. */
+  foreignKey: boolean;
+}
+
+export interface GraphTable {
+  oid: number;
+  name: string;
+  kind: NodeKind;
+  comment?: string;
+  columns: GraphColumn[];
+}
+
+export interface GraphEdge {
+  /** Nombre de la restricción. */
+  name: string;
+  source: number;
+  target: number;
+  sourceColumns: string[];
+  targetColumns: string[];
+  onUpdate: RefAction;
+  onDelete: RefAction;
+  /** `esquema.tabla` cuando la referida está fuera del diagrama; entonces `target` no es un nodo. */
+  targetLabel?: string;
+}
+
+export interface SchemaGraph {
+  database: string;
+  schema: string;
+  tables: GraphTable[];
+  edges: GraphEdge[];
+}
+
 export interface AppInfo {
   version: string;
   minPostgresMajor: number;
@@ -185,6 +224,14 @@ export const treeChildren = (id: string, parent: TreeNode | null, options: TreeO
 
 export const objectDdl = (id: string, node: TreeNode) =>
   invoke<Ddl>("object_ddl", { id, node });
+
+/** Tablas y claves foráneas de un esquema. Sin posiciones: el layout lo calcula `erd.ts`. */
+export const schemaGraph = (id: string, database: string, schema: string) =>
+  invoke<SchemaGraph>("schema_graph", { id, database, schema });
+
+/** Guarda el SVG del diagrama, que arma la interfaz, en la ruta que eligió el usuario. */
+export const erdExportSvg = (path: string, svg: string) =>
+  invoke<void>("erd_export_svg", { path, svg });
 
 // ---------------------------------------------------------------------------
 // Monitoreo

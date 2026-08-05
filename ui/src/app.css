@@ -409,6 +409,16 @@ textarea {
   /* Los gráficos del monitor tampoco reciben clases: leen estos valores al dibujarse. */
   --plot-axis: var(--color-zinc-400);
   --plot-grid: color-mix(in srgb, var(--color-zinc-500) 14%, transparent);
+
+  /* Diagrama ERD: el SVG se dibuja a mano y también pide colores en vez de clases. */
+  --erd-bg: var(--color-zinc-100);
+  --erd-box: var(--color-white);
+  --erd-header: var(--color-zinc-100);
+  --erd-border: var(--color-zinc-300);
+  --erd-text: var(--color-zinc-700);
+  --erd-muted: var(--color-zinc-400);
+  --erd-edge: var(--color-zinc-400);
+  --erd-accent: var(--color-blue-600);
 }
 
 [data-theme="dark"] {
@@ -430,4 +440,13 @@ textarea {
 
   --plot-axis: var(--color-zinc-500);
   --plot-grid: color-mix(in srgb, var(--color-zinc-400) 16%, transparent);
+
+  --erd-bg: var(--color-zinc-950);
+  --erd-box: var(--color-zinc-900);
+  --erd-header: var(--color-zinc-800);
+  --erd-border: var(--color-zinc-700);
+  --erd-text: var(--color-zinc-300);
+  --erd-muted: var(--color-zinc-500);
+  --erd-edge: var(--color-zinc-600);
+  --erd-accent: var(--color-blue-400);
 }

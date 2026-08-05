@@ -509,3 +509,20 @@ fn explain_analyze_avisa_antes_de_ejecutar_algo_que_modifica() {
             .is_none()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Diagrama ERD
+// ---------------------------------------------------------------------------
+
+#[test]
+fn exportar_el_diagrama_escribe_el_svg_tal_cual_lo_dibujo_la_interfaz() {
+    let path = std::env::temp_dir().join(format!("pgforge_erd_{}.svg", std::process::id()));
+    let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>";
+
+    commands::schema::erd_export_svg(path.to_string_lossy().into_owned(), svg.to_owned()).unwrap();
+    let escrito = std::fs::read_to_string(&path).unwrap();
+    let _ = std::fs::remove_file(&path);
+
+    // El archivo es exactamente lo que se vio en pantalla, no una reconstrucción parecida.
+    assert_eq!(escrito, svg);
+}

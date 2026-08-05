@@ -18,6 +18,7 @@ use pgforge_core::conn::{
     tunnel, ConnectionManager, ConnectionProfile, HostKeyPolicy, Password, ServerHandle, SshTunnel,
 };
 use pgforge_core::data;
+use pgforge_core::ddl::RefAction;
 use pgforge_core::introspect::{self, NodeKind, TreeNode, TreeOptions};
 use pgforge_core::sql::{self, ExplainOptions, Limits, Outcome, QuerySession};
 use pgforge_core::{caps::MIN_SUPPORTED_VERSION_NUM, ddl, Error, Result, ServerVersion};
@@ -52,6 +53,17 @@ enum Command {
         /// Incluir pg_catalog, information_schema y los esquemas temporales.
         #[arg(long)]
         system: bool,
+    },
+
+    /// Imprime el grafo de relaciones de un esquema: las tablas y sus claves foráneas.
+    Graph {
+        #[arg(long)]
+        url: String,
+        /// Base donde vive el esquema. Por omisión, la de la cadena de conexión.
+        #[arg(long)]
+        database: Option<String>,
+        /// Por ejemplo public
+        schema: String,
     },
 
     /// Imprime el DDL de un objeto, indicado como esquema.nombre
@@ -299,6 +311,11 @@ async fn main() -> ExitCode {
         }
         Command::Server { url } => server(&url).await,
         Command::Tree { url, depth, system } => tree(&url, depth, system).await,
+        Command::Graph {
+            url,
+            database,
+            schema,
+        } => graph(&url, database.as_deref(), &schema).await,
         Command::Ddl { url, object } => show_ddl(&url, &object).await,
         Command::Query {
             url,
@@ -791,6 +808,83 @@ async fn tree(url: &str, depth: usize, system: bool) -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn graph(url: &str, database: Option<&str>, schema: &str) -> Result<()> {
+    let handle = connect(url).await?;
+    let database = database.unwrap_or_else(|| handle.default_database());
+    let graph = introspect::schema_graph(&handle, database, schema).await?;
+
+    for table in &graph.tables {
+        println!("{}", table.name);
+        for column in &table.columns {
+            let mut marcas = Vec::new();
+            if column.primary_key {
+                marcas.push("PK");
+            }
+            if column.foreign_key {
+                marcas.push("FK");
+            }
+            if column.not_null {
+                marcas.push("not null");
+            }
+
+            let marcas = if marcas.is_empty() {
+                String::new()
+            } else {
+                format!(" · {}", marcas.join(" "))
+            };
+            println!("  {} {}{marcas}", column.name, column.type_name);
+        }
+    }
+
+    if graph.edges.is_empty() {
+        println!("\n(sin claves foráneas)");
+        return Ok(());
+    }
+
+    println!("\nreferencias:");
+    for edge in &graph.edges {
+        let origen = graph
+            .tables
+            .iter()
+            .find(|t| t.oid == edge.source)
+            .map(|t| t.name.as_str())
+            .unwrap_or("?");
+        // La referida puede estar fuera del esquema; ahí el nombre completo lo trae la arista.
+        let destino = edge
+            .target_label
+            .clone()
+            .or_else(|| {
+                graph
+                    .tables
+                    .iter()
+                    .find(|t| t.oid == edge.target)
+                    .map(|t| t.name.clone())
+            })
+            .unwrap_or_else(|| "?".to_owned());
+
+        println!(
+            "  {origen}({}) -> {destino}({}) · {} · ON UPDATE {} ON DELETE {}",
+            edge.source_columns.join(", "),
+            edge.target_columns.join(", "),
+            edge.name,
+            accion(edge.on_update),
+            accion(edge.on_delete),
+        );
+    }
+
+    Ok(())
+}
+
+fn accion(action: RefAction) -> &'static str {
+    match action {
+        RefAction::NoAction => "NO ACTION",
+        RefAction::Restrict => "RESTRICT",
+        RefAction::Cascade => "CASCADE",
+        RefAction::SetNull => "SET NULL",
+        RefAction::SetDefault => "SET DEFAULT",
+    }
 }
 
 async fn show_ddl(url: &str, object: &str) -> Result<()> {
