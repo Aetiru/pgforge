@@ -74,7 +74,11 @@ pub async fn list(handle: &ServerHandle) -> Result<Vec<Setting>> {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum SettingChange {
     Set { name: String, value: String },
     Reset { name: String },

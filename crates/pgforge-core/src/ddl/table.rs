@@ -66,7 +66,11 @@ impl RefAction {
 /// Postgres no tiene un "ALTER CONSTRAINT" que cambie su definición: se borra y se crea de nuevo,
 /// así que acá no hace falta nada parecido a `AlterColumnType`.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ConstraintDef {
     PrimaryKey {
         columns: Vec<String>,
@@ -90,7 +94,11 @@ pub enum ConstraintDef {
 
 /// Un cambio de estructura pendiente.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum TableChange {
     CreateTable {
         schema: String,

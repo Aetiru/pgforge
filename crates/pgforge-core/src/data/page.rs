@@ -25,7 +25,11 @@ pub const DEFAULT_PAGE_SIZE: usize = 200;
 
 /// Desde dónde sigue la lectura.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Cursor {
     /// Valores de clave de la última fila traída.
     After { key: Vec<String> },

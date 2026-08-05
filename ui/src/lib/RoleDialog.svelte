@@ -4,15 +4,8 @@
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
   import SqlPreview from "./SqlPreview.svelte";
-  import {
-    describeError,
-    roleApply,
-    roleMemberships,
-    rolePreview,
-    type RoleAttributes,
-    type RoleChange,
-    type RoleInfo,
-  } from "./ipc";
+  import { describeError, roleApply, roleMemberships, rolePreview, type RoleInfo } from "./ipc";
+  import { roleChanges, roleForm, validateRole } from "./role-form";
 
   let {
     profileId,
@@ -30,26 +23,8 @@
   } = $props();
 
   // Copia editable, tomada una sola vez: el diálogo se crea de nuevo cada vez que se abre.
-  let name = $state(untrack(() => existing?.name ?? ""));
-  let superuser = $state(untrack(() => existing?.superuser ?? false));
-  let createdb = $state(untrack(() => existing?.createdb ?? false));
-  let createrole = $state(untrack(() => existing?.createrole ?? false));
-  let inherit = $state(untrack(() => existing?.inherit ?? true));
-  let login = $state(untrack(() => existing?.login ?? false));
-  let replication = $state(untrack(() => existing?.replication ?? false));
-  let bypassRls = $state(untrack(() => existing?.bypassRls ?? false));
-  // -1 en Postgres es "sin límite"; en el formulario eso es el campo vacío (null).
-  let connectionLimit = $state<number | null>(
-    untrack(() => (existing && existing.connectionLimit !== -1 ? existing.connectionLimit : null)),
-  );
-  /** Siempre arranca vacía: Postgres nunca devuelve la contraseña para precargarla. */
-  let password = $state("");
+  let form = $state(untrack(() => roleForm(existing)));
   let showPassword = $state(false);
-  // `rolvaliduntil` llega como timestamptz en texto ("2025-12-31 00:00:00+00") o "infinity"; el
-  // campo de fecha solo maneja YYYY-MM-DD, así que se recorta a eso y el resto es "sin vencimiento".
-  let validUntil = $state(untrack(() => toDate(existing?.validUntil)));
-  let memberOfText = $state("");
-  let adminOption = $state(false);
 
   let originalMemberOf = $state<string[]>([]);
   let loadingMemberships = $state(untrack(() => existing !== null));
@@ -64,99 +39,18 @@
     roleMemberships(profileId, existing.name, database)
       .then((result) => {
         originalMemberOf = result;
-        memberOfText = result.join(", ");
+        form.memberOf = result.join(", ");
       })
       .catch((e) => (error = describeError(e)))
       .finally(() => (loadingMemberships = false));
   });
 
-  function memberOfList(): string[] {
-    return memberOfText
-      .split(",")
-      .map((r) => r.trim())
-      .filter((r) => r.length > 0);
-  }
-
-  function parsedConnectionLimit(): number {
-    // Vacío (null) es "sin límite", que en Postgres es -1.
-    return connectionLimit ?? -1;
-  }
-
-  /** El vencimiento recortado a la fecha (YYYY-MM-DD); vacío para "infinity", null o sin fecha. */
-  function toDate(value: string | null | undefined): string {
-    const text = (value ?? "").trim();
-    return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : "";
-  }
-
-  function changes(): RoleChange[] {
-    if (!existing) {
-      const attributes: RoleAttributes = {
-        superuser,
-        createdb,
-        createrole,
-        inherit,
-        login,
-        replication,
-        bypassRls,
-        connectionLimit: parsedConnectionLimit(),
-        password: password || undefined,
-        validUntil: validUntil.trim() || undefined,
-      };
-      return [{ kind: "createRole", name: name.trim(), attributes, memberOf: memberOfList() }];
-    }
-
-    const out: RoleChange[] = [];
-    let currentName = existing.name;
-    if (name.trim() !== existing.name) {
-      out.push({ kind: "renameRole", name: currentName, newName: name.trim() });
-      currentName = name.trim();
-    }
-
-    const attrs: RoleAttributes = {};
-    let anyAttr = false;
-    const setIfChanged = <K extends keyof RoleAttributes>(key: K, value: RoleAttributes[K], original: RoleAttributes[K]) => {
-      if (value !== original) {
-        attrs[key] = value;
-        anyAttr = true;
-      }
-    };
-    setIfChanged("superuser", superuser, existing.superuser);
-    setIfChanged("createdb", createdb, existing.createdb);
-    setIfChanged("createrole", createrole, existing.createrole);
-    setIfChanged("inherit", inherit, existing.inherit);
-    setIfChanged("login", login, existing.login);
-    setIfChanged("replication", replication, existing.replication);
-    setIfChanged("bypassRls", bypassRls, existing.bypassRls);
-    setIfChanged("connectionLimit", parsedConnectionLimit(), existing.connectionLimit);
-    if (password.trim()) {
-      attrs.password = password;
-      anyAttr = true;
-    }
-    const until = validUntil.trim();
-    if (until !== toDate(existing.validUntil)) {
-      // Vaciar el campo vuelve el rol a "sin vencimiento", que en Postgres es 'infinity'.
-      attrs.validUntil = until || "infinity";
-      anyAttr = true;
-    }
-    if (anyAttr) out.push({ kind: "alterRole", name: currentName, attributes: attrs });
-
-    const current = memberOfList();
-    for (const role of current.filter((r) => !originalMemberOf.includes(r))) {
-      out.push({ kind: "grantMembership", role, member: currentName, adminOption });
-    }
-    for (const role of originalMemberOf.filter((r) => !current.includes(r))) {
-      out.push({ kind: "revokeMembership", role, member: currentName });
-    }
-
-    return out;
+  function changes() {
+    return roleChanges(form, existing, originalMemberOf);
   }
 
   function validate(): string | null {
-    if (!name.trim()) return "Poné un nombre para el rol.";
-    if (connectionLimit !== null && (!Number.isInteger(connectionLimit) || connectionLimit < 0)) {
-      return "El límite de conexiones tiene que ser un número entero no negativo.";
-    }
-    return null;
+    return validateRole(form);
   }
 
   async function showPreview() {
@@ -208,19 +102,19 @@
 >
   <label class="flex flex-col gap-1">
     <span class="label">Nombre</span>
-    <input class="field" data-autofocus bind:value={name} />
+    <input class="field" data-autofocus bind:value={form.name} />
   </label>
 
   <div class="mt-3">
     <span class="label">Atributos</span>
     <div class="mt-1 grid grid-cols-2 gap-x-4 gap-y-1.5">
-      <label class="check"><input type="checkbox" bind:checked={login} /> LOGIN</label>
-      <label class="check"><input type="checkbox" bind:checked={superuser} /> SUPERUSER</label>
-      <label class="check"><input type="checkbox" bind:checked={createdb} /> CREATEDB</label>
-      <label class="check"><input type="checkbox" bind:checked={createrole} /> CREATEROLE</label>
-      <label class="check"><input type="checkbox" bind:checked={inherit} /> INHERIT</label>
-      <label class="check"><input type="checkbox" bind:checked={replication} /> REPLICATION</label>
-      <label class="check"><input type="checkbox" bind:checked={bypassRls} /> BYPASSRLS</label>
+      <label class="check"><input type="checkbox" bind:checked={form.login} /> LOGIN</label>
+      <label class="check"><input type="checkbox" bind:checked={form.superuser} /> SUPERUSER</label>
+      <label class="check"><input type="checkbox" bind:checked={form.createdb} /> CREATEDB</label>
+      <label class="check"><input type="checkbox" bind:checked={form.createrole} /> CREATEROLE</label>
+      <label class="check"><input type="checkbox" bind:checked={form.inherit} /> INHERIT</label>
+      <label class="check"><input type="checkbox" bind:checked={form.replication} /> REPLICATION</label>
+      <label class="check"><input type="checkbox" bind:checked={form.bypassRls} /> BYPASSRLS</label>
     </div>
   </div>
 
@@ -232,13 +126,13 @@
         type="number"
         min="0"
         step="1"
-        bind:value={connectionLimit}
+        bind:value={form.connectionLimit}
         placeholder="sin límite"
       />
     </label>
     <label class="flex flex-col gap-1">
       <span class="label">Válido hasta</span>
-      <input class="field" type="date" bind:value={validUntil} />
+      <input class="field" type="date" bind:value={form.validUntil} />
     </label>
   </div>
 
@@ -250,7 +144,7 @@
       <input
         class="field pr-9"
         type={showPassword ? "text" : "password"}
-        bind:value={password}
+        bind:value={form.password}
         autocomplete="off"
       />
       <button
@@ -276,13 +170,13 @@
         Leyendo las membresías…
       </p>
     {:else}
-      <input class="field" bind:value={memberOfText} placeholder="lectores, escritores" />
+      <input class="field" bind:value={form.memberOf} placeholder="lectores, escritores" />
     {/if}
   </label>
 
   {#if existing}
     <label class="check mt-2">
-      <input type="checkbox" bind:checked={adminOption} />
+      <input type="checkbox" bind:checked={form.adminOption} />
       Las membresías nuevas quedan con ADMIN OPTION
     </label>
   {/if}

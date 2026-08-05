@@ -120,7 +120,11 @@ impl From<keyring::Error> for Error {
 /// `thiserror` no implementa `Serialize`, y la interfaz necesita distinguir una cancelación de un
 /// error real para no mostrar un cartel rojo cuando el usuario apretó "cancelar".
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ErrorPayload {
     Canceled,
     Conflict {

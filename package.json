@@ -10,7 +10,8 @@
     "tauri": "tauri",
     "ui:dev": "pnpm --filter pgforge-ui dev",
     "ui:build": "pnpm --filter pgforge-ui build",
-    "ui:check": "pnpm --filter pgforge-ui check"
+    "ui:check": "pnpm --filter pgforge-ui check",
+    "ui:test": "pnpm --filter pgforge-ui test"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4"

@@ -155,6 +155,10 @@ pub async fn function_apply(
 }
 
 /// Borra una función o un procedimiento.
+///
+/// Los argumentos de un comando de Tauri son la carga del `invoke`, no una firma que se pueda
+/// reagrupar: juntarlos en un struct los movería también en `ipc.ts` sin sacar ninguno.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn function_drop(
     state: State<'_, AppState>,

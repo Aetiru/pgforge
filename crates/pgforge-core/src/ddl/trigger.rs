@@ -85,7 +85,11 @@ pub struct TriggerDef {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum TriggerChange {
     CreateTrigger {
         schema: String,

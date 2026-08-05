@@ -7,11 +7,16 @@
     describeError,
     policyApply,
     policyPreview,
-    type PolicyChange,
     type PolicyCommand,
     type PolicyInfo,
-    type PolicyKind,
   } from "./ipc";
+  import {
+    acceptsCheck as commandAcceptsCheck,
+    acceptsUsing as commandAcceptsUsing,
+    policyChanges,
+    policyForm,
+    validatePolicy,
+  } from "./policy-form";
 
   let {
     profileId,
@@ -41,12 +46,7 @@
   ];
 
   // Copia editable, tomada una sola vez: el diálogo se crea de nuevo cada vez que se abre.
-  let name = $state(untrack(() => existing?.name ?? ""));
-  let command = $state<PolicyCommand>(untrack(() => existing?.command ?? "all"));
-  let kind = $state<PolicyKind>(untrack(() => existing?.kind ?? "permissive"));
-  let roles = $state(untrack(() => existing?.roles.join(", ") ?? ""));
-  let usingText = $state(untrack(() => existing?.using ?? ""));
-  let checkText = $state(untrack(() => existing?.check ?? ""));
+  let form = $state(untrack(() => policyForm(existing)));
 
   let error = $state<string | null>(null);
   let saving = $state(false);
@@ -54,38 +54,15 @@
 
   // Las dos expresiones no valen para todos los comandos, y en vez de dejar escribir algo que el
   // servidor va a rechazar se esconde el campo que no corresponde.
-  const acceptsUsing = $derived(command !== "insert");
-  const acceptsCheck = $derived(command !== "select" && command !== "delete");
+  const acceptsUsing = $derived(commandAcceptsUsing(form.command));
+  const acceptsCheck = $derived(commandAcceptsCheck(form.command));
 
-  const roleList = $derived(
-    roles
-      .split(",")
-      .map((role) => role.trim())
-      .filter((role) => role.length > 0),
-  );
-
-  function changes(): PolicyChange[] {
-    const definition = {
-      command,
-      kind,
-      roles: roleList,
-      using: acceptsUsing ? usingText.trim() || null : null,
-      check: acceptsCheck ? checkText.trim() || null : null,
-    };
-    const create: PolicyChange = {
-      kind: "createPolicy",
-      schema,
-      table,
-      name: name.trim(),
-      definition,
-    };
-    if (!existing) return [create];
-    return [{ kind: "dropPolicy", schema, table, name: existing.name }, create];
+  function changes() {
+    return policyChanges(form, { schema, table }, existing);
   }
 
   function validate(): string | null {
-    if (!name.trim()) return "Poné un nombre para la política.";
-    return null;
+    return validatePolicy(form);
   }
 
   async function showPreview() {
@@ -141,12 +118,12 @@
   <div class="grid grid-cols-2 gap-3">
     <label class="flex flex-col gap-1">
       <span class="label">Nombre</span>
-      <input class="field" data-autofocus bind:value={name} />
+      <input class="field" data-autofocus bind:value={form.name} />
     </label>
 
     <label class="flex flex-col gap-1">
       <span class="label">Comando</span>
-      <select class="field" bind:value={command}>
+      <select class="field" bind:value={form.command}>
         {#each COMMAND_OPTIONS as option (option.value)}
           <option value={option.value}>{option.label}</option>
         {/each}
@@ -156,7 +133,7 @@
 
   <label class="mt-3 flex flex-col gap-1">
     <span class="label">Roles</span>
-    <input class="field" bind:value={roles} placeholder="ana, beto — vacío es PUBLIC" />
+    <input class="field" bind:value={form.roles} placeholder="ana, beto — vacío es PUBLIC" />
     <span class="text-xs muted">
       Separados por coma. Sin roles la política alcanza a todo el mundo.
     </span>
@@ -166,11 +143,11 @@
     <span class="label">Cómo se combina con las demás</span>
     <div class="mt-1 flex flex-col gap-1.5">
       <label class="check">
-        <input type="radio" value="permissive" bind:group={kind} />
+        <input type="radio" value="permissive" bind:group={form.kind} />
         Permisiva: suma a lo que dejan pasar las otras
       </label>
       <label class="check">
-        <input type="radio" value="restrictive" bind:group={kind} />
+        <input type="radio" value="restrictive" bind:group={form.kind} />
         Restrictiva: recorta lo que las permisivas dejaron pasar
       </label>
     </div>
@@ -181,7 +158,7 @@
       <span class="label">USING — qué filas se ven</span>
       <input
         class="field font-mono"
-        bind:value={usingText}
+        bind:value={form.using}
         placeholder="condición SQL, p. ej. dueno = current_user"
       />
     </label>
@@ -196,13 +173,13 @@
       <span class="label">WITH CHECK — qué filas se pueden escribir</span>
       <input
         class="field font-mono"
-        bind:value={checkText}
+        bind:value={form.check}
         placeholder="condición SQL; vacío repite la de USING"
       />
     </label>
   {:else}
     <p class="mt-3 text-xs muted">
-      Una política de {command === "select" ? "SELECT" : "DELETE"} no lleva WITH CHECK: no escribe ninguna
+      Una política de {form.command === "select" ? "SELECT" : "DELETE"} no lleva WITH CHECK: no escribe ninguna
       fila que verificar.
     </p>
   {/if}

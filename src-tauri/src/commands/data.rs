@@ -93,7 +93,11 @@ pub fn data_export_preview(spec: ExportSpec) -> Result<CopyCommand> {
 }
 
 #[derive(Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ExportEvent {
     Started {
         command: String,
@@ -189,7 +193,11 @@ pub fn data_import_preview(spec: ImportSpec) -> Result<CopyCommand> {
 }
 
 #[derive(Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ImportEvent {
     Started {
         command: String,

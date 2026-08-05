@@ -29,7 +29,11 @@ use super::shape::TableShape;
 pub type Values = BTreeMap<String, Option<String>>;
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Change {
     Insert {
         values: Values,

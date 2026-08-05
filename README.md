@@ -29,6 +29,8 @@ de forma incremental y cada etapa entrega algo usable por sí sola:
 | 11 | Import/export de datos (`COPY`) | listo |
 | 12 | Túnel SSH (bastión) | listo |
 | 13 | Monitoreo: bloqueos, índices sin uso y bloat | listo |
+| 14 | Diagrama ERD del esquema | pendiente |
+| 15 | Red de seguridad: tests de vista previa e IPC | listo |
 
 Las etapas 11 en adelante son la capa de mejoras posterior a la primera release; su plan está en
 [`plan-mejoras.md`](plan-mejoras.md). La replicación (física y lógica) queda fuera del alcance inicial.
@@ -118,6 +120,15 @@ cargo test --workspace
 ```
 
 Sin esa variable, los tests de integración no verifican nada y lo avisan por consola.
+
+No todo necesita un servidor. La lógica pura —lo que la interfaz muestra antes de aplicar un cambio,
+y la traducción de argumentos en la frontera con Rust— se prueba sola:
+
+```bash
+pnpm ui:test                # Vitest sobre ui/
+pnpm ui:build               # `cargo test -p pgforge-app` necesita ui/dist
+cargo test -p pgforge-app   # comandos de vista previa, sin red ni ventana
+```
 
 Para no dejar credenciales en el historial del intérprete de comandos, conviene ponerlas en un
 archivo `.env.local` en la raíz del repositorio (ya está ignorado por git):

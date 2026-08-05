@@ -21,7 +21,11 @@ use tokio::sync::Mutex;
 use crate::state::{AppState, MaintenanceEntry, MonitorEntry, PollConfig, MIN_POLL_MS};
 
 #[derive(Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum MonitorEvent {
     // La muestra va en un `Box` porque es mucho más grande que la variante de error y no tiene
     // sentido que cada evento pague ese tamaño.
@@ -282,7 +286,11 @@ pub async fn maintenance_plan(
 }
 
 #[derive(Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum MaintenanceEvent {
     Started { sql: String },
     Notice { severity: String, message: String },

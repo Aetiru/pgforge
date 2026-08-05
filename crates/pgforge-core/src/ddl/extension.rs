@@ -17,7 +17,11 @@ use super::quote_ident;
 use super::table::Statement;
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ExtensionChange {
     /// Instala la extensión. `IF NOT EXISTS` evita el error si otra sesión ya la instaló.
     Create {

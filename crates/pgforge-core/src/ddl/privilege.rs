@@ -155,7 +155,7 @@ impl TypePrivilege {
 /// Sobre qué se otorga o se revoca: el objeto y, atado a él, su vocabulario de privilegios. Que
 /// vayan juntos es a propósito — así no se puede pedir `TRUNCATE` sobre un esquema.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "on", rename_all = "camelCase")]
+#[serde(tag = "on", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Grantable {
     Table {
         schema: String,
@@ -261,7 +261,7 @@ impl Grantable {
 /// Sobre qué actúan los privilegios por omisión. El tipo de objeto y su vocabulario van juntos por
 /// la misma razón que en [`Grantable`].
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "on", rename_all = "camelCase")]
+#[serde(tag = "on", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum DefaultPrivileges {
     Tables { privileges: Vec<TablePrivilege> },
     Sequences { privileges: Vec<SequencePrivilege> },
@@ -316,7 +316,11 @@ impl DefaultScope {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum PrivilegeChange {
     Grant {
         target: Grantable,

@@ -31,7 +31,11 @@ pub async fn backup_plan(
 }
 
 #[derive(Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum BackupEvent {
     Started {
         command: Vec<String>,
@@ -144,7 +148,11 @@ pub async fn restore_plan(
 }
 
 #[derive(Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum RestoreEvent {
     Started {
         command: Vec<String>,

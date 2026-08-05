@@ -42,7 +42,11 @@ impl Default for Limits {
 
 /// Resultado de una sentencia.
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Outcome {
     /// Devolvió filas.
     #[serde(rename_all = "camelCase")]

@@ -14,7 +14,11 @@ use crate::error::{Error, Result};
 
 /// Sobre qué se ejecuta la tarea.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Target {
     Database { name: String },
     Table { schema: String, name: String },
@@ -33,7 +37,11 @@ impl Target {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Operation {
     #[serde(rename_all = "camelCase")]
     Vacuum {

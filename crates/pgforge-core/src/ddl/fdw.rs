@@ -112,7 +112,11 @@ fn parse_options(raw: Option<Vec<String>>) -> Vec<(String, String)> {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum FdwChange {
     Create {
         name: String,
@@ -200,7 +204,11 @@ fn fdw_one(change: &FdwChange) -> Result<Statement> {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ServerChange {
     Create {
         name: String,
@@ -276,7 +284,11 @@ fn server_one(change: &ServerChange) -> Result<Statement> {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum UserMappingChange {
     Create {
         server: String,

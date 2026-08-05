@@ -68,7 +68,11 @@ pub struct TextOptions {
 
 /// De dónde salen las filas a exportar.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ExportSource {
     /// Una tabla entera, o algunas de sus columnas.
     #[serde(rename_all = "camelCase")]

@@ -1,7 +1,10 @@
 //! Capa de escritorio: expone el núcleo como comandos de Tauri.
 
-mod commands;
-mod state;
+// Públicos para que `tests/preview.rs` pueda llamar a los comandos de vista previa —los que no
+// tocan la red— con la carga que manda la interfaz. Es la única forma de probar la traducción de
+// argumentos sin levantar la ventana.
+pub mod commands;
+pub mod state;
 
 use tauri::Manager;
 

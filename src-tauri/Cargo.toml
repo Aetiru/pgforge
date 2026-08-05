@@ -27,3 +27,8 @@ uuid = { version = "1.24.0", features = ["v4"] }
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
+
+[dev-dependencies]
+# Los tests de vista previa arman la carga JSON tal como la manda la interfaz, en vez de construir
+# los tipos de Rust: así lo que se verifica es también el contrato de serde con `ipc.ts`.
+serde_json = "1.0.145"

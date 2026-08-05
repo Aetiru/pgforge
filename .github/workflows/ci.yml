@@ -67,10 +67,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm ui:check
+      - run: pnpm ui:test
       - run: pnpm ui:build
 
-  # Verifica que la aplicación compila en las tres plataformas. No genera instaladores: eso es
-  # trabajo del workflow de release.
+  # Verifica que la aplicación compila en las tres plataformas y, en una sola, que sus comandos de
+  # vista previa traducen bien lo que manda la interfaz. No genera instaladores: eso es trabajo del
+  # workflow de release.
   desktop:
     name: escritorio (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -103,3 +105,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm tauri build --no-bundle
+
+      # Los tests de `src-tauri` son puros —no tocan la red ni la ventana—, así que correrlos en las
+      # tres plataformas no agregaría nada. Van después del build porque `generate_context!` exige
+      # que exista `ui/dist`, y el build es quien lo genera.
+      - name: Vista previa e IPC (tests puros)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          cargo clippy -p pgforge-app --all-targets
+          cargo test -p pgforge-app

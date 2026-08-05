@@ -25,7 +25,11 @@ use serde::Deserialize;
 
 /// Un cambio de vista pendiente.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ViewChange {
     CreateView {
         schema: String,

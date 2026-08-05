@@ -22,7 +22,11 @@ use tokio::sync::Mutex;
 use crate::state::{AppState, QueryEntry};
 
 #[derive(Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum QueryEvent {
     /// Empezó una sentencia del script.
     #[serde(rename_all = "camelCase")]

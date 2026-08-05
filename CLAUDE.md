@@ -21,16 +21,22 @@ pnpm install                    # el CLI de Tauri vive en la raíz del workspace
 pnpm dev                        # levantar la aplicación (tauri dev)
 pnpm build                      # tauri build
 pnpm ui:check                   # svelte-check sobre ui/
+pnpm ui:test                    # vitest sobre ui/ (lógica pura, sin DOM)
 pnpm ui:build                   # vite build de ui/
 
 cargo build --workspace
 cargo fmt --all --check
 cargo clippy -p pgforge-core -p pgforge-cli --all-targets   # CI usa RUSTFLAGS="-D warnings"
 cargo test -p pgforge-core -p pgforge-cli
+cargo clippy -p pgforge-app --all-targets && cargo test -p pgforge-app   # necesita ui/dist
 ```
 
-`src-tauri` se excluye del clippy/test de CI: se verifica compilándolo (`pnpm tauri build --no-bundle`)
-en las tres plataformas. El job del core corre contra PostgreSQL **13 y 17** — los dos extremos del rango soportado— porque es ahí donde se
+De `src-tauri` no se prueba lo que toca la red —eso vive en el core y se prueba ahí—, pero sí sus
+comandos de **vista previa**, que son puros: `src-tauri/tests/preview.rs` los llama con la carga
+JSON tal como la manda `ipc.ts`. Compilarlo exige que exista `ui/dist` (`generate_context!` lo
+verifica), así que hay que correr `pnpm ui:build` antes; en CI eso ya lo dejó hecho el
+`pnpm tauri build --no-bundle` del mismo job, que además cubre las tres plataformas. El job del core
+corre contra PostgreSQL **13 y 17** — los dos extremos del rango soportado— porque es ahí donde se
 nota un gating por versión mal puesto.
 
 La CLI es la forma rápida de ejercitar el core sin levantar la ventana, y sirve para comprobar a
@@ -153,6 +159,15 @@ los enums como uniones etiquetadas — `kind` para las variantes de datos (`Chan
 `MaintenanceEvent`). Los flujos largos (ejecución de consultas, sondeo del dashboard, mantenimiento)
 no devuelven el resultado: mandan eventos por un `Channel` de Tauri.
 
+**Un enum etiquetado necesita las dos:** `rename_all` renombra los nombres de variante y
+`rename_all_fields` los campos de adentro de cada variante. Solo con la primera, un `new_name` o un
+`type_name` sigue esperándose en `snake_case` mientras la interfaz manda `newName`: nada falla al
+compilar y el `invoke` se cae recién en tiempo de ejecución, con un «missing field» del lado de
+Rust. Por eso los enums de este proyecto llevan siempre
+`#[serde(tag = "…", rename_all = "camelCase", rename_all_fields = "camelCase")]`, aunque hoy no
+tengan ningún campo de dos palabras. Lo que atrapa el olvido es `src-tauri/tests/preview.rs`, que
+arma la carga como JSON en vez de construir los tipos de Rust.
+
 Los valores de las celdas viajan como `string | null` (`null` es un NULL de la base, distinto de la
 cadena vacía), no como tipos nativos de JavaScript.
 
@@ -248,6 +263,13 @@ forma, que es la cara visible de la regla de vista previa: copia editable de los
 sola vez con `untrack`, una función `changes()` que arma el cambio, `validate()` que devuelve el
 problema o `null`, un botón «Ver SQL» que llama al `*_preview` y un `submit()` que llama al
 `*_apply`. Al agregar un objeto nuevo, copiar esa estructura en vez de inventar otra.
+
+`changes()` y `validate()` son funciones puras de lo que hay escrito en pantalla, y montar el
+componente para probarlas no aporta nada. Donde la lógica es de verdad —un diff contra lo que hay en
+el servidor, un campo que solo vale para algunos casos— se saca a un `<objeto>-form.ts` al lado del
+diálogo (`role-form.ts`, `policy-form.ts`): el componente queda con el `$state` y las bindings, y el
+archivo suelto se prueba con Vitest. Los diálogos que solo juntan campos y los mandan no necesitan
+esa separación.
 
 ## Nota sobre `plan-proyecto-pgtool-rust.md`
 
