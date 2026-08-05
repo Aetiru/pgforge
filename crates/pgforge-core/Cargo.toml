@@ -9,8 +9,9 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+bytes = "1.10.1"
 deadpool-postgres = "0.14.1"
-futures-util = { version = "0.3.33", default-features = false, features = ["std"] }
+futures-util = { version = "0.3.33", default-features = false, features = ["std", "sink"] }
 keyring = { version = "3.6.3", features = ["apple-native", "sync-secret-service", "windows-native"] }
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 rustls = { version = "0.23.43", default-features = false, features = ["ring", "std", "tls12", "logging"] }
@@ -20,7 +21,7 @@ rustls-pki-types = "1.15.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 thiserror = "2.0.19"
-tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util"] }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util", "fs"] }
 tokio-postgres = "0.7.13"
 tokio-postgres-rustls = "0.14.0"
 tracing = "0.1.44"

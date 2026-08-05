@@ -96,6 +96,9 @@ pub struct AppState {
     pub maintenance: Mutex<HashMap<String, MaintenanceEntry>>,
     pub backups: Mutex<HashMap<String, ExternalTask>>,
     pub restores: Mutex<HashMap<String, ExternalTask>>,
+    /// Exportaciones e importaciones de datos en curso. Comparten el mismo mapa: cada una tiene su
+    /// identificador único y ambas se cancelan igual, avisándole a la tarea que corte.
+    pub copies: Mutex<HashMap<String, ExternalTask>>,
     pub queries: Mutex<HashMap<String, QueryEntry>>,
     pub history: Mutex<HistoryStore>,
 }
@@ -111,6 +114,7 @@ impl AppState {
             maintenance: Mutex::new(HashMap::new()),
             backups: Mutex::new(HashMap::new()),
             restores: Mutex::new(HashMap::new()),
+            copies: Mutex::new(HashMap::new()),
             queries: Mutex::new(HashMap::new()),
         })
     }

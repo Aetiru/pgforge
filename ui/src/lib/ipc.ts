@@ -655,6 +655,85 @@ export const dataApply = (id: string, shape: TableShape, changes: Change[], data
   invoke<Applied>("data_apply", { id, shape, changes, database: database ?? null });
 
 // ---------------------------------------------------------------------------
+// Exportar e importar con COPY
+// ---------------------------------------------------------------------------
+
+export type CopyFormat = "csv" | "text" | "binary";
+
+export interface TextOptions {
+  /** Primera línea con los nombres de columna. Solo CSV. */
+  header: boolean;
+  /** Separador de campos. Un solo carácter. */
+  delimiter?: string;
+  /** Carácter de comillas. Solo CSV. */
+  quote?: string;
+  /** Texto que representa un NULL (distinto de la cadena vacía). */
+  null?: string;
+}
+
+/** De dónde salen las filas a exportar. */
+export type ExportSource =
+  | { kind: "table"; schema: string; table: string; columns: string[] }
+  | { kind: "query"; sql: string };
+
+export interface ExportSpec {
+  source: ExportSource;
+  format: CopyFormat;
+  options: TextOptions;
+}
+
+export interface ImportSpec {
+  schema: string;
+  table: string;
+  /** Vacío usa todas las columnas de la tabla, en su orden. */
+  columns: string[];
+  format: CopyFormat;
+  options: TextOptions;
+}
+
+/** El texto del COPY que se ejecutaría. Lo que muestra la vista previa. */
+export interface CopyCommand {
+  sql: string;
+}
+
+export type ExportEvent =
+  | { type: "started"; command: string }
+  | { type: "progress"; bytes: number }
+  | { type: "finished"; path: string; bytes: number; seconds: number }
+  | { type: "failed"; error: CoreError };
+
+export type ImportEvent =
+  | { type: "started"; command: string }
+  | { type: "progress"; bytes: number }
+  | { type: "finished"; bytes: number; rows: number; seconds: number }
+  | { type: "failed"; error: CoreError };
+
+export const dataExportPreview = (spec: ExportSpec) =>
+  invoke<CopyCommand>("data_export_preview", { spec });
+
+export const dataExportRun = (
+  id: string,
+  spec: ExportSpec,
+  path: string,
+  channel: Channel<ExportEvent>,
+  database?: string,
+) => invoke<string>("data_export_run", { id, spec, path, channel, database: database ?? null });
+
+export const dataImportPreview = (spec: ImportSpec) =>
+  invoke<CopyCommand>("data_import_preview", { spec });
+
+export const dataImportRun = (
+  id: string,
+  spec: ImportSpec,
+  path: string,
+  channel: Channel<ImportEvent>,
+  database?: string,
+) => invoke<string>("data_import_run", { id, spec, path, channel, database: database ?? null });
+
+/** Corta una exportación o importación en curso. */
+export const dataCopyCancel = (taskId: string) => invoke<void>("data_copy_cancel", { taskId });
+
+// ---------------------------------------------------------------------------
 // Estructura de tablas
 // ---------------------------------------------------------------------------
 

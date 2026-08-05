@@ -171,6 +171,71 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+
+    /// Exporta una tabla o una consulta a un archivo con COPY.
+    Export {
+        #[arg(long)]
+        url: String,
+        /// Archivo de salida.
+        #[arg(long)]
+        out: PathBuf,
+        /// Tabla a exportar, como esquema.tabla. Excluyente con --sql.
+        table: Option<String>,
+        /// Consulta a exportar en vez de una tabla. Excluyente con la tabla.
+        #[arg(long)]
+        sql: Option<String>,
+        #[arg(long, value_enum, default_value_t = CopyFormatArg::Csv)]
+        format: CopyFormatArg,
+        /// Primera línea con los nombres de columna (solo CSV).
+        #[arg(long)]
+        header: bool,
+        /// Base sobre la que exportar. Por omisión, la del perfil.
+        #[arg(long)]
+        database: Option<String>,
+        /// Muestra el COPY y no ejecuta nada.
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Importa un archivo a una tabla con COPY.
+    Import {
+        #[arg(long)]
+        url: String,
+        /// Archivo de entrada.
+        #[arg(long)]
+        file: PathBuf,
+        /// Tabla destino, como esquema.tabla.
+        table: String,
+        #[arg(long, value_enum, default_value_t = CopyFormatArg::Csv)]
+        format: CopyFormatArg,
+        /// La primera línea trae los nombres de columna y se saltea (solo CSV).
+        #[arg(long)]
+        header: bool,
+        /// Base sobre la que importar. Por omisión, la del perfil.
+        #[arg(long)]
+        database: Option<String>,
+        /// Muestra el COPY y no ejecuta nada.
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+/// Los formatos de `COPY` que la CLI expone.
+#[derive(Clone, Copy, ValueEnum)]
+enum CopyFormatArg {
+    Csv,
+    Text,
+    Binary,
+}
+
+impl From<CopyFormatArg> for data::CopyFormat {
+    fn from(value: CopyFormatArg) -> Self {
+        match value {
+            CopyFormatArg::Csv => data::CopyFormat::Csv,
+            CopyFormatArg::Text => data::CopyFormat::Text,
+            CopyFormatArg::Binary => data::CopyFormat::Binary,
+        }
+    }
 }
 
 /// Los formatos de `pg_dump`, con los nombres que usa su propia documentación.
@@ -298,6 +363,25 @@ async fn main() -> ExitCode {
             )
             .await
         }
+        Command::Export {
+            url,
+            out,
+            table,
+            sql,
+            format,
+            header,
+            database,
+            dry_run,
+        } => run_export(&url, out, table, sql, format, header, database, dry_run).await,
+        Command::Import {
+            url,
+            file,
+            table,
+            format,
+            header,
+            database,
+            dry_run,
+        } => run_import(&url, file, &table, format, header, database, dry_run).await,
     };
 
     match result {
@@ -405,6 +489,131 @@ async fn run_restore(url: &str, mut options: RestoreOptions, dry_run: bool) -> R
     }
     println!();
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_export(
+    url: &str,
+    out: PathBuf,
+    table: Option<String>,
+    sql: Option<String>,
+    format: CopyFormatArg,
+    header: bool,
+    database: Option<String>,
+    dry_run: bool,
+) -> Result<()> {
+    let handle = connect(url).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    let source = match (table, sql) {
+        (Some(table), None) => {
+            let (schema, table) = split_qualified(&table);
+            data::ExportSource::Table {
+                schema,
+                table,
+                columns: vec![],
+            }
+        }
+        (None, Some(sql)) => data::ExportSource::Query { sql },
+        (Some(_), Some(_)) => {
+            return Err(Error::Config(
+                "indicá una tabla o --sql, pero no ambos".to_owned(),
+            ))
+        }
+        (None, None) => {
+            return Err(Error::Config(
+                "falta la tabla a exportar o --sql con una consulta".to_owned(),
+            ))
+        }
+    };
+
+    let spec = data::ExportSpec {
+        source,
+        format: format.into(),
+        options: data::TextOptions {
+            header,
+            ..Default::default()
+        },
+    };
+
+    println!("{}", data::export_command(&spec)?.sql);
+    if dry_run {
+        return Ok(());
+    }
+
+    let (progress, mut bytes_rx) = mpsc::channel(64);
+    let printer = tokio::spawn(async move {
+        while let Some(written) = bytes_rx.recv().await {
+            eprint!("\r{} exportados", bytes(written));
+        }
+        eprintln!();
+    });
+
+    let (_cancel, never) = oneshot::channel();
+    let outcome = data::export_to_file(&handle, &database, &spec, &out, progress, never).await;
+    let _ = printer.await;
+    let outcome = outcome?;
+
+    println!("listo: {} ({})", out.display(), bytes(outcome.bytes));
+    Ok(())
+}
+
+async fn run_import(
+    url: &str,
+    file: PathBuf,
+    table: &str,
+    format: CopyFormatArg,
+    header: bool,
+    database: Option<String>,
+    dry_run: bool,
+) -> Result<()> {
+    let handle = connect(url).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    let (schema, table) = split_qualified(table);
+    let spec = data::ImportSpec {
+        schema,
+        table,
+        columns: vec![],
+        format: format.into(),
+        options: data::TextOptions {
+            header,
+            ..Default::default()
+        },
+    };
+
+    println!("{}", data::import_command(&spec)?.sql);
+    if dry_run {
+        return Ok(());
+    }
+
+    let (progress, mut bytes_rx) = mpsc::channel(64);
+    let printer = tokio::spawn(async move {
+        while let Some(read) = bytes_rx.recv().await {
+            eprint!("\r{} leídos", bytes(read));
+        }
+        eprintln!();
+    });
+
+    let (_cancel, never) = oneshot::channel();
+    let outcome = data::import_from_file(&handle, &database, &spec, &file, progress, never).await;
+    let _ = printer.await;
+    let outcome = outcome?;
+
+    println!(
+        "listo: {} filas ({})",
+        outcome.rows.unwrap_or(0),
+        bytes(outcome.bytes)
+    );
+    Ok(())
+}
+
+/// Parte «esquema.tabla» en sus dos mitades. Sin punto, el esquema es `public`, como en psql.
+fn split_qualified(name: &str) -> (String, String) {
+    match name.split_once('.') {
+        Some((schema, table)) => (schema.to_owned(), table.to_owned()),
+        None => ("public".to_owned(), name.to_owned()),
+    }
 }
 
 /// Tamaño legible. La interfaz tiene su propia versión en `format.ts`; acá alcanza con esto.

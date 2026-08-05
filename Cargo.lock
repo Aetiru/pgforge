@@ -2528,6 +2528,7 @@ dependencies = [
 name = "pgforge-core"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "deadpool-postgres",
  "futures-util",
  "keyring",

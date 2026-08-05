@@ -3,6 +3,8 @@
   import Alert from "./Alert.svelte";
   import BackupDialog from "./BackupDialog.svelte";
   import RestoreDialog from "./RestoreDialog.svelte";
+  import ExportDialog from "./ExportDialog.svelte";
+  import ImportDialog from "./ImportDialog.svelte";
   import ColumnDialog from "./ColumnDialog.svelte";
   import Confirm from "./Confirm.svelte";
   import ConstraintDialog from "./ConstraintDialog.svelte";
@@ -593,6 +595,8 @@
   let privilegeDialog = $state<{ existing: PrivilegeExisting | null } | null>(null);
   let backupDialog = $state(false);
   let restoreDialog = $state(false);
+  let exportDialog = $state(false);
+  let importDialog = $state(false);
   let revokeTarget = $state<{ grantee: string; privileges: string[] } | null>(null);
   let revokeCascade = $state(false);
   let revoking = $state(false);
@@ -1375,6 +1379,25 @@
             >
               <Icon name="sql" size={12} />
               Consulta
+            </button>
+          {/if}
+
+          {#if isTable && node}
+            <button
+              class="btn"
+              title={`Exporta ${node.label} a un archivo con COPY`}
+              onclick={() => (exportDialog = true)}
+            >
+              <Icon name="download" size={12} />
+              Exportar
+            </button>
+            <button
+              class="btn"
+              title={`Importa un archivo a ${node.label} con COPY`}
+              onclick={() => (importDialog = true)}
+            >
+              <Icon name="upload" size={12} />
+              Importar
             </button>
           {/if}
 
@@ -2518,6 +2541,26 @@
     profileId={selected.profileId}
     database={node.label}
     onclose={() => (restoreDialog = false)}
+  />
+{/if}
+
+{#if exportDialog && selected && node && node.schema && node.database}
+  <ExportDialog
+    profileId={selected.profileId}
+    database={node.database}
+    schema={node.schema}
+    table={node.label}
+    onclose={() => (exportDialog = false)}
+  />
+{/if}
+
+{#if importDialog && selected && node && node.schema && node.database}
+  <ImportDialog
+    profileId={selected.profileId}
+    database={node.database}
+    schema={node.schema}
+    table={node.label}
+    onclose={() => (importDialog = false)}
   />
 {/if}
 
