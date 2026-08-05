@@ -20,6 +20,9 @@ export type CoreError =
 
 export type SslMode = "disable" | "prefer" | "require" | "verifyCa" | "verifyFull";
 
+/** Para qué se usa el servidor. No cambia cómo se conecta: cambia cuánto se avisa antes de tocarlo. */
+export type Environment = "dev" | "test" | "prod";
+
 export interface SshTunnel {
   host: string;
   port: number;
@@ -41,6 +44,11 @@ export interface ConnectionProfile {
   statementTimeoutMs?: number;
   tunnel?: SshTunnel;
   savePassword: boolean;
+  environment?: Environment;
+  /** Abre toda conexión al servidor con `default_transaction_read_only`. */
+  readOnly: boolean;
+  /** Valor inicial del autocommit de cada pestaña de consulta. */
+  autocommit: boolean;
 }
 
 export interface ServerCaps {
@@ -537,7 +545,12 @@ export const restoreCancel = (taskId: string) => invoke<void>("restore_cancel", 
 export interface QueryTab {
   tabId: string;
   database: string;
+  autocommit: boolean;
+  txStatus: TxStatus;
 }
+
+/** Estado de la transacción de una pestaña. `failed` es «abierta pero abortada». */
+export type TxStatus = "idle" | "active" | "failed";
 
 export interface QueryLimits {
   maxRows: number;
@@ -561,6 +574,7 @@ export type QueryEvent =
   | { type: "finished"; index: number; outcome: Outcome }
   | { type: "notice"; severity: string; message: string }
   | { type: "failed"; index: number; error: CoreError; offset: number }
+  | { type: "transaction"; status: TxStatus }
   | { type: "completed"; seconds: number; executed: number };
 
 export interface ExplainOptions {
@@ -609,6 +623,16 @@ export const queryRun = (
 ) => invoke<void>("query_run", { tabId, sql, channel, limits: limits ?? null });
 
 export const queryCancel = (tabId: string) => invoke<void>("query_cancel", { tabId });
+
+export const queryCommit = (tabId: string) => invoke<TxStatus>("query_commit", { tabId });
+
+export const queryRollback = (tabId: string) => invoke<TxStatus>("query_rollback", { tabId });
+
+/** Encenderlo no confirma la transacción abierta: solo deja de abrir una nueva en cada ejecución. */
+export const queryAutocommit = (tabId: string, enabled: boolean) =>
+  invoke<TxStatus>("query_autocommit", { tabId, enabled });
+
+export const queryTxStatus = (tabId: string) => invoke<TxStatus>("query_tx_status", { tabId });
 
 export const queryExplain = (tabId: string, sql: string, options?: ExplainOptions) =>
   invoke<Plan>("query_explain", { tabId, sql, options: options ?? null });

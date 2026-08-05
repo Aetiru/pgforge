@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use pgforge_core::monitor::{ActivityFilter, Monitor};
@@ -84,6 +85,9 @@ pub struct QueryEntry {
     pub database: String,
     pub session: Arc<Mutex<QuerySession>>,
     pub cancel: CancelToken,
+    /// Si cada ejecución se confirma sola. Arranca con el valor del perfil y la pestaña lo alterna.
+    /// Vive del lado de Rust y no en la interfaz porque es acá donde se decide si va un `BEGIN`.
+    pub autocommit: Arc<AtomicBool>,
     /// Canal de la ejecución en curso. Los `RAISE NOTICE` llegan por una tarea aparte que vive
     /// mientras dura la pestaña, así que necesita saber a dónde mandarlos en cada momento.
     pub notices: Arc<Mutex<Option<Channel<QueryEvent>>>>,
