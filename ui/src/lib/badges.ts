@@ -1,5 +1,5 @@
 import type { IconName } from "./Icon.svelte";
-import { folderOf, type NodeKind, type NodeTag } from "./ipc";
+import { folderOf, type Environment, type NodeKind, type NodeTag } from "./ipc";
 
 /**
  * Ícono y color de cada tipo de nodo.
@@ -115,6 +115,35 @@ const TAGS: Record<NodeTag, { label: string; tone: string; title: string }> = {
 export function tagLook(tag: NodeTag) {
   return TAGS[tag];
 }
+
+/**
+ * Entorno de un servidor.
+ *
+ * Va aparte de `TAGS`, que es el vocabulario cerrado de `NodeTag` y describe nodos del catálogo: el
+ * entorno es del perfil local y una fila de servidor no trae nodo. El rojo de producción es el punto
+ * de todo esto, así que no se comparte con ningún otro estado.
+ */
+const ENVIRONMENTS: Record<Environment, { label: string; tone: string; title: string }> = {
+  dev: { label: "dev", tone: "tag-ok", title: "Servidor de desarrollo" },
+  test: { label: "test", tone: "tag-info", title: "Servidor de pruebas" },
+  prod: {
+    label: "prod",
+    tone: "tag-bad",
+    title: "Servidor de producción: cada modificación pide una confirmación de más",
+  },
+};
+
+export function envLook(environment: Environment) {
+  return ENVIRONMENTS[environment];
+}
+
+/** Conexión abierta en solo lectura: el servidor rechaza toda escritura. */
+export const READ_ONLY_LOOK = {
+  icon: "lock" as IconName,
+  label: "solo lectura",
+  tone: "tag-neutral",
+  title: "La conexión se abre en solo lectura: el servidor rechaza cualquier escritura",
+};
 
 /** Nombre legible del tipo de nodo, para el panel de propiedades. */
 export function kindLabel(kind: NodeKind | null): string {

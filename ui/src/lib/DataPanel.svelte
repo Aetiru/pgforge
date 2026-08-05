@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { readOnlyReason } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import DataGrid, { type Column } from "./DataGrid.svelte";
   import Icon from "./Icon.svelte";
@@ -16,6 +17,7 @@
   const MAX_WIDTH = 340;
 
   const shape = $derived(tab.shape);
+  const readOnlyProfile = $derived(readOnlyReason(tab.profileId));
 
   const definitions = $derived.by<Column<Row>[]>(() => {
     if (!shape) return [];
@@ -159,7 +161,11 @@
     </span>
   </header>
 
-  {#if shape?.readOnly}
+  <!-- Dos motivos distintos por los que no se puede editar; el del perfil manda porque vale para
+       cualquier tabla que se abra. -->
+  {#if readOnlyProfile}
+    <Alert tone="warn">{readOnlyProfile}</Alert>
+  {:else if shape?.readOnly}
     <Alert tone="warn">{shape.readOnly}</Alert>
   {/if}
 

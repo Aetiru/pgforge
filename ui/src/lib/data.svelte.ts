@@ -1,3 +1,4 @@
+import { confirmMutation, isReadOnly } from "./access.svelte";
 import { Tab, tabs } from "./tabs.svelte";
 import {
   dataApply,
@@ -55,7 +56,9 @@ export class DataTab extends Tab {
   }
 
   get editable(): boolean {
-    return this.shape !== null && this.shape.readOnly === null;
+    // Dos motivos distintos para lo mismo: la relación no tiene con qué identificar una fila, o el
+    // perfil entero se abrió en solo lectura. La grilla los muestra igual.
+    return this.shape !== null && this.shape.readOnly === null && !isReadOnly(this.profileId);
   }
 
   get pending(): number {
@@ -209,6 +212,9 @@ export class DataTab extends Tab {
     const shape = this.shape;
     const changes = this.changes();
     if (!shape || changes.length === 0) return;
+    if (!(await confirmMutation(this.profileId, `Se van a aplicar ${changes.length} cambios.`))) {
+      return;
+    }
 
     this.saving = true;
     this.error = null;

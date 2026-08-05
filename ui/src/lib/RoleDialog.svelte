@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
@@ -81,6 +82,8 @@
       onsaved();
       return;
     }
+
+    if (!(await confirmMutation(profileId, "Se va a modificar un rol del servidor."))) return;
 
     saving = true;
     try {

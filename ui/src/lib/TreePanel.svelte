@@ -2,7 +2,8 @@
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
-  import { GROUP_LOOK, lookOf, tagLook } from "./badges";
+  import { environmentOf, isReadOnly } from "./access.svelte";
+  import { envLook, GROUP_LOOK, lookOf, READ_ONLY_LOOK, tagLook } from "./badges";
   import { explorer, visibleRows, type Row } from "./explorer.svelte";
   import { describeError, folderOf } from "./ipc";
 
@@ -322,6 +323,12 @@
 
           <Icon name={look.icon} class={look.tone} />
 
+          {#if isServer && isReadOnly(row.profileId)}
+            <span class="shrink-0 muted" title={READ_ONLY_LOOK.title}>
+              <Icon name={READ_ONLY_LOOK.icon} size={11} />
+            </span>
+          {/if}
+
           <!--
             El nombre es lo que identifica la fila, así que cede espacio último. El detalle se
             achica primero: sin esto, un host largo dejaba el nombre del servidor en dos letras.
@@ -347,6 +354,13 @@
             {@const badge = tagLook(tag)}
             <span class="tag {badge.tone} shrink-0" title={badge.title}>{badge.label}</span>
           {/each}
+
+          <!-- El entorno del servidor se ve en la misma fila que su nombre: es donde el usuario
+               elige a qué se conecta, y es el único momento en que puede elegir otro. -->
+          {#if isServer && environmentOf(row.profileId)}
+            {@const badge = envLook(environmentOf(row.profileId)!)}
+            <span class="tag {badge.tone} shrink-0" title={badge.title}>{badge.label}</span>
+          {/if}
 
           {#if row.detail && !isFolder}
             <span class="min-w-0 shrink-[100] truncate text-xs muted" title={row.detail}>

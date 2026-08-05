@@ -34,6 +34,7 @@
 
 <script lang="ts">
   import { untrack } from "svelte";
+  import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
   import SqlPreview from "./SqlPreview.svelte";
@@ -224,6 +225,8 @@
       onsaved();
       return;
     }
+
+    if (!(await confirmMutation(profileId, "Se van a modificar privilegios."))) return;
 
     saving = true;
     try {

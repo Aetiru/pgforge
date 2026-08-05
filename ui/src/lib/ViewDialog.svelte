@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
   import SqlEditor from "./SqlEditor.svelte";
@@ -110,6 +111,8 @@
       error = problem;
       return;
     }
+
+    if (!(await confirmMutation(profileId, "Se va a modificar una vista."))) return;
 
     saving = true;
     try {

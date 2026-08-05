@@ -1,5 +1,6 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
+  import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
   import { bytes, duration } from "./format";
@@ -94,6 +95,8 @@
   }
 
   async function run() {
+    if (!(await confirmMutation(profileId, "Se van a insertar filas en la tabla."))) return;
+
     progress = null;
     outcome = null;
     failed = false;
