@@ -14,7 +14,7 @@ pub mod history;
 pub mod split;
 
 pub use completion::{Relation, SchemaSnapshot};
-pub use exec::{Limits, Outcome, QuerySession, DEFAULT_MAX_ROWS};
+pub use exec::{Limits, Outcome, QuerySession, TxStatus, DEFAULT_MAX_ROWS};
 pub use explain::{ExplainOptions, Plan, PlanNode};
 pub use history::{HistoryStore, NewEntry};
 pub use split::{at_cursor, split, Statement};

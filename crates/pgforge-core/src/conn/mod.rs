@@ -8,7 +8,7 @@ pub mod tls;
 pub mod tunnel;
 
 pub use manager::{ConnectionManager, DatabaseInfo, Notice, ServerHandle, Session};
-pub use profile::{normalize_group, ConnectionProfile, ProfileId, SshTunnel, SslMode};
+pub use profile::{normalize_group, ConnectionProfile, Environment, ProfileId, SshTunnel, SslMode};
 pub use secret::Password;
 pub use store::ProfileStore;
 pub use tunnel::HostKeyPolicy;

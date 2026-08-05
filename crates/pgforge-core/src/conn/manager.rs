@@ -73,10 +73,20 @@ fn build_config(
         }
     });
 
-    // Se aplica en el arranque de la sesión en vez de con un `SET` posterior, así también cubre a
-    // las conexiones que el pool recicla.
+    // Los parámetros de sesión se aplican en el arranque en vez de con un `SET` posterior, así
+    // también cubren a las conexiones que el pool recicla. Van todos juntos en un solo llamado
+    // porque `options` reemplaza lo anterior: dos llamados dejarían solo el último.
+    let mut options = Vec::new();
     if let Some(ms) = statement_timeout_ms {
-        cfg.options(format!("-c statement_timeout={ms}"));
+        options.push(format!("-c statement_timeout={ms}"));
+    }
+    // Que el rechazo lo haga el servidor es lo que hace de esto una garantía y no un recordatorio:
+    // vale igual para el explorador, el editor de SQL, la importación y el mantenimiento.
+    if profile.read_only {
+        options.push("-c default_transaction_read_only=on".to_owned());
+    }
+    if !options.is_empty() {
+        cfg.options(options.join(" "));
     }
 
     cfg

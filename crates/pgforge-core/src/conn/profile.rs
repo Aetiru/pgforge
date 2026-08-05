@@ -70,6 +70,18 @@ impl SslMode {
     }
 }
 
+/// Para qué se usa el servidor.
+///
+/// No cambia cómo se conecta: existe para que producción no se vea igual que una base de pruebas en
+/// el árbol, y para pedir una confirmación de más antes de modificar algo en ella.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Environment {
+    Dev,
+    Test,
+    Prod,
+}
+
 /// Túnel SSH.
 ///
 /// Todavía no se establece ninguna conexión con esto: está en el modelo desde el principio porque
@@ -120,10 +132,26 @@ pub struct ConnectionProfile {
     /// Si la contraseña debe guardarse en el almacén de credenciales del sistema.
     #[serde(default)]
     pub save_password: bool,
+    /// Para qué sirve el servidor. `None` es «sin marcar», que es lo que trae un perfil viejo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<Environment>,
+    /// Abre toda conexión al servidor con `default_transaction_read_only`, así el rechazo de las
+    /// escrituras lo hace el servidor y no una lista de operaciones que hay que acordarse de tapar.
+    #[serde(default)]
+    pub read_only: bool,
+    /// Valor inicial del autocommit de cada pestaña de consulta; la pestaña después lo alterna sola.
+    #[serde(default = "default_autocommit")]
+    pub autocommit: bool,
 }
 
 fn default_connect_timeout() -> u64 {
     10
+}
+
+/// Un perfil viejo, y el editor de SQL de cualquier otra herramienta, trabajan en autocommit: pedir
+/// transacción explícita es lo que se elige, no lo que se hereda sin enterarse.
+fn default_autocommit() -> bool {
+    true
 }
 
 /// Normaliza el nombre de una carpeta de conexiones: sin espacios en los bordes, y una cadena
@@ -157,6 +185,9 @@ impl ConnectionProfile {
             statement_timeout_ms: None,
             tunnel: None,
             save_password: false,
+            environment: None,
+            read_only: false,
+            autocommit: default_autocommit(),
         }
     }
 
@@ -218,6 +249,9 @@ impl ConnectionProfile {
             statement_timeout_ms: None,
             tunnel: None,
             save_password: false,
+            environment: None,
+            read_only: false,
+            autocommit: default_autocommit(),
         };
 
         Ok((profile, password))
@@ -274,5 +308,9 @@ mod tests {
         assert_eq!(profile.ssl_mode, SslMode::Prefer);
         assert_eq!(profile.connect_timeout_secs, 10);
         assert!(profile.tunnel.is_none());
+        assert!(profile.environment.is_none());
+        assert!(!profile.read_only);
+        // Un perfil sin el campo no puede quedar esperando un COMMIT que nunca escribió nadie.
+        assert!(profile.autocommit);
     }
 }

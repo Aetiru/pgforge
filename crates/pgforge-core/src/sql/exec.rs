@@ -18,7 +18,7 @@ use tokio::sync::mpsc;
 use tokio_postgres::{CancelToken, SimpleQueryMessage};
 
 use crate::conn::{Notice, ServerHandle, Session};
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 /// Techo de filas que se guardan en memoria por omisión.
 ///
@@ -67,6 +67,34 @@ pub enum Outcome {
         seconds: f64,
     },
 }
+
+/// Estado de la transacción de una pestaña de consulta.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TxStatus {
+    /// Sin transacción abierta: cada sentencia se confirma sola.
+    Idle,
+    /// Hay una transacción en curso, con cambios que todavía nadie confirmó.
+    Active,
+    /// Una sentencia falló dentro de la transacción: el servidor rechaza todo hasta el `ROLLBACK`.
+    Failed,
+}
+
+/// Sonda con la que se averigua si hay una transacción abierta.
+///
+/// `now()` es el instante en que empezó la transacción y `statement_timestamp()` el de la sentencia
+/// que corre. Si la transacción se abrió en una ejecución anterior, difieren; en autocommit la sonda
+/// es la primera sentencia de su propia transacción y coinciden. Y si la transacción está abortada,
+/// la sonda falla con `25P02`, que es justamente el tercer estado.
+///
+/// Parece un rodeo porque lo es: el estado viaja en cada `ReadyForQuery` del protocolo, pero
+/// `tokio-postgres` descarta ese byte y no lo expone. Mientras siga siendo así, esta es la forma de
+/// saberlo sin llevar la cuenta a mano leyendo el SQL del usuario, que se rompe con el primer
+/// `SAVEPOINT` o el primer bloque `DO`.
+const TX_PROBE: &str = "SELECT now() <> statement_timestamp()";
+
+/// `in_failed_sql_transaction`: la transacción está abierta pero abortada.
+const IN_FAILED_SQL_TRANSACTION: &str = "25P02";
 
 /// Conexión propia de una pestaña de consulta.
 ///
@@ -159,6 +187,60 @@ impl QuerySession {
                 seconds,
             }
         })
+    }
+
+    /// Si hay o no una transacción abierta en esta sesión, y si está sana.
+    pub async fn tx_status(&self) -> Result<TxStatus> {
+        match self.session.client().simple_query(TX_PROBE).await {
+            Ok(messages) => {
+                let open = messages
+                    .iter()
+                    .find_map(|message| match message {
+                        SimpleQueryMessage::Row(row) => Some(row.get(0) == Some("t")),
+                        _ => None,
+                    })
+                    .unwrap_or(false);
+
+                Ok(if open {
+                    TxStatus::Active
+                } else {
+                    TxStatus::Idle
+                })
+            }
+            Err(error) => {
+                let error = Error::from(error);
+                match &error {
+                    Error::Database { code, .. } if code == IN_FAILED_SQL_TRANSACTION => {
+                        Ok(TxStatus::Failed)
+                    }
+                    _ => Err(error),
+                }
+            }
+        }
+    }
+
+    /// Abre una transacción si no había ninguna, y dice en qué estado quedó la sesión.
+    ///
+    /// Es lo que implementa «autocommit apagado»: PostgreSQL no tiene modo autocommit, el `BEGIN` lo
+    /// pone el cliente antes de la primera sentencia.
+    pub async fn begin_if_needed(&self) -> Result<TxStatus> {
+        let status = self.tx_status().await?;
+        if status != TxStatus::Idle {
+            return Ok(status);
+        }
+
+        self.run("BEGIN", Limits::default()).await?;
+        Ok(TxStatus::Active)
+    }
+
+    /// Confirma la transacción abierta. Sin transacción, el servidor avisa por NOTICE y no falla.
+    pub async fn commit(&self) -> Result<()> {
+        self.run("COMMIT", Limits::default()).await.map(|_| ())
+    }
+
+    /// Revierte la transacción abierta, incluso si está abortada.
+    pub async fn rollback(&self) -> Result<()> {
+        self.run("ROLLBACK", Limits::default()).await.map(|_| ())
     }
 }
 
