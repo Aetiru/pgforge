@@ -17,6 +17,7 @@ use tokio_postgres::{AsyncMessage, CancelToken, Client, Connection, NoTls, Socke
 use super::profile::{ConnectionProfile, ProfileId, SslMode};
 use super::secret::Password;
 use super::tls;
+use super::tunnel::{self, HostKeyPolicy, LocalForward};
 use crate::caps::{ServerCaps, ServerVersion, MIN_SUPPORTED_VERSION_NUM};
 use crate::error::{Error, Result};
 
@@ -39,15 +40,20 @@ fn map_pool_error(err: PoolError) -> Error {
 /// `statement_timeout` se pasa aparte porque no todos los usos quieren el mismo: el explorador
 /// respeta el del perfil, el monitoreo impone uno corto, y una tarea de mantenimiento no puede
 /// tener ninguno o el servidor mataría el `VACUUM` a mitad de camino.
+///
+/// `host`/`port` son el destino **efectivo**, no siempre el del perfil: cuando hay túnel SSH apuntan
+/// al puerto local del forward, y la conexión llega al servidor real a través del bastión.
 fn build_config(
     profile: &ConnectionProfile,
     password: Option<&Password>,
+    host: &str,
+    port: u16,
     database: &str,
     statement_timeout_ms: Option<u64>,
 ) -> tokio_postgres::Config {
     let mut cfg = tokio_postgres::Config::new();
-    cfg.host(&profile.host)
-        .port(profile.port)
+    cfg.host(host)
+        .port(port)
         .user(&profile.user)
         .dbname(database)
         .application_name("pgforge")
@@ -76,18 +82,55 @@ fn build_config(
     cfg
 }
 
+/// Destino efectivo de una conexión: el host y puerto a los que de verdad se conecta el cliente.
+///
+/// Sin túnel coincide con el del perfil. Con túnel apunta al puerto local del forward y baja
+/// `verify_hostname`, porque la conexión termina en `127.0.0.1` y el nombre del certificado del
+/// servidor real nunca coincidiría con esa dirección.
+struct Endpoint {
+    host: String,
+    port: u16,
+    verify_hostname: bool,
+}
+
+impl Endpoint {
+    /// Destino efectivo de un servidor: el del forward si hay túnel, el del perfil si no.
+    fn resolve(profile: &ConnectionProfile, tunnel: Option<&LocalForward>) -> Self {
+        match tunnel {
+            Some(forward) => Endpoint {
+                host: "127.0.0.1".to_owned(),
+                port: forward.local_port(),
+                verify_hostname: false,
+            },
+            None => Endpoint {
+                host: profile.host.clone(),
+                port: profile.port,
+                verify_hostname: true,
+            },
+        }
+    }
+}
+
 fn build_pool(
     profile: &ConnectionProfile,
     password: Option<&Password>,
+    endpoint: &Endpoint,
     database: &str,
 ) -> Result<Pool> {
-    let cfg = build_config(profile, password, database, profile.statement_timeout_ms);
+    let cfg = build_config(
+        profile,
+        password,
+        &endpoint.host,
+        endpoint.port,
+        database,
+        profile.statement_timeout_ms,
+    );
 
     let manager_config = ManagerConfig {
         recycling_method: RecyclingMethod::Fast,
     };
 
-    let manager = match tls::connector(profile)? {
+    let manager = match tls::connector(profile, endpoint.verify_hostname)? {
         Some(connector) => Manager::from_config(cfg, connector, manager_config),
         None => Manager::from_config(cfg, NoTls, manager_config),
     };
@@ -209,6 +252,9 @@ pub struct ServerHandle {
     pub profile: ConnectionProfile,
     pub caps: ServerCaps,
     password: Option<Password>,
+    /// Forward SSH activo, si el perfil tiene túnel. Un solo túnel por servidor, compartido por los
+    /// pools de todas sus bases. Al soltarse el handle se cierra, cerrando el túnel con él.
+    tunnel: Option<LocalForward>,
     pools: Mutex<HashMap<String, Pool>>,
 }
 
@@ -216,6 +262,12 @@ impl ServerHandle {
     /// Base a la que apunta el perfil, usada cuando no se indica otra.
     pub fn default_database(&self) -> &str {
         &self.profile.database
+    }
+
+    /// Destino efectivo al que conectan sus pools y sesiones: el del túnel si lo hay, el del perfil
+    /// si no.
+    fn endpoint(&self) -> Endpoint {
+        Endpoint::resolve(&self.profile, self.tunnel.as_ref())
     }
 
     /// Credencial con la que se abrió la conexión, para las herramientas externas que necesitan
@@ -232,7 +284,12 @@ impl ServerHandle {
             match pools.get(database) {
                 Some(pool) => pool.clone(),
                 None => {
-                    let pool = build_pool(&self.profile, self.password.as_ref(), database)?;
+                    let pool = build_pool(
+                        &self.profile,
+                        self.password.as_ref(),
+                        &self.endpoint(),
+                        database,
+                    )?;
                     pools.insert(database.to_owned(), pool.clone());
                     pool
                 }
@@ -250,14 +307,17 @@ impl ServerHandle {
         database: &str,
         statement_timeout_ms: Option<u64>,
     ) -> Result<Session> {
+        let endpoint = self.endpoint();
         let config = build_config(
             &self.profile,
             self.password.as_ref(),
+            &endpoint.host,
+            endpoint.port,
             database,
             statement_timeout_ms,
         );
 
-        let session = match tls::connector(&self.profile)? {
+        let session = match tls::connector(&self.profile, endpoint.verify_hostname)? {
             Some(connector) => {
                 let (client, connection) = config.connect(connector).await?;
                 spawn_connection(client, connection)
@@ -276,7 +336,9 @@ impl ServerHandle {
     /// La cancelación viaja por una conexión nueva —la original está ocupada— y esa conexión tiene
     /// que usar el mismo cifrado que el perfil, o un servidor que exige SSL la va a rechazar.
     pub async fn cancel(&self, token: &CancelToken) -> Result<()> {
-        match tls::connector(&self.profile)? {
+        // La cancelación abre una conexión nueva; a través de un túnel también viaja por el forward,
+        // porque el token guarda la dirección local a la que conectó la sesión original.
+        match tls::connector(&self.profile, self.endpoint().verify_hostname)? {
             Some(connector) => token.cancel_query(connector).await?,
             None => token.cancel_query(NoTls).await?,
         }
@@ -341,8 +403,40 @@ impl ConnectionManager {
         profile: ConnectionProfile,
         password: Option<Password>,
     ) -> Result<Arc<ServerHandle>> {
+        self.connect_with_ssh(profile, password, None, HostKeyPolicy::Strict)
+            .await
+    }
+
+    /// Igual que [`ConnectionManager::connect`], pero permite pasar el secreto del túnel SSH y la
+    /// política de verificación de la clave del host.
+    ///
+    /// El túnel, si el perfil lo trae, se levanta **antes** de construir el pool: recién con el
+    /// forward abierto se conoce el puerto local al que apuntan las conexiones. El túnel queda dentro
+    /// del `ServerHandle`, así que vive lo mismo que el servidor y se cierra cuando este se cierra.
+    pub async fn connect_with_ssh(
+        &self,
+        profile: ConnectionProfile,
+        password: Option<Password>,
+        ssh_secret: Option<Password>,
+        host_key_policy: HostKeyPolicy,
+    ) -> Result<Arc<ServerHandle>> {
+        let tunnel = match &profile.tunnel {
+            Some(spec) => Some(
+                tunnel::open_tunnel(
+                    spec,
+                    ssh_secret.as_ref(),
+                    &profile.host,
+                    profile.port,
+                    host_key_policy,
+                )
+                .await?,
+            ),
+            None => None,
+        };
+
+        let endpoint = Endpoint::resolve(&profile, tunnel.as_ref());
         let database = profile.database.clone();
-        let pool = build_pool(&profile, password.as_ref(), &database)?;
+        let pool = build_pool(&profile, password.as_ref(), &endpoint, &database)?;
 
         let caps = {
             let client = pool.get().await.map_err(map_pool_error)?;
@@ -354,6 +448,7 @@ impl ConnectionManager {
             profile,
             caps,
             password,
+            tunnel,
             pools: Mutex::new(HashMap::from([(database, pool)])),
         });
 

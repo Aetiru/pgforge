@@ -30,8 +30,8 @@ cargo test -p pgforge-core -p pgforge-cli
 ```
 
 `src-tauri` se excluye del clippy/test de CI: se verifica compilándolo (`pnpm tauri build --no-bundle`)
-en las tres plataformas. El job del core corre contra PostgreSQL **13 y 17** — los dos extremos del
-rango soportado— porque es ahí donde se nota un gating por versión mal puesto.
+en las tres plataformas. El job del core corre contra PostgreSQL **13 y 17** — los dos extremos del rango soportado— porque es ahí donde se
+nota un gating por versión mal puesto.
 
 La CLI es la forma rápida de ejercitar el core sin levantar la ventana, y sirve para comprobar a
 mano lo que un test todavía no cubre:
@@ -91,6 +91,12 @@ en vez de resolverlo en el sitio de uso.
 `ServerCaps` también lleva los permisos del rol conectado (`is_superuser`, `can_signal_backends`,
 `can_read_all_stats`), para poder avisar antes de intentar algo que va a fallar.
 
+Lo que depende de una **extensión** instalada (no de la versión) se gatea distinto: un `has_*`
+consulta `pg_extension` y la operación devuelve un `Error::Config` claro si falta —así lo hacen
+`pg_stat_statements` para las consultas costosas y `pgstattuple` para la estimación de bloat
+(`monitor::stats::bloat`, que usa `pgstattuple_approx` sobre las tablas más grandes en vez de
+recorrerlas enteras)—.
+
 ### Conexiones
 
 `ConnectionManager` mantiene, por servidor conectado, un pool por cada base abierta (el árbol salta
@@ -104,6 +110,20 @@ monitoreo uno corto, y una tarea de mantenimiento ninguno (o el servidor matarí
 Las contraseñas nunca van a los archivos de la aplicación: el perfil guarda solo los datos del
 servidor y la contraseña va al almacén del sistema operativo vía `keyring`, solo si se pide
 recordarla.
+
+**Túnel SSH** (`conn::tunnel`, con `russh`): cuando el perfil trae `tunnel`, `connect_with_ssh`
+levanta un **forward local** (`TcpListener` en `127.0.0.1:<efímero>` empalmado a un canal
+`direct-tcpip`) *antes* de armar el pool, y el resto del núcleo conecta a ese puerto local sin
+enterarse del túnel —el TLS de PostgreSQL sigue siendo de extremo a extremo—. El `LocalForward` vive
+dentro del `ServerHandle`, así que un túnel por servidor se comparte entre los pools de sus bases y
+se cierra cuando se cierra el servidor. `russh` usa el backend **`ring`** a propósito (no
+`aws-lc-rs`, que pediría NASM/cmake en el CI). Dos consecuencias: por un túnel `verify-full` degrada
+a validar solo la cadena (la conexión termina en `127.0.0.1`, el nombre nunca coincide), lo resuelve
+`tls::connector(profile, verify_hostname)`; y la clave del host se verifica contra `known_hosts` con
+`HostKeyPolicy` —un host desconocido o con clave cambiada devuelve `Error::SshHostKey` con la huella
+para que la interfaz confirme, nunca se acepta a ciegas—. El secreto SSH va al `keyring` bajo una
+clave aparte (`{id}:ssh`), separado del de la base. El extremo a extremo con un `sshd` real es prueba
+manual (`pgforge tunnel …`), no entra en `PGFORGE_TEST_URLS`.
 
 Los servidores se agrupan en **carpetas de conexiones**: el campo `group` del perfil. No hay una
 lista de carpetas guardada aparte —una carpeta es el nombre que comparten unos perfiles—, así que
@@ -139,10 +159,17 @@ cadena vacía), no como tipos nativos de JavaScript.
 ### Vista previa antes de aplicar
 
 Toda mutación tiene dos comandos: uno que **genera el SQL** y otro que lo ejecuta — `ddl_preview` /
-`ddl_apply`, `data_preview` / `data_apply`, `index_preview` / `index_create`, `view_preview`,
-`trigger_preview`, `role_preview`, `privilege_preview`, `maintenance_plan` / `maintenance_run`,
-`backup_plan` / `backup_run` y `restore_plan` / `restore_run` (que en vez de SQL generan la línea de
-comando de `pg_dump` y `pg_restore`).
+`ddl_apply`, `data_preview` / `data_apply`, `data_export_preview` / `data_export_run`,
+`data_import_preview` / `data_import_run` (que generan el `COPY … TO/FROM STDIN` exacto, ver
+`data::io`), `index_preview` / `index_create`, `view_preview`, `trigger_preview`, `role_preview`,
+`privilege_preview`, `maintenance_plan` / `maintenance_run`, `backup_plan` / `backup_run` y
+`restore_plan` / `restore_run` (que en vez de SQL generan la línea de comando de `pg_dump` y
+`pg_restore`).
+
+El import/export mueve datos en streaming por trozos (`copy_out`/`copy_in`), no acumula el archivo
+en memoria, y reporta el avance por un `Channel`; el import corre en una sola transacción para no
+dejar la tabla a medias. El formato binario no es portable entre versiones distintas —la interfaz lo
+advierte—.
 
 La función generadora es **pura** a propósito: es lo único verificable sin servidor, y garantiza que
 lo que la interfaz muestra es exactamente lo que se va a ejecutar, no una reconstrucción parecida.

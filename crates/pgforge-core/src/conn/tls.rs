@@ -23,7 +23,14 @@ fn provider() -> Arc<CryptoProvider> {
 /// Construye el conector TLS que corresponde al modo del perfil.
 ///
 /// Devuelve `None` cuando el modo es `disable`, en cuyo caso la conexión va en claro.
-pub fn connector(profile: &ConnectionProfile) -> Result<Option<MakeRustlsConnect>> {
+///
+/// `verify_hostname` en `false` degrada `verify-full` a validar solo la cadena del certificado, sin
+/// exigir que el nombre coincida. Es lo que corresponde cuando se llega por un túnel SSH: la conexión
+/// termina en `127.0.0.1`, que nunca va a coincidir con el nombre del certificado del servidor real.
+pub fn connector(
+    profile: &ConnectionProfile,
+    verify_hostname: bool,
+) -> Result<Option<MakeRustlsConnect>> {
     if profile.ssl_mode == SslMode::Disable {
         return Ok(None);
     }
@@ -32,7 +39,7 @@ pub fn connector(profile: &ConnectionProfile) -> Result<Option<MakeRustlsConnect
         SslMode::Disable => unreachable!("descartado arriba"),
         SslMode::Prefer | SslMode::Require => client_config_without_verification(),
         SslMode::VerifyCa => client_config_verifying(profile, false)?,
-        SslMode::VerifyFull => client_config_verifying(profile, true)?,
+        SslMode::VerifyFull => client_config_verifying(profile, verify_hostname)?,
     };
 
     Ok(Some(MakeRustlsConnect::new(config)))

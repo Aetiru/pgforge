@@ -14,6 +14,8 @@ export type CoreError =
       hint: string | null;
       position: number | null;
     }
+  /** La clave del host SSH no está en `known_hosts`, o cambió. La interfaz muestra la huella. */
+  | { kind: "sshHostKey"; host: string; fingerprint: string; changed: boolean }
   | { kind: "other"; message: string };
 
 export type SslMode = "disable" | "prefer" | "require" | "verifyCa" | "verifyFull";
@@ -134,8 +136,12 @@ export const appInfo = () => invoke<AppInfo>("app_info");
 
 export const listProfiles = () => invoke<ConnectionProfile[]>("list_profiles");
 
-export const saveProfile = (profile: ConnectionProfile, password?: string) =>
-  invoke<ConnectionProfile>("save_profile", { profile, password: password || null });
+export const saveProfile = (profile: ConnectionProfile, password?: string, sshPassword?: string) =>
+  invoke<ConnectionProfile>("save_profile", {
+    profile,
+    password: password || null,
+    sshPassword: sshPassword || null,
+  });
 
 export const deleteProfile = (id: string) => invoke<void>("delete_profile", { id });
 
@@ -146,8 +152,29 @@ export const listGroups = () => invoke<string[]>("list_groups");
 export const renameGroup = (from: string, to?: string) =>
   invoke<number>("rename_group", { from, to: to ?? null });
 
-export const connect = (id: string, password?: string) =>
-  invoke<Connected>("connect", { id, password: password || null });
+export const connect = (
+  id: string,
+  password?: string,
+  sshPassword?: string,
+  trustHostKey?: boolean,
+) =>
+  invoke<Connected>("connect", {
+    id,
+    password: password || null,
+    sshPassword: sshPassword || null,
+    trustHostKey: trustHostKey ?? null,
+  });
+
+/**
+ * Prueba el túnel SSH del perfil sin conectar a la base. Devuelve el error `sshHostKey` si la clave
+ * del bastión no está verificada, igual que `connect`, para reusar el mismo flujo de confirmación.
+ */
+export const sshTest = (profile: ConnectionProfile, sshPassword?: string, trustHostKey?: boolean) =>
+  invoke<void>("ssh_test", {
+    profile,
+    sshPassword: sshPassword || null,
+    trustHostKey: trustHostKey ?? null,
+  });
 
 export const disconnect = (id: string) => invoke<void>("disconnect", { id });
 
@@ -1457,9 +1484,23 @@ export function describeError(error: unknown): string {
       return `Permiso insuficiente: ${e.message}`;
     case "database":
       return e.hint ? `${e.message} (${e.hint})` : e.message;
+    case "sshHostKey":
+      return e.changed
+        ? `La clave del host SSH ${e.host} cambió (huella ${e.fingerprint}). Podría ser un intermediario.`
+        : `El host SSH ${e.host} no está verificado (huella ${e.fingerprint}).`;
     case "other":
       return e.message;
     default:
       return String(error);
   }
+}
+
+/** Devuelve el error de clave de host SSH sin verificar, o `null` si el error es de otro tipo. */
+export function sshHostKey(
+  error: unknown,
+): { host: string; fingerprint: string; changed: boolean } | null {
+  const e = error as CoreError;
+  return e?.kind === "sshHostKey"
+    ? { host: e.host, fingerprint: e.fingerprint, changed: e.changed }
+    : null;
 }

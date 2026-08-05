@@ -15,4 +15,5 @@ path = "src/main.rs"
 [dependencies]
 clap = { version = "4.5.61", features = ["derive"] }
 pgforge-core.workspace = true
-tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }
+# `signal` deja que `pgforge tunnel` espere Ctrl-C para cerrar el forward de forma ordenada.
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "signal"] }

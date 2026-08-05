@@ -14,7 +14,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 use pgforge_core::backup::restore::{self, RestoreOptions};
 use pgforge_core::backup::tools::Tool;
 use pgforge_core::backup::{self, BackupOptions, Format};
-use pgforge_core::conn::{ConnectionManager, ConnectionProfile, ServerHandle};
+use pgforge_core::conn::{
+    tunnel, ConnectionManager, ConnectionProfile, HostKeyPolicy, Password, ServerHandle, SshTunnel,
+};
 use pgforge_core::data;
 use pgforge_core::introspect::{self, NodeKind, TreeNode, TreeOptions};
 use pgforge_core::sql::{self, ExplainOptions, Limits, Outcome, QuerySession};
@@ -218,6 +220,34 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+
+    /// Abre un túnel SSH a un servidor y deja el puerto local escuchando, para probarlo a mano.
+    ///
+    /// El secreto SSH (contraseña del bastión o frase de la clave) se lee de la variable de entorno
+    /// PGFORGE_SSH_PASSWORD, para no dejarlo en el historial de comandos.
+    Tunnel {
+        /// Host del bastión SSH.
+        #[arg(long)]
+        ssh_host: String,
+        #[arg(long, default_value_t = 22)]
+        ssh_port: u16,
+        #[arg(long)]
+        ssh_user: String,
+        /// Clave privada. Si se omite, se autentica por contraseña.
+        #[arg(long)]
+        key: Option<PathBuf>,
+        /// Host del servidor destino, tal como lo ve el bastión.
+        #[arg(long)]
+        target_host: String,
+        #[arg(long, default_value_t = 5432)]
+        target_port: u16,
+        /// Acepta y registra en known_hosts una clave de host desconocida, en vez de rechazarla.
+        #[arg(long)]
+        trust: bool,
+        /// Solo prueba el túnel y sale, sin dejar el puerto abierto.
+        #[arg(long)]
+        test: bool,
+    },
 }
 
 /// Los formatos de `COPY` que la CLI expone.
@@ -382,6 +412,30 @@ async fn main() -> ExitCode {
             database,
             dry_run,
         } => run_import(&url, file, &table, format, header, database, dry_run).await,
+        Command::Tunnel {
+            ssh_host,
+            ssh_port,
+            ssh_user,
+            key,
+            target_host,
+            target_port,
+            trust,
+            test,
+        } => {
+            run_tunnel(
+                SshTunnel {
+                    host: ssh_host,
+                    port: ssh_port,
+                    user: ssh_user,
+                    private_key: key,
+                },
+                &target_host,
+                target_port,
+                trust,
+                test,
+            )
+            .await
+        }
     };
 
     match result {
@@ -614,6 +668,45 @@ fn split_qualified(name: &str) -> (String, String) {
         Some((schema, table)) => (schema.to_owned(), table.to_owned()),
         None => ("public".to_owned(), name.to_owned()),
     }
+}
+
+/// Abre —o solo prueba— un túnel SSH. Sirve para ejercitar el forward sin levantar la ventana, que
+/// es la única forma de probarlo de punta a punta (el test de integración no incluye un `sshd`).
+async fn run_tunnel(
+    spec: SshTunnel,
+    target_host: &str,
+    target_port: u16,
+    trust: bool,
+    test: bool,
+) -> Result<()> {
+    // El secreto va por entorno, no por argumento: los argumentos quedan en el historial del shell.
+    let secret = std::env::var("PGFORGE_SSH_PASSWORD")
+        .ok()
+        .map(Password::new);
+    let policy = if trust {
+        HostKeyPolicy::TrustOnFirstUse
+    } else {
+        HostKeyPolicy::Strict
+    };
+
+    if test {
+        tunnel::test_connection(&spec, secret.as_ref(), target_host, target_port, policy).await?;
+        println!("túnel OK: el bastión alcanza {target_host}:{target_port}");
+        return Ok(());
+    }
+
+    let forward =
+        tunnel::open_tunnel(&spec, secret.as_ref(), target_host, target_port, policy).await?;
+    let port = forward.local_port();
+    println!("túnel abierto: 127.0.0.1:{port} -> {target_host}:{target_port}");
+    println!("conectá con: pgforge query --url postgres://usuario@127.0.0.1:{port}/base --sql \"SELECT 1\"");
+    println!("Ctrl-C para cerrar el túnel.");
+
+    tokio::signal::ctrl_c()
+        .await
+        .map_err(|e| Error::Ssh(format!("no se pudo esperar la señal de cierre: {e}")))?;
+    println!("cerrando el túnel.");
+    Ok(())
 }
 
 /// Tamaño legible. La interfaz tiene su propia versión en `format.ts`; acá alcanza con esto.

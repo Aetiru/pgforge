@@ -21,6 +21,7 @@ pub fn run() {
             commands::servers::save_profile,
             commands::servers::delete_profile,
             commands::servers::connect,
+            commands::servers::ssh_test,
             commands::servers::disconnect,
             commands::servers::connected_servers,
             commands::schema::tree_children,

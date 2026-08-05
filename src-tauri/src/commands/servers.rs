@@ -1,11 +1,21 @@
 //! Perfiles de conexión y estado de los servidores.
 
-use pgforge_core::conn::store;
+use pgforge_core::conn::{store, tunnel, HostKeyPolicy};
 use pgforge_core::{ConnectionProfile, Error, Password, ProfileId, Result, ServerCaps};
 use serde::Serialize;
 use tauri::State;
 
 use crate::state::AppState;
+
+/// Traduce la confirmación de la interfaz en una política de verificación de host key. `Some(true)`
+/// llega solo después de que el usuario aceptó la huella; en cualquier otro caso se es estricto.
+fn host_key_policy(trust_host_key: Option<bool>) -> HostKeyPolicy {
+    if trust_host_key == Some(true) {
+        HostKeyPolicy::TrustOnFirstUse
+    } else {
+        HostKeyPolicy::Strict
+    }
+}
 
 #[tauri::command]
 pub async fn list_profiles(state: State<'_, AppState>) -> Result<Vec<ConnectionProfile>> {
@@ -35,10 +45,19 @@ pub async fn save_profile(
     state: State<'_, AppState>,
     profile: ConnectionProfile,
     password: Option<String>,
+    ssh_password: Option<String>,
 ) -> Result<ConnectionProfile> {
     match (&password, profile.save_password) {
         (Some(password), true) => store::store_password(profile.id, &Password::new(password))?,
         (_, false) => store::delete_password(profile.id)?,
+        _ => {}
+    }
+
+    // El secreto SSH (contraseña del bastión o frase de la clave) se guarda si el usuario lo escribió;
+    // si el perfil dejó de tener túnel, se limpia el que hubiera quedado para no dejar basura invisible.
+    match (&ssh_password, profile.tunnel.is_some()) {
+        (Some(secret), true) => store::store_ssh_secret(profile.id, &Password::new(secret))?,
+        (_, false) => store::delete_ssh_secret(profile.id)?,
         _ => {}
     }
 
@@ -62,11 +81,17 @@ pub struct Connected {
 
 /// Conecta el perfil. Si no se pasa contraseña se busca la guardada; si tampoco hay, se intenta
 /// sin ella (puede haber autenticación por confianza, por certificado o por ident).
+///
+/// Con un túnel SSH, `trustHostKey` en `true` llega solo tras confirmar la huella del bastión: la
+/// primera conexión a un host desconocido devuelve un error `sshHostKey` con la huella, y la interfaz
+/// vuelve a llamar con esta bandera para aceptarla y recordarla en `known_hosts`.
 #[tauri::command]
 pub async fn connect(
     state: State<'_, AppState>,
     id: ProfileId,
     password: Option<String>,
+    ssh_password: Option<String>,
+    trust_host_key: Option<bool>,
 ) -> Result<Connected> {
     let profile = state
         .store
@@ -81,11 +106,53 @@ pub async fn connect(
         None => store::load_password(id)?,
     };
 
-    let handle = state.manager.connect(profile.clone(), password).await?;
+    let ssh_secret = match ssh_password {
+        Some(secret) => Some(Password::new(secret)),
+        None => store::load_ssh_secret(id)?,
+    };
+
+    let handle = state
+        .manager
+        .connect_with_ssh(
+            profile.clone(),
+            password,
+            ssh_secret,
+            host_key_policy(trust_host_key),
+        )
+        .await?;
     Ok(Connected {
         profile,
         caps: handle.caps.clone(),
     })
+}
+
+/// Prueba el túnel SSH del perfil sin conectar a la base ni guardar nada: útil en el diálogo de
+/// conexión antes de aceptar. Devuelve el mismo error `sshHostKey` que `connect` si la clave del
+/// bastión no está verificada, para reusar el mismo flujo de confirmación.
+#[tauri::command]
+pub async fn ssh_test(
+    profile: ConnectionProfile,
+    ssh_password: Option<String>,
+    trust_host_key: Option<bool>,
+) -> Result<()> {
+    let spec = profile
+        .tunnel
+        .as_ref()
+        .ok_or_else(|| Error::Config("el perfil no tiene un túnel SSH configurado".to_owned()))?;
+
+    let ssh_secret = match ssh_password {
+        Some(secret) => Some(Password::new(secret)),
+        None => store::load_ssh_secret(profile.id)?,
+    };
+
+    tunnel::test_connection(
+        spec,
+        ssh_secret.as_ref(),
+        &profile.host,
+        profile.port,
+        host_key_policy(trust_host_key),
+    )
+    .await
 }
 
 #[tauri::command]

@@ -266,8 +266,8 @@ class Explorer {
     await this.refreshProfiles();
   }
 
-  async connect(profile: ConnectionProfile, password?: string) {
-    const result = await ipcConnect(profile.id, password);
+  async connect(profile: ConnectionProfile, password?: string, trustHostKey?: boolean) {
+    const result = await ipcConnect(profile.id, password, undefined, trustHostKey);
     this.caps[profile.id] = result.caps;
 
     const row = this.rowFor(profile.id);

@@ -26,8 +26,12 @@ de forma incremental y cada etapa entrega algo usable por sí sola:
 | 8 | Extensiones y datos externos (FDW) | listo |
 | 9 | Configuración del servidor (`pg_settings`) | listo |
 | 10 | Empaquetado y primera release | en curso |
+| 11 | Import/export de datos (`COPY`) | listo |
+| 12 | Túnel SSH (bastión) | listo |
+| 13 | Monitoreo: bloqueos, índices sin uso y bloat | listo |
 
-La replicación (física y lógica) queda fuera del alcance inicial.
+Las etapas 11 en adelante son la capa de mejoras posterior a la primera release; su plan está en
+[`plan-mejoras.md`](plan-mejoras.md). La replicación (física y lógica) queda fuera del alcance inicial.
 
 La etapa 6 cubre roles y membresías, GRANT/REVOKE sobre tablas, vistas, secuencias, funciones,
 esquemas, bases y columnas, privilegios por omisión (`ALTER DEFAULT PRIVILEGES`) y Row-Level
@@ -87,6 +91,11 @@ mandan. El restore no lee el formato plano: ese es un script SQL que se aplica c
 Nunca se guardan en los archivos de la aplicación. El archivo de conexiones solo tiene los datos
 del servidor; la contraseña va al almacén de credenciales del sistema operativo (Credential
 Manager, Keychain o Secret Service) y solo si se pide recordarla.
+
+El secreto de un túnel SSH (la contraseña del bastión o la frase de la clave privada) va al mismo
+almacén, bajo una clave aparte de la de la base. La clave del host del bastión se verifica contra el
+`known_hosts` del usuario: un host desconocido —o uno cuya clave cambió— pide confirmación mostrando
+la huella, nunca se acepta a ciegas.
 
 ## Desarrollo
 

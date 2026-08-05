@@ -100,6 +100,7 @@ impl ProfileStore {
     pub fn remove(&mut self, id: ProfileId) -> Result<()> {
         self.profiles.retain(|p| p.id != id);
         delete_password(id)?;
+        delete_ssh_secret(id)?;
         self.persist()
     }
 
@@ -123,6 +124,14 @@ fn entry(id: ProfileId) -> Result<keyring::Entry> {
     Ok(keyring::Entry::new(KEYRING_SERVICE, &id.to_string())?)
 }
 
+/// Entrada del secreto del túnel SSH (contraseña del bastión o frase de la clave privada).
+///
+/// Va bajo una cuenta distinta de la de la base —el mismo `ProfileId` con el sufijo `:ssh`— para no
+/// pisar la contraseña de PostgreSQL: son dos credenciales del mismo perfil y no se deben mezclar.
+fn ssh_entry(id: ProfileId) -> Result<keyring::Entry> {
+    Ok(keyring::Entry::new(KEYRING_SERVICE, &format!("{id}:ssh"))?)
+}
+
 pub fn store_password(id: ProfileId, password: &Password) -> Result<()> {
     entry(id)?.set_password(password.expose())?;
     Ok(())
@@ -139,6 +148,27 @@ pub fn load_password(id: ProfileId) -> Result<Option<Password>> {
 
 pub fn delete_password(id: ProfileId) -> Result<()> {
     match entry(id)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(Error::Credentials(e.to_string())),
+    }
+}
+
+pub fn store_ssh_secret(id: ProfileId, secret: &Password) -> Result<()> {
+    ssh_entry(id)?.set_password(secret.expose())?;
+    Ok(())
+}
+
+/// Devuelve `None` si el perfil no tiene secreto SSH guardado.
+pub fn load_ssh_secret(id: ProfileId) -> Result<Option<Password>> {
+    match ssh_entry(id)?.get_password() {
+        Ok(value) => Ok(Some(Password::new(value))),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(Error::Credentials(e.to_string())),
+    }
+}
+
+pub fn delete_ssh_secret(id: ProfileId) -> Result<()> {
+    match ssh_entry(id)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(Error::Credentials(e.to_string())),
     }

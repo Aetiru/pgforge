@@ -51,6 +51,20 @@ pub enum Error {
     #[error("configuración inválida: {0}")]
     Config(String),
 
+    #[error("no se pudo abrir el túnel SSH: {0}")]
+    Ssh(String),
+
+    /// La clave del host SSH no se pudo verificar contra `known_hosts`: o no estaba registrada, o
+    /// —peor— cambió respecto de la registrada. No es una falla de red ni de credenciales: la
+    /// interfaz muestra la huella y pide confirmación antes de confiar, en vez de aceptarla a ciegas.
+    #[error("la clave del host SSH {host} no está verificada (huella {fingerprint})")]
+    SshHostKey {
+        host: String,
+        fingerprint: String,
+        /// `true` si el host ya era conocido pero con otra clave: la señal de un posible intermediario.
+        changed: bool,
+    },
+
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -123,6 +137,14 @@ pub enum ErrorPayload {
         hint: Option<String>,
         position: Option<u32>,
     },
+    /// Clave de host SSH sin verificar. Va aparte de `Other` para que la interfaz la distinga y
+    /// muestre la huella en un diálogo de confirmación en lugar de un cartel de error.
+    #[serde(rename_all = "camelCase")]
+    SshHostKey {
+        host: String,
+        fingerprint: String,
+        changed: bool,
+    },
     Other {
         message: String,
     },
@@ -150,6 +172,15 @@ impl From<&Error> for ErrorPayload {
                 detail: detail.clone(),
                 hint: hint.clone(),
                 position: *position,
+            },
+            Error::SshHostKey {
+                host,
+                fingerprint,
+                changed,
+            } => ErrorPayload::SshHostKey {
+                host: host.clone(),
+                fingerprint: fingerprint.clone(),
+                changed: *changed,
             },
             other => ErrorPayload::Other {
                 message: other.to_string(),

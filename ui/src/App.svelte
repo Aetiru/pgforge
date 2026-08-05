@@ -23,6 +23,7 @@
     deleteProfile,
     describeError,
     formatVersion,
+    sshHostKey,
     type AppInfo,
     type ConnectionProfile,
   } from "./lib/ipc";
@@ -33,6 +34,17 @@
     null,
   );
   let confirmDelete = $state<ConnectionProfile | null>(null);
+  /**
+   * Confirmación de la clave del host de un bastión SSH sin verificar. Guarda la contraseña con la
+   * que se estaba conectando para reintentar tal cual una vez que el usuario acepta la huella.
+   */
+  let hostKey = $state<{
+    profile: ConnectionProfile;
+    host: string;
+    fingerprint: string;
+    changed: boolean;
+    password?: string;
+  } | null>(null);
   /** La carpeta de conexiones que se está renombrando. */
   let groupDialog = $state<string | null>(null);
   /** Abierto mientras se crea una carpeta nueva. */
@@ -73,14 +85,22 @@
     return explorer.profiles.find((profile) => profile.id === profileId) ?? null;
   }
 
-  async function connect(profile: ConnectionProfile, password?: string) {
+  async function connect(profile: ConnectionProfile, password?: string, trustHostKey?: boolean) {
     banner = null;
     try {
-      await explorer.connect(profile, password);
+      await explorer.connect(profile, password, trustHostKey);
       prompt = null;
+      hostKey = null;
     } catch (error) {
+      // Una clave de host SSH sin verificar no es una falla: es una pregunta de seguridad. Se
+      // muestra la huella y, si el usuario confía, se reintenta la misma conexión aceptándola.
+      const host = sshHostKey(error);
+      if (host) {
+        hostKey = { profile, password, ...host };
+        return;
+      }
       const message = describeError(error);
-      // Un fallo de autenticación no es un error para mostrar y olvidar: es una pregunta.
+      // Un fallo de autenticación tampoco es un error para mostrar y olvidar: es una pregunta.
       if (/contrase|password|authentication|autenticaci/i.test(message)) {
         prompt = { profile, message, password: "" };
       } else {
@@ -557,6 +577,23 @@
       </button>
     {/snippet}
   </Modal>
+{/if}
+
+{#if hostKey}
+  <Confirm
+    title="Clave del bastión SSH sin verificar"
+    message="El host {hostKey.host} {hostKey.changed
+      ? 'presentó una clave distinta de la registrada, lo que podría indicar un intermediario.'
+      : 'no está en tu archivo known_hosts.'} Huella SHA256: {hostKey.fingerprint}. ¿Confiar en esta clave y recordarla?"
+    confirmLabel={hostKey.changed ? "Confiar de todos modos" : "Confiar y conectar"}
+    danger={hostKey.changed}
+    onconfirm={() => {
+      const pending = hostKey;
+      hostKey = null;
+      if (pending) connect(pending.profile, pending.password, true);
+    }}
+    onclose={() => (hostKey = null)}
+  />
 {/if}
 
 {#if confirmDelete}
