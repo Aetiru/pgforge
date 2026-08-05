@@ -25,7 +25,7 @@ cargo test -p pgforge-core -p pgforge-cli
 cargo clippy -p pgforge-app --all-targets && cargo test -p pgforge-app   # necesita ui/dist
 ```
 
-De `src-tauri` no se prueba lo que toca red —eso vive en core y se prueba ahí—, pero sí sus comandos de **vista previa**, que son puros: `src-tauri/tests/preview.rs` los llama con la carga JSON tal como manda `ipc.ts`. Compilarlo exige que exista `ui/dist` (`generate_context!` lo verifica): correr `pnpm ui:build` antes. En CI ya lo dejó hecho el `pnpm tauri build --no-bundle` del mismo job, que además cubre las tres plataformas. Job del core corre contra PostgreSQL **13 y 17** —extremos del rango soportado— porque ahí se nota gating por versión mal puesto.
+De `src-tauri` no se prueba lo que toca red —eso vive en core y se prueba ahí—, pero sí sus comandos de **vista previa**, que son puros: `src-tauri/tests/preview.rs` los llama con la carga JSON tal como manda `ipc.ts`. Compilarlo exige que exista `ui/dist` (`generate_context!` lo verifica): correr `pnpm ui:build` antes. En CI ya lo dejó hecho el `pnpm tauri build --no-bundle` del mismo job, que además cubre las tres plataformas. Job del core corre contra **todo el rango soportado, PostgreSQL 13 a 17**, una instancia por versión, porque ahí se nota gating por versión mal puesto —los extremos atrapan lo que se sale del rango; las del medio, el salto de catálogo atado a una versión intermedia—.
 
 CLI = forma rápida de ejercitar core sin levantar ventana; sirve para comprobar a mano lo que test todavía no cubre:
 

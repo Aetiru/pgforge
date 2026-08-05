@@ -14,15 +14,17 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
-  # El núcleo y la CLI se prueban contra las versiones de PostgreSQL en los extremos del rango
-  # soportado: si el gating por versión está mal, falla acá y no en la máquina de un usuario.
+  # El núcleo y la CLI se prueban contra **todas** las versiones de PostgreSQL del rango soportado:
+  # si el gating por versión está mal, falla acá y no en la máquina de un usuario. Los extremos
+  # atrapan lo que se rompe al salir del rango; las del medio, el salto de catálogo que quedó atado
+  # a una versión intermedia y que 13 y 17 no distinguen.
   core:
     name: core (PostgreSQL ${{ matrix.postgres }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        postgres: ["13", "17"]
+        postgres: ["13", "14", "15", "16", "17"]
     services:
       postgres:
         image: postgres:${{ matrix.postgres }}
