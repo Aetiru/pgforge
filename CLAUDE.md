@@ -75,7 +75,11 @@ Lo que depende de **extensión** instalada (no de versión) se gatea distinto: u
 
 `ConnectionManager` mantiene, por servidor conectado, un pool por cada base abierta (árbol salta entre bases; reconectar en cada salto sería inutilizable). Aparte del pool hay **sesiones dedicadas**: cada pestaña de consulta tiene la suya — eso hace que `BEGIN`, `SET` o tabla temporal sigan valiendo en la consulta siguiente. Cada una guarda su `CancelToken`.
 
-`statement_timeout` se pasa por caso de uso, no globalmente: explorador usa el del perfil, monitoreo uno corto, tarea de mantenimiento ninguno (o servidor mataría el `VACUUM`).
+`statement_timeout` se pasa por caso de uso, no globalmente: explorador usa el del perfil, monitoreo uno corto, tarea de mantenimiento ninguno (o servidor mataría el `VACUUM`). Va como opción de arranque (`options`) y no como `SET` posterior, para que también valga en conexiones recicladas del pool; como `Config::options` reemplaza en vez de acumular, todas las opciones se arman en una lista y se pasan de una sola vez.
+
+Tres campos del perfil que no cambian cómo se conecta sino qué se permite: `environment` (`dev`/`test`/`prod`, `None` = sin marcar) pinta el servidor en árbol, detalle, barra de consulta y pestañas, y hace que toda mutación pase por una confirmación extra (`ui/src/lib/access.svelte.ts`); `read_only` agrega `-c default_transaction_read_only=on` a esas mismas opciones de arranque, así **rechaza el servidor** y no una lista de operaciones que hay que acordarse de tapar —vale igual para explorador, editor de SQL, importación y mantenimiento—; `autocommit` es el valor inicial de cada pestaña de consulta. Los tres llevan `#[serde(default)]`: `connections.json` no tiene versión ni migraciones, y un perfil viejo tiene que seguir abriendo.
+
+**Transacciones de la pestaña de consulta** (`sql::exec`): `TxStatus` (`Idle`/`Active`/`Failed`) no se deduce del SQL escrito, se le pregunta al servidor con `SELECT now() <> statement_timestamp()` — `tokio-postgres` descarta el byte de estado de `ReadyForQuery` y no lo expone. Adentro de una transacción abortada esa sonda falla con `25P02`, que es exactamente el tercer estado. Con autocommit apagado, `begin_if_needed()` antepone el `BEGIN` antes de la primera sentencia: PostgreSQL no tiene modo autocommit del lado del servidor. Encender autocommit **no confirma** la transacción abierta; solo deja de abrir una nueva.
 
 Contraseñas nunca van a archivos de la aplicación: perfil guarda solo datos del servidor y contraseña va al almacén del sistema operativo vía `keyring`, solo si se pide recordarla.
 
@@ -96,6 +100,8 @@ Convenciones de serde que interfaz da por hechas: `#[serde(rename_all = "camelCa
 **Enum etiquetado necesita las dos:** `rename_all` renombra nombres de variante, `rename_all_fields` los campos de adentro de cada variante. Solo con la primera, un `new_name` o `type_name` sigue esperándose en `snake_case` mientras interfaz manda `newName`: nada falla al compilar y el `invoke` se cae recién en tiempo de ejecución, con «missing field» del lado de Rust. Por eso los enums de este proyecto llevan siempre `#[serde(tag = "…", rename_all = "camelCase", rename_all_fields = "camelCase")]`, aunque hoy no tengan campo de dos palabras. Lo que atrapa el olvido: `src-tauri/tests/preview.rs`, que arma la carga como JSON en vez de construir tipos de Rust.
 
 Valores de celdas viajan como `string | null` (`null` = NULL de la base, distinto de cadena vacía), no como tipos nativos de JavaScript.
+
+Lo que un perfil habilita o exige no se consulta al `explorer` desde cada diálogo, sino a `ui/src/lib/access.svelte.ts`: `isReadOnly`, `readOnlyReason` (motivo para el `title` de un botón apagado) y `confirmMutation`, que resuelve una promesa contra un único `Confirm.svelte` montado en `App.svelte` — así ningún diálogo de mutación tiene que anidar otro modal adentro del suyo. Todo `submit()` que modifica el servidor arranca con esa línea; en `DetailPanel` los botones que abren esos diálogos llevan `{...blocked}`, que agrega `disabled` **y** el motivo.
 
 ### Vista previa antes de aplicar
 
