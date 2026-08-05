@@ -40,6 +40,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # `keyring` usa el Secret Service en Linux, que habla D-Bus: sin la cabecera, `libdbus-sys` ni
+      # siquiera compila. El job de escritorio no lo necesita porque `libwebkit2gtk-4.1-dev` ya la
+      # arrastra; este solo compila el núcleo, así que la pide él.
+      - name: Dependencias de sistema
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
