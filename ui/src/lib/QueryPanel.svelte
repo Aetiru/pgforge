@@ -1,6 +1,8 @@
 <script lang="ts">
   import Confirm from "./Confirm.svelte";
   import Empty from "./Empty.svelte";
+  import { environmentOf, isReadOnly } from "./access.svelte";
+  import { envLook, READ_ONLY_LOOK } from "./badges";
   import HistoryPanel from "./HistoryPanel.svelte";
   import Icon from "./Icon.svelte";
   import PlanTree from "./PlanTree.svelte";
@@ -20,6 +22,7 @@
     warning: string;
   } | null>(null);
 
+  const environment = $derived(environmentOf(tab.profileId));
   const result = $derived(tab.result);
   const withRows = $derived(result?.outcome.kind === "rows" ? result.outcome : null);
   const errors = $derived(tab.messages.filter((message) => message.tone === "error").length);
@@ -129,6 +132,39 @@
 
     <span class="toolbar-sep"></span>
 
+    <!--
+      El interruptor y los dos botones van juntos: apagar el autocommit sin tener a la vista con qué
+      confirmar deja al usuario con una transacción abierta y sin dónde cerrarla.
+    -->
+    <label class="check" title="Apagado, cada ejecución abre una transacción que hay que confirmar">
+      <input
+        type="checkbox"
+        checked={tab.autocommit}
+        disabled={tab.tabId === null || tab.running}
+        onchange={(event) => tab.setAutocommit(event.currentTarget.checked)}
+      />
+      Autocommit
+    </label>
+
+    <button
+      class="btn"
+      disabled={tab.tabId === null || tab.running || tab.txStatus === "idle"}
+      title="Confirma la transacción abierta en esta pestaña"
+      onclick={() => tab.commit()}
+    >
+      Commit
+    </button>
+    <button
+      class="btn btn-danger"
+      disabled={tab.tabId === null || tab.running || tab.txStatus === "idle"}
+      title="Descarta todo lo hecho desde que se abrió la transacción"
+      onclick={() => tab.rollback()}
+    >
+      Rollback
+    </button>
+
+    <span class="toolbar-sep"></span>
+
     <button
       class="btn"
       disabled={tab.tabId === null || tab.running}
@@ -152,6 +188,25 @@
           <span class="spinner"></span>
           ejecutando…
         </span>
+      {/if}
+      {#if tab.txStatus !== "idle"}
+        <span
+          class="tag {tab.txStatus === 'failed' ? 'tag-bad' : 'tag-warn'}"
+          title={tab.txStatus === "failed"
+            ? "Una sentencia falló dentro de la transacción: el servidor rechaza el resto hasta el rollback"
+            : "Hay cambios sin confirmar en esta pestaña"}
+        >
+          {tab.txStatus === "failed" ? "transacción abortada" : "transacción abierta"}
+        </span>
+      {/if}
+      <!-- Contra qué servidor corre lo que se está por ejecutar es justo lo que no se puede
+           adivinar mirando el editor. -->
+      {#if environment}
+        {@const badge = envLook(environment)}
+        <span class="tag {badge.tone}" title={badge.title}>{badge.label}</span>
+      {/if}
+      {#if isReadOnly(tab.profileId)}
+        <span class="tag tag-neutral" title={READ_ONLY_LOOK.title}>{READ_ONLY_LOOK.label}</span>
       {/if}
       <span class="tag tag-neutral" title="Base sobre la que corre esta pestaña">
         <Icon name="database" size={10} />

@@ -16,9 +16,10 @@
   import TreePanel from "./lib/TreePanel.svelte";
   import { openData, DataTab } from "./lib/data.svelte";
   import { openErd, ErdTab } from "./lib/erd.svelte";
+  import { environmentOf, guard } from "./lib/access.svelte";
   import { explorer } from "./lib/explorer.svelte";
   import { openQuery, QueryTab } from "./lib/query.svelte";
-  import { tabs, type TabKind } from "./lib/tabs.svelte";
+  import { tabs, type Tab, type TabKind } from "./lib/tabs.svelte";
   import { theme } from "./lib/theme.svelte";
   import {
     appInfo,
@@ -28,6 +29,7 @@
     sshHostKey,
     type AppInfo,
     type ConnectionProfile,
+    type Environment,
   } from "./lib/ipc";
 
   let info = $state<AppInfo | null>(null);
@@ -36,6 +38,20 @@
     null,
   );
   let confirmDelete = $state<ConnectionProfile | null>(null);
+  /**
+   * Pestaña que se quiere cerrar con una transacción abierta. La pregunta va acá y no en
+   * `QueryTab.dispose()`, que corre cuando la pestaña ya se cerró y no puede preguntar nada.
+   */
+  let closingTab = $state<QueryTab | null>(null);
+
+  /** Cerrar es inmediato, salvo que se pierdan cambios sin confirmar. */
+  function closeTab(tab: Tab) {
+    if (tab instanceof QueryTab && tab.txStatus !== "idle") {
+      closingTab = tab;
+      return;
+    }
+    tabs.close(tab.key);
+  }
   /**
    * Confirmación de la clave del host de un bastión SSH sin verificar. Guarda la contraseña con la
    * que se estaba conectando para reintentar tal cual una vez que el usuario acepta la huella.
@@ -66,6 +82,14 @@
     query: "sql",
     data: "table",
     erd: "diagram",
+  };
+
+  /** Los mismos colores que las pastillas de entorno, aplicados al ícono de la pestaña. */
+  const TAB_TONE: Record<Environment | "none", string> = {
+    none: "muted",
+    dev: "text-emerald-600 dark:text-emerald-400",
+    test: "text-blue-600 dark:text-blue-400",
+    prod: "text-rose-600 dark:text-rose-400",
   };
 
   $effect(() => {
@@ -458,13 +482,19 @@
                 onclick={() => (tabs.active = tab.key)}
                 onauxclick={(event) => {
                   // Botón del medio: cerrar, como en cualquier navegador.
-                  if (event.button === 1) tabs.close(tab.key);
+                  if (event.button === 1) closeTab(tab);
                 }}
               >
                 {#if tab instanceof QueryTab && tab.running}
                   <span class="spinner"></span>
                 {:else}
-                  <Icon name={TAB_ICON[tab.kind]} size={12} class="muted" />
+                  <!-- El ícono de la pestaña toma el color del entorno: la pestaña activa tapa el
+                       árbol, y sin esto no queda nada en pantalla diciendo que es producción. -->
+                  <Icon
+                    name={TAB_ICON[tab.kind]}
+                    size={12}
+                    class={TAB_TONE[environmentOf(tab.profileId) ?? "none"]}
+                  />
                 {/if}
                 <span class="truncate">{tab.title}</span>
               </button>
@@ -472,7 +502,7 @@
                 class="tab-close"
                 aria-label="Cerrar la pestaña"
                 title="Cerrar la pestaña"
-                onclick={() => tabs.close(tab.key)}
+                onclick={() => closeTab(tab)}
               >
                 <Icon name="close" size={10} />
               </button>
@@ -609,6 +639,19 @@
   />
 {/if}
 
+{#if closingTab}
+  <Confirm
+    title="Cerrar «{closingTab.title}»"
+    message="La pestaña tiene una transacción abierta. Al cerrarla se suelta la conexión y el servidor revierte todo lo que no esté confirmado."
+    confirmLabel="Cerrar y revertir"
+    onconfirm={() => {
+      if (closingTab) tabs.close(closingTab.key);
+      closingTab = null;
+    }}
+    onclose={() => (closingTab = null)}
+  />
+{/if}
+
 {#if confirmDelete}
   <Confirm
     title="Eliminar «{confirmDelete.name}»"
@@ -616,5 +659,20 @@
     confirmLabel="Eliminar"
     onconfirm={() => confirmDelete && remove(confirmDelete)}
     onclose={() => (confirmDelete = null)}
+  />
+{/if}
+
+<!--
+  Va último a propósito: se dibuja sobre el diálogo de mutación que la pidió, que sigue abierto
+  detrás con todo lo que el usuario escribió.
+-->
+{#if guard.pending}
+  <Confirm
+    title="Modificar producción"
+    message="«{guard.pending.profile.name}» está marcado como servidor de producción. {guard.pending
+      .action}"
+    confirmLabel="Modificar igual"
+    onconfirm={() => guard.answer(true)}
+    onclose={() => guard.answer(false)}
   />
 {/if}

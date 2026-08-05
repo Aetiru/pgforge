@@ -4,17 +4,22 @@ import {
   Channel,
   describeError,
   isCanceled,
+  queryAutocommit,
   queryCancel,
   queryClose,
+  queryCommit,
   queryExplain,
   queryOpen,
+  queryRollback,
   queryRun,
+  queryTxStatus,
   schemaSnapshot,
   type CoreError,
   type ExplainOptions,
   type Outcome,
   type Plan,
   type QueryEvent,
+  type TxStatus,
 } from "./ipc";
 
 export type MessageTone = "info" | "notice" | "error";
@@ -78,6 +83,11 @@ export class QueryTab extends Tab {
   sql = $state("");
   opening = $state(true);
   running = $state(false);
+
+  /** Arranca con el valor del perfil; el interruptor de la barra lo cambia solo para esta pestaña. */
+  autocommit = $state(true);
+  /** Lo dice el servidor después de cada ejecución, no se deduce del SQL escrito. */
+  txStatus = $state<TxStatus>("idle");
 
   /**
    * Van en `$state.raw` y no en `$state` porque se reemplazan enteros y nunca se mutan por dentro.
@@ -172,6 +182,10 @@ export class QueryTab extends Tab {
         this.log("notice", `${event.severity}: ${event.message}`);
         break;
 
+      case "transaction":
+        this.txStatus = event.status;
+        break;
+
       case "failed": {
         if (isCanceled(event.error)) {
           this.log("info", "Consulta cancelada.");
@@ -203,6 +217,47 @@ export class QueryTab extends Tab {
       await queryCancel(this.tabId);
     } catch (error) {
       this.log("error", describeError(error));
+    }
+  }
+
+  async commit() {
+    await this.endTransaction(queryCommit, "Transacción confirmada.");
+  }
+
+  async rollback() {
+    await this.endTransaction(queryRollback, "Transacción revertida.");
+  }
+
+  /**
+   * Enciende o apaga el autocommit. Encenderlo con una transacción abierta no la confirma: el estado
+   * que devuelve el backend sigue diciendo que hay algo pendiente, y la barra lo sigue mostrando.
+   */
+  async setAutocommit(enabled: boolean) {
+    if (!this.tabId) return;
+    this.autocommit = enabled;
+    try {
+      this.txStatus = await queryAutocommit(this.tabId, enabled);
+      if (enabled && this.txStatus !== "idle") {
+        this.log("notice", "Queda una transacción abierta: confirmala o revertila.");
+      }
+    } catch (error) {
+      this.log("error", describeError(error));
+    }
+  }
+
+  private async endTransaction(
+    action: (tabId: string) => Promise<TxStatus>,
+    done: string,
+  ) {
+    if (!this.tabId || this.running) return;
+    try {
+      this.txStatus = await action(this.tabId);
+      this.log("info", done);
+    } catch (error) {
+      this.log("error", describeError(error));
+      this.view = "messages";
+      // Un `COMMIT` que falla igual termina la transacción: se vuelve a preguntar en vez de suponer.
+      this.txStatus = await queryTxStatus(this.tabId).catch(() => this.txStatus);
     }
   }
 
@@ -242,7 +297,12 @@ export async function openQuery(
   try {
     const opened = await queryOpen(profileId, database);
     tab.tabId = opened.tabId;
+    tab.autocommit = opened.autocommit;
+    tab.txStatus = opened.txStatus;
     tab.log("info", `Conectado a ${opened.database}.`);
+    if (!opened.autocommit) {
+      tab.log("info", "Autocommit apagado: cada ejecución abre una transacción.");
+    }
   } catch (error) {
     tab.log("error", describeError(error));
     tab.view = "messages";
