@@ -1,4 +1,5 @@
 import type { SQLNamespace } from "@codemirror/lang-sql";
+import { paging } from "./paging.svelte";
 import { Tab, tabs } from "./tabs.svelte";
 import {
   Channel,
@@ -6,6 +7,7 @@ import {
   isCanceled,
   queryAutocommit,
   queryCancel,
+  queryColumnTypes,
   queryClose,
   queryCommit,
   queryExplain,
@@ -100,6 +102,18 @@ export class QueryTab extends Tab {
   messages = $state<Message[]>([]);
   errorMark = $state<ErrorMark | null>(null);
   view = $state<ResultView>("rows");
+  /** El SQL de la última ejecución, tal como se mandó. */
+  ranSql = $state("");
+
+  /**
+   * Los tipos de las columnas del resultado, cuando se piden.
+   *
+   * No vienen con las filas: el resultado viaja como texto y el protocolo simple no trae los tipos
+   * (ver `sql::exec`). Saberlos cuesta preparar la sentencia de nuevo en el servidor, así que se
+   * pide solo con el interruptor encendido y no en cada ejecución.
+   */
+  showTypes = $state(false);
+  columnTypes = $state.raw<string[] | null>(null);
   /** Cuál de los resultados se está mirando, cuando el script devolvió más de uno. */
   shown = $state(0);
 
@@ -123,6 +137,9 @@ export class QueryTab extends Tab {
   async run(sql: string, base = 0) {
     if (!this.tabId || this.running || sql.trim() === "") return;
 
+    // Lo último que se mandó, para poder exportarlo sin volver a ejecutarlo. La grilla tiene solo
+    // las filas que entraron en el techo; exportar tiene que ir de nuevo al servidor con la consulta.
+    this.ranSql = sql;
     this.running = true;
     this.results = [];
     this.messages = [];
@@ -136,12 +153,38 @@ export class QueryTab extends Tab {
     channel.onmessage = (event) => this.apply(event, lines, base);
 
     try {
-      await queryRun(this.tabId, sql, channel);
+      // El techo de filas es el mismo que elige la grilla de datos: es la misma pregunta —cuántas
+      // filas se traen de una— y una consulta sin `WHERE` sobre una tabla grande, con el techo del
+      // núcleo, dejaba diez mil filas en memoria para mirar las primeras veinte.
+      await queryRun(this.tabId, sql, channel, { maxRows: paging.size });
+      if (this.showTypes) await this.loadColumnTypes();
     } catch (error) {
       this.log("error", describeError(error));
       this.view = "messages";
     } finally {
       this.running = false;
+    }
+  }
+
+  async setShowTypes(on: boolean) {
+    this.showTypes = on;
+    if (on) await this.loadColumnTypes();
+    else this.columnTypes = null;
+  }
+
+  /** Los tipos del último resultado. Solo tiene sentido con una sola sentencia: `PREPARE` no
+   * acepta un script, y con varios resultados no habría a cuál pegarle los tipos. */
+  async loadColumnTypes() {
+    this.columnTypes = null;
+    if (!this.tabId || this.results.length !== 1 || this.ranSql.trim() === "") return;
+
+    try {
+      const columns = await queryColumnTypes(this.tabId, this.ranSql);
+      this.columnTypes = columns.map((column) => column.typeName);
+    } catch {
+      // Preparar puede fallar por motivos legítimos —un `SET`, un `CREATE`, un script—: sin tipos,
+      // el encabezado queda como estaba y no se molesta al usuario con un error por algo opcional.
+      this.columnTypes = null;
     }
   }
 

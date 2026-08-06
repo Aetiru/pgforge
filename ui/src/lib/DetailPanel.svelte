@@ -22,6 +22,7 @@
     type Subject as PrivilegeSubject,
   } from "./PrivilegeDialog.svelte";
   import RoleDialog from "./RoleDialog.svelte";
+  import FontSize from "./FontSize.svelte";
   import Sql from "./Sql.svelte";
   import TableDialog from "./TableDialog.svelte";
   import TriggerDialog from "./TriggerDialog.svelte";
@@ -2404,10 +2405,13 @@
                 <span class="text-xs muted">
                   {ddl.source === "pgDump" ? "reconstruido con pg_dump" : "generado por PostgreSQL"}
                 </span>
-                <button class="btn btn-sm ml-auto" onclick={copy}>
-                  <Icon name={copied ? "check" : "copy"} size={11} />
-                  {copied ? "Copiado" : "Copiar"}
-                </button>
+                <span class="ml-auto flex items-center gap-1">
+                  <FontSize />
+                  <button class="btn btn-sm" onclick={copy}>
+                    <Icon name={copied ? "check" : "copy"} size={11} />
+                    {copied ? "Copiado" : "Copiar"}
+                  </button>
+                </span>
               {/if}
             </div>
 
@@ -2623,8 +2627,7 @@
   <ExportDialog
     profileId={selected.profileId}
     database={node.database}
-    schema={node.schema}
-    table={node.label}
+    source={{ kind: "table", schema: node.schema, table: node.label, columns: [] }}
     onclose={() => (exportDialog = false)}
   />
 {/if}

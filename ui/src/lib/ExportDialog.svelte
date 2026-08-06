@@ -11,22 +11,32 @@
     describeError,
     type CopyFormat,
     type ExportEvent,
+    type ExportSource,
     type ExportSpec,
   } from "./ipc";
 
+  /**
+   * De dónde salen las filas: una tabla del árbol o el resultado de la consulta que se acaba de
+   * ejecutar. El diálogo es el mismo porque la pregunta es la misma —formato, archivo, opciones—;
+   * lo único que cambia es qué `COPY` arma el núcleo, y eso ya lo decide `ExportSource`.
+   */
   let {
     profileId,
     database,
-    schema,
-    table,
+    source,
     onclose,
   }: {
     profileId: string;
     database: string;
-    schema: string;
-    table: string;
+    source: ExportSource;
     onclose: () => void;
   } = $props();
+
+  /** Nombre para el título y para proponer el archivo. */
+  const label = $derived(
+    source.kind === "table" ? `${source.schema}.${source.table}` : "resultado de la consulta",
+  );
+  const fileName = $derived(source.kind === "table" ? source.table : "consulta");
 
   const FORMATS: { value: CopyFormat; label: string; hint: string; extension: string }[] = [
     {
@@ -69,7 +79,7 @@
   const isBinary = $derived(format === "binary");
 
   const spec = $derived.by<ExportSpec>(() => ({
-    source: { kind: "table", schema, table, columns: [] },
+    source,
     format,
     // El binario no admite ninguna de estas opciones; se mandan vacías y el núcleo las valida.
     options: isBinary
@@ -106,7 +116,7 @@
   async function choose() {
     const chosen = await save({
       title: "Dónde guardar la exportación",
-      defaultPath: `${table}.${FORMATS.find((f) => f.value === format)?.extension}`,
+      defaultPath: `${fileName}.${FORMATS.find((f) => f.value === format)?.extension}`,
     });
     if (typeof chosen === "string") path = chosen;
   }
@@ -156,7 +166,7 @@
   }
 </script>
 
-<Modal title="Exportar" subtitle="{schema}.{table}" size="lg" busy={running} {onclose}>
+<Modal title="Exportar" subtitle={label} size="lg" busy={running} {onclose}>
   <div class="seg" role="tablist">
     {#each FORMATS as item (item.value)}
       <button

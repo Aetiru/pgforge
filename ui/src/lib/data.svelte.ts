@@ -1,4 +1,5 @@
 import { confirmMutation, isReadOnly } from "./access.svelte";
+import { AUTO_LIMIT, paging } from "./paging.svelte";
 import { Tab, tabs } from "./tabs.svelte";
 import {
   dataApply,
@@ -8,6 +9,7 @@ import {
   describeError,
   type Change,
   type Cursor,
+  type PageOrder,
   type PreviewStatement,
   type RowValues,
   type TableShape,
@@ -43,6 +45,14 @@ export class DataTab extends Tab {
   rows = $state.raw<Row[]>([]);
   cursor = $state.raw<Cursor | null>(null);
 
+  /**
+   * Orden y filtro los resuelve el servidor, no la grilla: sobre un millón de filas, «las diez más
+   * recientes» no está entre las doscientas que se trajeron primero. Cambiar cualquiera de los dos
+   * vuelve a leer desde la primera tanda, porque lo cargado ya no es el principio de nada.
+   */
+  order = $state.raw<PageOrder | null>(null);
+  filter = $state("");
+
   loading = $state(false);
   saving = $state(false);
   /** `true` cuando ya se trajo la última página. */
@@ -61,9 +71,14 @@ export class DataTab extends Tab {
     return this.shape !== null && this.shape.readOnly === null && !isReadOnly(this.profileId);
   }
 
-  get pending(): number {
-    return this.rows.filter((row) => row.deleted || row.isNew || row.edited.size > 0).length;
-  }
+  /**
+   * Cuántas filas tienen cambios sin guardar. Es `$derived` y no un getter porque la barra lo
+   * consulta cuatro veces por dibujo, y con diez mil filas cargadas eso son cuatro recorridas de
+   * todo lo que hay en memoria.
+   */
+  pending = $derived(
+    this.rows.filter((row) => row.deleted || row.isNew || row.edited.size > 0).length,
+  );
 
   /** El valor que hay que mostrar en una celda: lo editado si se tocó, si no lo original. */
   value(row: Row, column: number): string | null {
@@ -87,14 +102,36 @@ export class DataTab extends Tab {
     }
   }
 
-  /** Trae la página siguiente. Es lo que dispara el scroll al acercarse al final. */
+  /**
+   * `true` cuando el scroll ya trajo todo lo que trae solo. De acá en más hay que pedirlo a mano:
+   * cada tanda queda en memoria, y una barra arrastrada hasta el fondo no puede terminar con una
+   * tabla de millones de filas adentro de la ventana.
+   */
+  get autoDone(): boolean {
+    return this.rows.length >= AUTO_LIMIT;
+  }
+
+  /** Lo que dispara el scroll al acercarse al final: una tanda, y hasta el techo. */
+  moreAuto() {
+    if (this.autoDone) return;
+    return this.more();
+  }
+
+  /** Trae la tanda siguiente, del tamaño que diga la preferencia. */
   async more() {
     const shape = this.shape;
     if (!shape || this.complete || this.loading) return;
 
     this.loading = true;
     try {
-      const page = await dataPage(this.profileId, shape, this.cursor, undefined, this.database);
+      const page = await dataPage(
+        this.profileId,
+        shape,
+        this.cursor,
+        paging.size,
+        this.database,
+        { order: this.order, filter: this.filter.trim() || null },
+      );
       const base = this.rows.length;
 
       const nuevas = page.rows.map((cells, offset) => ({
@@ -116,6 +153,18 @@ export class DataTab extends Tab {
     } finally {
       this.loading = false;
     }
+  }
+
+  /** Ordena contra el servidor. `column` en `null` vuelve al orden de la clave. */
+  setOrder(column: string | null, descending: boolean) {
+    this.order = column === null ? null : { column, descending };
+    return this.load();
+  }
+
+  /** Aplica el `WHERE` escrito en la barra. Lo valida el servidor: un error se muestra tal cual. */
+  applyFilter(filter: string) {
+    this.filter = filter;
+    return this.load();
   }
 
   edit(row: Row, column: number, value: string | null) {

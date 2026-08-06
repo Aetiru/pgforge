@@ -1,13 +1,16 @@
 <script lang="ts">
   import Confirm from "./Confirm.svelte";
   import Empty from "./Empty.svelte";
+  import ExportDialog from "./ExportDialog.svelte";
   import { environmentOf, isReadOnly } from "./access.svelte";
   import { envLook, READ_ONLY_LOOK } from "./badges";
   import HistoryPanel from "./HistoryPanel.svelte";
   import Icon from "./Icon.svelte";
   import PlanTree from "./PlanTree.svelte";
   import ResultGrid from "./ResultGrid.svelte";
+  import FontSize from "./FontSize.svelte";
   import SqlEditor from "./SqlEditor.svelte";
+  import { PAGE_SIZES, paging } from "./paging.svelte";
   import { count, decimal } from "./format";
   import type { QueryTab } from "./query.svelte";
   import { describeError, explainWarning, statementAtCursor, type ExplainOptions } from "./ipc";
@@ -15,6 +18,7 @@
   let { tab }: { tab: QueryTab } = $props();
 
   let editorHeight = $state(240);
+  let exportOpen = $state(false);
   let pending = $state<{
     sql: string;
     base: number;
@@ -182,6 +186,10 @@
       Explicar y medir
     </button>
 
+    <span class="toolbar-sep"></span>
+
+    <FontSize />
+
     <span class="ml-auto flex items-center gap-2 text-xs muted">
       {#if tab.running}
         <span class="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
@@ -273,10 +281,65 @@
         </select>
       {/if}
 
+      <!-- Cuántas filas se traen de una. Es la misma preferencia que usa la grilla de datos para su
+           tanda: acá no hay scroll que pida la siguiente, así que sube el techo y se vuelve a
+           ejecutar. -->
+      <!-- Los tipos no vienen con las filas: pedirlos cuesta preparar la sentencia de nuevo en el
+           servidor, así que es un interruptor y no algo que pase siempre. -->
+      <label
+        class="ml-auto check"
+        title="Muestra el tipo de cada columna; se le pregunta al servidor sin ejecutar de nuevo"
+      >
+        <input
+          type="checkbox"
+          checked={tab.showTypes}
+          disabled={tab.running}
+          onchange={(event) => tab.setShowTypes(event.currentTarget.checked)}
+        />
+        Tipos
+      </label>
+
+      <label
+        class="flex items-center gap-1 text-xs muted"
+        title="Máximo de filas que se traen; para ver más, subilo y volvé a ejecutar"
+      >
+        <span>Máx.</span>
+        <select
+          class="field py-0.5 text-xs"
+          value={paging.size}
+          onchange={(event) => paging.set(Number(event.currentTarget.value))}
+        >
+          {#each PAGE_SIZES as size (size)}
+            <option value={size}>{size}</option>
+          {/each}
+        </select>
+      </label>
+
+      <!--
+        Exportar no manda las filas que están en pantalla: vuelve a correr la consulta con un
+        `COPY … TO STDOUT`, así el archivo tiene todas las filas y no las que entraron en el techo.
+        Por eso solo se ofrece cuando se ejecutó una sola sentencia: un script entero no es una
+        consulta que `COPY` pueda envolver.
+      -->
       {#if withRows}
-        <span class="ml-auto flex items-center gap-2 text-xs muted">
+        <button
+          class="btn btn-sm"
+          disabled={tab.results.length !== 1 || tab.ranSql.trim() === ""}
+          title={tab.results.length !== 1
+            ? "El script devolvió varios resultados: ejecutá sola la consulta que querés exportar"
+            : "Exporta todas las filas de la consulta, no solo las que se muestran"}
+          onclick={() => (exportOpen = true)}
+        >
+          <Icon name="download" size={11} />
+          Exportar
+        </button>
+
+        <span class="flex items-center gap-2 text-xs muted">
           {#if withRows.truncated}
-            <span class="tag tag-warn" title="Hay más filas de las que se trajeron">
+            <span
+              class="tag tag-warn"
+              title="La consulta devolvió más filas de las que entran en el máximo elegido"
+            >
               se muestran {count(withRows.rows.length)}
             </span>
           {/if}
@@ -293,7 +356,11 @@
       {#if tab.view === "rows"}
         {#if withRows}
           {#key result}
-            <ResultGrid columns={withRows.columns} rows={withRows.rows} />
+            <ResultGrid
+              columns={withRows.columns}
+              rows={withRows.rows}
+              types={tab.showTypes ? tab.columnTypes : null}
+            />
           {/key}
         {:else if result && result.outcome.kind === "command"}
           <Empty
@@ -369,6 +436,15 @@
     </div>
   </div>
 </div>
+
+{#if exportOpen}
+  <ExportDialog
+    profileId={tab.profileId}
+    database={tab.database}
+    source={{ kind: "query", sql: tab.ranSql }}
+    onclose={() => (exportOpen = false)}
+  />
+{/if}
 
 {#if pending}
   <Confirm
