@@ -89,6 +89,14 @@ impl ServerCaps {
     pub fn has_vacuum_process_toast(&self) -> bool {
         self.version.at_least(14)
     }
+
+    /// `ALTER TABLE ... DETACH PARTITION ... CONCURRENTLY`.
+    ///
+    /// Sin esto, separar una partición toma un `ACCESS EXCLUSIVE` sobre la tabla madre: nadie puede
+    /// leerla mientras dure. Es la diferencia entre poder hacerlo en horario de trabajo o no.
+    pub fn has_detach_partition_concurrently(&self) -> bool {
+        self.version.at_least(14)
+    }
 }
 
 #[cfg(test)]
