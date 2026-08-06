@@ -167,9 +167,16 @@ async fn lee_la_pagina(handle: &ServerHandle, oid: u32) {
         "la tabla tiene clave primaria: tenía que abrirse editable"
     );
 
-    let page = data::page::page(handle, database, &shape, None, 200)
-        .await
-        .expect("no se pudo leer la página");
+    let page = data::page::page(
+        handle,
+        database,
+        &shape,
+        None,
+        200,
+        &data::PageView::default(),
+    )
+    .await
+    .expect("no se pudo leer la página");
     assert_eq!(page.rows.len(), 2);
     assert_eq!(page.columns[0], "Id");
 
@@ -177,9 +184,16 @@ async fn lee_la_pagina(handle: &ServerHandle, oid: u32) {
     let cursor = Cursor::After {
         key: vec![page.rows[0][0].clone().unwrap()],
     };
-    let siguiente = data::page::page(handle, database, &shape, Some(&cursor), 200)
-        .await
-        .expect("no se pudo paginar por clave");
+    let siguiente = data::page::page(
+        handle,
+        database,
+        &shape,
+        Some(&cursor),
+        200,
+        &data::PageView::default(),
+    )
+    .await
+    .expect("no se pudo paginar por clave");
     assert_eq!(siguiente.rows.len(), 1);
 }
 
@@ -187,9 +201,16 @@ async fn actualiza_y_borra(handle: &ServerHandle, oid: u32) {
     let database = handle.default_database();
     let shape = data::shape::shape(handle, database, oid).await.unwrap();
 
-    let page = data::page::page(handle, database, &shape, None, 200)
-        .await
-        .unwrap();
+    let page = data::page::page(
+        handle,
+        database,
+        &shape,
+        None,
+        200,
+        &data::PageView::default(),
+    )
+    .await
+    .unwrap();
     let primera = page.rows[0][0].clone().unwrap();
     let segunda = page.rows[1][0].clone().unwrap();
 
@@ -229,9 +250,16 @@ async fn actualiza_y_borra(handle: &ServerHandle, oid: u32) {
     .expect("el INSERT sobre una tabla citada tenía que funcionar");
     assert_eq!(applied.inserted, 1);
 
-    let page = data::page::page(handle, database, &shape, None, 200)
-        .await
-        .unwrap();
+    let page = data::page::page(
+        handle,
+        database,
+        &shape,
+        None,
+        200,
+        &data::PageView::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(page.rows.len(), 2);
     assert_eq!(page.rows[0][1].as_deref(), Some("UNO"));
 }

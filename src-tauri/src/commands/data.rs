@@ -8,7 +8,8 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use pgforge_core::data::{
-    self, Applied, Change, CopyCommand, Cursor, ExportSpec, ImportSpec, Page, Statement, TableShape,
+    self, Applied, Change, CopyCommand, Cursor, ExportSpec, ImportSpec, Page, PageView, Statement,
+    TableShape,
 };
 use pgforge_core::error::ErrorPayload;
 use pgforge_core::{Error, ProfileId, Result};
@@ -42,6 +43,7 @@ pub async fn data_page(
     shape: TableShape,
     cursor: Option<Cursor>,
     limit: Option<usize>,
+    view: Option<PageView>,
 ) -> Result<Page> {
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
@@ -52,6 +54,7 @@ pub async fn data_page(
         &shape,
         cursor.as_ref(),
         limit.unwrap_or(data::DEFAULT_PAGE_SIZE),
+        &view.unwrap_or_default(),
     )
     .await
 }

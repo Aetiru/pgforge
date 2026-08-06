@@ -47,11 +47,54 @@ pub struct Page {
     pub next: Option<Cursor>,
 }
 
+/// Por qué columna se ordena, cuando el usuario eligió una en el encabezado.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageOrder {
+    pub column: String,
+    #[serde(default)]
+    pub descending: bool,
+}
+
+/// Cómo se mira la tabla: con qué orden y con qué filtro.
+///
+/// Va al servidor y no a la grilla porque ordenar o filtrar lo ya traído responde otra pregunta:
+/// sobre una tabla de un millón de filas, «las diez más recientes» no está entre las doscientas que
+/// se leyeron primero.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageView {
+    #[serde(default)]
+    pub order: Option<PageOrder>,
+    /// Predicado del `WHERE` tal como lo escribió el usuario.
+    ///
+    /// Va **crudo** a la consulta, como el `DEFAULT` de una columna o la expresión de un `CHECK`:
+    /// no se puede parametrizar —es una expresión, no un valor—, lo valida el servidor al ejecutar,
+    /// y es la misma frontera de confianza que el editor de consultas. Lo ejecuta el mismo usuario
+    /// con sus mismos privilegios.
+    #[serde(default)]
+    pub filter: Option<String>,
+}
+
+impl PageView {
+    fn predicate(&self) -> Option<&str> {
+        self.filter
+            .as_deref()
+            .map(str::trim)
+            .filter(|f| !f.is_empty())
+    }
+}
+
 /// Arma el `SELECT` de una página.
 ///
 /// Es pura para poder verificarla sin servidor: es el lugar donde un error no se nota hasta que
 /// alguien pierde una fila al paginar.
-pub fn select(shape: &TableShape, cursor: Option<&Cursor>, limit: usize) -> Result<String> {
+pub fn select(
+    shape: &TableShape,
+    cursor: Option<&Cursor>,
+    limit: usize,
+    view: &PageView,
+) -> Result<String> {
     let columns = shape
         .columns
         .iter()
@@ -75,6 +118,14 @@ pub fn select(shape: &TableShape, cursor: Option<&Cursor>, limit: usize) -> Resu
     // no dependa de esa asimetría entre cláusulas.
     let mut sql = format!("SELECT {columns} FROM {table} AS t");
 
+    let mut conditions: Vec<String> = Vec::new();
+
+    if let Some(filter) = view.predicate() {
+        // Entre paréntesis: un filtro con `OR` adentro, pegado al `AND` del cursor, cambiaría de
+        // significado y devolvería filas que el usuario no pidió.
+        conditions.push(format!("({filter})"));
+    }
+
     match cursor {
         Some(Cursor::After { key: values }) => {
             if key.is_empty() {
@@ -89,6 +140,13 @@ pub fn select(shape: &TableShape, cursor: Option<&Cursor>, limit: usize) -> Resu
                     key.len()
                 )));
             }
+            // El cursor por clave solo vale con el orden de la clave: con otro orden, «lo que sigue
+            // después de esta clave» no es lo que sigue en pantalla. Ahí se pagina por posición.
+            if view.order.is_some() {
+                return Err(Error::Config(
+                    "con un orden elegido, la página siguiente se pide por posición".to_owned(),
+                ));
+            }
 
             // La comparación va por fila entera y no columna por columna: con una clave compuesta,
             // `a > $1 AND b > $2` se saltea filas legítimas —las que tienen el mismo `a` y un `b`
@@ -99,18 +157,48 @@ pub fn select(shape: &TableShape, cursor: Option<&Cursor>, limit: usize) -> Resu
                     .enumerate()
                     .map(|(index, name)| cast_param(index + 1, shape, name)),
             );
-            sql.push_str(&format!(" WHERE ({names}) > ({placeholders})"));
+            conditions.push(format!("({names}) > ({placeholders})"));
         }
         Some(Cursor::Offset { .. }) | None => {}
     }
 
-    if !key.is_empty() {
-        // Sin un orden estable la paginación no significa nada: el servidor puede devolver las
-        // mismas filas en otro orden y una fila aparecería dos veces o ninguna.
-        sql.push_str(&format!(
-            " ORDER BY {}",
-            join(key.iter().map(|name| format!("t.{}", quote_ident(name))))
+    if !conditions.is_empty() {
+        sql.push_str(&format!(" WHERE {}", conditions.join(" AND ")));
+    }
+
+    // Sin un orden estable la paginación no significa nada: el servidor puede devolver las mismas
+    // filas en otro orden y una fila aparecería dos veces o ninguna. La clave va como desempate
+    // incluso con un orden elegido, porque ordenar por una columna repetida no define nada.
+    let mut order: Vec<String> = Vec::new();
+
+    if let Some(chosen) = &view.order {
+        if shape.column(&chosen.column).is_none() {
+            return Err(Error::Config(format!(
+                "la tabla no tiene una columna llamada «{}»",
+                chosen.column
+            )));
+        }
+        order.push(format!(
+            "t.{}{}",
+            quote_ident(&chosen.column),
+            if chosen.descending { " DESC" } else { "" }
         ));
+    }
+
+    for name in key.iter() {
+        // La columna elegida ya está en la lista: repetirla como desempate no desempata nada.
+        if view
+            .order
+            .as_ref()
+            .is_some_and(|chosen| &chosen.column == name)
+        {
+            continue;
+        }
+        order.push(format!("t.{}", quote_ident(name)));
+    }
+
+    if !order.is_empty() {
+        sql.push_str(&format!(" ORDER BY {}", order.join(", ")));
     }
 
     sql.push_str(&format!(" LIMIT {limit}"));
@@ -147,8 +235,9 @@ pub async fn page(
     shape: &TableShape,
     cursor: Option<&Cursor>,
     limit: usize,
+    view: &PageView,
 ) -> Result<Page> {
-    let sql = select(shape, cursor, limit)?;
+    let sql = select(shape, cursor, limit, view)?;
     let client = handle.client(database).await?;
 
     let values: Vec<String> = match cursor {
@@ -169,7 +258,7 @@ pub async fn page(
     // Una página incompleta significa que no hay más: pedir otra devolvería vacío y sería un viaje
     // al servidor para enterarse de nada.
     let next = (rows.len() == limit)
-        .then(|| next_cursor(shape, cursor, &rows))
+        .then(|| next_cursor(shape, cursor, &rows, view))
         .flatten();
 
     Ok(Page {
@@ -183,10 +272,13 @@ fn next_cursor(
     shape: &TableShape,
     cursor: Option<&Cursor>,
     rows: &[Vec<Option<String>>],
+    view: &PageView,
 ) -> Option<Cursor> {
     let key = shape.key_columns();
 
-    if key.is_empty() {
+    // Con un orden elegido, «lo que sigue después de esta clave» ya no es lo que sigue en pantalla:
+    // se paga el `OFFSET` porque es lo único que respeta ese orden.
+    if key.is_empty() || view.order.is_some() {
         let seen = match cursor {
             Some(Cursor::Offset { rows }) => *rows,
             _ => 0,
@@ -262,7 +354,7 @@ mod tests {
     #[test]
     fn la_primera_pagina_ordena_por_clave() {
         // Los identificadores van sin comillas porque `quote_ident` solo cita lo que lo necesita.
-        let sql = select(&con_clave(), None, 200).unwrap();
+        let sql = select(&con_clave(), None, 200, &PageView::default()).unwrap();
         assert_eq!(
             sql,
             "SELECT id::text, nombre::text, creado::text \
@@ -275,7 +367,7 @@ mod tests {
         // Sin el alias `t.`, `ORDER BY id` se ataría a la salida `id::text` (que Postgres nombra
         // igual que la columna de origen) y ordenaría alfabéticamente en vez de por el tipo real.
         // Es justo el bug que este test existe para no dejar volver.
-        let sql = select(&con_clave(), None, 200).unwrap();
+        let sql = select(&con_clave(), None, 200, &PageView::default()).unwrap();
         assert!(sql.contains("FROM public.clientes AS t"), "{sql}");
         assert!(sql.contains("ORDER BY t.id"), "{sql}");
         assert!(!sql.contains("ORDER BY id"), "{sql}");
@@ -286,7 +378,7 @@ mod tests {
         let cursor = Cursor::After {
             key: vec!["1240".into()],
         };
-        let sql = select(&con_clave(), Some(&cursor), 200).unwrap();
+        let sql = select(&con_clave(), Some(&cursor), 200, &PageView::default()).unwrap();
 
         assert!(sql.contains("WHERE (t.id) > ($1::text::bigint)"), "{sql}");
         assert!(sql.contains("ORDER BY t.id"), "{sql}");
@@ -298,7 +390,13 @@ mod tests {
         let cursor = Cursor::After {
             key: vec!["1240".into(), "ana".into()],
         };
-        let sql = select(&con_clave_compuesta(), Some(&cursor), 50).unwrap();
+        let sql = select(
+            &con_clave_compuesta(),
+            Some(&cursor),
+            50,
+            &PageView::default(),
+        )
+        .unwrap();
 
         assert!(
             sql.contains("WHERE (t.id, t.nombre) > ($1::text::bigint, $2::text::text)"),
@@ -310,7 +408,7 @@ mod tests {
     #[test]
     fn sin_clave_se_pagina_por_offset() {
         let cursor = Cursor::Offset { rows: 400 };
-        let sql = select(&shape(None), Some(&cursor), 200).unwrap();
+        let sql = select(&shape(None), Some(&cursor), 200, &PageView::default()).unwrap();
 
         assert!(sql.ends_with("LIMIT 200 OFFSET 400"), "{sql}");
         assert!(
@@ -324,7 +422,7 @@ mod tests {
         let cursor = Cursor::After {
             key: vec!["1".into()],
         };
-        assert!(select(&shape(None), Some(&cursor), 200).is_err());
+        assert!(select(&shape(None), Some(&cursor), 200, &PageView::default()).is_err());
     }
 
     #[test]
@@ -332,7 +430,13 @@ mod tests {
         let cursor = Cursor::After {
             key: vec!["1".into()],
         };
-        let error = select(&con_clave_compuesta(), Some(&cursor), 200).unwrap_err();
+        let error = select(
+            &con_clave_compuesta(),
+            Some(&cursor),
+            200,
+            &PageView::default(),
+        )
+        .unwrap_err();
         assert!(
             error.to_string().contains("1 valores"),
             "el error tiene que decir qué no cuadra: {error}"
@@ -351,7 +455,7 @@ mod tests {
             columns: vec!["id de cliente".into()],
         });
 
-        let sql = select(&shape, None, 10).unwrap();
+        let sql = select(&shape, None, 10, &PageView::default()).unwrap();
         assert!(sql.contains("\"mi esquema\".\"Clientes\""), "{sql}");
         assert!(sql.contains("\"id de cliente\"::text"), "{sql}");
     }
@@ -365,18 +469,103 @@ mod tests {
         ];
 
         assert_eq!(
-            next_cursor(&shape, None, &rows),
+            next_cursor(&shape, None, &rows, &PageView::default()),
             Some(Cursor::After {
                 key: vec!["2".into(), "beto".into()]
             })
         );
     }
 
+    fn ordenado_por(column: &str, descending: bool) -> PageView {
+        PageView {
+            order: Some(PageOrder {
+                column: column.into(),
+                descending,
+            }),
+            filter: None,
+        }
+    }
+
+    #[test]
+    fn el_orden_elegido_va_primero_y_la_clave_desempata() {
+        let sql = select(&con_clave(), None, 200, &ordenado_por("nombre", true)).unwrap();
+        assert!(sql.contains("ORDER BY t.nombre DESC, t.id"), "{sql}");
+    }
+
+    #[test]
+    fn ordenar_por_la_misma_clave_no_la_repite() {
+        let sql = select(&con_clave(), None, 200, &ordenado_por("id", false)).unwrap();
+        assert!(sql.contains("ORDER BY t.id LIMIT"), "{sql}");
+    }
+
+    #[test]
+    fn ordenar_por_una_columna_que_no_existe_se_rechaza() {
+        // La columna llega de la interfaz: si no se valida, termina interpolada en el SQL.
+        let error = select(&con_clave(), None, 200, &ordenado_por("apellido", false)).unwrap_err();
+        assert!(error.to_string().contains("apellido"), "{error}");
+    }
+
+    #[test]
+    fn con_un_orden_elegido_no_se_pagina_por_clave() {
+        // El cursor por clave significa «lo que sigue de esta clave»: con otro orden eso no es lo
+        // que sigue en pantalla, y las filas se repetirían o faltarían.
+        let cursor = Cursor::After {
+            key: vec!["10".into()],
+        };
+        assert!(select(
+            &con_clave(),
+            Some(&cursor),
+            200,
+            &ordenado_por("nombre", false)
+        )
+        .is_err());
+
+        let rows = vec![vec![Some("1".into()), Some("ana".into()), None]];
+        assert_eq!(
+            next_cursor(&con_clave(), None, &rows, &ordenado_por("nombre", false)),
+            Some(Cursor::Offset { rows: 1 })
+        );
+    }
+
+    #[test]
+    fn el_filtro_va_entre_parentesis_y_se_combina_con_el_cursor() {
+        let view = PageView {
+            order: None,
+            filter: Some("nombre ILIKE 'a%' OR id < 10".into()),
+        };
+        let cursor = Cursor::After {
+            key: vec!["3".into()],
+        };
+        let sql = select(&con_clave(), Some(&cursor), 200, &view).unwrap();
+
+        // Sin los paréntesis, el `OR` se llevaría puesta la condición del cursor y la página
+        // siguiente traería filas ya vistas.
+        assert!(
+            sql.contains("WHERE (nombre ILIKE 'a%' OR id < 10) AND (t.id) > ($1::text::bigint)"),
+            "{sql}"
+        );
+    }
+
+    #[test]
+    fn un_filtro_en_blanco_es_no_filtrar() {
+        let view = PageView {
+            order: None,
+            filter: Some("   ".into()),
+        };
+        let sql = select(&con_clave(), None, 200, &view).unwrap();
+        assert!(!sql.contains("WHERE"), "{sql}");
+    }
+
     #[test]
     fn el_offset_siguiente_acumula_lo_ya_visto() {
         let rows = vec![vec![Some("1".into()), None, None]];
         assert_eq!(
-            next_cursor(&shape(None), Some(&Cursor::Offset { rows: 400 }), &rows),
+            next_cursor(
+                &shape(None),
+                Some(&Cursor::Offset { rows: 400 }),
+                &rows,
+                &PageView::default()
+            ),
             Some(Cursor::Offset { rows: 401 })
         );
     }

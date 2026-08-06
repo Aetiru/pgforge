@@ -15,5 +15,5 @@ pub use io::{
     export_command, export_to_file, import_command, import_from_file, CopyCommand, CopyFormat,
     ExportSource, ExportSpec, ImportSpec, Outcome as CopyOutcome, TextOptions,
 };
-pub use page::{page, select, Cursor, Page, DEFAULT_PAGE_SIZE};
+pub use page::{page, select, Cursor, Page, PageOrder, PageView, DEFAULT_PAGE_SIZE};
 pub use shape::{shape, Column, Key, KeyKind, TableShape};
