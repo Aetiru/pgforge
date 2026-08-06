@@ -376,6 +376,12 @@ textarea {
   @apply px-3 py-1.5 align-middle;
 }
 
+/* Una opción del menú que se abre con el clic derecho: ancho completo y atajo alineado al final. */
+.row-menu {
+  @apply flex w-full items-center justify-between gap-4 rounded px-2 py-1 text-left text-sm
+    hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-zinc-800;
+}
+
 /* Las acciones de una fila no compiten con el contenido hasta que el mouse llega a la fila. */
 .row-actions {
   @apply flex justify-end gap-1 opacity-0 transition-opacity

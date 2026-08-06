@@ -4,9 +4,13 @@
   let {
     columns,
     rows,
+    types = null,
   }: {
     columns: string[];
     rows: (string | null)[][];
+    /** Tipos de cada columna, cuando se pidieron. Van pegados al nombre, como en la pestaña de
+     * datos: al leer un resultado, saber si eso es un `numeric` o un `text` cambia lo que dice. */
+    types?: string[] | null;
   } = $props();
 
   /** Lo que se muestra en lugar de un NULL, que no es lo mismo que una celda vacía. */
@@ -42,9 +46,12 @@
 
       return {
         key: `${index}-${name}`,
-        header: name,
+        header: types?.[index] ? `${name}  ${types[index]}` : name,
         width: Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(longest * CHAR_WIDTH) + 20)),
+        align: numeric(sample, index) ? "right" : "left",
         value: (row) => oneLine(row.cells[index]),
+        // Lo que se copia y lo que muestra el visor es el valor como vino, no el de una línea.
+        raw: (row) => row.cells[index],
         title: (row) => row.cells[index] ?? undefined,
         tone: (row) =>
           row.cells[index] === null ? "italic text-zinc-400 dark:text-zinc-600" : "",
@@ -68,6 +75,23 @@
   /** Un valor con saltos de línea rompería la altura fija de la fila. */
   function oneLine(value: string | null): string {
     return value === null ? NULL : value.replace(/\s*\n\s*/g, " ↵ ");
+  }
+
+  /**
+   * Si la columna se alinea a la derecha. El resultado de una consulta no trae los tipos —viaja como
+   * texto—, así que se decide por lo que se ve: una columna donde todo lo que hay son números se lee
+   * en columna, con las unidades una debajo de otra. Alcanza con que la muestra sea uniforme; una
+   * fila más abajo con texto solo queda alineada distinto, no rompe nada.
+   */
+  function numeric(sample: (string | null)[][], index: number): boolean {
+    let seen = 0;
+    for (const row of sample) {
+      const value = row[index];
+      if (value === null) continue;
+      if (!/^[+-]?\d+(\.\d+)?$/.test(value.trim())) return false;
+      seen += 1;
+    }
+    return seen > 0;
   }
 </script>
 
