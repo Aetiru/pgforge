@@ -122,6 +122,12 @@ class Explorer {
   search = $state("");
 
   /**
+   * Deja fuera del árbol a los servidores sin conectar. No los desconfigura ni los borra: con veinte
+   * conexiones guardadas, las tres que están en uso quedan sepultadas entre las diecisiete que no.
+   */
+  onlyConnected = $state(false);
+
+  /**
    * Carpetas creadas en la interfaz que todavía no tienen ningún servidor. Viven solo acá, en
    * memoria: como una carpeta es un nombre compartido entre perfiles y no hay lista de carpetas
    * guardada aparte, una que quede vacía no tiene dónde persistir y desaparece al reiniciar. En
@@ -354,6 +360,21 @@ class Explorer {
     this.selected = null;
   }
 
+  /**
+   * Cierra todo lo que esté abierto sin desconectar nada ni descartar lo cargado: volver a abrir un
+   * servidor no le vuelve a pedir el catálogo. Las carpetas de conexiones quedan abiertas, porque
+   * cerrarlas escondería justamente los servidores que se quieren volver a ver.
+   */
+  collapseAll() {
+    const walk = (list: Row[]) => {
+      for (const row of list) {
+        if (row.kind !== "group") row.expanded = false;
+        if (row.children) walk(row.children);
+      }
+    };
+    walk(this.roots);
+  }
+
   select(row: Row) {
     this.selected = row;
   }
@@ -362,19 +383,35 @@ class Explorer {
 export const explorer = new Explorer();
 
 /**
+ * Si la fila sobrevive al filtro de «solo conectados».
+ *
+ * Se filtran servidores y no nodos: todo lo que cuelga de un servidor conectado lo está. Una carpeta
+ * se va con sus servidores, porque un encabezado sin nada adentro ocupa lo mismo que uno con algo.
+ * El filtro no descarta las filas del árbol, solo deja de dibujarlas: las que se esconden conservan
+ * lo que tenían abierto y cargado para cuando se lo apague.
+ */
+function passesFilter(row: Row, onlyConnected: boolean): boolean {
+  if (!onlyConnected) return true;
+  if (row.kind === "server") return row.connected;
+  if (row.kind === "group") return (row.children ?? []).some((server) => server.connected);
+  return true;
+}
+
+/**
  * Aplana el árbol a la lista de filas visibles.
  *
  * Con búsqueda activa se muestran las coincidencias y sus ancestros, sin importar si el nodo
  * estaba expandido. Solo alcanza a lo que ya se trajo del servidor: el árbol se carga por niveles
  * y buscar en todo el catálogo sería otra cosa.
  */
-export function visibleRows(rows: Row[], search = ""): Row[] {
+export function visibleRows(rows: Row[], search = "", onlyConnected = false): Row[] {
   const needle = search.trim().toLowerCase();
   const out: Row[] = [];
 
   if (needle === "") {
     const walk = (list: Row[]) => {
       for (const row of list) {
+        if (!passesFilter(row, onlyConnected)) continue;
         out.push(row);
         if (row.expanded && row.children) walk(row.children);
       }
@@ -385,6 +422,8 @@ export function visibleRows(rows: Row[], search = ""): Row[] {
 
   const collect = (list: Row[], into: Row[]) => {
     for (const row of list) {
+      if (!passesFilter(row, onlyConnected)) continue;
+
       const matched: Row[] = [];
       if (row.children) collect(row.children, matched);
 

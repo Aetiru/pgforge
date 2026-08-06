@@ -382,6 +382,14 @@
             </div>
             <button
               class="btn btn-icon"
+              title="Contraer todo"
+              aria-label="Contraer todo"
+              onclick={() => explorer.collapseAll()}
+            >
+              <Icon name="collapse" />
+            </button>
+            <button
+              class="btn btn-icon"
               title="Nueva carpeta"
               aria-label="Nueva carpeta"
               onclick={() => (newGroupDialog = true)}
@@ -406,7 +414,12 @@
             />
           </div>
 
-          <div class="divider-t px-3 py-2">
+          <div class="divider-t flex flex-col gap-1.5 px-3 py-2">
+            <!-- Filtra sin releer nada del servidor: es cambiar qué se dibuja, no qué se cargó. -->
+            <label class="check" title="Esconde los servidores guardados que no están conectados">
+              <input type="checkbox" bind:checked={explorer.onlyConnected} />
+              Solo servidores conectados
+            </label>
             <label class="check">
               <input
                 type="checkbox"
