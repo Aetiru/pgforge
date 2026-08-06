@@ -121,6 +121,18 @@ Los tipos de las columnas de una consulta se piden aparte (`QuerySession::column
 
 `ExportDialog` recibe un `ExportSource`, no una tabla: la pestaña de consulta exporta su resultado con `{ kind: "query" }` y el núcleo arma el `COPY (…) TO STDOUT`. Exportar **no** manda las filas de la pantalla: vuelve al servidor, así que el archivo trae todas y no las que entraron en el techo.
 
+### Objetos con molde propio
+
+Casi todo módulo de `ddl/` sigue el mismo molde de `ddl::view`: enum `XChange` etiquetado, función pura `statements()` y `apply()` que la ejecuta en **una** transacción. Tres se salen, y no por gusto:
+
+- **`ddl::database`** no abre transacción: PostgreSQL rechaza `CREATE DATABASE` y `DROP DATABASE` adentro de un bloque transaccional. Consecuencia: una lista a medias deja hecho lo anterior, así que la interfaz manda un cambio por vez. Además no se puede borrar ni renombrar la base a la que uno está conectado — de qué base colgarse lo decide `working_database`, no quien llama.
+- **`ddl::partition`** manda las sentencias sueltas solo si hay un `DETACH … CONCURRENTLY`, igual que `ddl::index` con `CREATE INDEX CONCURRENTLY`. Ese modificador existe desde PG 14 y lo gatea `ServerCaps::has_detach_partition_concurrently`; por eso `statements()` recibe las capacidades y `partition_preview` pide el perfil, a diferencia del resto de las vistas previas (mismo caso que `maintenance_plan`).
+- **`ddl::comment`** es transversal y no un cambio repetido en cada objeto: la sentencia es siempre `COMMENT ON <clase> <nombre> IS <texto>` y lo único que cambia es cómo se escribe el nombre. Sin texto borra con `IS NULL`, porque una cadena vacía deja un objeto documentado con nada adentro.
+
+Dos cosas que **no** hacen falta gatear, aunque parezca: `ALTER TYPE … ADD VALUE` corre adentro de una transacción en todo el rango soportado (la prohibición se levantó en PG 12, el piso es la 13), y `DROP DATABASE … WITH (FORCE)` existe desde la 13.
+
+Lo que PostgreSQL no puede hacer y la interfaz tiene que explicar en vez de intentar: no hay `DROP VALUE` de una enumeración —sacar uno exigiría recrear el tipo y todas las columnas que lo usan—, así que `TypeDialog` avisa que el valor se conserva. El diff de tipos y compuestos vive en `type-form.ts`, puro y probado.
+
 ### Identificadores y SQL crudo
 
 `ddl::quote_ident` cita solo cuando hace falta (mayúsculas, símbolos, palabras reservadas). Usarlo para todo identificador que se interpole. En cambio, hay texto que va **crudo** a propósito y está documentado como tal: `DEFAULT` de columna, `USING` de cambio de tipo, predicado de índice parcial, expresión de `CHECK`, nombre de tipo de columna. No se pueden parametrizar en DDL, los valida el servidor al ejecutar, y es la misma frontera de confianza que el editor de consultas: lo ejecuta el propio usuario con sus propios privilegios.
