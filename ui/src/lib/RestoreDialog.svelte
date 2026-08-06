@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
+  import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
   import { duration } from "./format";
@@ -128,6 +129,10 @@
   }
 
   async function run() {
+    if (!(await confirmMutation(profileId, "Se va a restaurar un respaldo sobre esta base."))) {
+      return;
+    }
+
     log = [];
     outcome = null;
     failed = false;

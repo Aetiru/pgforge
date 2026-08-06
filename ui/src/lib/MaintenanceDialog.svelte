@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
   import { duration } from "./format";
@@ -101,6 +102,8 @@
   });
 
   async function run() {
+    if (!(await confirmMutation(profileId, "Se va a correr una tarea de mantenimiento."))) return;
+
     log = [];
     outcome = null;
     failed = false;

@@ -141,6 +141,7 @@ async fn lee_y_edita_contra_servidores_reales() {
                 reconoce_la_clave(&handle, &schema).await;
                 recorre_todas_las_paginas(&handle, &schema).await;
                 recorre_con_clave_compuesta(&handle, &schema).await;
+                ordena_y_filtra_contra_el_servidor(&handle, &schema).await;
                 da_de_alta_modifica_y_borra(&handle, &schema).await;
                 escribe_cualquier_tipo(&handle, &schema).await;
                 detecta_que_otro_toco_la_fila(&handle, &schema).await;
@@ -196,9 +197,16 @@ async fn recorre_todas_las_paginas(handle: &ServerHandle, schema: &str) {
     let mut paginas = 0;
 
     loop {
-        let page = data::page(handle, database, &shape, cursor.as_ref(), 300)
-            .await
-            .expect("no se pudo traer la página");
+        let page = data::page(
+            handle,
+            database,
+            &shape,
+            cursor.as_ref(),
+            300,
+            &data::PageView::default(),
+        )
+        .await
+        .expect("no se pudo traer la página");
 
         vistas.extend(page.rows.iter().map(|row| row[0].clone().unwrap()));
         paginas += 1;
@@ -216,6 +224,96 @@ async fn recorre_todas_las_paginas(handle: &ServerHandle, schema: &str) {
     assert!(paginas > 1, "el fixture tenía que necesitar varias páginas");
 }
 
+/// Ordenar y filtrar del lado del servidor: lo que no se puede comprobar con el SQL armado a mano
+/// es que la paginación siga sin repetir ni saltear filas cuando el orden ya no es el de la clave.
+async fn ordena_y_filtra_contra_el_servidor(handle: &ServerHandle, schema: &str) {
+    let shape = shape_of(handle, schema, "clientes").await;
+    let database = handle.default_database();
+
+    // Descendente por identidad: la primera fila tiene que ser la última que se insertó.
+    let vista = data::PageView {
+        order: Some(data::PageOrder {
+            column: "id".to_owned(),
+            descending: true,
+        }),
+        filter: None,
+    };
+    let page = data::page(handle, database, &shape, None, 10, &vista)
+        .await
+        .expect("no se pudo ordenar contra el servidor");
+    assert_eq!(page.rows[0][0].as_deref(), Some("5000"));
+
+    // Con un orden elegido no vale el cursor por clave: la página siguiente va por posición.
+    assert!(
+        matches!(page.next, Some(Cursor::Offset { rows: 10 })),
+        "con orden propio hay que paginar por posición: {:?}",
+        page.next
+    );
+
+    // El filtro lo resuelve el servidor, así que alcanza a filas que la primera tanda ni tocó.
+    let filtrada = data::PageView {
+        order: None,
+        filter: Some("nombre = 'cliente 4999'".to_owned()),
+    };
+    let page = data::page(handle, database, &shape, None, 200, &filtrada)
+        .await
+        .expect("no se pudo filtrar contra el servidor");
+    assert_eq!(
+        page.rows.len(),
+        1,
+        "el filtro tenía que dejar una sola fila"
+    );
+    assert_eq!(page.rows[0][0].as_deref(), Some("4999"));
+    assert!(page.next.is_none());
+
+    // Ordenar por una columna que no existe se rechaza antes de llegar al servidor.
+    let inventada = data::PageView {
+        order: Some(data::PageOrder {
+            column: "apellido".to_owned(),
+            descending: false,
+        }),
+        filter: None,
+    };
+    assert!(data::page(handle, database, &shape, None, 10, &inventada)
+        .await
+        .is_err());
+
+    // Un predicado inválido lo rechaza el servidor, con su propio error.
+    let rota = data::PageView {
+        order: None,
+        filter: Some("no_existe = 1".to_owned()),
+    };
+    assert!(matches!(
+        data::page(handle, database, &shape, None, 10, &rota).await,
+        Err(Error::Database { .. })
+    ));
+
+    // Recorrer entero con orden propio: ni una fila repetida ni una que falte.
+    let orden_texto = data::PageView {
+        order: Some(data::PageOrder {
+            column: "nombre".to_owned(),
+            descending: false,
+        }),
+        filter: Some("id <= 1000".to_owned()),
+    };
+    let mut vistas: Vec<String> = Vec::new();
+    let mut cursor: Option<Cursor> = None;
+    loop {
+        let page = data::page(handle, database, &shape, cursor.as_ref(), 300, &orden_texto)
+            .await
+            .unwrap();
+        vistas.extend(page.rows.iter().map(|row| row[0].clone().unwrap()));
+        match page.next {
+            Some(next) => cursor = Some(next),
+            None => break,
+        }
+        assert!(vistas.len() <= 1000, "el cursor no termina de avanzar");
+    }
+    let unicas: std::collections::HashSet<&String> = vistas.iter().collect();
+    assert_eq!(vistas.len(), 1000, "faltan o sobran filas con orden propio");
+    assert_eq!(unicas.len(), 1000, "alguna fila salió repetida");
+}
+
 async fn recorre_con_clave_compuesta(handle: &ServerHandle, schema: &str) {
     let shape = shape_of(handle, schema, "ventas").await;
     let database = handle.default_database();
@@ -224,9 +322,16 @@ async fn recorre_con_clave_compuesta(handle: &ServerHandle, schema: &str) {
     let mut cursor: Option<Cursor> = None;
 
     loop {
-        let page = data::page(handle, database, &shape, cursor.as_ref(), 250)
-            .await
-            .unwrap();
+        let page = data::page(
+            handle,
+            database,
+            &shape,
+            cursor.as_ref(),
+            250,
+            &data::PageView::default(),
+        )
+        .await
+        .unwrap();
         vistas.extend(
             page.rows
                 .iter()

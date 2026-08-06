@@ -45,7 +45,9 @@
     | "info"
     | "clock"
     | "key"
+    | "lock"
     | "sort"
+    | "collapse"
     | "chart"
     | "compass"
     | "download"
@@ -102,7 +104,10 @@
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.8h.01"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5.5l3.5 2"/>',
     key: '<circle cx="8" cy="15" r="4"/><path d="M10.9 12.1L20 3l1.5 1.5-1.5 1.5 1.5 1.5-3 3-1.5-1.5-1.5 1.5"/>',
+    lock: '<rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
     sort: '<path d="M8 4v16M8 4L4.5 7.5M8 4l3.5 3.5"/><path d="M16 20V4M16 20l-3.5-3.5M16 20l3.5-3.5"/>',
+    // Dos flechas que se juntan sobre una línea: todo lo abierto vuelve al mismo lugar.
+    collapse: '<path d="M4 12h16"/><path d="M8.5 4L12 7.5 15.5 4"/><path d="M8.5 20L12 16.5l3.5 3.5"/>',
     chart: '<path d="M4 20V4"/><path d="M4 20h16"/><path d="M8 16.5v-4M12.5 16.5v-8M17 16.5v-5.5"/>',
     compass: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
     download: '<path d="M12 3v12"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M4 20h16"/>',

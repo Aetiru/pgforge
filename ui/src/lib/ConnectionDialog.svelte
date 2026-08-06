@@ -10,6 +10,7 @@
     sshHostKey,
     sshTest,
     type ConnectionProfile,
+    type Environment,
     type SshTunnel,
     type SslMode,
   } from "./ipc";
@@ -35,6 +36,8 @@
       sslMode: "prefer",
       connectTimeoutSecs: 10,
       savePassword: false,
+      readOnly: false,
+      autocommit: true,
     };
   }
 
@@ -65,6 +68,24 @@
   let testResult = $state<{ ok: boolean; message: string } | null>(null);
   let testTrust = $state<{ fingerprint: string; changed: boolean } | null>(null);
 
+  // El formulario se partió en pestañas cuando dejó de entrar de un vistazo: lo de todos los días
+  // arriba, lo que se toca una vez por servidor detrás. La validación tiene que poder traer al
+  // usuario de vuelta a la pestaña del campo que falla, o el error señala algo que no está en pantalla.
+  type Section = "general" | "connection" | "ssh";
+  const SECTIONS: { value: Section; label: string }[] = [
+    { value: "general", label: "General" },
+    { value: "connection", label: "Conexión" },
+    { value: "ssh", label: "SSH" },
+  ];
+  let section = $state<Section>("general");
+
+  const ENVIRONMENTS: { value: Environment | ""; label: string }[] = [
+    { value: "", label: "Sin marcar" },
+    { value: "dev", label: "Desarrollo" },
+    { value: "test", label: "Pruebas" },
+    { value: "prod", label: "Producción" },
+  ];
+
   const SSL_MODES: { value: SslMode; label: string }[] = [
     { value: "disable", label: "Sin cifrado" },
     { value: "prefer", label: "Preferir cifrado" },
@@ -76,6 +97,16 @@
   async function pickKey() {
     const chosen = await open({ title: "Elegir la clave privada SSH" });
     if (typeof chosen === "string" && form.tunnel) form.tunnel.privateKey = chosen;
+  }
+
+  async function pickRootCert() {
+    const chosen = await open({ title: "Elegir el certificado raíz" });
+    if (typeof chosen === "string") form.rootCert = chosen;
+  }
+
+  /** Vacío en el formulario es «sin límite»: el perfil lo guarda como campo ausente. */
+  function optionalNumber(value: string): number | undefined {
+    return value.trim() === "" ? undefined : Number(value);
   }
 
   async function testTunnel(trustHostKey = false) {
@@ -100,10 +131,12 @@
   async function submit(connect: boolean) {
     error = null;
     if (!form.name.trim()) {
+      section = "general";
       error = "Poné un nombre para identificar el servidor.";
       return;
     }
     if (form.tunnel && !form.tunnel.host.trim()) {
+      section = "ssh";
       error = "El túnel SSH necesita el host del bastión, o desactivalo.";
       return;
     }
@@ -130,7 +163,20 @@
   busy={saving}
   {onclose}
 >
-  <div class="grid grid-cols-2 gap-3">
+  <div class="seg mb-4" role="tablist">
+    {#each SECTIONS as item (item.value)}
+      <button
+        class="seg-item"
+        role="tab"
+        aria-selected={section === item.value}
+        onclick={() => (section = item.value)}
+      >
+        {item.label}
+      </button>
+    {/each}
+  </div>
+
+  <div class="grid grid-cols-2 gap-3" class:hidden={section !== "general"}>
     <label class="flex flex-col gap-1">
       <span class="label">Nombre</span>
       <input class="field" data-autofocus bind:value={form.name} placeholder="Producción" />
@@ -204,15 +250,78 @@
     </label>
   </div>
 
-  <div class="divider-t my-4"></div>
+  <div class="grid grid-cols-2 gap-3" class:hidden={section !== "connection"}>
+    <label class="flex flex-col gap-1">
+      <span class="label">Entorno</span>
+      <select
+        class="field"
+        title="Solo cambia cómo se ve y cuánto se pregunta antes de modificar algo"
+        value={form.environment ?? ""}
+        onchange={(event) =>
+          (form.environment = (event.currentTarget.value || undefined) as Environment | undefined)}
+      >
+        {#each ENVIRONMENTS as item (item.value)}
+          <option value={item.value}>{item.label}</option>
+        {/each}
+      </select>
+    </label>
 
-  <label class="check">
-    <input type="checkbox" bind:checked={tunnelOn} />
-    Conectar a través de un túnel SSH (bastión)
-  </label>
+    <label class="flex flex-col gap-1">
+      <span class="label">Límite por sentencia (ms)</span>
+      <input
+        class="field"
+        type="number"
+        min="0"
+        placeholder="El del servidor"
+        value={form.statementTimeoutMs ?? ""}
+        onchange={(event) => (form.statementTimeoutMs = optionalNumber(event.currentTarget.value))}
+      />
+    </label>
 
-  {#if form.tunnel}
-    <div class="mt-3 grid grid-cols-2 gap-3">
+    <label class="flex flex-col gap-1">
+      <span class="label">Espera al conectar (s)</span>
+      <input class="field" type="number" min="1" bind:value={form.connectTimeoutSecs} />
+    </label>
+
+    <label class="flex flex-col gap-1">
+      <span class="label">Certificado raíz</span>
+      <div class="flex gap-2">
+        <input
+          class="field grow"
+          bind:value={form.rootCert}
+          placeholder="Vacío: las CA del sistema"
+        />
+        <button type="button" class="btn btn-sm" onclick={pickRootCert}>Elegir…</button>
+      </div>
+    </label>
+
+    <label class="check col-span-2">
+      <input type="checkbox" bind:checked={form.readOnly} />
+      Conexión de solo lectura
+    </label>
+    <p class="col-span-2 -mt-2 text-xs muted">
+      Abre cada conexión con <code>default_transaction_read_only</code>: el rechazo lo hace el
+      servidor, así vale igual para el explorador, el editor de SQL y las importaciones.
+    </p>
+
+    <label class="check col-span-2">
+      <input type="checkbox" bind:checked={form.autocommit} />
+      Autocommit en las pestañas de consulta
+    </label>
+    <p class="col-span-2 -mt-2 text-xs muted">
+      Apagado, cada ejecución abre una transacción que hay que confirmar con Commit. Es el valor
+      inicial: cada pestaña lo puede cambiar por su cuenta.
+    </p>
+  </div>
+
+  <div class:hidden={section !== "ssh"}>
+    <label class="check">
+      <input type="checkbox" bind:checked={tunnelOn} />
+      Conectar a través de un túnel SSH (bastión)
+    </label>
+
+    {#if form.tunnel}
+      <div class="mt-3 grid grid-cols-2 gap-3">
       <label class="flex flex-col gap-1">
         <span class="label">Bastión</span>
         <input class="field" bind:value={form.tunnel.host} placeholder="bastion.interno" />
@@ -282,8 +391,9 @@
           </button>
         </Alert>
       {/if}
-    </div>
-  {/if}
+      </div>
+    {/if}
+  </div>
 
   {#if error}
     <Alert tone="bad" box class="mt-3">{error}</Alert>

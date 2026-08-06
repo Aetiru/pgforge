@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
@@ -119,6 +120,8 @@
       error = problem;
       return;
     }
+
+    if (!(await confirmMutation(profileId, "Se va a modificar la estructura de la tabla."))) return;
 
     saving = true;
     try {

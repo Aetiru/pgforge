@@ -22,11 +22,13 @@
     type Subject as PrivilegeSubject,
   } from "./PrivilegeDialog.svelte";
   import RoleDialog from "./RoleDialog.svelte";
+  import FontSize from "./FontSize.svelte";
   import Sql from "./Sql.svelte";
   import TableDialog from "./TableDialog.svelte";
   import TriggerDialog from "./TriggerDialog.svelte";
   import ViewDialog from "./ViewDialog.svelte";
-  import { GROUP_LOOK, kindLabel, lookOf } from "./badges";
+  import { confirmMutation, isReadOnly, readOnlyReason } from "./access.svelte";
+  import { envLook, GROUP_LOOK, kindLabel, lookOf } from "./badges";
   import { explorer, type Row } from "./explorer.svelte";
   import {
     dataOpen,
@@ -121,6 +123,18 @@
   );
   const caps = $derived(selected ? (explorer.caps[selected.profileId] ?? null) : null);
   const look = $derived(isGroup ? GROUP_LOOK : lookOf(node?.kind ?? null));
+
+  /**
+   * Lo que se le agrega a un botón que modifica algo cuando el servidor es de solo lectura.
+   *
+   * Se esparce con `{...blocked}` después del `title` para que gane el motivo: un botón apagado sin
+   * explicación se lee como una falla de la aplicación, no como una decisión del perfil.
+   */
+  const blocked = $derived(
+    selected && isReadOnly(selected.profileId)
+      ? { disabled: true, title: readOnlyReason(selected.profileId) ?? "" }
+      : {},
+  );
 
   /** Ni las carpetas, ni las bases, ni la fila del servidor tienen un DDL propio. */
   const hasDdl = $derived(node !== null && folderOf(node.kind) === null && node.kind !== "database");
@@ -351,6 +365,8 @@
   /** Prende, apaga o fuerza el filtro sin salir de la sección: es un solo ALTER TABLE. */
   async function applySwitch(change: PolicyChange) {
     if (!selected || !node) return;
+    if (!(await confirmMutation(selected.profileId, "Se va a cambiar la seguridad de la tabla.")))
+      return;
     securityError = null;
     try {
       await policyApply(selected.profileId, [change], node.database);
@@ -835,6 +851,7 @@
 
   async function confirmRevoke() {
     if (!revokeTarget || !selected || !node || !privilegeSubject) return;
+    if (!(await confirmMutation(selected.profileId, "Se van a revocar privilegios."))) return;
     revoking = true;
     revokeError = null;
     try {
@@ -927,6 +944,8 @@
 
   async function confirmRefresh() {
     if (!refreshTarget || !selected) return;
+    if (!(await confirmMutation(selected.profileId, "Se va a recalcular la vista materializada.")))
+      return;
     refreshing = true;
     refreshError = null;
     try {
@@ -953,6 +972,8 @@
 
   async function confirmDrop() {
     if (!dropTarget || !selected || !node) return;
+    if (!(await confirmMutation(selected.profileId, "Se va a eliminar un objeto del servidor.")))
+      return;
     dropping = true;
     dropError = null;
     try {
@@ -1216,6 +1237,13 @@
       { label: "Base inicial", value: profile.database },
       { label: "Usuario", value: profile.user },
       { label: "Cifrado", value: profile.sslMode },
+      {
+        label: "Entorno",
+        value: profile.environment ? envLook(profile.environment).title : "sin marcar",
+        bad: profile.environment === "prod",
+      },
+      { label: "Solo lectura", value: profile.readOnly ? "sí" : "no" },
+      { label: "Autocommit", value: profile.autocommit ? "sí" : "no" },
     ];
     if (caps) {
       rows.push(
@@ -1289,6 +1317,7 @@
           {#if isViewsFolder && node?.schema}
             <button
               class="btn btn-primary"
+              {...blocked}
               onclick={() => (viewDialog = { materialized: false, existing: null })}
             >
               <Icon name="plus" size={12} />
@@ -1299,6 +1328,7 @@
           {#if isMatViewsFolder && node?.schema}
             <button
               class="btn btn-primary"
+              {...blocked}
               onclick={() => (viewDialog = { materialized: true, existing: null })}
             >
               <Icon name="plus" size={12} />
@@ -1309,6 +1339,7 @@
           {#if isFunctionsFolder && node?.schema}
             <button
               class="btn btn-primary"
+              {...blocked}
               onclick={() =>
                 (functionDialog = { sql: functionSkeleton(node!.schema!, false), isEdit: false })}
             >
@@ -1320,6 +1351,7 @@
           {#if isProceduresFolder && node?.schema}
             <button
               class="btn btn-primary"
+              {...blocked}
               onclick={() =>
                 (functionDialog = { sql: functionSkeleton(node!.schema!, true), isEdit: false })}
             >
@@ -1329,7 +1361,7 @@
           {/if}
 
           {#if isRolesFolder}
-            <button class="btn btn-primary" onclick={() => (roleDialog = { existing: null })}>
+            <button class="btn btn-primary" {...blocked} onclick={() => (roleDialog = { existing: null })}>
               <Icon name="plus" size={12} />
               Nuevo rol
             </button>
@@ -1338,6 +1370,7 @@
           {#if isExtensionsFolder}
             <button
               class="btn btn-primary"
+              {...blocked}
               onclick={() => (extensionDialog = { existing: null })}
             >
               <Icon name="plus" size={12} />
@@ -1346,7 +1379,7 @@
           {/if}
 
           {#if isFdwsFolder}
-            <button class="btn btn-primary" onclick={() => (fdwDialog = { existing: null })}>
+            <button class="btn btn-primary" {...blocked} onclick={() => (fdwDialog = { existing: null })}>
               <Icon name="plus" size={12} />
               Nuevo wrapper
             </button>
@@ -1355,6 +1388,7 @@
           {#if isForeignServersFolder}
             <button
               class="btn btn-primary"
+              {...blocked}
               onclick={() => (foreignServerDialog = { existing: null })}
             >
               <Icon name="plus" size={12} />
@@ -1408,6 +1442,7 @@
             <button
               class="btn"
               title={`Importa un archivo a ${node.label} con COPY`}
+              {...blocked}
               onclick={() => (importDialog = true)}
             >
               <Icon name="upload" size={12} />
@@ -1427,6 +1462,7 @@
             <button
               class="btn"
               title={`Restaura un backup sobre ${node.label} con pg_restore`}
+              {...blocked}
               onclick={() => (restoreDialog = true)}
             >
               <Icon name="upload" size={12} />
@@ -1437,6 +1473,7 @@
           {#if isView && node}
             <button
               class="btn"
+              {...blocked}
               onclick={() =>
                 (viewDialog = {
                   materialized: false,
@@ -1451,6 +1488,7 @@
           {#if isMaterializedView && node}
             <button
               class="btn"
+              {...blocked}
               onclick={() =>
                 (viewDialog = {
                   materialized: true,
@@ -1463,6 +1501,7 @@
             <button
               class="btn"
               title="Vuelve a calcular los datos guardados de la vista"
+              {...blocked}
               onclick={() => (refreshTarget = { schema: node!.schema!, name: node!.label })}
             >
               <Icon name="refresh" size={12} />
@@ -1471,7 +1510,7 @@
           {/if}
 
           {#if (isFunction || isProcedure) && ddl}
-            <button class="btn" onclick={() => (functionDialog = { sql: ddl!.sql, isEdit: true })}>
+            <button class="btn" {...blocked} onclick={() => (functionDialog = { sql: ddl!.sql, isEdit: true })}>
               <Icon name="edit" size={12} />
               Editar
             </button>
@@ -1533,6 +1572,7 @@
             <button
               class="btn btn-danger-ghost"
               title="Eliminar la tabla"
+              {...blocked}
               onclick={() => (dropTarget = { kind: "table", label: shape!.name })}
             >
               <Icon name="trash" size={12} />
@@ -1543,6 +1583,7 @@
           {#if isView && node}
             <button
               class="btn btn-danger-ghost"
+              {...blocked}
               onclick={() => (dropTarget = { kind: "view", label: node!.label })}
             >
               <Icon name="trash" size={12} />
@@ -1553,6 +1594,7 @@
           {#if isMaterializedView && node}
             <button
               class="btn btn-danger-ghost"
+              {...blocked}
               onclick={() => (dropTarget = { kind: "materializedView", label: node!.label })}
             >
               <Icon name="trash" size={12} />
@@ -1561,7 +1603,7 @@
           {/if}
 
           {#if (isFunction || isProcedure) && ddl}
-            <button class="btn btn-danger-ghost" onclick={askDropFunction}>
+            <button class="btn btn-danger-ghost" {...blocked} onclick={askDropFunction}>
               <Icon name="trash" size={12} />
               Eliminar
             </button>
@@ -1570,6 +1612,7 @@
           {#if isRole}
             <button
               class="btn btn-danger-ghost"
+              {...blocked}
               onclick={() => (dropTarget = { kind: "role", label: selected.label })}
             >
               <Icon name="trash" size={12} />
@@ -1580,6 +1623,7 @@
           {#if isExtension}
             <button
               class="btn btn-danger-ghost"
+              {...blocked}
               onclick={() => (dropTarget = { kind: "extension", label: selected.label })}
             >
               <Icon name="trash" size={12} />
@@ -1590,6 +1634,7 @@
           {#if isFdw}
             <button
               class="btn btn-danger-ghost"
+              {...blocked}
               onclick={() => (dropTarget = { kind: "foreignDataWrapper", label: selected.label })}
             >
               <Icon name="trash" size={12} />
@@ -1600,6 +1645,7 @@
           {#if isForeignServer}
             <button
               class="btn btn-danger-ghost"
+              {...blocked}
               onclick={() => (dropTarget = { kind: "foreignServer", label: selected.label })}
             >
               <Icon name="trash" size={12} />
@@ -1737,6 +1783,7 @@
               {#if shape}
                 <button
                   class="btn btn-sm ml-auto"
+                  {...blocked}
                   onclick={() => (columnDialog = { column: null })}
                 >
                   <Icon name="plus" size={11} />
@@ -1781,6 +1828,7 @@
                               class="btn btn-ghost btn-icon size-6"
                               title="Editar la columna"
                               aria-label="Editar la columna"
+                              {...blocked}
                               onclick={() => (columnDialog = { column })}
                             >
                               <Icon name="edit" size={12} />
@@ -1790,6 +1838,7 @@
                             class="btn btn-danger-ghost btn-icon size-6"
                             title="Eliminar la columna"
                             aria-label="Eliminar la columna"
+                            {...blocked}
                             onclick={() => (dropTarget = { kind: "column", label: column.name })}
                           >
                             <Icon name="trash" size={12} />
@@ -1807,7 +1856,7 @@
             <div class="card-head">
               <span class="card-title">Índices</span>
               {#if shape}
-                <button class="btn btn-sm ml-auto" onclick={() => (newIndex = true)}>
+                <button class="btn btn-sm ml-auto" {...blocked} onclick={() => (newIndex = true)}>
                   <Icon name="plus" size={11} />
                   Índice
                 </button>
@@ -1852,6 +1901,7 @@
                             class="btn btn-danger-ghost btn-icon size-6"
                             title="Eliminar el índice"
                             aria-label="Eliminar el índice"
+                            {...blocked}
                             onclick={() => (dropTarget = { kind: "index", label: index.name })}
                           >
                             <Icon name="trash" size={12} />
@@ -1869,7 +1919,7 @@
             <div class="card-head">
               <span class="card-title">Restricciones</span>
               {#if shape}
-                <button class="btn btn-sm ml-auto" onclick={() => (newConstraint = true)}>
+                <button class="btn btn-sm ml-auto" {...blocked} onclick={() => (newConstraint = true)}>
                   <Icon name="plus" size={11} />
                   Restricción
                 </button>
@@ -1910,6 +1960,7 @@
                             class="btn btn-danger-ghost btn-icon size-6"
                             title="Eliminar la restricción"
                             aria-label="Eliminar la restricción"
+                            {...blocked}
                             onclick={() =>
                               (dropTarget = { kind: "constraint", label: constraint.name })}
                           >
@@ -1930,6 +1981,7 @@
               {#if shape}
                 <button
                   class="btn btn-sm ml-auto"
+                  {...blocked}
                   onclick={() => (triggerDialog = { existing: null })}
                 >
                   <Icon name="plus" size={11} />
@@ -1968,6 +2020,7 @@
                             class="btn btn-ghost btn-icon size-6"
                             title="Editar el trigger"
                             aria-label="Editar el trigger"
+                            {...blocked}
                             onclick={() => (triggerDialog = { existing: trigger })}
                           >
                             <Icon name="edit" size={12} />
@@ -1976,6 +2029,7 @@
                             class="btn btn-danger-ghost btn-icon size-6"
                             title="Eliminar el trigger"
                             aria-label="Eliminar el trigger"
+                            {...blocked}
                             onclick={() => (dropTarget = { kind: "trigger", label: trigger.name })}
                           >
                             <Icon name="trash" size={12} />
@@ -1995,6 +2049,7 @@
               {#if shape}
                 <button
                   class="btn btn-sm ml-auto"
+                  {...blocked}
                   onclick={() => (policyDialog = { existing: null })}
                 >
                   <Icon name="plus" size={11} />
@@ -2096,6 +2151,7 @@
                               class="btn btn-ghost btn-icon size-6"
                               title="Editar la política"
                               aria-label="Editar la política"
+                              {...blocked}
                               onclick={() => (policyDialog = { existing: policy })}
                             >
                               <Icon name="edit" size={12} />
@@ -2104,6 +2160,7 @@
                               class="btn btn-danger-ghost btn-icon size-6"
                               title="Eliminar la política"
                               aria-label="Eliminar la política"
+                              {...blocked}
                               onclick={() => (dropTarget = { kind: "policy", label: policy.name })}
                             >
                               <Icon name="trash" size={12} />
@@ -2123,6 +2180,7 @@
               <span class="card-title">Privilegios</span>
               <button
                 class="btn btn-sm ml-auto"
+                {...blocked}
                 onclick={() => (privilegeDialog = { existing: null })}
               >
                 <Icon name="plus" size={11} />
@@ -2169,6 +2227,7 @@
                             class="btn btn-ghost btn-icon size-6"
                             title="Editar los privilegios"
                             aria-label="Editar los privilegios"
+                            {...blocked}
                             onclick={() =>
                               (privilegeDialog = {
                                 existing: {
@@ -2187,6 +2246,7 @@
                             class="btn btn-danger-ghost btn-icon size-6"
                             title="Revocar todo"
                             aria-label="Revocar todo"
+                            {...blocked}
                             onclick={() =>
                               (revokeTarget = {
                                 grantee: group.grantee,
@@ -2276,6 +2336,7 @@
               <span class="card-title">Mapeos de usuario</span>
               <button
                 class="btn btn-sm ml-auto"
+                {...blocked}
                 onclick={() => (userMappingDialog = { existing: null })}
               >
                 <Icon name="plus" size={11} />
@@ -2315,6 +2376,7 @@
                             class="btn btn-ghost btn-icon size-6"
                             title="Editar el mapeo"
                             aria-label="Editar el mapeo"
+                            {...blocked}
                             onclick={() => (userMappingDialog = { existing: mapping })}
                           >
                             <Icon name="edit" size={12} />
@@ -2343,10 +2405,13 @@
                 <span class="text-xs muted">
                   {ddl.source === "pgDump" ? "reconstruido con pg_dump" : "generado por PostgreSQL"}
                 </span>
-                <button class="btn btn-sm ml-auto" onclick={copy}>
-                  <Icon name={copied ? "check" : "copy"} size={11} />
-                  {copied ? "Copiado" : "Copiar"}
-                </button>
+                <span class="ml-auto flex items-center gap-1">
+                  <FontSize />
+                  <button class="btn btn-sm" onclick={copy}>
+                    <Icon name={copied ? "check" : "copy"} size={11} />
+                    {copied ? "Copiado" : "Copiar"}
+                  </button>
+                </span>
               {/if}
             </div>
 
@@ -2562,8 +2627,7 @@
   <ExportDialog
     profileId={selected.profileId}
     database={node.database}
-    schema={node.schema}
-    table={node.label}
+    source={{ kind: "table", schema: node.schema, table: node.label, columns: [] }}
     onclose={() => (exportDialog = false)}
   />
 {/if}

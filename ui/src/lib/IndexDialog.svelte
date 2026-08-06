@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
   import SqlPreview from "./SqlPreview.svelte";
@@ -87,6 +88,8 @@
       error = problem;
       return;
     }
+
+    if (!(await confirmMutation(profileId, "Se va a crear un índice."))) return;
 
     saving = true;
     try {

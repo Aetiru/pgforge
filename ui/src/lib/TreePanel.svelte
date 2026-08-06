@@ -2,7 +2,8 @@
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
-  import { GROUP_LOOK, lookOf, tagLook } from "./badges";
+  import { environmentOf, isReadOnly } from "./access.svelte";
+  import { envLook, GROUP_LOOK, lookOf, READ_ONLY_LOOK, tagLook } from "./badges";
   import { explorer, visibleRows, type Row } from "./explorer.svelte";
   import { describeError, folderOf } from "./ipc";
 
@@ -19,11 +20,19 @@
   } = $props();
 
   /**
-   * Todas las filas miden lo mismo, así que la ventana visible se calcula con una división en vez
-   * de medir cada fila. Un esquema con miles de tablas dibuja solo lo que entra en pantalla.
+   * Un servidor ocupa dos líneas —nombre arriba, a dónde apunta abajo— y todo lo demás una sola. Es
+   * la única fila que se lee eligiendo entre veinte parecidas; las tablas de un esquema se recorren
+   * y ahí lo que sirve es que entren muchas.
+   *
+   * Las alturas dejan de ser iguales, así que la ventana visible ya no sale de una división: se
+   * acumulan los desplazamientos una vez por lista y se busca en ellos por bisección. Un esquema con
+   * miles de tablas sigue dibujando solo lo que entra en pantalla.
    */
   const ROW_HEIGHT = 28;
+  const SERVER_HEIGHT = 42;
   const OVERSCAN = 8;
+
+  const heightOf = (row: Row) => (row.kind === "server" ? SERVER_HEIGHT : ROW_HEIGHT);
 
   let scrollTop = $state(0);
   let viewportHeight = $state(600);
@@ -34,10 +43,40 @@
   let dropGroup = $state<string | null | undefined>(undefined);
   let moveError = $state<string | null>(null);
 
-  const rows = $derived(visibleRows(explorer.roots, explorer.search));
-  const start = $derived(Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN));
+  const rows = $derived(visibleRows(explorer.roots, explorer.search, explorer.onlyConnected));
+
+  /** Dónde arranca cada fila, más la altura total al final. */
+  const offsets = $derived.by(() => {
+    const out = new Array<number>(rows.length + 1);
+    let top = 0;
+    for (let index = 0; index < rows.length; index++) {
+      out[index] = top;
+      top += heightOf(rows[index]);
+    }
+    out[rows.length] = top;
+    return out;
+  });
+
+  /** La última fila que empieza en `top` o antes. */
+  function indexAt(top: number): number {
+    let low = 0;
+    let high = rows.length - 1;
+    let found = 0;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      if (offsets[mid] <= top) {
+        found = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return found;
+  }
+
+  const start = $derived(Math.max(0, indexAt(scrollTop) - OVERSCAN));
   const visible = $derived(
-    rows.slice(start, start + Math.ceil(viewportHeight / ROW_HEIGHT) + OVERSCAN * 2),
+    rows.slice(start, Math.min(rows.length, indexAt(scrollTop + viewportHeight) + 1 + OVERSCAN)),
   );
 
   const needle = $derived(explorer.search.trim().toLowerCase());
@@ -54,10 +93,11 @@
   /** Deja la fila `index` dentro de la ventana visible, sin moverla si ya se ve. */
   function reveal(index: number) {
     if (!viewport) return;
-    const top = index * ROW_HEIGHT;
+    const top = offsets[index];
+    const height = heightOf(rows[index]);
     if (top < scrollTop) viewport.scrollTop = top;
-    else if (top + ROW_HEIGHT > scrollTop + viewportHeight) {
-      viewport.scrollTop = top + ROW_HEIGHT - viewportHeight;
+    else if (top + height > scrollTop + viewportHeight) {
+      viewport.scrollTop = top + height - viewportHeight;
     }
   }
 
@@ -145,6 +185,19 @@
   }
 
   /**
+   * Si la fila lleva una línea de separación arriba. Solo la llevan servidores y carpetas: son los
+   * bloques que se leen enteros, y sin separación una lista de veinte conexiones es una sola mancha
+   * de texto. El primer servidor de una carpeta no la lleva, porque el encabezado y lo que agrupa
+   * son la misma cosa.
+   */
+  function separated(index: number): boolean {
+    if (index === 0) return false;
+    const row = rows[index];
+    if (row.kind === "node") return false;
+    return !(row.kind === "server" && rows[index - 1].kind === "group");
+  }
+
+  /**
    * Parte la etiqueta en los tramos que coinciden con la búsqueda y los que no. Sin esto hay que
    * releer cada fila para encontrar por qué apareció en el resultado.
    */
@@ -208,12 +261,29 @@
         </button>
       {/if}
     </Empty>
+  {:else if rows.length === 0 && explorer.onlyConnected && needle === ""}
+    <Empty
+      icon="plug"
+      title="Ningún servidor conectado"
+      hint="El árbol está mostrando solo los servidores conectados y todavía no hay ninguno."
+    >
+      <button class="btn" onclick={() => (explorer.onlyConnected = false)}>
+        Mostrar todos los servidores
+      </button>
+    </Empty>
   {:else if rows.length === 0}
     <Empty
       icon="search"
       title="Sin coincidencias"
       hint="La búsqueda solo alcanza a lo que ya se cargó del árbol: abrí los nodos donde puede estar «{explorer.search}»."
-    />
+    >
+      {#if explorer.onlyConnected}
+        <!-- Con el filtro puesto, lo que falta puede estar en un servidor que el árbol no muestra. -->
+        <button class="btn" onclick={() => (explorer.onlyConnected = false)}>
+          Buscar también en los servidores sin conectar
+        </button>
+      {/if}
+    </Empty>
   {:else}
     {#if needle !== ""}
       <p class="px-3 py-1.5 text-[11px] muted">
@@ -222,14 +292,16 @@
       </p>
     {/if}
 
-    <div class="relative" style="height: {rows.length * ROW_HEIGHT}px">
+    <div class="relative" style="height: {offsets[rows.length]}px">
       {#each visible as row, index (start + index)}
+        {@const at = start + index}
         {@const isGroup = row.kind === "group"}
         {@const isServer = row.kind === "server"}
         {@const look = isGroup ? GROUP_LOOK : lookOf(row.node?.kind ?? null)}
         {@const isFolder = row.node !== null && folderOf(row.node.kind) !== null}
         {@const isSelected = explorer.selected?.key === row.key}
         {@const isDropTarget = dragging !== null && dropGroup === dropTargetOf(row)}
+        {@const environment = environmentOf(row.profileId)}
         <!-- El teclado lo maneja el contenedor: las filas fuera de la ventana no están en el DOM. -->
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <div
@@ -238,9 +310,10 @@
                  {isSelected
             ? 'bg-blue-50 text-blue-900 dark:bg-blue-950/60 dark:text-blue-100'
             : 'hover:bg-zinc-100 dark:hover:bg-zinc-800/70'}
+                 {separated(at) ? 'border-t border-zinc-200/80 dark:border-zinc-800' : ''}
                  {isDropTarget && dropGroup !== null ? 'bg-blue-100/70 dark:bg-blue-900/40' : ''}
                  {dragging === row.profileId ? 'opacity-40' : ''}"
-          style="top: {(start + index) * ROW_HEIGHT}px; height: {ROW_HEIGHT}px; padding-left: {4 +
+          style="top: {offsets[at]}px; height: {heightOf(row)}px; padding-left: {4 +
             row.level * 13}px"
           role="treeitem"
           tabindex="-1"
@@ -284,7 +357,19 @@
             ></span>
           {/each}
 
-          {#if isSelected}
+          <!--
+            El borde izquierdo dice a qué servidor pertenece la fila y de qué entorno es: la línea
+            arranca en el servidor y baja por todo lo que cuelga de él, así que no hay que rastrear
+            la sangría hasta la raíz para saber que se está editando producción. Sin entorno marcado
+            queda para la fila elegida, que necesita el mismo píxel.
+          -->
+          {#if environment}
+            {@const badge = envLook(environment)}
+            <span
+              class="pointer-events-none absolute inset-y-0 left-0 rounded-r {badge.spine}
+                     {isServer ? 'w-[3px]' : 'w-0.5'}"
+            ></span>
+          {:else if isSelected}
             <span
               class="pointer-events-none absolute inset-y-0 left-0 w-0.5 rounded-r bg-blue-600
                      dark:bg-blue-400"
@@ -323,45 +408,93 @@
           <Icon name={look.icon} class={look.tone} />
 
           <!--
-            El nombre es lo que identifica la fila, así que cede espacio último. El detalle se
-            achica primero: sin esto, un host largo dejaba el nombre del servidor en dos letras.
+            El nombre y lo que lo acompaña van en columna: en un servidor son dos líneas —nombre
+            arriba, a dónde apunta abajo—, en el resto una sola. Así el nombre del servidor se queda
+            con el ancho entero de la fila, que era lo que se le comían el host, el entorno y el
+            botón de conectar. El nombre cede espacio último; el detalle se achica primero.
           -->
-          <span
-            class="min-w-0 truncate {isServer || isGroup ? 'font-medium' : ''}"
-            title={row.comment ?? row.label}
-          >
-            {#each pieces(row.label) as piece, position (position)}
-              {#if piece.hit}
-                <mark class="rounded bg-amber-200 text-inherit dark:bg-amber-500/40"
-                  >{piece.text}</mark
+          <span class="flex min-w-0 flex-1 flex-col justify-center gap-px">
+            <span class="flex min-w-0 items-center gap-1.5">
+              <span
+                class="min-w-0 truncate {isServer || isGroup ? 'font-medium' : ''}"
+                title={row.comment ?? row.label}
+              >
+                {#each pieces(row.label) as piece, position (position)}
+                  {#if piece.hit}
+                    <mark class="rounded bg-amber-200 text-inherit dark:bg-amber-500/40"
+                      >{piece.text}</mark
+                    >
+                  {:else}{piece.text}{/if}
+                {/each}
+              </span>
+
+              <!--
+                Los rasgos del objeto van como etiquetas y no como texto: que un rol pueda entrar o
+                que una tabla filtre filas se reconoce por el color, sin leer la fila entera.
+              -->
+              {#each row.node?.tags ?? [] as tag (tag)}
+                {@const badge = tagLook(tag)}
+                <span class="tag {badge.tone} shrink-0" title={badge.title}>{badge.label}</span>
+              {/each}
+
+              <!-- Producción lo dice con palabras y arriba, junto al nombre: es la marca que no se
+                   puede depender de reconocer por el color, y la que decide si se sigue o no. Los
+                   otros entornos se conforman con la línea del borde y el texto de abajo. -->
+              {#if isServer && environment === "prod"}
+                {@const badge = envLook(environment)}
+                <span class="tag {badge.tone} shrink-0" title={badge.title}>{badge.label}</span>
+              {/if}
+
+              {#if !isServer && row.detail && !isFolder}
+                <span class="min-w-0 shrink-[100] truncate text-xs muted" title={row.detail}>
+                  {row.detail}
+                </span>
+              {/if}
+
+              {#if !isServer && row.error}
+                <span
+                  class="min-w-0 shrink-[100] truncate text-xs text-rose-600 dark:text-rose-400"
+                  title={row.error}
                 >
-              {:else}{piece.text}{/if}
-            {/each}
+                  {row.error}
+                </span>
+              {/if}
+            </span>
+
+            <!-- Segunda línea: todo lo que describe al servidor sin identificarlo. Se lee cuando se
+                 duda entre dos conexiones parecidas, no en cada pasada por el árbol. -->
+            {#if isServer}
+              <span class="flex min-w-0 items-center gap-1.5 text-[11px] leading-none muted">
+                {#if row.detail}
+                  <span class="min-w-0 shrink truncate" title={row.detail}>{row.detail}</span>
+                {/if}
+
+                {#if isReadOnly(row.profileId)}
+                  <span
+                    class="flex shrink-0 items-center gap-0.5"
+                    title={READ_ONLY_LOOK.title}
+                  >
+                    <Icon name={READ_ONLY_LOOK.icon} size={10} />
+                    {READ_ONLY_LOOK.label}
+                  </span>
+                {/if}
+
+                {#if environment && environment !== "prod"}
+                  {@const badge = envLook(environment)}
+                  <span class="shrink-0" title={badge.title}>{badge.label}</span>
+                {/if}
+
+                {#if row.error}
+                  <span
+                    class="min-w-0 shrink-[100] truncate text-rose-600 dark:text-rose-400"
+                    title={row.error}
+                  >
+                    {row.error}
+                  </span>
+                {/if}
+              </span>
+            {/if}
           </span>
-
-          <!--
-            Los rasgos del objeto van como etiquetas y no como texto: que un rol pueda entrar o que
-            una tabla filtre filas se reconoce por el color, sin leer la fila entera.
-          -->
-          {#each row.node?.tags ?? [] as tag (tag)}
-            {@const badge = tagLook(tag)}
-            <span class="tag {badge.tone} shrink-0" title={badge.title}>{badge.label}</span>
-          {/each}
-
-          {#if row.detail && !isFolder}
-            <span class="min-w-0 shrink-[100] truncate text-xs muted" title={row.detail}>
-              {row.detail}
-            </span>
-          {/if}
-
-          {#if row.error}
-            <span
-              class="min-w-0 shrink-[100] truncate text-xs text-rose-600 dark:text-rose-400"
-              title={row.error}
-            >
-              {row.error}
-            </span>
-          {/if}
 
           <span class="ml-auto flex shrink-0 items-center gap-0.5 pl-1">
             {#if isGroup && ongroup}
@@ -402,17 +535,24 @@
               <span class="seg-count tabular-nums">{row.detail}</span>
             {/if}
 
+            <!-- «Conectar» era una palabra fija en cada servidor apagado: con veinte, era una
+                 columna de texto repetido comiéndose el nombre. Ahora es un ícono que aparece al
+                 pasar por encima o al elegir la fila —doble clic y Enter siguen conectando—. -->
             {#if isServer && !row.connected}
               <button
-                class="btn btn-ghost px-2 py-0.5 text-xs text-blue-600 hover:bg-blue-50
-                       dark:text-blue-400 dark:hover:bg-blue-950"
+                class="btn btn-ghost btn-icon size-6 text-blue-600 group-hover:opacity-100
+                       focus-visible:opacity-100 dark:text-blue-400 {isSelected
+                  ? ''
+                  : 'opacity-0'}"
+                title="Conectar"
+                aria-label="Conectar"
                 tabindex="-1"
                 onclick={(event) => {
                   event.stopPropagation();
                   onconnect(row.profileId);
                 }}
               >
-                Conectar
+                <Icon name="plug" size={12} />
               </button>
             {/if}
           </span>

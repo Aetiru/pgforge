@@ -108,6 +108,19 @@ enum Command {
         /// siguiente.
         #[arg(long, value_delimiter = ',')]
         after: Option<Vec<String>>,
+        /// Ordenar por esta columna en vez de por la clave. Con orden propio se pagina por
+        /// posición: la página siguiente se pide con --offset.
+        #[arg(long)]
+        order: Option<String>,
+        /// Ordenar de mayor a menor.
+        #[arg(long)]
+        desc: bool,
+        /// Predicado del WHERE, tal como se escribiría en el editor.
+        #[arg(long = "where")]
+        filter: Option<String>,
+        /// Cuántas filas saltear, para seguir una lectura ordenada.
+        #[arg(long)]
+        offset: Option<usize>,
     },
 
     /// Hace un backup con pg_dump.
@@ -337,7 +350,20 @@ async fn main() -> ExitCode {
             table,
             limit,
             after,
-        } => show_data(&url, &table, limit, after).await,
+            order,
+            desc,
+            filter,
+            offset,
+        } => {
+            let view = data::PageView {
+                order: order.map(|column| data::PageOrder {
+                    column,
+                    descending: desc,
+                }),
+                filter,
+            };
+            show_data(&url, &table, limit, after, offset, &view).await
+        }
         Command::Backup {
             url,
             out,
@@ -1068,7 +1094,14 @@ fn print_grid(columns: &[String], rows: &[Vec<Option<String>>]) {
     }
 }
 
-async fn show_data(url: &str, table: &str, limit: usize, after: Option<Vec<String>>) -> Result<()> {
+async fn show_data(
+    url: &str,
+    table: &str,
+    limit: usize,
+    after: Option<Vec<String>>,
+    offset: Option<usize>,
+    view: &data::PageView,
+) -> Result<()> {
     let (schema_name, table_name) = table.split_once('.').ok_or_else(|| {
         Error::Config("indicá la tabla como esquema.nombre, por ejemplo public.clientes".to_owned())
     })?;
@@ -1088,8 +1121,12 @@ async fn show_data(url: &str, table: &str, limit: usize, after: Option<Vec<Strin
         (None, None) => {}
     }
 
-    let cursor = after.map(|key| data::Cursor::After { key });
-    let page = data::page(&handle, &database, &shape, cursor.as_ref(), limit).await?;
+    let cursor = match (after, offset) {
+        (Some(key), _) => Some(data::Cursor::After { key }),
+        (None, Some(rows)) => Some(data::Cursor::Offset { rows }),
+        (None, None) => None,
+    };
+    let page = data::page(&handle, &database, &shape, cursor.as_ref(), limit, view).await?;
 
     print_grid(&page.columns, &page.rows);
     println!("({} filas)", page.rows.len());

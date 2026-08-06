@@ -1,11 +1,16 @@
 <script lang="ts">
   import Confirm from "./Confirm.svelte";
   import Empty from "./Empty.svelte";
+  import ExportDialog from "./ExportDialog.svelte";
+  import { environmentOf, isReadOnly } from "./access.svelte";
+  import { envLook, READ_ONLY_LOOK } from "./badges";
   import HistoryPanel from "./HistoryPanel.svelte";
   import Icon from "./Icon.svelte";
   import PlanTree from "./PlanTree.svelte";
   import ResultGrid from "./ResultGrid.svelte";
+  import FontSize from "./FontSize.svelte";
   import SqlEditor from "./SqlEditor.svelte";
+  import { PAGE_SIZES, paging } from "./paging.svelte";
   import { count, decimal } from "./format";
   import type { QueryTab } from "./query.svelte";
   import { describeError, explainWarning, statementAtCursor, type ExplainOptions } from "./ipc";
@@ -13,6 +18,7 @@
   let { tab }: { tab: QueryTab } = $props();
 
   let editorHeight = $state(240);
+  let exportOpen = $state(false);
   let pending = $state<{
     sql: string;
     base: number;
@@ -20,6 +26,7 @@
     warning: string;
   } | null>(null);
 
+  const environment = $derived(environmentOf(tab.profileId));
   const result = $derived(tab.result);
   const withRows = $derived(result?.outcome.kind === "rows" ? result.outcome : null);
   const errors = $derived(tab.messages.filter((message) => message.tone === "error").length);
@@ -129,6 +136,39 @@
 
     <span class="toolbar-sep"></span>
 
+    <!--
+      El interruptor y los dos botones van juntos: apagar el autocommit sin tener a la vista con qué
+      confirmar deja al usuario con una transacción abierta y sin dónde cerrarla.
+    -->
+    <label class="check" title="Apagado, cada ejecución abre una transacción que hay que confirmar">
+      <input
+        type="checkbox"
+        checked={tab.autocommit}
+        disabled={tab.tabId === null || tab.running}
+        onchange={(event) => tab.setAutocommit(event.currentTarget.checked)}
+      />
+      Autocommit
+    </label>
+
+    <button
+      class="btn"
+      disabled={tab.tabId === null || tab.running || tab.txStatus === "idle"}
+      title="Confirma la transacción abierta en esta pestaña"
+      onclick={() => tab.commit()}
+    >
+      Commit
+    </button>
+    <button
+      class="btn btn-danger"
+      disabled={tab.tabId === null || tab.running || tab.txStatus === "idle"}
+      title="Descarta todo lo hecho desde que se abrió la transacción"
+      onclick={() => tab.rollback()}
+    >
+      Rollback
+    </button>
+
+    <span class="toolbar-sep"></span>
+
     <button
       class="btn"
       disabled={tab.tabId === null || tab.running}
@@ -146,12 +186,35 @@
       Explicar y medir
     </button>
 
+    <span class="toolbar-sep"></span>
+
+    <FontSize />
+
     <span class="ml-auto flex items-center gap-2 text-xs muted">
       {#if tab.running}
         <span class="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
           <span class="spinner"></span>
           ejecutando…
         </span>
+      {/if}
+      {#if tab.txStatus !== "idle"}
+        <span
+          class="tag {tab.txStatus === 'failed' ? 'tag-bad' : 'tag-warn'}"
+          title={tab.txStatus === "failed"
+            ? "Una sentencia falló dentro de la transacción: el servidor rechaza el resto hasta el rollback"
+            : "Hay cambios sin confirmar en esta pestaña"}
+        >
+          {tab.txStatus === "failed" ? "transacción abortada" : "transacción abierta"}
+        </span>
+      {/if}
+      <!-- Contra qué servidor corre lo que se está por ejecutar es justo lo que no se puede
+           adivinar mirando el editor. -->
+      {#if environment}
+        {@const badge = envLook(environment)}
+        <span class="tag {badge.tone}" title={badge.title}>{badge.label}</span>
+      {/if}
+      {#if isReadOnly(tab.profileId)}
+        <span class="tag tag-neutral" title={READ_ONLY_LOOK.title}>{READ_ONLY_LOOK.label}</span>
       {/if}
       <span class="tag tag-neutral" title="Base sobre la que corre esta pestaña">
         <Icon name="database" size={10} />
@@ -218,10 +281,65 @@
         </select>
       {/if}
 
+      <!-- Cuántas filas se traen de una. Es la misma preferencia que usa la grilla de datos para su
+           tanda: acá no hay scroll que pida la siguiente, así que sube el techo y se vuelve a
+           ejecutar. -->
+      <!-- Los tipos no vienen con las filas: pedirlos cuesta preparar la sentencia de nuevo en el
+           servidor, así que es un interruptor y no algo que pase siempre. -->
+      <label
+        class="ml-auto check"
+        title="Muestra el tipo de cada columna; se le pregunta al servidor sin ejecutar de nuevo"
+      >
+        <input
+          type="checkbox"
+          checked={tab.showTypes}
+          disabled={tab.running}
+          onchange={(event) => tab.setShowTypes(event.currentTarget.checked)}
+        />
+        Tipos
+      </label>
+
+      <label
+        class="flex items-center gap-1 text-xs muted"
+        title="Máximo de filas que se traen; para ver más, subilo y volvé a ejecutar"
+      >
+        <span>Máx.</span>
+        <select
+          class="field py-0.5 text-xs"
+          value={paging.size}
+          onchange={(event) => paging.set(Number(event.currentTarget.value))}
+        >
+          {#each PAGE_SIZES as size (size)}
+            <option value={size}>{size}</option>
+          {/each}
+        </select>
+      </label>
+
+      <!--
+        Exportar no manda las filas que están en pantalla: vuelve a correr la consulta con un
+        `COPY … TO STDOUT`, así el archivo tiene todas las filas y no las que entraron en el techo.
+        Por eso solo se ofrece cuando se ejecutó una sola sentencia: un script entero no es una
+        consulta que `COPY` pueda envolver.
+      -->
       {#if withRows}
-        <span class="ml-auto flex items-center gap-2 text-xs muted">
+        <button
+          class="btn btn-sm"
+          disabled={tab.results.length !== 1 || tab.ranSql.trim() === ""}
+          title={tab.results.length !== 1
+            ? "El script devolvió varios resultados: ejecutá sola la consulta que querés exportar"
+            : "Exporta todas las filas de la consulta, no solo las que se muestran"}
+          onclick={() => (exportOpen = true)}
+        >
+          <Icon name="download" size={11} />
+          Exportar
+        </button>
+
+        <span class="flex items-center gap-2 text-xs muted">
           {#if withRows.truncated}
-            <span class="tag tag-warn" title="Hay más filas de las que se trajeron">
+            <span
+              class="tag tag-warn"
+              title="La consulta devolvió más filas de las que entran en el máximo elegido"
+            >
               se muestran {count(withRows.rows.length)}
             </span>
           {/if}
@@ -238,7 +356,11 @@
       {#if tab.view === "rows"}
         {#if withRows}
           {#key result}
-            <ResultGrid columns={withRows.columns} rows={withRows.rows} />
+            <ResultGrid
+              columns={withRows.columns}
+              rows={withRows.rows}
+              types={tab.showTypes ? tab.columnTypes : null}
+            />
           {/key}
         {:else if result && result.outcome.kind === "command"}
           <Empty
@@ -314,6 +436,15 @@
     </div>
   </div>
 </div>
+
+{#if exportOpen}
+  <ExportDialog
+    profileId={tab.profileId}
+    database={tab.database}
+    source={{ kind: "query", sql: tab.ranSql }}
+    onclose={() => (exportOpen = false)}
+  />
+{/if}
 
 {#if pending}
   <Confirm

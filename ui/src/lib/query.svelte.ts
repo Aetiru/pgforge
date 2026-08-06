@@ -1,20 +1,27 @@
 import type { SQLNamespace } from "@codemirror/lang-sql";
+import { paging } from "./paging.svelte";
 import { Tab, tabs } from "./tabs.svelte";
 import {
   Channel,
   describeError,
   isCanceled,
+  queryAutocommit,
   queryCancel,
+  queryColumnTypes,
   queryClose,
+  queryCommit,
   queryExplain,
   queryOpen,
+  queryRollback,
   queryRun,
+  queryTxStatus,
   schemaSnapshot,
   type CoreError,
   type ExplainOptions,
   type Outcome,
   type Plan,
   type QueryEvent,
+  type TxStatus,
 } from "./ipc";
 
 export type MessageTone = "info" | "notice" | "error";
@@ -79,6 +86,11 @@ export class QueryTab extends Tab {
   opening = $state(true);
   running = $state(false);
 
+  /** Arranca con el valor del perfil; el interruptor de la barra lo cambia solo para esta pestaña. */
+  autocommit = $state(true);
+  /** Lo dice el servidor después de cada ejecución, no se deduce del SQL escrito. */
+  txStatus = $state<TxStatus>("idle");
+
   /**
    * Van en `$state.raw` y no en `$state` porque se reemplazan enteros y nunca se mutan por dentro.
    * `$state` envuelve en un proxy cada objeto anidado: un resultado de diez mil filas por veinte
@@ -90,6 +102,18 @@ export class QueryTab extends Tab {
   messages = $state<Message[]>([]);
   errorMark = $state<ErrorMark | null>(null);
   view = $state<ResultView>("rows");
+  /** El SQL de la última ejecución, tal como se mandó. */
+  ranSql = $state("");
+
+  /**
+   * Los tipos de las columnas del resultado, cuando se piden.
+   *
+   * No vienen con las filas: el resultado viaja como texto y el protocolo simple no trae los tipos
+   * (ver `sql::exec`). Saberlos cuesta preparar la sentencia de nuevo en el servidor, así que se
+   * pide solo con el interruptor encendido y no en cada ejecución.
+   */
+  showTypes = $state(false);
+  columnTypes = $state.raw<string[] | null>(null);
   /** Cuál de los resultados se está mirando, cuando el script devolvió más de uno. */
   shown = $state(0);
 
@@ -113,6 +137,9 @@ export class QueryTab extends Tab {
   async run(sql: string, base = 0) {
     if (!this.tabId || this.running || sql.trim() === "") return;
 
+    // Lo último que se mandó, para poder exportarlo sin volver a ejecutarlo. La grilla tiene solo
+    // las filas que entraron en el techo; exportar tiene que ir de nuevo al servidor con la consulta.
+    this.ranSql = sql;
     this.running = true;
     this.results = [];
     this.messages = [];
@@ -126,12 +153,38 @@ export class QueryTab extends Tab {
     channel.onmessage = (event) => this.apply(event, lines, base);
 
     try {
-      await queryRun(this.tabId, sql, channel);
+      // El techo de filas es el mismo que elige la grilla de datos: es la misma pregunta —cuántas
+      // filas se traen de una— y una consulta sin `WHERE` sobre una tabla grande, con el techo del
+      // núcleo, dejaba diez mil filas en memoria para mirar las primeras veinte.
+      await queryRun(this.tabId, sql, channel, { maxRows: paging.size });
+      if (this.showTypes) await this.loadColumnTypes();
     } catch (error) {
       this.log("error", describeError(error));
       this.view = "messages";
     } finally {
       this.running = false;
+    }
+  }
+
+  async setShowTypes(on: boolean) {
+    this.showTypes = on;
+    if (on) await this.loadColumnTypes();
+    else this.columnTypes = null;
+  }
+
+  /** Los tipos del último resultado. Solo tiene sentido con una sola sentencia: `PREPARE` no
+   * acepta un script, y con varios resultados no habría a cuál pegarle los tipos. */
+  async loadColumnTypes() {
+    this.columnTypes = null;
+    if (!this.tabId || this.results.length !== 1 || this.ranSql.trim() === "") return;
+
+    try {
+      const columns = await queryColumnTypes(this.tabId, this.ranSql);
+      this.columnTypes = columns.map((column) => column.typeName);
+    } catch {
+      // Preparar puede fallar por motivos legítimos —un `SET`, un `CREATE`, un script—: sin tipos,
+      // el encabezado queda como estaba y no se molesta al usuario con un error por algo opcional.
+      this.columnTypes = null;
     }
   }
 
@@ -172,6 +225,10 @@ export class QueryTab extends Tab {
         this.log("notice", `${event.severity}: ${event.message}`);
         break;
 
+      case "transaction":
+        this.txStatus = event.status;
+        break;
+
       case "failed": {
         if (isCanceled(event.error)) {
           this.log("info", "Consulta cancelada.");
@@ -203,6 +260,47 @@ export class QueryTab extends Tab {
       await queryCancel(this.tabId);
     } catch (error) {
       this.log("error", describeError(error));
+    }
+  }
+
+  async commit() {
+    await this.endTransaction(queryCommit, "Transacción confirmada.");
+  }
+
+  async rollback() {
+    await this.endTransaction(queryRollback, "Transacción revertida.");
+  }
+
+  /**
+   * Enciende o apaga el autocommit. Encenderlo con una transacción abierta no la confirma: el estado
+   * que devuelve el backend sigue diciendo que hay algo pendiente, y la barra lo sigue mostrando.
+   */
+  async setAutocommit(enabled: boolean) {
+    if (!this.tabId) return;
+    this.autocommit = enabled;
+    try {
+      this.txStatus = await queryAutocommit(this.tabId, enabled);
+      if (enabled && this.txStatus !== "idle") {
+        this.log("notice", "Queda una transacción abierta: confirmala o revertila.");
+      }
+    } catch (error) {
+      this.log("error", describeError(error));
+    }
+  }
+
+  private async endTransaction(
+    action: (tabId: string) => Promise<TxStatus>,
+    done: string,
+  ) {
+    if (!this.tabId || this.running) return;
+    try {
+      this.txStatus = await action(this.tabId);
+      this.log("info", done);
+    } catch (error) {
+      this.log("error", describeError(error));
+      this.view = "messages";
+      // Un `COMMIT` que falla igual termina la transacción: se vuelve a preguntar en vez de suponer.
+      this.txStatus = await queryTxStatus(this.tabId).catch(() => this.txStatus);
     }
   }
 
@@ -242,7 +340,12 @@ export async function openQuery(
   try {
     const opened = await queryOpen(profileId, database);
     tab.tabId = opened.tabId;
+    tab.autocommit = opened.autocommit;
+    tab.txStatus = opened.txStatus;
     tab.log("info", `Conectado a ${opened.database}.`);
+    if (!opened.autocommit) {
+      tab.log("info", "Autocommit apagado: cada ejecución abre una transacción.");
+    }
   } catch (error) {
     tab.log("error", describeError(error));
     tab.view = "messages";

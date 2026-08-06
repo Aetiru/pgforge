@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { GROUP_LOOK, kindLabel, lookOf, tagLook } from "./badges";
-import type { FolderKind, NodeKind, NodeTag } from "./ipc";
+import { envLook, GROUP_LOOK, kindLabel, lookOf, tagLook } from "./badges";
+import type { Environment, FolderKind, NodeKind, NodeTag } from "./ipc";
 
 /**
  * Un tipo de objeto nuevo se agrega en dos lugares (`lookOf` y `kindLabel`) y es fácil olvidarse de
@@ -76,6 +76,29 @@ describe("kindLabel", () => {
   it("nombra también a la raíz y a las carpetas", () => {
     expect(kindLabel(null)).toBe("Servidor");
     expect(kindLabel({ folder: "indexes" })).toBe("Carpeta");
+  });
+});
+
+const ENVIRONMENTS: Record<Environment, true> = { dev: true, test: true, prod: true };
+
+describe("envLook", () => {
+  it("le da texto, tono, línea y explicación a cada entorno", () => {
+    for (const environment of Object.keys(ENVIRONMENTS) as Environment[]) {
+      const look = envLook(environment);
+      expect(look.label.length).toBeGreaterThan(0);
+      expect(look.tone.startsWith("tag-")).toBe(true);
+      // La línea del árbol es un fondo, no las clases de texto de la pastilla.
+      expect(look.spine.startsWith("bg-")).toBe(true);
+      expect(look.title.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("le da a producción un color que no comparte con nadie", () => {
+    expect(envLook("prod").tone).not.toBe(envLook("dev").tone);
+    expect(envLook("prod").tone).not.toBe(envLook("test").tone);
+    // Vale igual para la línea: es la marca que en el árbol se ve antes que el texto.
+    expect(envLook("prod").spine).not.toBe(envLook("dev").spine);
+    expect(envLook("prod").spine).not.toBe(envLook("test").spine);
   });
 });
 

@@ -1,5 +1,5 @@
 import type { IconName } from "./Icon.svelte";
-import { folderOf, type NodeKind, type NodeTag } from "./ipc";
+import { folderOf, type Environment, type NodeKind, type NodeTag } from "./ipc";
 
 /**
  * Ícono y color de cada tipo de nodo.
@@ -115,6 +115,54 @@ const TAGS: Record<NodeTag, { label: string; tone: string; title: string }> = {
 export function tagLook(tag: NodeTag) {
   return TAGS[tag];
 }
+
+/**
+ * Entorno de un servidor.
+ *
+ * Va aparte de `TAGS`, que es el vocabulario cerrado de `NodeTag` y describe nodos del catálogo: el
+ * entorno es del perfil local y una fila de servidor no trae nodo. El rojo de producción es el punto
+ * de todo esto, así que no se comparte con ningún otro estado.
+ *
+ * `spine` es el color de la línea que el árbol pinta en el borde izquierdo de un servidor y de todo
+ * lo que cuelga de él: con veinte conexiones abiertas, saber a qué servidor pertenece la fila que se
+ * está mirando no puede depender de subir con la vista hasta la raíz. Es un fondo y no un texto, así
+ * que no puede salir de `tone`, que son las clases de la pastilla.
+ */
+const ENVIRONMENTS: Record<
+  Environment,
+  { label: string; tone: string; spine: string; title: string }
+> = {
+  dev: {
+    label: "dev",
+    tone: "tag-ok",
+    spine: "bg-emerald-500/70",
+    title: "Servidor de desarrollo",
+  },
+  test: {
+    label: "test",
+    tone: "tag-info",
+    spine: "bg-blue-500/70",
+    title: "Servidor de pruebas",
+  },
+  prod: {
+    label: "prod",
+    tone: "tag-bad",
+    spine: "bg-rose-500/80",
+    title: "Servidor de producción: cada modificación pide una confirmación de más",
+  },
+};
+
+export function envLook(environment: Environment) {
+  return ENVIRONMENTS[environment];
+}
+
+/** Conexión abierta en solo lectura: el servidor rechaza toda escritura. */
+export const READ_ONLY_LOOK = {
+  icon: "lock" as IconName,
+  label: "solo lectura",
+  tone: "tag-neutral",
+  title: "La conexión se abre en solo lectura: el servidor rechaza cualquier escritura",
+};
 
 /** Nombre legible del tipo de nodo, para el panel de propiedades. */
 export function kindLabel(kind: NodeKind | null): string {

@@ -5,13 +5,14 @@
 //! el mismo mecanismo que usa el mantenimiento. Un script de diez sentencias tiene que mostrar la
 //! primera cuando termina la primera, no cuando terminan las diez.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
 use pgforge_core::error::ErrorPayload;
 use pgforge_core::sql::{
-    self, completion, explain, history::Entry as HistoryEntry, ExplainOptions, Limits, NewEntry,
-    Outcome, Plan, QuerySession, SchemaSnapshot,
+    self, completion, explain, history::Entry as HistoryEntry, ColumnType, ExplainOptions, Limits,
+    NewEntry, Outcome, Plan, QuerySession, SchemaSnapshot, TxStatus,
 };
 use pgforge_core::{Error, ProfileId, Result};
 use serde::Serialize;
@@ -55,6 +56,12 @@ pub enum QueryEvent {
         /// trae el error, ubica el carácter exacto en el editor.
         offset: usize,
     },
+    /// Cómo quedó la transacción de la pestaña. Se emite al terminar el script, haya fallado o no:
+    /// una sentencia rota dentro de una transacción la deja abortada, y eso hay que mostrarlo.
+    #[serde(rename_all = "camelCase")]
+    Transaction {
+        status: TxStatus,
+    },
     /// Terminó el script entero.
     #[serde(rename_all = "camelCase")]
     Completed {
@@ -70,6 +77,9 @@ pub struct QueryTab {
     pub tab_id: String,
     /// La base que quedó abierta, que puede ser la del perfil si no se pidió otra.
     pub database: String,
+    /// Valor heredado del perfil; la pestaña lo puede cambiar con `query_autocommit`.
+    pub autocommit: bool,
+    pub tx_status: TxStatus,
 }
 
 /// Abre la conexión de una pestaña de consulta.
@@ -104,6 +114,8 @@ pub async fn query_open(
         });
     }
 
+    let autocommit = handle.profile.autocommit;
+
     state.queries.lock().await.insert(
         tab_id.clone(),
         QueryEntry {
@@ -112,10 +124,17 @@ pub async fn query_open(
             session: Arc::new(Mutex::new(session)),
             cancel,
             notices: sink,
+            autocommit: Arc::new(AtomicBool::new(autocommit)),
         },
     );
 
-    Ok(QueryTab { tab_id, database })
+    Ok(QueryTab {
+        tab_id,
+        database,
+        autocommit,
+        // Una sesión recién abierta no tiene nada empezado; no hace falta preguntárselo al servidor.
+        tx_status: TxStatus::Idle,
+    })
 }
 
 /// Cierra la pestaña y suelta su conexión.
@@ -137,7 +156,7 @@ pub async fn query_run(
     limits: Option<Limits>,
     channel: Channel<QueryEvent>,
 ) -> Result<()> {
-    let (profile, database, session, sink) = {
+    let (profile, database, session, sink, autocommit) = {
         let tabs = state.queries.lock().await;
         let entry = require(&tabs, &tab_id)?;
         (
@@ -145,6 +164,7 @@ pub async fn query_run(
             entry.database.clone(),
             entry.session.clone(),
             entry.notices.clone(),
+            entry.autocommit.load(Ordering::Relaxed),
         )
     };
 
@@ -166,6 +186,15 @@ pub async fn query_run(
     // ejecuciones se intercalen mezclaría las transacciones de la pestaña.
     let session = session.lock().await;
     *sink.lock().await = Some(channel.clone());
+
+    // Con autocommit apagado, la transacción la abre pgforge antes de la primera sentencia: el
+    // servidor no tiene modo autocommit que apagar. Si ya había una abierta, esto no hace nada.
+    if !autocommit {
+        if let Err(error) = session.begin_if_needed().await {
+            *sink.lock().await = None;
+            return Err(error);
+        }
+    }
 
     for (index, statement) in statements.iter().enumerate() {
         let _ = channel.send(QueryEvent::Started {
@@ -195,6 +224,13 @@ pub async fn query_run(
                 break;
             }
         }
+    }
+
+    // Cómo quedó la transacción se pregunta acá y no se deduce del SQL: el usuario pudo escribir su
+    // propio `BEGIN`, un `COMMIT` o dejarla abortada, y la interfaz tiene que mostrar lo que hay.
+    // Que falle la sonda no invalida lo que ya se ejecutó, así que solo se omite el evento.
+    if let Ok(status) = session.tx_status().await {
+        let _ = channel.send(QueryEvent::Transaction { status });
     }
 
     *sink.lock().await = None;
@@ -280,6 +316,83 @@ pub async fn query_cancel(state: State<'_, AppState>, tab_id: String) -> Result<
     // dejaría al servidor ejecutando la consulta igual, sin nadie esperando el resultado.
     let handle = state.manager.require(profile).await?;
     handle.cancel(&cancel).await
+}
+
+/// Confirma la transacción de la pestaña y devuelve cómo quedó.
+#[tauri::command]
+pub async fn query_commit(state: State<'_, AppState>, tab_id: String) -> Result<TxStatus> {
+    let session = session_of(&state, &tab_id).await?;
+    let session = session.lock().await;
+
+    // El estado se consulta aunque el `COMMIT` falle —una restricción diferida puede voltearlo—,
+    // porque la interfaz tiene que mostrar la transacción real, no la que se esperaba.
+    let applied = session.commit().await;
+    let status = session.tx_status().await;
+    applied?;
+    status
+}
+
+/// Revierte la transacción de la pestaña, esté sana o abortada.
+#[tauri::command]
+pub async fn query_rollback(state: State<'_, AppState>, tab_id: String) -> Result<TxStatus> {
+    let session = session_of(&state, &tab_id).await?;
+    let session = session.lock().await;
+
+    let applied = session.rollback().await;
+    let status = session.tx_status().await;
+    applied?;
+    status
+}
+
+/// Los tipos de las columnas que devolvería la sentencia, sin ejecutarla.
+///
+/// Se pide aparte porque cuesta preparar la sentencia en el servidor: la interfaz lo hace solo
+/// cuando el usuario pide ver los tipos.
+#[tauri::command]
+pub async fn query_column_types(
+    state: State<'_, AppState>,
+    tab_id: String,
+    sql: String,
+) -> Result<Vec<ColumnType>> {
+    let session = session_of(&state, &tab_id).await?;
+    let session = session.lock().await;
+    session.column_types(&sql).await
+}
+
+/// Estado de la transacción de la pestaña, para volver a sincronizar la interfaz.
+#[tauri::command]
+pub async fn query_tx_status(state: State<'_, AppState>, tab_id: String) -> Result<TxStatus> {
+    let session = session_of(&state, &tab_id).await?;
+    let session = session.lock().await;
+    session.tx_status().await
+}
+
+/// Enciende o apaga el autocommit de la pestaña.
+///
+/// Encenderlo **no confirma nada**: solo deja de anteponer el `BEGIN`. Si quedaba una transacción
+/// abierta se devuelve tal cual está, para que la interfaz pida confirmarla o revertirla — commitear
+/// en silencio por tocar un interruptor es exactamente lo que estos botones existen para evitar.
+#[tauri::command]
+pub async fn query_autocommit(
+    state: State<'_, AppState>,
+    tab_id: String,
+    enabled: bool,
+) -> Result<TxStatus> {
+    let (session, autocommit) = {
+        let tabs = state.queries.lock().await;
+        let entry = require(&tabs, &tab_id)?;
+        (entry.session.clone(), entry.autocommit.clone())
+    };
+
+    autocommit.store(enabled, Ordering::Relaxed);
+    let session = session.lock().await;
+    session.tx_status().await
+}
+
+/// Sesión de una pestaña, para los comandos que solo necesitan eso.
+async fn session_of(state: &State<'_, AppState>, tab_id: &str) -> Result<Arc<Mutex<QuerySession>>> {
+    let tabs = state.queries.lock().await;
+    Ok(require(&tabs, tab_id)?.session.clone())
 }
 
 /// Plan de ejecución de una sentencia.
