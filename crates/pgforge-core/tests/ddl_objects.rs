@@ -18,7 +18,7 @@ use pgforge_core::ddl::comment::{self, CommentChange, CommentTarget};
 use pgforge_core::ddl::domain::{self, DomainChange, DomainConstraint};
 use pgforge_core::ddl::partition::{self, PartitionBound, PartitionChange};
 use pgforge_core::ddl::schema::{self, SchemaChange};
-use pgforge_core::ddl::sequence::{self, OwnedBy, SequenceChange, SequenceOptions};
+use pgforge_core::ddl::sequence::{self, SequenceChange, SequenceOptions, SequenceOwner};
 use pgforge_core::ddl::types::{self, Field, TypeChange, TypeKind};
 
 fn test_urls() -> Vec<String> {
@@ -217,11 +217,11 @@ async fn secuencias(handle: &ServerHandle, schema: &str) {
             schema: schema.to_owned(),
             name: "folios".into(),
             options: SequenceOptions {
-                owned_by: Some(Some(OwnedBy {
+                owned_by: Some(SequenceOwner::Column {
                     schema: schema.to_owned(),
                     table: "comprobantes".into(),
                     column: "folio".into(),
-                })),
+                }),
                 ..SequenceOptions::default()
             },
         }],
@@ -435,7 +435,9 @@ async fn dominios(handle: &ServerHandle, schema: &str) {
     // generando el SQL: pide que el servidor lo evalúe.
     let client = handle.client(&database).await.unwrap();
     client
-        .batch_execute(&format!("CREATE TABLE {schema}.medidas (v {schema}.positivo)"))
+        .batch_execute(&format!(
+            "CREATE TABLE {schema}.medidas (v {schema}.positivo)"
+        ))
         .await
         .unwrap();
 

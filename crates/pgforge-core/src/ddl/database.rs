@@ -403,10 +403,7 @@ mod tests {
             if_exists: true,
             force: true,
         });
-        assert_eq!(
-            statement.sql,
-            "DROP DATABASE IF EXISTS ventas WITH (FORCE)"
-        );
+        assert_eq!(statement.sql, "DROP DATABASE IF EXISTS ventas WITH (FORCE)");
     }
 
     #[test]

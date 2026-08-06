@@ -31,10 +31,10 @@ pub use index::IndexDef;
 pub use partition::PartitionChange;
 pub use schema::SchemaChange;
 pub use sequence::SequenceChange;
-pub use types::TypeChange;
 pub use table::{
     ColumnDef, ConstraintDef, Identity, RefAction, Statement as TableStatement, TableChange,
 };
+pub use types::TypeChange;
 pub use view::ViewChange;
 
 use serde::{Deserialize, Serialize};

@@ -129,7 +129,11 @@ fn constraint_sql(constraint: &DomainConstraint) -> Result<String> {
 
     Ok(format!(
         "{named}CHECK ({check}){}",
-        if constraint.not_valid { " NOT VALID" } else { "" }
+        if constraint.not_valid {
+            " NOT VALID"
+        } else {
+            ""
+        }
     ))
 }
 
@@ -152,9 +156,7 @@ fn one(change: &DomainChange) -> Result<Statement> {
             require_name(name)?;
             let data_type = data_type.trim();
             if data_type.is_empty() {
-                return Err(Error::Config(
-                    "un dominio necesita un tipo base".to_owned(),
-                ));
+                return Err(Error::Config("un dominio necesita un tipo base".to_owned()));
             }
 
             let mut sql = format!("CREATE DOMAIN {} AS {data_type}", qualified(schema, name));
@@ -483,10 +485,7 @@ mod tests {
             name: "positivo".into(),
             default: Some("0".into()),
         });
-        assert_eq!(
-            statement.sql,
-            "ALTER DOMAIN public.positivo SET DEFAULT 0"
-        );
+        assert_eq!(statement.sql, "ALTER DOMAIN public.positivo SET DEFAULT 0");
 
         let statement = one_statement(DomainChange::SetDomainDefault {
             schema: "public".into(),
@@ -503,20 +502,14 @@ mod tests {
             name: "positivo".into(),
             not_null: true,
         });
-        assert_eq!(
-            statement.sql,
-            "ALTER DOMAIN public.positivo SET NOT NULL"
-        );
+        assert_eq!(statement.sql, "ALTER DOMAIN public.positivo SET NOT NULL");
 
         let statement = one_statement(DomainChange::SetDomainNotNull {
             schema: "public".into(),
             name: "positivo".into(),
             not_null: false,
         });
-        assert_eq!(
-            statement.sql,
-            "ALTER DOMAIN public.positivo DROP NOT NULL"
-        );
+        assert_eq!(statement.sql, "ALTER DOMAIN public.positivo DROP NOT NULL");
     }
 
     #[test]

@@ -34,6 +34,26 @@ pub struct OwnedBy {
     pub column: String,
 }
 
+/// A qué columna se ata la secuencia, o `None` para desatarla.
+///
+/// Es un enum y no un `Option<Option<OwnedBy>>` porque serde colapsa el `null` de JSON en el
+/// `Option` de afuera: «desatala» y «no la toques» llegarían indistinguibles desde la interfaz.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum SequenceOwner {
+    /// `OWNED BY NONE`.
+    None,
+    Column {
+        schema: String,
+        table: String,
+        column: String,
+    },
+}
+
 /// Los parámetros de una secuencia. `None` en cualquiera es «no lo toques».
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -53,9 +73,9 @@ pub struct SequenceOptions {
     pub cache: Option<i64>,
     #[serde(default)]
     pub cycle: Option<bool>,
-    /// A qué columna pertenece. `Some(None)` la desata (`OWNED BY NONE`).
+    /// A qué columna pertenece. `None` no la toca.
     #[serde(default)]
-    pub owned_by: Option<Option<OwnedBy>>,
+    pub owned_by: Option<SequenceOwner>,
 }
 
 /// Un cambio de secuencia pendiente.
@@ -273,12 +293,16 @@ fn option_clauses(options: &SequenceOptions) -> Result<String> {
 
     if let Some(owned_by) = options.owned_by.as_ref() {
         parts.push(match owned_by {
-            Some(owner) => format!(
+            SequenceOwner::Column {
+                schema,
+                table,
+                column,
+            } => format!(
                 "OWNED BY {}.{}",
-                qualified(&owner.schema, &owner.table),
-                quote_ident(&owner.column)
+                qualified(schema, table),
+                quote_ident(column)
             ),
-            None => "OWNED BY NONE".to_owned(),
+            SequenceOwner::None => "OWNED BY NONE".to_owned(),
         });
     }
 
@@ -297,7 +321,11 @@ fn require_name(name: &str) -> Result<()> {
 }
 
 /// Aplica los cambios en una sola transacción: mismo molde que `table::apply`.
-pub async fn apply(handle: &ServerHandle, database: &str, changes: &[SequenceChange]) -> Result<()> {
+pub async fn apply(
+    handle: &ServerHandle,
+    database: &str,
+    changes: &[SequenceChange],
+) -> Result<()> {
     let statements = statements(changes)?;
     let mut client = handle.client(database).await?;
     let transaction = client.transaction().await?;
@@ -441,11 +469,11 @@ mod tests {
                 start: Some(100),
                 cache: Some(5),
                 cycle: Some(true),
-                owned_by: Some(Some(OwnedBy {
+                owned_by: Some(SequenceOwner::Column {
                     schema: "public".into(),
                     table: "comprobantes".into(),
                     column: "folio".into(),
-                })),
+                }),
             },
         });
         assert_eq!(
@@ -462,14 +490,11 @@ mod tests {
             schema: "public".into(),
             name: "folios".into(),
             options: SequenceOptions {
-                owned_by: Some(None),
+                owned_by: Some(SequenceOwner::None),
                 ..options()
             },
         });
-        assert_eq!(
-            statement.sql,
-            "ALTER SEQUENCE public.folios OWNED BY NONE"
-        );
+        assert_eq!(statement.sql, "ALTER SEQUENCE public.folios OWNED BY NONE");
     }
 
     #[test]
@@ -566,7 +591,10 @@ mod tests {
             name: "folios".into(),
             owner: "ventas".into(),
         });
-        assert_eq!(statement.sql, "ALTER SEQUENCE public.folios OWNER TO ventas");
+        assert_eq!(
+            statement.sql,
+            "ALTER SEQUENCE public.folios OWNER TO ventas"
+        );
     }
 
     #[test]
@@ -593,11 +621,11 @@ mod tests {
             name: "Folios".into(),
             if_not_exists: false,
             options: SequenceOptions {
-                owned_by: Some(Some(OwnedBy {
+                owned_by: Some(SequenceOwner::Column {
                     schema: "mi esquema".into(),
                     table: "Comprobantes".into(),
                     column: "folio nuevo".into(),
-                })),
+                }),
                 ..options()
             },
         });

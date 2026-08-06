@@ -17,8 +17,8 @@ use crate::caps::ServerCaps;
 use crate::conn::ServerHandle;
 use crate::error::{Error, Result};
 
-use super::table::Statement;
 use super::qualified;
+use super::table::Statement;
 
 use serde::{Deserialize, Serialize};
 
@@ -294,15 +294,12 @@ pub async fn info(handle: &ServerHandle, database: &str, oid: u32) -> Result<Par
     let client = handle.client(database).await?;
 
     let row = client
-        .query_opt(
-            "SELECT pg_catalog.pg_get_partkeydef($1)",
-            &[&oid],
-        )
+        .query_opt("SELECT pg_catalog.pg_get_partkeydef($1)", &[&oid])
         .await?;
 
     let strategy: Option<String> = row.and_then(|row| row.get(0));
-    let strategy = strategy
-        .ok_or_else(|| Error::Config("la tabla no está particionada".to_owned()))?;
+    let strategy =
+        strategy.ok_or_else(|| Error::Config("la tabla no está particionada".to_owned()))?;
 
     let partitions = client
         .query(
@@ -408,7 +405,9 @@ mod tests {
             partition_by: None,
         });
         assert!(
-            statement.sql.ends_with("FOR VALUES IN ('sur', 'patagonia')"),
+            statement
+                .sql
+                .ends_with("FOR VALUES IN ('sur', 'patagonia')"),
             "{}",
             statement.sql
         );

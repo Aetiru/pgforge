@@ -704,9 +704,9 @@ mod tests {
             fields: vec![field("calle principal", "text")],
         });
         assert!(
-            statement
-                .sql
-                .starts_with("CREATE TYPE \"mi esquema\".\"Direccion\" AS (\n    \"calle principal\" text"),
+            statement.sql.starts_with(
+                "CREATE TYPE \"mi esquema\".\"Direccion\" AS (\n    \"calle principal\" text"
+            ),
             "{}",
             statement.sql
         );
