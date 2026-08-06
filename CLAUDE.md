@@ -34,6 +34,8 @@ cargo run -p pgforge-cli -- tree  --url postgres://postgres@localhost:5432/postg
 cargo run -p pgforge-cli -- graph --url postgres://postgres@localhost:5432/postgres public
 cargo run -p pgforge-cli -- ddl   --url postgres://postgres@localhost:5432/postgres public.clientes
 cargo run -p pgforge-cli -- query --url postgres://postgres@localhost:5432/postgres --sql "SELECT 1"
+cargo run -p pgforge-cli -- data  --url postgres://postgres@localhost:5432/postgres public.clientes \
+    --order creado --desc --where "estado = 'activo'" --limit 20
 ```
 
 ### Tests de integración
@@ -113,6 +115,12 @@ Función generadora es **pura** a propósito: único verificable sin servidor, y
 
 Reglas que sostienen edición de datos (`data::edit`): sin clave primaria/única, grilla se abre en solo lectura; cada `UPDATE` lleva valores originales de las columnas que cambia y, si afecta cero filas, reporta `Conflict` en vez de pisar; lote entero va en una transacción.
 
+Orden y filtro de la pestaña de datos los resuelve el servidor, no la grilla: `PageView` (`data::page`) lleva la columna a ordenar —validada contra la forma de la tabla, porque llega de la interfaz y se interpola— y el predicado del `WHERE`, que va **crudo**, misma frontera de confianza que el editor. Con un orden elegido, el cursor por clave deja de valer —«lo que sigue de esta clave» no es lo que sigue en pantalla— y se pagina por `OFFSET`; la clave se agrega igual como desempate, o dos filas con el mismo valor podrían aparecer dos veces. Cambiar cualquiera de los dos vuelve a leer desde la primera tanda, así que la interfaz lo bloquea si hay ediciones sin guardar.
+
+Los tipos de las columnas de una consulta se piden aparte (`QuerySession::column_types`, comando `query_column_types`) y solo con el interruptor «Tipos» encendido: el protocolo simple con el que se ejecuta no los trae, y saberlos cuesta **preparar** la sentencia de nuevo —otra vuelta al servidor y otra planificación—. Vale para una sola sentencia; un script lo rechaza el servidor y el encabezado se queda sin tipos, sin molestar con un error.
+
+`ExportDialog` recibe un `ExportSource`, no una tabla: la pestaña de consulta exporta su resultado con `{ kind: "query" }` y el núcleo arma el `COPY (…) TO STDOUT`. Exportar **no** manda las filas de la pantalla: vuelve al servidor, así que el archivo trae todas y no las que entraron en el techo.
+
 ### Identificadores y SQL crudo
 
 `ddl::quote_ident` cita solo cuando hace falta (mayúsculas, símbolos, palabras reservadas). Usarlo para todo identificador que se interpole. En cambio, hay texto que va **crudo** a propósito y está documentado como tal: `DEFAULT` de columna, `USING` de cambio de tipo, predicado de índice parcial, expresión de `CHECK`, nombre de tipo de columna. No se pueden parametrizar en DDL, los valida el servidor al ejecutar, y es la misma frontera de confianza que el editor de consultas: lo ejecuta el propio usuario con sus propios privilegios.
@@ -129,6 +137,14 @@ Pestañas de consulta, de datos y de diagrama conviven en una sola barra (`tabs.
 
 Editor SQL: CodeMirror 6 (`@codemirror/lang-sql`). Gráficos: uPlot.
 
+El tamaño de letra del SQL es una sola preferencia para toda la aplicación (`editor.svelte.ts`), guardada como el tema y aplicada como variable `--sql-font-size` en la raíz: la leen el editor de consultas y `Sql.svelte`, o sea también el DDL y toda vista previa. Se cambia con `Ctrl +`/`Ctrl -`/`Ctrl 0`, `Ctrl` + rueda o los botones de `FontSize.svelte`. Al tocarla hay que llamar a `requestMeasure()` de cada `EditorView`: CodeMirror mide el ancho de un carácter una vez y con la letra nueva el cursor queda corrido.
+
+Cuántas filas se traen de una es una preferencia del usuario (`paging.svelte.ts`, 200 por omisión, guardada) y no una constante del núcleo: la pestaña de datos la usa como tamaño de tanda —el scroll pide la siguiente hasta `AUTO_LIMIT`, y de ahí en más hay que apretar «Cargar N más»— y la pestaña de consulta como `maxRows` del `query_run`, donde no hay scroll que traiga nada y para ver más se sube el número y se vuelve a ejecutar.
+
+La grilla virtualiza en las dos direcciones: filas por división de la altura fija y columnas por `columnRange` (`grid-window.ts`, puro y probado). Las filas dibujadas van en un bloque que se corre con `transform`, no con un `top` por fila, y el desplazamiento se lee una vez por cuadro con `requestAnimationFrame`. Las tres cosas son lo mismo: el compositor desplaza antes de que el hilo principal dibuje, y cada celda de más se paga en ese retraso.
+
+La grilla (`DataGrid.svelte`) tiene foco de celda y rango rectangular: flechas con `Shift`, `Ctrl+C` (TSV), `Ctrl+Shift+C` (CSV con encabezados), clic derecho para el menú, `Espacio` para el visor de la celda y `Ctrl+F` para el filtro sobre lo ya cargado. El clic derecho en el encabezado fija columnas contra el borde izquierdo, las esconde o ajusta el ancho; todo eso pasa por `active` —las columnas visibles—, que es sobre la que cuentan el foco, el rango y la ventana horizontal, así que esconder una columna corre los índices en vez de dejar un hueco. Las fijas son `sticky` con `bg-inherit`, y por eso el fondo de la fila es opaco: con un fondo a medias se les vería por debajo lo que pasa de largo. Lo que se copia sale de `Column.raw` —el valor como vino, con `null` para NULL—, no del texto de pantalla, que va recortado a una línea; el formato lo arma `grid-copy.ts`, que es puro y está probado con Vitest.
+
 **Diagrama ERD**: `introspect::graph` devuelve tablas y aristas, jamás coordenadas — posición depende del ancho del texto en pantalla y de lo que el usuario arrastre, así que layout vive en `ui/src/lib/erd.ts`, puro y con Vitest (rangos por capas, ciclos de FK que no pueden colgar la interfaz, tope de columnas por caja). `ErdPanel.svelte` solo dibuja el SVG y maneja zoom/pan/arrastre. Excepción anotada a la regla de que lógica vive en core: `erd_export_svg` escribe el archivo desde `src-tauri` porque SVG lo arma la interfaz y sumar el plugin de archivos por un caso costaba más que cinco líneas de `std::fs`.
 
 #### Estilos
@@ -140,6 +156,8 @@ Dos consecuencias de ese archivo que sorprenden si no se leyó: `<body>` tiene `
 Íconos = SVG dibujados a mano en `Icon.svelte` (librería completa pesa más que toda la interfaz); ícono y color de cada tipo de nodo salen de `lookOf` en `badges.ts`, que agrupa por familia. Tipo de objeto nuevo se agrega en esos dos lugares, no en el componente que lo muestra.
 
 Rasgos que árbol muestra como pastillas de color (rol puede iniciar sesión, tabla tiene RLS activa) son el `NodeTag` del núcleo, vocabulario cerrado: `TreeNode` los trae en `tags` y `tagLook` en `badges.ts` les pone texto y tono. Van separados de `detail`, texto libre para leer. Rasgo nuevo se agrega en esos dos lugares.
+
+La fila del árbol tiene ancho fijo y muchos candidatos a ocuparlo, así que el servidor —única fila que se elige entre veinte parecidas— ocupa **dos líneas**: nombre solo arriba, y abajo `host:port`, solo lectura y entorno. Todo lo demás sigue en una. Eso rompe la altura uniforme, así que la ventana visible no sale de una división sino de desplazamientos acumulados (`offsets`) más bisección (`indexAt`); al tocar el alto de una fila hay que pasar por `heightOf`, no por el `style`. «Conectar» es un ícono que sale al pasar por encima, no una palabra fija. El entorno además se pinta como línea en el borde izquierdo (`spine` de `envLook`) que baja por el servidor y todo lo que cuelga de él —producción conserva la pastilla junto al nombre, porque el color solo no se le puede confiar—. Servidores y carpetas llevan línea de separación arriba; `visibleRows` acepta el filtro «solo conectados», que esconde filas sin descartar lo que tienen cargado.
 
 #### Diálogos
 
