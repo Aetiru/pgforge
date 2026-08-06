@@ -26,14 +26,23 @@
   import Sql from "./Sql.svelte";
   import TableDialog from "./TableDialog.svelte";
   import TriggerDialog from "./TriggerDialog.svelte";
+  import CommentDialog from "./CommentDialog.svelte";
+  import DatabaseDialog from "./DatabaseDialog.svelte";
+  import DomainDialog from "./DomainDialog.svelte";
+  import PartitionDialog from "./PartitionDialog.svelte";
+  import SchemaDialog from "./SchemaDialog.svelte";
+  import SequenceDialog from "./SequenceDialog.svelte";
+  import TypeDialog from "./TypeDialog.svelte";
   import ViewDialog from "./ViewDialog.svelte";
   import { confirmMutation, isReadOnly, readOnlyReason } from "./access.svelte";
   import { envLook, GROUP_LOOK, kindLabel, lookOf } from "./badges";
   import { explorer, type Row } from "./explorer.svelte";
   import {
     dataOpen,
+    databaseApply,
     ddlApply,
     describeError,
+    domainApply,
     extensionApply,
     extensionInfo,
     fdwApply,
@@ -57,14 +66,20 @@
     relationPrivileges,
     roleApply,
     roleInfo,
+    schemaApply,
     schemaPrivileges,
+    sequenceApply,
     tableConstraints,
     tableIndexes,
+    tablePartitions,
     tableSecurity,
     tableTriggers,
     triggerApply,
+    typeApply,
+    typeInfo,
     viewApply,
     type ColumnGrant,
+    type CommentTarget,
     type ConstraintInfo,
     type Ddl,
     type DefaultGrant,
@@ -247,6 +262,13 @@
   const isSchema = $derived(node?.kind === "schema");
   const isSequence = $derived(node?.kind === "sequence");
   const isDatabase = $derived(node?.kind === "database");
+  /** Los dominios también son `pg_type`, así que el árbol los trae con esta misma clase. */
+  const isType = $derived(node?.kind === "type");
+  const isPartitionedTable = $derived(node?.kind === "partitionedTable");
+
+  const isSchemasFolder = $derived(node !== null && folderOf(node.kind) === "schemas");
+  const isSequencesFolder = $derived(node !== null && folderOf(node.kind) === "sequences");
+  const isTypesFolder = $derived(node !== null && folderOf(node.kind) === "types");
 
   /**
    * Los tipos de objeto que tienen privilegios propios. Los índices y las restricciones no están:
@@ -614,6 +636,18 @@
   let privilegeDialog = $state<{ existing: PrivilegeExisting | null } | null>(null);
   let backupDialog = $state(false);
   let restoreDialog = $state(false);
+  let sequenceDialog = $state<{ existing: { oid: number; name: string } | null } | null>(null);
+  let typeDialog = $state<{
+    composite: boolean;
+    existing: { oid: number; name: string } | null;
+  } | null>(null);
+  let domainDialog = $state<{ existing: { oid: number; name: string } | null } | null>(null);
+  let schemaDialog = $state<{ existing: { name: string; owner: string } | null } | null>(null);
+  let databaseDialog = $state<{ existing: string | null } | null>(null);
+  let partitionDialog = $state<{ strategy: string } | null>(null);
+  let commentDialog = $state<{ target: CommentTarget; label: string; current: string | null } | null>(
+    null,
+  );
   let exportDialog = $state(false);
   let importDialog = $state(false);
   let revokeTarget = $state<{ grantee: string; privileges: string[] } | null>(null);
@@ -634,7 +668,12 @@
           | "role"
           | "extension"
           | "foreignDataWrapper"
-          | "foreignServer";
+          | "foreignServer"
+          | "sequence"
+          | "type"
+          | "domain"
+          | "schema"
+          | "database";
         label: string;
       }
     | { kind: "function"; schema: string; name: string; args: string; procedure: boolean }
@@ -931,6 +970,69 @@
     }
   }
 
+  /**
+   * Un tipo y un dominio son los dos `pg_type` y el árbol no los distingue, así que hay que
+   * preguntarle al servidor antes de saber qué formulario abrir.
+   */
+  async function openEditType() {
+    if (!selected || !node?.oid) return;
+    try {
+      const info = await typeInfo(selected.profileId, node.oid, node.database);
+      const existing = { oid: node.oid, name: node.label };
+      if (info.kind === "domain") domainDialog = { existing };
+      else typeDialog = { composite: info.kind === "composite", existing };
+    } catch (error) {
+      ddlError = describeError(error);
+    }
+  }
+
+  /** La estrategia de partición la manda el servidor: decide qué límite pide el formulario. */
+  async function openPartitionDialog() {
+    if (!selected || !node?.oid) return;
+    try {
+      const info = await tablePartitions(selected.profileId, node.oid, node.database);
+      partitionDialog = { strategy: info.strategy };
+    } catch (error) {
+      ddlError = describeError(error);
+    }
+  }
+
+  /** Sobre qué objeto se comenta, a partir del nodo seleccionado. */
+  function commentTargetOf(): CommentTarget | null {
+    if (!node) return null;
+    const schema = node.schema ?? "public";
+
+    switch (node.kind) {
+      case "table":
+      case "partitionedTable":
+        return { kind: "table", schema, name: node.label };
+      case "foreignTable":
+        return { kind: "foreignTable", schema, name: node.label };
+      case "view":
+        return { kind: "view", schema, name: node.label };
+      case "materializedView":
+        return { kind: "materializedView", schema, name: node.label };
+      case "sequence":
+        return { kind: "sequence", schema, name: node.label };
+      case "index":
+        return { kind: "index", schema, name: node.label };
+      case "type":
+        return { kind: "type", schema, name: node.label };
+      case "schema":
+        return { kind: "schema", name: node.label };
+      case "database":
+        return { kind: "database", name: node.label };
+      case "role":
+        return { kind: "role", name: node.label };
+      case "extension":
+        return { kind: "extension", name: node.label };
+      default:
+        return null;
+    }
+  }
+
+  const commentTarget = $derived(commentTargetOf());
+
   /** Recarga el nodo carpeta que pasó a tener un objeto nuevo, o refresca el DDL tras editarlo. */
   function afterViewSaved() {
     const wasCreate = viewDialog !== null && viewDialog.existing === null;
@@ -1155,6 +1257,94 @@
           }
           explorer.selected = null;
           break;
+        case "sequence":
+          await sequenceApply(
+            selected.profileId,
+            [
+              {
+                kind: "dropSequence",
+                schema: node.schema!,
+                name: dropTarget.label,
+                cascade: dropCascade,
+              },
+            ],
+            node.database,
+          );
+          {
+            const parent = parentOf(explorer.roots, selected);
+            if (parent) await explorer.reload(parent);
+          }
+          explorer.selected = null;
+          break;
+        case "type":
+          await typeApply(
+            selected.profileId,
+            [
+              {
+                kind: "dropType",
+                schema: node.schema!,
+                name: dropTarget.label,
+                cascade: dropCascade,
+              },
+            ],
+            node.database,
+          );
+          {
+            const parent = parentOf(explorer.roots, selected);
+            if (parent) await explorer.reload(parent);
+          }
+          explorer.selected = null;
+          break;
+        case "domain":
+          await domainApply(
+            selected.profileId,
+            [
+              {
+                kind: "dropDomain",
+                schema: node.schema!,
+                name: dropTarget.label,
+                cascade: dropCascade,
+              },
+            ],
+            node.database,
+          );
+          {
+            const parent = parentOf(explorer.roots, selected);
+            if (parent) await explorer.reload(parent);
+          }
+          explorer.selected = null;
+          break;
+        case "schema":
+          await schemaApply(
+            selected.profileId,
+            [
+              {
+                kind: "dropSchema",
+                name: dropTarget.label,
+                ifExists: false,
+                cascade: dropCascade,
+              },
+            ],
+            node.database,
+          );
+          {
+            const parent = parentOf(explorer.roots, selected);
+            if (parent) await explorer.reload(parent);
+          }
+          explorer.selected = null;
+          break;
+        case "database":
+          // `force` echa a las sesiones conectadas: sin eso, una base con alguien adentro no se
+          // borra y el error no dice quién es.
+          await databaseApply(selected.profileId, [
+            { kind: "dropDatabase", name: dropTarget.label, ifExists: false, force: dropCascade },
+          ]);
+          {
+            const parent = parentOf(explorer.roots, selected);
+            if (parent) await explorer.reload(parent);
+          }
+          explorer.selected = null;
+          break;
         case "foreignDataWrapper":
           await fdwApply(
             selected.profileId,
@@ -1217,6 +1407,16 @@
         return `¿Eliminar el wrapper foráneo ${dropTarget.label}?`;
       case "foreignServer":
         return `¿Eliminar el servidor foráneo ${dropTarget.label}? Se pierden sus mapeos de usuario.`;
+      case "sequence":
+        return `¿Eliminar la secuencia ${dropTarget.label}?`;
+      case "type":
+        return `¿Eliminar el tipo ${dropTarget.label}? Las columnas que lo usan lo necesitan.`;
+      case "domain":
+        return `¿Eliminar el dominio ${dropTarget.label}? Las columnas que lo usan lo necesitan.`;
+      case "schema":
+        return `¿Eliminar el esquema ${dropTarget.label}? Sin CASCADE falla si tiene algo adentro.`;
+      case "database":
+        return `¿Eliminar la base ${dropTarget.label}? Se pierde todo lo que tiene adentro.`;
     }
   });
 
@@ -1396,6 +1596,63 @@
             </button>
           {/if}
 
+          {#if isSequencesFolder && node?.schema}
+            <button
+              class="btn btn-primary"
+              {...blocked}
+              onclick={() => (sequenceDialog = { existing: null })}
+            >
+              <Icon name="plus" size={12} />
+              Nueva secuencia
+            </button>
+          {/if}
+
+          {#if isTypesFolder && node?.schema}
+            <button
+              class="btn btn-primary"
+              {...blocked}
+              onclick={() => (typeDialog = { composite: false, existing: null })}
+            >
+              <Icon name="plus" size={12} />
+              Nueva enumeración
+            </button>
+            <button
+              class="btn"
+              {...blocked}
+              onclick={() => (typeDialog = { composite: true, existing: null })}
+            >
+              <Icon name="plus" size={12} />
+              Nuevo compuesto
+            </button>
+            <button class="btn" {...blocked} onclick={() => (domainDialog = { existing: null })}>
+              <Icon name="plus" size={12} />
+              Nuevo dominio
+            </button>
+          {/if}
+
+          {#if isSchemasFolder}
+            <button
+              class="btn btn-primary"
+              {...blocked}
+              onclick={() => (schemaDialog = { existing: null })}
+            >
+              <Icon name="plus" size={12} />
+              Nuevo esquema
+            </button>
+          {/if}
+
+          {#if isPartitionedTable && node?.oid}
+            <button
+              class="btn"
+              title="Crea o engancha una partición de esta tabla"
+              {...blocked}
+              onclick={openPartitionDialog}
+            >
+              <Icon name="plus" size={12} />
+              Nueva partición
+            </button>
+          {/if}
+
           {#if dataTarget !== null && queryTarget}
             <button
               class="btn btn-primary"
@@ -1544,6 +1801,64 @@
             </button>
           {/if}
 
+          {#if isSequence && node?.oid}
+            <button
+              class="btn"
+              {...blocked}
+              onclick={() => (sequenceDialog = { existing: { oid: node!.oid!, name: node!.label } })}
+            >
+              <Icon name="edit" size={12} />
+              Editar
+            </button>
+          {/if}
+
+          {#if isType && node?.oid}
+            <button class="btn" {...blocked} onclick={openEditType}>
+              <Icon name="edit" size={12} />
+              Editar
+            </button>
+          {/if}
+
+          {#if isSchema && node}
+            <button
+              class="btn"
+              {...blocked}
+              onclick={() =>
+                (schemaDialog = { existing: { name: node!.label, owner: node!.detail ?? "" } })}
+            >
+              <Icon name="edit" size={12} />
+              Editar
+            </button>
+          {/if}
+
+          {#if isDatabase && node}
+            <button class="btn" {...blocked} onclick={() => (databaseDialog = { existing: node!.label })}>
+              <Icon name="edit" size={12} />
+              Editar
+            </button>
+            <button class="btn" {...blocked} onclick={() => (databaseDialog = { existing: null })}>
+              <Icon name="plus" size={12} />
+              Nueva base
+            </button>
+          {/if}
+
+          {#if commentTarget}
+            <button
+              class="btn"
+              title="Documenta el objeto adentro de la propia base"
+              {...blocked}
+              onclick={() =>
+                (commentDialog = {
+                  target: commentTarget!,
+                  label: selected.label,
+                  current: node?.comment ?? null,
+                })}
+            >
+              <Icon name="edit" size={12} />
+              Comentario
+            </button>
+          {/if}
+
           {#if isGroup}
             <button class="btn btn-primary" onclick={() => ongroup(selected.group!)}>
               <Icon name="edit" size={12} />
@@ -1604,6 +1919,51 @@
 
           {#if (isFunction || isProcedure) && ddl}
             <button class="btn btn-danger-ghost" {...blocked} onclick={askDropFunction}>
+              <Icon name="trash" size={12} />
+              Eliminar
+            </button>
+          {/if}
+
+          {#if isSequence && node}
+            <button
+              class="btn btn-danger-ghost"
+              {...blocked}
+              onclick={() => (dropTarget = { kind: "sequence", label: node!.label })}
+            >
+              <Icon name="trash" size={12} />
+              Eliminar
+            </button>
+          {/if}
+
+          {#if isType && node}
+            <button
+              class="btn btn-danger-ghost"
+              {...blocked}
+              onclick={() => (dropTarget = { kind: "type", label: node!.label })}
+            >
+              <Icon name="trash" size={12} />
+              Eliminar
+            </button>
+          {/if}
+
+          {#if isSchema && node}
+            <button
+              class="btn btn-danger-ghost"
+              title="Sin CASCADE falla si el esquema tiene algo adentro"
+              {...blocked}
+              onclick={() => (dropTarget = { kind: "schema", label: node!.label })}
+            >
+              <Icon name="trash" size={12} />
+              Eliminar
+            </button>
+          {/if}
+
+          {#if isDatabase && node}
+            <button
+              class="btn btn-danger-ghost"
+              {...blocked}
+              onclick={() => (dropTarget = { kind: "database", label: node!.label })}
+            >
               <Icon name="trash" size={12} />
               Eliminar
             </button>
@@ -2524,6 +2884,124 @@
   />
 {/if}
 
+{#if sequenceDialog && selected && node?.schema}
+  <SequenceDialog
+    profileId={selected.profileId}
+    database={node.database}
+    schema={node.schema}
+    existing={sequenceDialog.existing}
+    onclose={() => (sequenceDialog = null)}
+    onsaved={() => {
+      const wasCreate = sequenceDialog?.existing === null;
+      sequenceDialog = null;
+      if (wasCreate) {
+        if (selected) explorer.reload(selected);
+      } else {
+        refreshDdl();
+      }
+    }}
+  />
+{/if}
+
+{#if typeDialog && selected && node?.schema}
+  <TypeDialog
+    profileId={selected.profileId}
+    database={node.database}
+    schema={node.schema}
+    composite={typeDialog.composite}
+    existing={typeDialog.existing}
+    onclose={() => (typeDialog = null)}
+    onsaved={() => {
+      const wasCreate = typeDialog?.existing === null;
+      typeDialog = null;
+      if (wasCreate) {
+        if (selected) explorer.reload(selected);
+      } else {
+        refreshDdl();
+      }
+    }}
+  />
+{/if}
+
+{#if domainDialog && selected && node?.schema}
+  <DomainDialog
+    profileId={selected.profileId}
+    database={node.database}
+    schema={node.schema}
+    existing={domainDialog.existing}
+    onclose={() => (domainDialog = null)}
+    onsaved={() => {
+      const wasCreate = domainDialog?.existing === null;
+      domainDialog = null;
+      if (wasCreate) {
+        if (selected) explorer.reload(selected);
+      } else {
+        refreshDdl();
+      }
+    }}
+  />
+{/if}
+
+{#if schemaDialog && selected && node}
+  <SchemaDialog
+    profileId={selected.profileId}
+    database={node.database}
+    existing={schemaDialog.existing}
+    onclose={() => (schemaDialog = null)}
+    onsaved={() => {
+      schemaDialog = null;
+      // Un esquema nuevo o renombrado cambia la lista de arriba, no el nodo de abajo.
+      const parent = selected ? parentOf(explorer.roots, selected) : null;
+      if (parent) explorer.reload(parent);
+      else if (selected) explorer.reload(selected);
+    }}
+  />
+{/if}
+
+{#if databaseDialog && selected}
+  <DatabaseDialog
+    profileId={selected.profileId}
+    existing={databaseDialog.existing}
+    onclose={() => (databaseDialog = null)}
+    onsaved={() => {
+      databaseDialog = null;
+      const parent = selected ? parentOf(explorer.roots, selected) : null;
+      if (parent) explorer.reload(parent);
+    }}
+  />
+{/if}
+
+{#if partitionDialog && selected && node?.schema}
+  <PartitionDialog
+    profileId={selected.profileId}
+    database={node.database}
+    schema={node.schema}
+    parent={node.label}
+    strategy={partitionDialog.strategy}
+    onclose={() => (partitionDialog = null)}
+    onsaved={() => {
+      partitionDialog = null;
+      if (selected) explorer.reload(selected);
+    }}
+  />
+{/if}
+
+{#if commentDialog && selected && node}
+  <CommentDialog
+    profileId={selected.profileId}
+    database={node.database}
+    target={commentDialog.target}
+    label={commentDialog.label}
+    current={commentDialog.current}
+    onclose={() => (commentDialog = null)}
+    onsaved={() => {
+      commentDialog = null;
+      const parent = selected ? parentOf(explorer.roots, selected) : null;
+      if (parent) explorer.reload(parent);
+    }}
+  />
+{/if}
+
 {#if functionDialog && selected}
   <FunctionDialog
     profileId={selected.profileId}
@@ -2717,6 +3195,12 @@
           ({node?.database}). Si el rol tiene objetos en otra base, hay que repetirlo desde ahí.
         </p>
       {/if}
+      <!-- Una base no admite CASCADE; lo que se le puede pedir es que eche a las sesiones. -->
+    {:else if dropTarget.kind === "database"}
+      <label class="check">
+        <input type="checkbox" bind:checked={dropCascade} />
+        FORCE (echa a las sesiones conectadas en vez de fallar)
+      </label>
       <!-- Una política no admite CASCADE: nada puede depender de ella. -->
     {:else if dropTarget.kind !== "policy"}
       <label class="check">
