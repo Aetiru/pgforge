@@ -351,13 +351,18 @@ pub async fn info(handle: &ServerHandle, database: &str, oid: u32) -> Result<Dom
 
     // `pg_get_constraintdef` devuelve la restricción entera («CHECK ((VALUE > 0)) NOT VALID»); se
     // le saca el envoltorio para poder volver a mostrarla en el mismo campo donde se escribió.
+    //
+    // El filtro por `contype = 'c'` no es decorativo: desde PostgreSQL 17 el `NOT NULL` de un
+    // dominio también vive en `pg_constraint`, con `contype = 'n'`. Sin el filtro, el mismo dominio
+    // devuelve una restricción de más en la 17 y no en las anteriores. El `NOT NULL` ya viene por
+    // `typnotnull`, así que esa fila no aporta nada.
     let constraints = client
         .query(
             "SELECT c.conname::text,
                     pg_catalog.pg_get_constraintdef(c.oid),
                     c.convalidated
                FROM pg_catalog.pg_constraint c
-              WHERE c.contypid = $1
+              WHERE c.contypid = $1 AND c.contype = 'c'
               ORDER BY c.conname",
             &[&oid],
         )
