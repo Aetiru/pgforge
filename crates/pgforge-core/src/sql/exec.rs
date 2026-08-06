@@ -68,6 +68,15 @@ pub enum Outcome {
     },
 }
 
+/// Nombre y tipo de una columna del resultado.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnType {
+    pub name: String,
+    /// El nombre del tipo tal como lo llama PostgreSQL: `int8`, `timestamptz`, `jsonb`.
+    pub type_name: String,
+}
+
 /// Estado de la transacción de una pestaña de consulta.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -187,6 +196,34 @@ impl QuerySession {
                 seconds,
             }
         })
+    }
+
+    /// Los tipos de las columnas que devolvería esta sentencia.
+    ///
+    /// El protocolo simple con el que se ejecuta no los trae: su `RowDescription` expone el nombre
+    /// de cada columna y nada más. La única forma de saberlos es **preparar** la sentencia —el
+    /// servidor la analiza y la planifica, pero no la ejecuta— y leer la descripción del protocolo
+    /// extendido.
+    ///
+    /// Por eso va aparte y a pedido, en vez de sumarse a [`Self::run`]: cuesta otra vuelta al
+    /// servidor y una planificación de más, y quien no mira los tipos no tiene por qué pagarlas.
+    /// Vale para una sola sentencia: preparar un script entero lo rechaza el servidor.
+    pub async fn column_types(&self, sql: &str) -> Result<Vec<ColumnType>> {
+        // El `;` final es cómodo de dejar al escribir, pero acá se prepara una sola sentencia.
+        let statement = self
+            .session
+            .client()
+            .prepare(sql.trim().trim_end_matches(';'))
+            .await?;
+
+        Ok(statement
+            .columns()
+            .iter()
+            .map(|column| ColumnType {
+                name: column.name().to_owned(),
+                type_name: column.type_().name().to_owned(),
+            })
+            .collect())
     }
 
     /// Si hay o no una transacción abierta en esta sesión, y si está sana.

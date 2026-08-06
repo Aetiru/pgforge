@@ -55,6 +55,7 @@ pub fn run() {
             commands::query::query_rollback,
             commands::query::query_autocommit,
             commands::query::query_tx_status,
+            commands::query::query_column_types,
             commands::query::query_explain,
             commands::query::statement_at_cursor,
             commands::query::schema_snapshot,

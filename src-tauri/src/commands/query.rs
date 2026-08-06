@@ -11,8 +11,8 @@ use std::time::Instant;
 
 use pgforge_core::error::ErrorPayload;
 use pgforge_core::sql::{
-    self, completion, explain, history::Entry as HistoryEntry, ExplainOptions, Limits, NewEntry,
-    Outcome, Plan, QuerySession, SchemaSnapshot, TxStatus,
+    self, completion, explain, history::Entry as HistoryEntry, ColumnType, ExplainOptions, Limits,
+    NewEntry, Outcome, Plan, QuerySession, SchemaSnapshot, TxStatus,
 };
 use pgforge_core::{Error, ProfileId, Result};
 use serde::Serialize;
@@ -342,6 +342,21 @@ pub async fn query_rollback(state: State<'_, AppState>, tab_id: String) -> Resul
     let status = session.tx_status().await;
     applied?;
     status
+}
+
+/// Los tipos de las columnas que devolvería la sentencia, sin ejecutarla.
+///
+/// Se pide aparte porque cuesta preparar la sentencia en el servidor: la interfaz lo hace solo
+/// cuando el usuario pide ver los tipos.
+#[tauri::command]
+pub async fn query_column_types(
+    state: State<'_, AppState>,
+    tab_id: String,
+    sql: String,
+) -> Result<Vec<ColumnType>> {
+    let session = session_of(&state, &tab_id).await?;
+    let session = session.lock().await;
+    session.column_types(&sql).await
 }
 
 /// Estado de la transacción de la pestaña, para volver a sincronizar la interfaz.
