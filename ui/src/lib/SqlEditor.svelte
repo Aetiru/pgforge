@@ -6,6 +6,7 @@
   import { basicSetup } from "codemirror";
   import { untrack } from "svelte";
   import { sqlHighlight } from "./sql-highlight";
+  import { sqlFont } from "./editor.svelte";
   import type { ErrorMark } from "./query.svelte";
 
   let {
@@ -35,7 +36,9 @@
   const marks = new Compartment();
 
   const theme = EditorView.theme({
-    "&": { height: "100%", fontSize: "13px", backgroundColor: "transparent" },
+    // El tamaño sale de la variable que maneja `sqlFont`: lo cambia el usuario y vale para todo el
+    // SQL de la aplicación, no solo para este editor.
+    "&": { height: "100%", fontSize: "var(--sql-font-size)", backgroundColor: "transparent" },
     "&.cm-focused": { outline: "none" },
     ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "1.6" },
     ".cm-content": { paddingBlock: "8px" },
@@ -129,6 +132,41 @@
           return true;
         },
       },
+      // El zoom del SQL con los atajos de siempre. Van acá y no en la ventana porque `Ctrl -` sobre
+      // un editor con foco lo tiene que atender el editor; el resto de la aplicación no cambia de
+      // tamaño con ellos.
+      {
+        key: "Mod-=",
+        preventDefault: true,
+        run: () => {
+          sqlFont.bigger();
+          return true;
+        },
+      },
+      {
+        key: "Mod-Shift-=",
+        preventDefault: true,
+        run: () => {
+          sqlFont.bigger();
+          return true;
+        },
+      },
+      {
+        key: "Mod--",
+        preventDefault: true,
+        run: () => {
+          sqlFont.smaller();
+          return true;
+        },
+      },
+      {
+        key: "Mod-0",
+        preventDefault: true,
+        run: () => {
+          sqlFont.reset();
+          return true;
+        },
+      },
     ]),
   );
 
@@ -193,9 +231,27 @@
     }
   });
 
+  // CodeMirror mide el ancho de un carácter una sola vez: si la letra cambia y nadie le avisa, el
+  // cursor y el salto de línea quedan calculados con el tamaño viejo.
+  $effect(() => {
+    sqlFont.size;
+    view?.requestMeasure();
+  });
+
   export function focus() {
     view?.focus();
   }
 </script>
 
-<div class="h-full overflow-hidden [&_.cm-editor]:h-full" bind:this={element}></div>
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+  class="h-full overflow-hidden [&_.cm-editor]:h-full"
+  bind:this={element}
+  onwheel={(event) => {
+    // Ctrl + rueda es el gesto que todos prueban antes de buscar el botón.
+    if (!event.ctrlKey) return;
+    event.preventDefault();
+    if (event.deltaY < 0) sqlFont.bigger();
+    else sqlFont.smaller();
+  }}
+></div>
