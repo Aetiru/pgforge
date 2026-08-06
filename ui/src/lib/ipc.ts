@@ -624,6 +624,19 @@ export const queryRun = (
 
 export const queryCancel = (tabId: string) => invoke<void>("query_cancel", { tabId });
 
+/** Nombre y tipo de cada columna del resultado. */
+export interface ColumnType {
+  name: string;
+  typeName: string;
+}
+
+/**
+ * Los tipos de las columnas de una sentencia, sin ejecutarla. Cuesta prepararla en el servidor, así
+ * que se pide solo cuando el usuario quiere verlos.
+ */
+export const queryColumnTypes = (tabId: string, sql: string) =>
+  invoke<ColumnType[]>("query_column_types", { tabId, sql });
+
 export const queryCommit = (tabId: string) => invoke<TxStatus>("query_commit", { tabId });
 
 export const queryRollback = (tabId: string) => invoke<TxStatus>("query_rollback", { tabId });
@@ -719,6 +732,18 @@ export interface TableShape {
 
 export type Cursor = { kind: "after"; key: string[] } | { kind: "offset"; rows: number };
 
+export interface PageOrder {
+  column: string;
+  descending: boolean;
+}
+
+/** Con qué orden y con qué filtro se mira la tabla. Los resuelve el servidor, no la grilla. */
+export interface PageView {
+  order?: PageOrder | null;
+  /** Predicado del `WHERE`, tal como lo escribió el usuario. */
+  filter?: string | null;
+}
+
 export interface DataPage {
   columns: string[];
   rows: (string | null)[][];
@@ -754,6 +779,7 @@ export const dataPage = (
   cursor: Cursor | null,
   limit?: number,
   database?: string,
+  view?: PageView,
 ) =>
   invoke<DataPage>("data_page", {
     id,
@@ -761,6 +787,7 @@ export const dataPage = (
     cursor,
     limit: limit ?? null,
     database: database ?? null,
+    view: view ?? null,
   });
 
 export const dataPreview = (shape: TableShape, changes: Change[]) =>
