@@ -65,3 +65,40 @@ class SqlFont {
 }
 
 export const sqlFont = new SqlFont();
+
+/**
+ * Alto del editor dentro de la pestaña de consulta.
+ *
+ * Se guarda por la misma razón que el tamaño de letra, y **es una sola preferencia para todas las
+ * pestañas**: era un `$state` local de cada `QueryPanel`, así que agrandar el editor duraba hasta
+ * abrir la consulta siguiente, que volvía a nacer chica con el resultado ocupando casi todo.
+ */
+const SPLIT_KEY = "pgforge.sql.editorHeight";
+
+export const DEFAULT_EDITOR_HEIGHT = 320;
+const MIN_HEIGHT = 96;
+const MAX_HEIGHT = 720;
+
+function clampHeight(height: number): number {
+  return Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, Math.round(height)));
+}
+
+function storedHeight(): number {
+  const value = Number(localStorage.getItem(SPLIT_KEY));
+  return Number.isFinite(value) && value > 0 ? clampHeight(value) : DEFAULT_EDITOR_HEIGHT;
+}
+
+class EditorSplit {
+  height = $state(storedHeight());
+
+  set(height: number) {
+    this.height = clampHeight(height);
+    localStorage.setItem(SPLIT_KEY, String(this.height));
+  }
+
+  reset() {
+    this.set(DEFAULT_EDITOR_HEIGHT);
+  }
+}
+
+export const editorSplit = new EditorSplit();

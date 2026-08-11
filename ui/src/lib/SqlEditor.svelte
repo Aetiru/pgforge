@@ -1,25 +1,33 @@
 <script lang="ts">
+  import { completionStatus } from "@codemirror/autocomplete";
   import { syntaxHighlighting } from "@codemirror/language";
+  import { searchPanelOpen } from "@codemirror/search";
   import { PostgreSQL, sql, type SQLNamespace } from "@codemirror/lang-sql";
   import { Compartment, EditorState, Prec } from "@codemirror/state";
   import { Decoration, EditorView, keymap, type DecorationSet } from "@codemirror/view";
   import { basicSetup } from "codemirror";
   import { untrack } from "svelte";
   import { sqlHighlight } from "./sql-highlight";
+  import { columnCompletion } from "./sql-complete";
   import { sqlFont } from "./editor.svelte";
+  import type { SchemaRelation } from "./ipc";
   import type { ErrorMark } from "./query.svelte";
 
   let {
     value = $bindable(""),
     schema = undefined,
+    relations = [],
     errorMark = null,
     readonly = false,
     onrun,
     onrunScript,
     oncancel,
+    onsave,
   }: {
     value?: string;
     schema?: SQLNamespace;
+    /** Los mismos nombres en plano, para completar las columnas del `FROM` sin calificar. */
+    relations?: SchemaRelation[];
     errorMark?: ErrorMark | null;
     readonly?: boolean;
     /** Ctrl+Enter: la selección, o la sentencia donde está el cursor. */
@@ -27,6 +35,8 @@
     /** Ctrl+Shift+Enter: el script entero. */
     onrunScript?: () => void;
     oncancel?: () => void;
+    /** Ctrl+S guarda donde ya se había guardado; Ctrl+Shift+S siempre pregunta. */
+    onsave?: (askPath: boolean) => void;
   } = $props();
 
   let element: HTMLDivElement;
@@ -126,9 +136,30 @@
         },
       },
       {
+        // Este keymap es `Prec.highest`, así que sin la guarda se comía el Escape que cierra el
+        // autocompletado y el panel de búsqueda: cancelaba la consulta y la lista quedaba abierta.
+        // Devolver `false` deja que lo atienda el manejador que corresponde.
         key: "Escape",
-        run: () => {
+        run: (target) => {
+          if (completionStatus(target.state) !== null) return false;
+          if (searchPanelOpen(target.state)) return false;
           oncancel?.();
+          return true;
+        },
+      },
+      {
+        key: "Mod-s",
+        preventDefault: true,
+        run: () => {
+          onsave?.(false);
+          return true;
+        },
+      },
+      {
+        key: "Mod-Shift-s",
+        preventDefault: true,
+        run: () => {
+          onsave?.(true);
           return true;
         },
       },
@@ -200,16 +231,23 @@
   });
 
   function sqlExtension(namespace: SQLNamespace | undefined) {
-    return sql({
-      dialect: PostgreSQL,
-      schema: namespace,
-      // Sin esto, escribir `clientes` no completa nada hasta calificarlo con el esquema.
-      defaultSchema: "public",
-      upperCaseKeywords: true,
-    });
+    return [
+      sql({
+        dialect: PostgreSQL,
+        schema: namespace,
+        // Sin esto, escribir `clientes` no completa nada hasta calificarlo con el esquema.
+        defaultSchema: "public",
+        upperCaseKeywords: true,
+      }),
+      // Sumada a la del dialecto, no en su lugar: esa sigue resolviendo `tabla.` y las palabras
+      // clave, y esta agrega lo único que le falta, las columnas del `FROM` sin calificar.
+      // Las relaciones se leen por función para que el cambio de base no exija reconfigurar.
+      PostgreSQL.language.data.of({ autocomplete: columnCompletion(() => relations) }),
+    ];
   }
 
-  // El esquema llega después de abrir la pestaña, cuando termina la consulta al catálogo.
+  // El esquema llega después de abrir la pestaña, cuando termina la consulta al catálogo, y cambia
+  // entero al cambiar de base.
   $effect(() => {
     view?.dispatch({ effects: language.reconfigure(sqlExtension(schema)) });
   });
@@ -240,6 +278,20 @@
 
   export function focus() {
     view?.focus();
+  }
+
+  /**
+   * Lo seleccionado y dónde está el cursor, ahora mismo.
+   *
+   * Se pregunta en vez de avisarse: los botones de la barra corren mucho después del último tecleo,
+   * y una copia guardada en el panel queda en donde estaba el cursor la vez anterior —con el editor
+   * recién abierto, en cero, o sea siempre la primera sentencia—.
+   */
+  export function selection(): { text: string; cursor: number } {
+    if (!view) return { text: "", cursor: 0 };
+    const { from, to } = view.state.selection.main;
+    const text = view.state.doc.toString();
+    return { text: text.slice(from, to), cursor: toCharOffset(text, from) };
   }
 </script>
 
