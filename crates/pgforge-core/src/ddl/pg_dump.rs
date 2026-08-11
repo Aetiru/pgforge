@@ -40,7 +40,7 @@ pub async fn dump_object(
     let binary = tools::require(Tool::PgDump)?;
 
     let mut command = Command::new(&binary);
-    command
+    tools::hidden(&mut command)
         .arg("--schema-only")
         .arg("--no-publications")
         .arg("--no-subscriptions")
