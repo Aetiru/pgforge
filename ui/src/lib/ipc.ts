@@ -249,9 +249,10 @@ export interface Backend {
   pid: number;
   database: string | null;
   user: string | null;
-  applicationName: string;
+  /** `null` cuando el rol conectado no puede ver el detalle de esa sesión. */
+  applicationName: string | null;
   clientAddr: string | null;
-  backendType: string;
+  backendType: string | null;
   state: string | null;
   waitEventType: string | null;
   waitEvent: string | null;
@@ -353,7 +354,8 @@ export interface StatementStat {
   queryId: number | null;
   database: string | null;
   user: string | null;
-  query: string;
+  /** `null` si la extensión perdió el texto de esta entrada; los tiempos siguen valiendo. */
+  query: string | null;
   calls: number;
   totalMs: number;
   meanMs: number;
@@ -698,6 +700,10 @@ export const statementAtCursor = (sql: string, cursor: number) =>
 
 export const explainWarning = (sql: string, options?: ExplainOptions) =>
   invoke<string | null>("explain_warning", { sql, options: options ?? null });
+
+/** Guarda el texto de una pestaña de consulta como archivo. */
+export const sqlWriteFile = (path: string, sql: string) =>
+  invoke<void>("sql_write_file", { path, sql });
 
 // ---------------------------------------------------------------------------
 // Datos de una tabla
@@ -1705,7 +1711,8 @@ export type SettingType = "bool" | "integer" | "real" | "enum" | "string";
 
 export interface Setting {
   name: string;
-  value: string;
+  /** `null` en los parámetros que solo puede leer un superusuario (`data_directory`, `hba_file`, …). */
+  value: string | null;
   unit: string | null;
   category: string;
   shortDesc: string;

@@ -100,6 +100,12 @@
 
   $effect(() => monitor.watchVisibility());
 
+  /** Con estos dos permisos apagados, lo que se ve es una parte de lo que hay: conviene decirlo. */
+  const limitedStats = $derived.by(() => {
+    const caps = explorer.caps[profileId];
+    return caps ? !caps.isSuperuser && !caps.canReadAllStats : false;
+  });
+
   const snapshot = $derived(monitor.snapshot);
   const metrics = $derived(snapshot?.metrics ?? null);
   const backends = $derived(snapshot?.backends ?? []);
@@ -441,7 +447,7 @@
       header: "Sentencia",
       width: 620,
       value: (s) => oneLine(s.query, 400),
-      title: (s) => s.query,
+      title: (s) => s.query ?? undefined,
     },
     {
       key: "calls",
@@ -610,6 +616,16 @@
 
   {#if monitor.error}
     <Alert tone="bad">{monitor.error}</Alert>
+  {/if}
+
+  <!-- Sin este aviso, media tabla en blanco parece un error de la aplicación y no lo que es: el
+       servidor esconde el detalle de las sesiones ajenas a quien no puede verlas. -->
+  {#if limitedStats}
+    <Alert tone="warn">
+      El rol conectado no es superusuario ni miembro de <code>pg_read_all_stats</code>: de las
+      sesiones de otros usuarios solo se ve el PID, y las estadísticas por tabla e índice pueden
+      venir incompletas.
+    </Alert>
   {/if}
 
   {#if metrics}
