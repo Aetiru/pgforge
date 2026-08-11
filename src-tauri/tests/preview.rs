@@ -503,6 +503,20 @@ fn la_sentencia_bajo_el_cursor_es_la_que_se_va_a_ejecutar() {
 }
 
 #[test]
+fn el_cursor_en_la_linea_en_blanco_apunta_a_la_sentencia_de_abajo() {
+    // El caso que se reportó: `SELECT 1;` arriba, una línea vacía, y la sentencia que se quiere
+    // ejecutar en la tercera. Parado en la vacía se ejecutaba la primera.
+    let sql = "SELECT 1;\n\nSELECT 2;";
+
+    let abajo = commands::query::statement_at_cursor(sql.to_owned(), 10).unwrap();
+    assert_eq!(abajo.text.trim(), "SELECT 2");
+
+    // Y el cursor donde uno lo deja al terminar de escribir sigue siendo esa misma sentencia.
+    let recien_escrita = commands::query::statement_at_cursor(sql.to_owned(), 9).unwrap();
+    assert_eq!(recien_escrita.text.trim(), "SELECT 1");
+}
+
+#[test]
 fn explain_analyze_avisa_antes_de_ejecutar_algo_que_modifica() {
     let options = payload(json!({ "analyze": true, "buffers": false, "verbose": false }));
     let aviso = commands::query::explain_warning("DELETE FROM clientes".to_owned(), Some(options));
