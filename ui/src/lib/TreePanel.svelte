@@ -6,17 +6,24 @@
   import { envLook, GROUP_LOOK, lookOf, READ_ONLY_LOOK, tagLook } from "./badges";
   import { explorer, visibleRows, type Row } from "./explorer.svelte";
   import { describeError, folderOf } from "./ipc";
+  import { dataTargetOf, erdTargetOf, qualifiedNameOf, queryTargetOf } from "./tree-actions";
 
   let {
     onconnect,
     onnew,
     ongroup,
+    onquery,
+    ondata,
+    onerd,
   }: {
     onconnect: (profileId: string) => void;
     /** Abre el diálogo de servidor nuevo desde el estado vacío. */
     onnew?: () => void;
     /** Abre el diálogo para renombrar o deshacer una carpeta de conexiones. */
     ongroup?: (name: string) => void;
+    onquery: (profileId: string, database: string, title: string) => void;
+    ondata: (profileId: string, database: string, title: string, oid: number) => void;
+    onerd: (profileId: string, database: string, schema: string) => void;
   } = $props();
 
   /**
@@ -88,6 +95,78 @@
     if (row.hasChildren && !explorer.needsConnection(row)) {
       explorer.toggle(row);
     }
+  }
+
+  /**
+   * El menú del clic derecho, con la fila sobre la que se abrió.
+   *
+   * Va fijo a la ventana y no adentro del árbol: adentro lo recortaría el desplazamiento en cuanto
+   * se abriera cerca del borde de abajo, que es donde están las tablas que uno busca.
+   */
+  let menu = $state<{ x: number; y: number; row: Row } | null>(null);
+
+  const menuProfile = $derived(
+    menu ? explorer.profiles.find((profile) => profile.id === menu?.row.profileId) : undefined,
+  );
+  const menuQuery = $derived(menu ? queryTargetOf(menu.row, menuProfile) : null);
+  const menuData = $derived(menu ? dataTargetOf(menu.row.node) : null);
+  const menuErd = $derived(menu ? erdTargetOf(menu.row.node) : null);
+  const menuName = $derived(menu ? qualifiedNameOf(menu.row.node) : null);
+
+  function openMenu(event: MouseEvent, row: Row) {
+    event.preventDefault();
+    // Abrir el menú también selecciona: lo que se hace desde él es sobre esta fila, y verla marcada
+    // evita el clic derecho sobre una tabla con otra resaltada.
+    explorer.select(row);
+    menu = { x: event.clientX, y: event.clientY, row };
+  }
+
+  /**
+   * Cada acción se escribe entera y no pasa por un ayudante que reciba una función.
+   *
+   * `menuQuery` y compañía son `$derived` de `menu`, así que cerrar el menú primero los recalcula a
+   * `null` **antes** de que la acción los lea, y el clic termina en un `TypeError` en vez de abrir
+   * nada. Lo único que lo evita es leer lo que hace falta mientras `menu` sigue en pie, y recién
+   * después cerrarlo; que sean cinco funciones parecidas es el precio de que eso quede a la vista.
+   */
+  function newQuery() {
+    const row = menu?.row;
+    const target = menuQuery;
+    menu = null;
+    if (row && target) onquery(row.profileId, target.database, target.title);
+  }
+
+  function openData() {
+    const row = menu?.row;
+    const target = menuQuery;
+    const oid = menuData;
+    menu = null;
+    if (row && target && oid !== null) ondata(row.profileId, target.database, target.title, oid);
+  }
+
+  function openErd() {
+    const row = menu?.row;
+    const target = menuErd;
+    menu = null;
+    if (row && target) onerd(row.profileId, target.database, target.schema);
+  }
+
+  function connect() {
+    const row = menu?.row;
+    menu = null;
+    if (row) onconnect(row.profileId);
+  }
+
+  function reload() {
+    const row = menu?.row;
+    menu = null;
+    if (row) explorer.reload(row);
+  }
+
+  async function copyName() {
+    const name = menuName;
+    menu = null;
+    if (name) await navigator.clipboard.writeText(name).catch(() => {});
   }
 
   /** Deja la fila `index` dentro de la ventana visible, sin moverla si ya se ve. */
@@ -219,6 +298,8 @@
   }
 </script>
 
+<svelte:window onclick={() => (menu = null)} />
+
 <!-- El contenedor recibe lo que se suelta fuera de toda carpeta: ahí es donde el servidor queda
      suelto. Las filas que sí tienen carpeta cortan la propagación antes de llegar acá. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -320,6 +401,7 @@
           aria-expanded={row.hasChildren ? row.expanded : undefined}
           aria-selected={isSelected}
           onclick={() => activate(row)}
+          oncontextmenu={(event) => openMenu(event, row)}
           ondblclick={() => {
             // Doble clic sobre un servidor apagado: lo que se quiere es entrar.
             if (explorer.needsConnection(row)) onconnect(row.profileId);
@@ -561,3 +643,59 @@
     </div>
   {/if}
 </div>
+
+<!--
+  Lo que se puede abrir desde una fila, sin pasar por el panel de detalle. Era el camino de todos
+  los días —elegir la tabla, ir a «Detalle», bajar hasta el botón— y son dos clics de más cada vez.
+-->
+{#if menu}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="card fixed z-40 min-w-52 p-1 text-sm shadow-lg"
+    style="left: {Math.min(menu.x, window.innerWidth - 230)}px;
+           top: {Math.min(menu.y, window.innerHeight - 220)}px"
+    role="menu"
+    tabindex="-1"
+    onclick={(event) => event.stopPropagation()}
+  >
+    {#if explorer.needsConnection(menu.row)}
+      <button class="row-menu" onclick={connect}>
+        <span class="flex items-center gap-2"><Icon name="plug" size={13} /> Conectar</span>
+      </button>
+    {/if}
+
+    {#if menuQuery}
+      <button class="row-menu" onclick={newQuery}>
+        <span class="flex items-center gap-2"><Icon name="sql" size={13} /> Nueva consulta</span>
+        <span class="muted">Ctrl+Q</span>
+      </button>
+    {/if}
+
+    {#if menuQuery && menuData !== null}
+      <button class="row-menu" onclick={openData}>
+        <span class="flex items-center gap-2"><Icon name="table" size={13} /> Ver los datos</span>
+      </button>
+    {/if}
+
+    {#if menuErd}
+      <button class="row-menu" onclick={openErd}>
+        <span class="flex items-center gap-2">
+          <Icon name="diagram" size={13} /> Diagrama del esquema
+        </span>
+      </button>
+    {/if}
+
+    {#if menuName}
+      <button class="row-menu" onclick={copyName}>
+        <span class="flex items-center gap-2"><Icon name="copy" size={13} /> Copiar el nombre</span>
+      </button>
+    {/if}
+
+    {#if menu.row.hasChildren && !explorer.needsConnection(menu.row)}
+      <button class="row-menu" onclick={reload}>
+        <span class="flex items-center gap-2"><Icon name="refresh" size={13} /> Refrescar</span>
+      </button>
+    {/if}
+  </div>
+{/if}

@@ -18,7 +18,8 @@
   import { openErd, ErdTab } from "./lib/erd.svelte";
   import { environmentOf, guard } from "./lib/access.svelte";
   import { explorer } from "./lib/explorer.svelte";
-  import { openQuery, QueryTab } from "./lib/query.svelte";
+  import { openQuery, saveQueryTab, QueryTab } from "./lib/query.svelte";
+  import { queryTargetOf } from "./lib/tree-actions";
   import { tabs, type Tab, type TabKind } from "./lib/tabs.svelte";
   import { theme } from "./lib/theme.svelte";
   import {
@@ -185,10 +186,41 @@
   }
 
   /** Atajos que valen en toda la ventana. Los del editor los maneja CodeMirror, que tiene el foco. */
+  /**
+   * Contra qué base abriría una consulta lo que está seleccionado en el árbol.
+   *
+   * Es la misma regla que usan el botón del panel de detalle y el menú del clic derecho: vive en
+   * `tree-actions.ts` para que las tres puertas abran lo mismo.
+   */
+  const queryTarget = $derived.by(() => {
+    const row = explorer.selected;
+    return queryTargetOf(row, row ? profileOf(row.profileId) : undefined);
+  });
+
+  function newQuery() {
+    const row = explorer.selected;
+    if (!row || !queryTarget) return;
+    openQuery(row.profileId, queryTarget.database, queryTarget.title);
+  }
+
   function onKeydown(event: KeyboardEvent) {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b") {
-      event.preventDefault();
-      sidebarOpen = !sidebarOpen;
+    if (!(event.ctrlKey || event.metaKey)) return;
+
+    switch (event.key.toLowerCase()) {
+      case "b":
+        event.preventDefault();
+        sidebarOpen = !sidebarOpen;
+        break;
+      case "q":
+        event.preventDefault();
+        newQuery();
+        break;
+      case "s":
+        // Con el editor enfocado lo atiende su propio keymap; esto cubre el resto de la ventana,
+        // donde `Ctrl+S` si no lo tomaría el navegador que hay debajo de la ventana de Tauri.
+        event.preventDefault();
+        if (tabs.current instanceof QueryTab) saveQueryTab(tabs.current, event.shiftKey);
+        break;
     }
   }
 
@@ -411,6 +443,9 @@
               onconnect={connectById}
               onnew={() => (dialog = { profile: null })}
               ongroup={(name) => (groupDialog = name)}
+              onquery={openQuery}
+              ondata={openData}
+              onerd={openErd}
             />
           </div>
 
@@ -521,6 +556,20 @@
               </button>
             </div>
           {/each}
+
+          <!-- Abrir una consulta contra lo que ya se está mirando, sin volver al panel de detalle:
+               era el camino de todos los días y son dos clics de más cada vez. -->
+          <button
+            class="btn btn-ghost btn-icon ml-1 shrink-0 self-center"
+            disabled={queryTarget === null}
+            aria-label="Nueva consulta"
+            title={queryTarget
+              ? `Nueva consulta contra ${queryTarget.database} (Ctrl+Q)`
+              : "Elegí una base o un objeto de un servidor conectado"}
+            onclick={newQuery}
+          >
+            <Icon name="plus" size={13} />
+          </button>
         </div>
 
         <div class="min-h-0 flex-1">
