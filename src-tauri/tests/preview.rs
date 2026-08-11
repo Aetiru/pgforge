@@ -11,13 +11,19 @@
 
 use pgforge_app_lib::commands;
 use pgforge_core::data::{Change, ExportSpec, ImportSpec, TableShape};
+use pgforge_core::ddl::comment::CommentChange;
+use pgforge_core::ddl::database::DatabaseChange;
+use pgforge_core::ddl::domain::DomainChange;
 use pgforge_core::ddl::extension::ExtensionChange;
 use pgforge_core::ddl::index::IndexDef;
 use pgforge_core::ddl::policy::PolicyChange;
 use pgforge_core::ddl::privilege::PrivilegeChange;
 use pgforge_core::ddl::role::RoleChange;
+use pgforge_core::ddl::schema::SchemaChange;
+use pgforge_core::ddl::sequence::SequenceChange;
 use pgforge_core::ddl::table::TableChange;
 use pgforge_core::ddl::trigger::TriggerChange;
+use pgforge_core::ddl::types::TypeChange;
 use pgforge_core::ddl::view::ViewChange;
 use pgforge_core::settings::SettingChange;
 use serde::de::DeserializeOwned;
@@ -497,6 +503,20 @@ fn la_sentencia_bajo_el_cursor_es_la_que_se_va_a_ejecutar() {
 }
 
 #[test]
+fn el_cursor_en_la_linea_en_blanco_apunta_a_la_sentencia_de_abajo() {
+    // El caso que se reportó: `SELECT 1;` arriba, una línea vacía, y la sentencia que se quiere
+    // ejecutar en la tercera. Parado en la vacía se ejecutaba la primera.
+    let sql = "SELECT 1;\n\nSELECT 2;";
+
+    let abajo = commands::query::statement_at_cursor(sql.to_owned(), 10).unwrap();
+    assert_eq!(abajo.text.trim(), "SELECT 2");
+
+    // Y el cursor donde uno lo deja al terminar de escribir sigue siendo esa misma sentencia.
+    let recien_escrita = commands::query::statement_at_cursor(sql.to_owned(), 9).unwrap();
+    assert_eq!(recien_escrita.text.trim(), "SELECT 1");
+}
+
+#[test]
 fn explain_analyze_avisa_antes_de_ejecutar_algo_que_modifica() {
     let options = payload(json!({ "analyze": true, "buffers": false, "verbose": false }));
     let aviso = commands::query::explain_warning("DELETE FROM clientes".to_owned(), Some(options));
@@ -508,6 +528,202 @@ fn explain_analyze_avisa_antes_de_ejecutar_algo_que_modifica() {
         commands::query::explain_warning("DELETE FROM clientes".to_owned(), Some(options))
             .is_none()
     );
+}
+
+// ---------------------------------------------------------------------------
+// Secuencias, tipos, dominios, esquemas y bases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn crear_una_secuencia_traduce_sus_opciones() {
+    let changes: Vec<SequenceChange> = payload(json!([{
+        "kind": "createSequence",
+        "schema": "public",
+        "name": "folios",
+        "ifNotExists": true,
+        "options": {
+            "dataType": "integer",
+            "increment": 5,
+            "minValue": 100,
+            "maxValue": 1000,
+            "start": 100,
+            "cache": 1,
+            "cycle": true,
+            "ownedBy": {
+                "kind": "column",
+                "schema": "public",
+                "table": "comprobantes",
+                "column": "folio"
+            }
+        }
+    }]));
+
+    let sql = &commands::ddl::sequence_preview(changes).unwrap()[0].sql;
+    assert!(
+        sql.contains("CREATE SEQUENCE IF NOT EXISTS public.folios"),
+        "{sql}"
+    );
+    assert!(sql.contains("AS integer"), "{sql}");
+    assert!(sql.contains("INCREMENT BY 5"), "{sql}");
+    assert!(sql.contains("MINVALUE 100 MAXVALUE 1000"), "{sql}");
+    assert!(sql.contains("OWNED BY public.comprobantes.folio"), "{sql}");
+}
+
+#[test]
+fn reiniciar_una_secuencia_no_toca_su_start() {
+    let changes: Vec<SequenceChange> = payload(json!([{
+        "kind": "restartSequence",
+        "schema": "public",
+        "name": "folios",
+        "value": 1
+    }]));
+
+    let sql = &commands::ddl::sequence_preview(changes).unwrap()[0].sql;
+    assert_eq!(sql, "ALTER SEQUENCE public.folios RESTART WITH 1");
+}
+
+#[test]
+fn agregar_un_valor_a_una_enumeracion_respeta_la_posicion() {
+    let changes: Vec<TypeChange> = payload(json!([{
+        "kind": "addEnumValue",
+        "schema": "public",
+        "name": "estado",
+        "value": "pausado",
+        "position": { "kind": "before", "value": "inactivo" },
+        "ifNotExists": true
+    }]));
+
+    let sql = &commands::ddl::type_preview(changes).unwrap()[0].sql;
+    assert_eq!(
+        sql,
+        "ALTER TYPE public.estado ADD VALUE IF NOT EXISTS 'pausado' BEFORE 'inactivo'"
+    );
+}
+
+#[test]
+fn crear_un_compuesto_traduce_sus_campos() {
+    let changes: Vec<TypeChange> = payload(json!([{
+        "kind": "createComposite",
+        "schema": "public",
+        "name": "direccion",
+        "fields": [
+            { "name": "calle", "dataType": "text", "collation": null },
+            { "name": "numero", "dataType": "integer", "collation": null }
+        ]
+    }]));
+
+    let sql = &commands::ddl::type_preview(changes).unwrap()[0].sql;
+    assert!(sql.contains("calle text"), "{sql}");
+    assert!(sql.contains("numero integer"), "{sql}");
+}
+
+#[test]
+fn crear_un_dominio_conserva_el_check_crudo() {
+    let changes: Vec<DomainChange> = payload(json!([{
+        "kind": "createDomain",
+        "schema": "public",
+        "name": "correo",
+        "dataType": "text",
+        "collation": null,
+        "default": null,
+        "notNull": true,
+        "constraints": [
+            { "name": "correo_valido", "check": "VALUE ~ '@'", "notValid": false }
+        ]
+    }]));
+
+    let sql = &commands::ddl::domain_preview(changes).unwrap()[0].sql;
+    assert!(sql.contains("CREATE DOMAIN public.correo AS text"), "{sql}");
+    assert!(sql.contains("NOT NULL"), "{sql}");
+    // La expresión va cruda: es lo que escribió el usuario, no un literal a escapar.
+    assert!(
+        sql.contains("CONSTRAINT correo_valido CHECK (VALUE ~ '@')"),
+        "{sql}"
+    );
+}
+
+#[test]
+fn crear_un_esquema_traduce_su_autorizacion() {
+    let changes: Vec<SchemaChange> = payload(json!([{
+        "kind": "createSchema",
+        "name": "ventas",
+        "authorization": "analistas",
+        "ifNotExists": true
+    }]));
+
+    let sql = &commands::ddl::schema_preview(changes).unwrap()[0].sql;
+    assert_eq!(
+        sql,
+        "CREATE SCHEMA IF NOT EXISTS ventas AUTHORIZATION analistas"
+    );
+}
+
+#[test]
+fn crear_una_base_traduce_sus_opciones() {
+    let changes: Vec<DatabaseChange> = payload(json!([{
+        "kind": "createDatabase",
+        "name": "ventas",
+        "options": {
+            "owner": "analistas",
+            "template": "template0",
+            "encoding": "UTF8",
+            "lcCollate": "es_AR.UTF-8",
+            "lcCtype": "es_AR.UTF-8",
+            "connectionLimit": 10,
+            "isTemplate": false
+        }
+    }]));
+
+    let sql = &commands::ddl::database_preview(changes).unwrap()[0].sql;
+    assert!(sql.contains("OWNER = analistas"), "{sql}");
+    assert!(sql.contains("TEMPLATE = template0"), "{sql}");
+    // El encoding y los locales son literales, no identificadores.
+    assert!(sql.contains("ENCODING = 'UTF8'"), "{sql}");
+    assert!(sql.contains("LC_COLLATE = 'es_AR.UTF-8'"), "{sql}");
+    assert!(sql.contains("CONNECTION LIMIT = 10"), "{sql}");
+}
+
+#[test]
+fn borrar_una_base_con_force_echa_a_las_sesiones() {
+    let changes: Vec<DatabaseChange> = payload(json!([{
+        "kind": "dropDatabase",
+        "name": "ventas",
+        "ifExists": true,
+        "force": true
+    }]));
+
+    let sql = &commands::ddl::database_preview(changes).unwrap()[0].sql;
+    assert_eq!(sql, "DROP DATABASE IF EXISTS ventas WITH (FORCE)");
+}
+
+#[test]
+fn comentar_una_columna_la_nombra_con_su_tabla() {
+    let changes: Vec<CommentChange> = payload(json!([{
+        "target": {
+            "kind": "column",
+            "schema": "public",
+            "table": "clientes",
+            "column": "estado"
+        },
+        "comment": "activo | inactivo"
+    }]));
+
+    let sql = &commands::ddl::comment_preview(changes).unwrap()[0].sql;
+    assert_eq!(
+        sql,
+        "COMMENT ON COLUMN public.clientes.estado IS 'activo | inactivo'"
+    );
+}
+
+#[test]
+fn un_comentario_sin_texto_lo_borra() {
+    let changes: Vec<CommentChange> = payload(json!([{
+        "target": { "kind": "schema", "name": "ventas" },
+        "comment": null
+    }]));
+
+    let sql = &commands::ddl::comment_preview(changes).unwrap()[0].sql;
+    assert_eq!(sql, "COMMENT ON SCHEMA ventas IS NULL");
 }
 
 // ---------------------------------------------------------------------------

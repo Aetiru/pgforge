@@ -10,15 +10,24 @@
   import ResultGrid from "./ResultGrid.svelte";
   import FontSize from "./FontSize.svelte";
   import SqlEditor from "./SqlEditor.svelte";
+  import { editorSplit } from "./editor.svelte";
   import { PAGE_SIZES, paging } from "./paging.svelte";
   import { count, decimal } from "./format";
-  import type { QueryTab } from "./query.svelte";
-  import { describeError, explainWarning, statementAtCursor, type ExplainOptions } from "./ipc";
+  import { saveQueryTab, type QueryTab } from "./query.svelte";
+  import {
+    describeError,
+    explainWarning,
+    statementAtCursor,
+    treeChildren,
+    type ExplainOptions,
+  } from "./ipc";
 
   let { tab }: { tab: QueryTab } = $props();
 
-  let editorHeight = $state(240);
   let exportOpen = $state(false);
+  let editor = $state<ReturnType<typeof SqlEditor> | null>(null);
+  let databases = $state<string[]>([]);
+  let switching = $state<string | null>(null);
   let pending = $state<{
     sql: string;
     base: number;
@@ -50,6 +59,16 @@
     return statement ? { sql: statement.text, base: statement.offset } : null;
   }
 
+  /**
+   * Dónde está el cursor se le pregunta al editor en el momento del clic.
+   *
+   * Guardarlo en el panel cada vez que el editor avisaba dejaba a los botones ejecutando la
+   * sentencia de la vez anterior: el atajo lo actualizaba, pero llegar al botón con el mouse no.
+   */
+  function here() {
+    return editor?.selection() ?? { text: "", cursor: 0 };
+  }
+
   async function run(selection: string, cursor: number) {
     const target = await resolve(selection, cursor);
     if (target) await tab.run(target.sql, target.base);
@@ -76,10 +95,10 @@
   function startResize(event: MouseEvent) {
     event.preventDefault();
     const origin = event.clientY;
-    const initial = editorHeight;
+    const initial = editorSplit.height;
 
     const move = (moved: MouseEvent) => {
-      editorHeight = Math.min(720, Math.max(96, initial + moved.clientY - origin));
+      editorSplit.set(initial + moved.clientY - origin);
     };
     const up = () => {
       window.removeEventListener("mousemove", move);
@@ -94,8 +113,30 @@
   const analyze: ExplainOptions = { analyze: true, buffers: true, verbose: false };
   const estimate: ExplainOptions = { analyze: false, buffers: false, verbose: false };
 
-  /** El editor entrega la selección y el cursor; el panel decide qué hacer con ellos. */
-  let lastCursor = $state(0);
+  // Las bases del servidor, para poder apuntar la pestaña a otra sin abrir una nueva. Se piden una
+  // sola vez por pestaña: crear o borrar bases mientras se escribe una consulta no es lo normal.
+  $effect(() => {
+    const id = tab.profileId;
+    let cancelled = false;
+    treeChildren(id, null, { showSystemSchemas: false })
+      .then((nodes) => {
+        if (cancelled) return;
+        databases = nodes.filter((node) => node.kind === "database").map((node) => node.label);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  async function switchDatabase(database: string) {
+    // Cambiar de base cierra la sesión, y con ella se revierte lo que esté sin confirmar.
+    if (tab.txStatus !== "idle") {
+      switching = database;
+      return;
+    }
+    await tab.switchDatabase(database);
+  }
 
   const VIEWS = [
     { value: "rows", label: "Resultados" },
@@ -106,9 +147,14 @@
 </script>
 
 <div class="flex h-full flex-col">
+  <!--
+    Íconos y no palabras: la barra tenía nueve controles con texto y en una ventana angosta se
+    partía en dos líneas, comiéndose el alto del editor. «Ejecutar» conserva la etiqueta porque es
+    la acción que se busca sin mirar; el resto la lleva en el `title`.
+  -->
   <header class="toolbar">
     {#if tab.running}
-      <button class="btn btn-danger" onclick={() => tab.cancel()}>
+      <button class="btn btn-danger" title="Cancela la consulta en curso" onclick={() => tab.cancel()}>
         <Icon name="close" size={12} />
         Cancelar
       </button>
@@ -116,21 +162,24 @@
       <button
         class="btn btn-primary"
         disabled={tab.tabId === null}
-        title="Ejecuta la selección, o la sentencia donde está el cursor"
-        onclick={() => run("", lastCursor)}
+        title="Ejecuta la selección, o la sentencia donde está el cursor (Ctrl+Enter)"
+        onclick={() => {
+          const { text, cursor } = here();
+          run(text, cursor);
+        }}
       >
         <Icon name="play" size={12} />
         Ejecutar
         <span class="kbd border-white/30 bg-white/15 text-white/80">Ctrl+↵</span>
       </button>
       <button
-        class="btn"
+        class="btn btn-icon"
         disabled={tab.tabId === null}
-        title="Ejecuta todas las sentencias del editor"
+        aria-label="Ejecutar el script entero"
+        title="Ejecuta todas las sentencias del editor (Ctrl+Mayús+Enter)"
         onclick={() => tab.run(tab.sql)}
       >
-        Script entero
-        <span class="kbd">Ctrl+⇧+↵</span>
+        <Icon name="sql" size={14} />
       </button>
     {/if}
 
@@ -151,39 +200,62 @@
     </label>
 
     <button
-      class="btn"
+      class="btn btn-icon"
       disabled={tab.tabId === null || tab.running || tab.txStatus === "idle"}
+      aria-label="Commit"
       title="Confirma la transacción abierta en esta pestaña"
       onclick={() => tab.commit()}
     >
-      Commit
+      <Icon name="check" size={14} />
     </button>
     <button
-      class="btn btn-danger"
+      class="btn btn-danger btn-icon"
       disabled={tab.tabId === null || tab.running || tab.txStatus === "idle"}
+      aria-label="Rollback"
       title="Descarta todo lo hecho desde que se abrió la transacción"
       onclick={() => tab.rollback()}
     >
-      Rollback
+      <Icon name="undo" size={14} />
     </button>
 
     <span class="toolbar-sep"></span>
 
     <button
-      class="btn"
+      class="btn btn-icon"
       disabled={tab.tabId === null || tab.running}
+      aria-label="Explicar"
       title="Muestra el plan estimado sin ejecutar la consulta"
-      onclick={() => explain("", lastCursor, estimate)}
+      onclick={() => {
+        const { text, cursor } = here();
+        explain(text, cursor, estimate);
+      }}
     >
-      Explicar
+      <Icon name="compass" size={14} />
     </button>
     <button
-      class="btn"
+      class="btn btn-icon"
       disabled={tab.tabId === null || tab.running}
+      aria-label="Explicar y medir"
       title="Ejecuta la consulta y muestra los tiempos reales"
-      onclick={() => explain("", lastCursor, analyze)}
+      onclick={() => {
+        const { text, cursor } = here();
+        explain(text, cursor, analyze);
+      }}
     >
-      Explicar y medir
+      <Icon name="gauge" size={14} />
+    </button>
+
+    <span class="toolbar-sep"></span>
+
+    <button
+      class="btn btn-icon"
+      aria-label="Guardar como archivo .sql"
+      title={tab.filePath
+        ? `Guarda en ${tab.filePath} (Ctrl+S; Ctrl+Mayús+S para elegir otro archivo)`
+        : "Guarda el texto como archivo .sql (Ctrl+S)"}
+      onclick={() => saveQueryTab(tab, false)}
+    >
+      <Icon name="save" size={14} />
     </button>
 
     <span class="toolbar-sep"></span>
@@ -216,24 +288,44 @@
       {#if isReadOnly(tab.profileId)}
         <span class="tag tag-neutral" title={READ_ONLY_LOOK.title}>{READ_ONLY_LOOK.label}</span>
       {/if}
-      <span class="tag tag-neutral" title="Base sobre la que corre esta pestaña">
-        <Icon name="database" size={10} />
-        {tab.database}
-      </span>
+      <!-- Contra qué base corre se elige acá y no cerrando la pestaña para abrir otra: es la misma
+           consulta contra otra base, que es como se prueba algo entre desarrollo y producción. -->
+      <label class="flex items-center gap-1" title="Base sobre la que corre esta pestaña">
+        <Icon name="database" size={11} />
+        <select
+          class="field max-w-44 py-0.5 text-xs"
+          value={tab.database}
+          disabled={tab.running || tab.opening}
+          onchange={(event) => {
+            // El desplegable vuelve a lo que hay hasta que el cambio salga bien: si falla, o si la
+            // confirmación por la transacción abierta se cancela, mostraría una base que no es.
+            const chosen = event.currentTarget.value;
+            event.currentTarget.value = tab.database;
+            switchDatabase(chosen);
+          }}
+        >
+          {#if !databases.includes(tab.database)}
+            <option value={tab.database}>{tab.database}</option>
+          {/if}
+          {#each databases as name (name)}
+            <option value={name}>{name}</option>
+          {/each}
+        </select>
+      </label>
     </span>
   </header>
 
-  <div class="min-h-0 shrink-0 overflow-hidden" style="height: {editorHeight}px">
+  <div class="min-h-0 shrink-0 overflow-hidden" style="height: {editorSplit.height}px">
     <SqlEditor
+      bind:this={editor}
       bind:value={tab.sql}
       schema={tab.schema}
+      relations={tab.relations}
       errorMark={tab.errorMark}
-      onrun={(selection, cursor) => {
-        lastCursor = cursor;
-        run(selection, cursor);
-      }}
+      onrun={(selection, cursor) => run(selection, cursor)}
       onrunScript={() => tab.run(tab.sql)}
       oncancel={() => tab.cancel()}
+      onsave={(askPath) => saveQueryTab(tab, askPath)}
     />
   </div>
 
@@ -241,8 +333,9 @@
   <div
     class="group relative h-px shrink-0 bg-zinc-200 dark:bg-zinc-800"
     onmousedown={startResize}
-    ondblclick={() => (editorHeight = 240)}
-    title="Arrastrá para cambiar la altura del editor; doble clic para restablecerla"
+    ondblclick={() => editorSplit.reset()}
+    title="Arrastrá para cambiar la altura del editor; doble clic para restablecerla. Vale para
+           todas las pestañas de consulta y se recuerda."
   >
     <div
       class="absolute inset-x-0 -top-[3px] h-[7px] cursor-row-resize transition-colors
@@ -352,7 +445,26 @@
       {/if}
     </div>
 
-    <div class="min-h-0 flex-1">
+    <div class="relative min-h-0 flex-1">
+      <!--
+        Mientras corre, el estado vacío decía «todavía no ejecutaste nada», que es exactamente lo
+        contrario de lo que está pasando. Va por encima y no en lugar de la grilla: al volver a
+        ejecutar, tapar el resultado anterior con una pantalla vacía hace parpadear todo.
+      -->
+      {#if tab.running}
+        <div
+          class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3
+                 bg-white/70 backdrop-blur-[1px] dark:bg-zinc-950/70"
+        >
+          <span class="spinner size-6 border-2"></span>
+          <p class="text-sm muted">Ejecutando…</p>
+          <button class="btn btn-danger btn-sm" onclick={() => tab.cancel()}>
+            <Icon name="close" size={11} />
+            Cancelar
+          </button>
+        </div>
+      {/if}
+
       {#if tab.view === "rows"}
         {#if withRows}
           {#key result}
@@ -443,6 +555,21 @@
     database={tab.database}
     source={{ kind: "query", sql: tab.ranSql }}
     onclose={() => (exportOpen = false)}
+  />
+{/if}
+
+{#if switching}
+  <Confirm
+    title="Hay una transacción abierta"
+    message="Cambiar de base cierra la sesión de esta pestaña, y con ella se revierte todo lo que no
+             se haya confirmado. El texto del editor queda como está."
+    confirmLabel="Cambiar igual"
+    onconfirm={() => {
+      const database = switching;
+      switching = null;
+      if (database) tab.switchDatabase(database);
+    }}
+    onclose={() => (switching = null)}
   />
 {/if}
 

@@ -1,19 +1,26 @@
 //! Estructura de tablas: crear, cambiar y borrar tablas, columnas, índices, constraints, vistas,
 //! funciones, triggers, roles, privilegios y políticas de seguridad por fila.
 
+use pgforge_core::ddl::comment::{self, CommentChange};
+use pgforge_core::ddl::database::{self, DatabaseChange, DatabaseInfo};
+use pgforge_core::ddl::domain::{self, DomainChange, DomainInfo};
 use pgforge_core::ddl::extension::{self, AvailableExtension, ExtensionChange, ExtensionInfo};
 use pgforge_core::ddl::fdw::{
     self, FdwChange, FdwInfo, ServerChange, ServerInfo, UserMapping, UserMappingChange,
 };
 use pgforge_core::ddl::function;
 use pgforge_core::ddl::index::{self, IndexDef, IndexInfo};
+use pgforge_core::ddl::partition::{self, PartitionChange, PartitioningInfo};
 use pgforge_core::ddl::policy::{self, PolicyChange, TableSecurity};
 use pgforge_core::ddl::privilege::{
     self, ColumnGrant, DefaultGrant, PrivilegeChange, PrivilegeGrant,
 };
 use pgforge_core::ddl::role::{self, RoleChange, RoleInfo};
+use pgforge_core::ddl::schema::{self, SchemaChange};
+use pgforge_core::ddl::sequence::{self, SequenceChange, SequenceInfo};
 use pgforge_core::ddl::table::{self, ConstraintInfo, Statement, TableChange};
 use pgforge_core::ddl::trigger::{self, TriggerChange, TriggerInfo};
+use pgforge_core::ddl::types::{self, TypeChange, TypeInfo};
 use pgforge_core::ddl::view::{self, ViewChange};
 use pgforge_core::{ProfileId, Result};
 use tauri::State;
@@ -562,4 +569,223 @@ pub async fn table_security(
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
     policy::table_security(&handle, &database, oid).await
+}
+
+/// El SQL que se ejecutaría sobre una secuencia, sin ejecutar nada.
+#[tauri::command]
+pub fn sequence_preview(changes: Vec<SequenceChange>) -> Result<Vec<Statement>> {
+    sequence::statements(&changes)
+}
+
+/// Aplica los cambios pendientes en una sola transacción.
+#[tauri::command]
+pub async fn sequence_apply(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    changes: Vec<SequenceChange>,
+) -> Result<()> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    sequence::apply(&handle, &database, &changes).await
+}
+
+/// La definición de una secuencia, para precargar el formulario y mostrar su valor actual.
+#[tauri::command]
+pub async fn sequence_info(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    oid: u32,
+) -> Result<SequenceInfo> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    sequence::info(&handle, &database, oid).await
+}
+
+/// El SQL que se ejecutaría sobre un tipo, sin ejecutar nada.
+#[tauri::command]
+pub fn type_preview(changes: Vec<TypeChange>) -> Result<Vec<Statement>> {
+    types::statements(&changes)
+}
+
+/// Aplica los cambios pendientes en una sola transacción.
+#[tauri::command]
+pub async fn type_apply(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    changes: Vec<TypeChange>,
+) -> Result<()> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    types::apply(&handle, &database, &changes).await
+}
+
+/// La definición de un tipo: sus valores si es una enumeración, sus campos si es compuesto.
+#[tauri::command]
+pub async fn type_info(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    oid: u32,
+) -> Result<TypeInfo> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    types::info(&handle, &database, oid).await
+}
+
+/// El SQL que se ejecutaría sobre un dominio, sin ejecutar nada.
+#[tauri::command]
+pub fn domain_preview(changes: Vec<DomainChange>) -> Result<Vec<Statement>> {
+    domain::statements(&changes)
+}
+
+/// Aplica los cambios pendientes en una sola transacción.
+#[tauri::command]
+pub async fn domain_apply(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    changes: Vec<DomainChange>,
+) -> Result<()> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    domain::apply(&handle, &database, &changes).await
+}
+
+/// La definición de un dominio: tipo base, `DEFAULT`, `NOT NULL` y restricciones.
+#[tauri::command]
+pub async fn domain_info(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    oid: u32,
+) -> Result<DomainInfo> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    domain::info(&handle, &database, oid).await
+}
+
+/// El SQL que se ejecutaría sobre un esquema, sin ejecutar nada.
+#[tauri::command]
+pub fn schema_preview(changes: Vec<SchemaChange>) -> Result<Vec<Statement>> {
+    schema::statements(&changes)
+}
+
+/// Aplica los cambios pendientes en una sola transacción.
+#[tauri::command]
+pub async fn schema_apply(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    changes: Vec<SchemaChange>,
+) -> Result<()> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    schema::apply(&handle, &database, &changes).await
+}
+
+/// El SQL que se ejecutaría sobre una base, sin ejecutar nada.
+#[tauri::command]
+pub fn database_preview(changes: Vec<DatabaseChange>) -> Result<Vec<Statement>> {
+    database::statements(&changes)
+}
+
+/// Aplica los cambios pendientes.
+///
+/// A diferencia del resto del DDL, **sin transacción**: `CREATE DATABASE` y `DROP DATABASE` no
+/// corren adentro de un bloque transaccional. El núcleo elige además desde qué base conectarse.
+#[tauri::command]
+pub async fn database_apply(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    changes: Vec<DatabaseChange>,
+) -> Result<()> {
+    let handle = state.manager.require(id).await?;
+
+    database::apply(&handle, &changes).await
+}
+
+/// La definición de una base: dueño, codificación, locales, tamaño y límite de conexiones.
+#[tauri::command]
+pub async fn database_info(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    name: String,
+) -> Result<DatabaseInfo> {
+    let handle = state.manager.require(id).await?;
+
+    database::info(&handle, &name).await
+}
+
+/// El SQL que se ejecutaría sobre una partición, sin ejecutar nada.
+///
+/// Pide el perfil, a diferencia de las demás vistas previas, porque `DETACH … CONCURRENTLY` no
+/// existe antes de PostgreSQL 14 y la decisión sale de `ServerCaps`. Mismo caso que
+/// `maintenance_plan`.
+#[tauri::command]
+pub async fn partition_preview(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    changes: Vec<PartitionChange>,
+) -> Result<Vec<Statement>> {
+    let handle = state.manager.require(id).await?;
+
+    partition::statements(&changes, &handle.caps)
+}
+
+/// Aplica los cambios pendientes. Sin transacción si hay un `DETACH … CONCURRENTLY`.
+#[tauri::command]
+pub async fn partition_apply(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    changes: Vec<PartitionChange>,
+) -> Result<()> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    partition::apply(&handle, &database, &changes).await
+}
+
+/// Cómo está particionada una tabla y qué particiones tiene.
+#[tauri::command]
+pub async fn table_partitions(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    oid: u32,
+) -> Result<PartitioningInfo> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    partition::info(&handle, &database, oid).await
+}
+
+/// El SQL del comentario, sin ejecutar nada.
+#[tauri::command]
+pub fn comment_preview(changes: Vec<CommentChange>) -> Result<Vec<Statement>> {
+    comment::statements(&changes)
+}
+
+/// Aplica los comentarios pendientes en una sola transacción.
+#[tauri::command]
+pub async fn comment_apply(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    changes: Vec<CommentChange>,
+) -> Result<()> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    comment::apply(&handle, &database, &changes).await
 }

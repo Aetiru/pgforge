@@ -1,4 +1,5 @@
 import type { SQLNamespace } from "@codemirror/lang-sql";
+import { save } from "@tauri-apps/plugin-dialog";
 import { paging } from "./paging.svelte";
 import { Tab, tabs } from "./tabs.svelte";
 import {
@@ -16,11 +17,13 @@ import {
   queryRun,
   queryTxStatus,
   schemaSnapshot,
+  sqlWriteFile,
   type CoreError,
   type ExplainOptions,
   type Outcome,
   type Plan,
   type QueryEvent,
+  type SchemaRelation,
   type TxStatus,
 } from "./ipc";
 
@@ -48,14 +51,24 @@ export interface ErrorMark {
 export type ResultView = "rows" | "plan" | "messages" | "history";
 
 /**
+ * Lo que el editor necesita del catálogo: el árbol que espera `@codemirror/lang-sql` para completar
+ * detrás de un punto, y la lista plana, que es con la que se resuelven las columnas del `FROM`
+ * (ver `sql-complete.ts`). Sale todo de la misma consulta, así que viaja junto.
+ */
+export interface EditorSchema {
+  namespace: SQLNamespace;
+  relations: SchemaRelation[];
+}
+
+/**
  * Los nombres de una base, cacheados mientras dure la ventana.
  *
  * Dos pestañas contra la misma base comparten el resultado: la consulta al catálogo no es gratis y
  * abrir varias pestañas sobre la base en la que uno trabaja es lo normal.
  */
-const namespaces = new Map<string, Promise<SQLNamespace>>();
+const namespaces = new Map<string, Promise<EditorSchema>>();
 
-async function schemaFor(profileId: string, database: string): Promise<SQLNamespace> {
+async function schemaFor(profileId: string, database: string): Promise<EditorSchema> {
   const key = `${profileId}:${database}`;
   const cached = namespaces.get(key);
   if (cached) return cached;
@@ -66,7 +79,7 @@ async function schemaFor(profileId: string, database: string): Promise<SQLNamesp
     for (const relation of snapshot.relations) {
       (namespace[relation.schema] ??= {})[relation.name] = relation.columns;
     }
-    return namespace as SQLNamespace;
+    return { namespace: namespace as SQLNamespace, relations: snapshot.relations };
   });
 
   // Un fallo no se cachea: la próxima pestaña vuelve a intentarlo.
@@ -82,6 +95,8 @@ export class QueryTab extends Tab {
   tabId = $state<string | null>(null);
   /** Nombres del esquema en el formato que espera `@codemirror/lang-sql`. */
   schema = $state.raw<SQLNamespace | undefined>(undefined);
+  /** Los mismos nombres en plano, para completar las columnas del `FROM` sin calificar. */
+  relations = $state.raw<SchemaRelation[]>([]);
   sql = $state("");
   opening = $state(true);
   running = $state(false);
@@ -117,8 +132,80 @@ export class QueryTab extends Tab {
   /** Cuál de los resultados se está mirando, cuando el script devolvió más de uno. */
   shown = $state(0);
 
+  /** Dónde se guardó el texto, para que el siguiente Ctrl+S no vuelva a preguntar. */
+  filePath = $state<string | null>(null);
+
   get result(): ResultSet | null {
     return this.results[this.shown] ?? null;
+  }
+
+  /**
+   * Guarda el texto del editor en un archivo.
+   *
+   * Escribir el archivo es del lado de Rust por la misma razón que `erd_export_svg`: el contenido
+   * lo tiene la interfaz y sumar el complemento de archivos por un caso costaba más que el comando.
+   */
+  async saveTo(path: string) {
+    await sqlWriteFile(path, this.sql);
+    this.filePath = path;
+    // El nombre del archivo es lo que uno busca en la barra cuando tiene cuatro pestañas abiertas.
+    const name = path.split(/[\\/]/).pop();
+    if (name) this.title = name;
+    this.log("info", `Guardado en ${path}.`);
+  }
+
+  /**
+   * Vuelve a apuntar la pestaña a otra base del mismo servidor.
+   *
+   * La sesión se cierra y se abre de nuevo: no hay forma de cambiar de base sobre una conexión
+   * abierta. El texto del editor queda intacto —es lo que uno quiere correr contra la otra base—,
+   * pero los resultados no, porque ya no son de donde dice el encabezado.
+   */
+  async switchDatabase(database: string) {
+    if (this.running || database === this.database) return;
+
+    const previous = this.tabId;
+    this.tabId = null;
+    this.opening = true;
+    this.results = [];
+    this.plan = null;
+    this.columnTypes = null;
+    this.errorMark = null;
+    this.ranSql = "";
+    this.shown = 0;
+
+    try {
+      if (previous) await queryClose(previous);
+      const opened = await queryOpen(this.profileId, database);
+      this.tabId = opened.tabId;
+      this.database = opened.database;
+      this.autocommit = opened.autocommit;
+      this.txStatus = opened.txStatus;
+      this.messages = [];
+      this.log("info", `Conectado a ${opened.database}.`);
+      await this.loadSchema();
+    } catch (error) {
+      this.log("error", describeError(error));
+      this.view = "messages";
+    } finally {
+      this.opening = false;
+    }
+  }
+
+  /**
+   * Pide los nombres para el autocompletado. No bloquea nada: la pestaña ya sirve para escribir y
+   * ejecutar mientras el catálogo se consulta, y si falla lo único que se pierde es completar.
+   */
+  async loadSchema() {
+    this.schema = undefined;
+    this.relations = [];
+    try {
+      const loaded = await schemaFor(this.profileId, this.database);
+      this.schema = loaded.namespace;
+      this.relations = loaded.relations;
+    } catch (error) {
+      this.log("notice", `Sin autocompletado: ${describeError(error)}`);
+    }
   }
 
   log(tone: MessageTone, text: string) {
@@ -329,6 +416,31 @@ export class QueryTab extends Tab {
   }
 }
 
+/**
+ * Guarda el texto de la pestaña como archivo `.sql`.
+ *
+ * Con `askPath` apagado y una ruta ya elegida no vuelve a preguntar, que es lo que uno espera de
+ * Ctrl+S mientras trabaja. Vive acá y no en `QueryPanel` porque el atajo también llega desde la
+ * ventana, cuando el foco está afuera del editor.
+ */
+export async function saveQueryTab(tab: QueryTab, askPath: boolean) {
+  try {
+    let path = askPath ? null : tab.filePath;
+    if (!path) {
+      path = await save({
+        title: "Guardar la consulta",
+        defaultPath: tab.filePath ?? `${tab.title.replace(/[\\/:*?"<>|]/g, "_")}.sql`,
+        filters: [{ name: "SQL", extensions: ["sql"] }],
+      });
+    }
+    if (!path) return;
+    await tab.saveTo(path);
+  } catch (error) {
+    tab.log("error", describeError(error));
+    tab.view = "messages";
+  }
+}
+
 /** Abre una pestaña de consulta contra una base y la deja seleccionada. */
 export async function openQuery(
   profileId: string,
@@ -353,13 +465,8 @@ export async function openQuery(
     tab.opening = false;
   }
 
-  // El autocompletado no bloquea: la pestaña ya sirve para escribir y ejecutar mientras el catálogo
-  // se consulta. Si falla, se pierde el autocompletado y nada más.
-  schemaFor(profileId, database)
-    .then((namespace) => {
-      tab.schema = namespace;
-    })
-    .catch((error) => tab.log("notice", `Sin autocompletado: ${describeError(error)}`));
+  // Sin `await`: la pestaña ya sirve para escribir y ejecutar mientras el catálogo se consulta.
+  void tab.loadSchema();
 
   return tab;
 }

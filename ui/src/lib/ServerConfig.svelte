@@ -138,8 +138,16 @@
               <span class="w-72 shrink-0 truncate font-mono text-xs" title={setting.name}>
                 {setting.name}
               </span>
-              <span class="w-40 shrink-0 truncate tabular-nums" title={setting.value}>
-                {setting.value}{setting.unit ? ` ${setting.unit}` : ""}
+              <!-- Sin valor no es un parámetro vacío: es uno que este rol no tiene permiso de leer. -->
+              <span
+                class="w-40 shrink-0 truncate tabular-nums {setting.value === null ? 'muted' : ''}"
+                title={setting.value ?? "solo lo puede leer un superusuario"}
+              >
+                {#if setting.value === null}
+                  sin permiso
+                {:else}
+                  {setting.value}{setting.unit ? ` ${setting.unit}` : ""}
+                {/if}
               </span>
 
               <span class="flex shrink-0 gap-1">

@@ -442,6 +442,17 @@ pub fn statement_at_cursor(sql: String, cursor: usize) -> Option<sql::Statement>
     sql::at_cursor(&sql, cursor)
 }
 
+/// Guarda el texto de una pestaña de consulta en la ruta elegida.
+///
+/// Misma excepción anotada que `erd_export_svg`: lo que se escribe lo tiene la interfaz y no el
+/// servidor, así que no hay lógica que llevar al núcleo, y estas dos líneas salen más baratas que
+/// sumar el complemento de archivos con su ámbito de permisos.
+#[tauri::command]
+pub fn sql_write_file(path: String, sql: String) -> Result<()> {
+    std::fs::write(path, sql)?;
+    Ok(())
+}
+
 /// Advertencia previa a un `EXPLAIN ANALYZE`, que ejecuta la sentencia de verdad.
 ///
 /// Es una consulta al núcleo y no una regla escrita en la interfaz para que la CLI avise lo mismo.

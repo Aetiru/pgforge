@@ -181,24 +181,40 @@ pub fn split(sql: &str) -> Vec<Statement> {
 
 /// La sentencia que contiene al cursor, para poder ejecutar solo esa.
 ///
-/// Un cursor apoyado justo después del `;` pertenece a la sentencia que acaba de cerrar, que es
-/// donde uno lo deja al terminar de escribirla.
+/// Cuando el cursor cae en un hueco —una línea en blanco, un comentario suelto— manda la línea: si
+/// está en la misma en la que termina la sentencia anterior, es esa; si bajó, es la siguiente. Es la
+/// diferencia entre dejar el cursor después del `;` que uno acaba de escribir y haber bajado hasta
+/// la sentencia que quiere ejecutar, y la regla anterior —siempre la anterior— hacía que pararse
+/// arriba de la segunda sentencia ejecutara la primera.
 pub fn at_cursor(sql: &str, cursor: usize) -> Option<Statement> {
     let statements = split(sql);
 
-    statements
+    if let Some(dentro) = statements.iter().find(|statement| {
+        let end = statement.offset + statement.text.chars().count();
+        cursor >= statement.offset && cursor <= end
+    }) {
+        return Some(dentro.clone());
+    }
+
+    let anterior = statements
         .iter()
-        .find(|statement| {
-            let end = statement.offset + statement.text.chars().count();
-            cursor >= statement.offset && cursor <= end
-        })
-        .or_else(|| {
-            // Entre dos sentencias (sobre un comentario o una línea en blanco) vale la anterior.
-            statements
-                .iter()
-                .rfind(|statement| statement.offset <= cursor)
-        })
-        .cloned()
+        .rfind(|statement| statement.offset <= cursor);
+    let siguiente = statements
+        .iter()
+        .find(|statement| statement.offset > cursor);
+
+    match (anterior, siguiente) {
+        (Some(previa), Some(proxima)) => {
+            let fin = previa.offset + previa.text.chars().count();
+            let bajo = sql.chars().skip(fin).take(cursor - fin).any(|c| c == '\n');
+            Some(if bajo {
+                proxima.clone()
+            } else {
+                previa.clone()
+            })
+        }
+        (previa, proxima) => previa.or(proxima).cloned(),
+    }
 }
 
 /// Arma la sentencia recortando el espacio de los extremos y corrigiendo el desplazamiento.
@@ -395,6 +411,42 @@ SELECT f()";
             at_cursor(sql, sql.chars().count()).unwrap().text,
             "SELECT 3"
         );
+    }
+
+    #[test]
+    fn en_un_hueco_manda_la_linea_del_cursor() {
+        // `SELECT 1;` en la línea 1, en blanco la 2, `SELECT 2;` en la 3.
+        let sql = "SELECT 1;\n\nSELECT 2;";
+
+        assert_eq!(
+            at_cursor(sql, 9).unwrap().text,
+            "SELECT 1",
+            "justo después del punto y coma sigue siendo la sentencia recién escrita"
+        );
+        assert_eq!(
+            at_cursor(sql, 10).unwrap().text,
+            "SELECT 2",
+            "bajar a la línea en blanco de arriba de la segunda es querer ejecutar la segunda"
+        );
+    }
+
+    #[test]
+    fn un_comentario_entre_dos_sentencias_va_con_la_de_abajo() {
+        // El comentario ya forma parte de la sentencia que lo sigue —se le manda al servidor con
+        // ella, o la posición del error caería corrida—, así que el cursor adentro es esa.
+        let sql = "SELECT 1;\n-- lo que sigue\nSELECT 2;";
+        let comentario = sql.chars().position(|c| c == '-').unwrap();
+
+        assert_eq!(
+            at_cursor(sql, comentario + 3).unwrap().text,
+            "-- lo que sigue\nSELECT 2"
+        );
+    }
+
+    #[test]
+    fn el_cursor_antes_de_la_primera_sentencia_la_elige_a_ella() {
+        let sql = "\n\nSELECT 1;";
+        assert_eq!(at_cursor(sql, 0).unwrap().text, "SELECT 1");
     }
 
     #[test]

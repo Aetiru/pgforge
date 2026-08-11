@@ -15,9 +15,11 @@ pub struct Backend {
     pub pid: i32,
     pub database: Option<String>,
     pub user: Option<String>,
-    pub application_name: String,
+    /// `None` cuando el rol conectado no tiene permiso para ver el detalle de esa sesión.
+    pub application_name: Option<String>,
     pub client_addr: Option<String>,
-    pub backend_type: String,
+    /// `None` por el mismo motivo que `application_name`, y no porque el servidor no lo sepa.
+    pub backend_type: Option<String>,
     pub state: Option<String>,
     pub wait_event_type: Option<String>,
     pub wait_event: Option<String>,
@@ -46,8 +48,14 @@ impl Backend {
 
     /// Los procesos internos del servidor (writer, checkpointer, autovacuum) no son sesiones de
     /// usuario y en la lista solo agregan ruido.
+    ///
+    /// Sin permiso para ver el tipo, la sesión cuenta como sesión de usuario: `pg_stat_activity`
+    /// esconde el detalle de las sesiones *ajenas*, que es lo que casi siempre son. Al revés, un
+    /// rol sin privilegios vería su lista vacía y el total de conexiones en cero.
     pub fn is_background(&self) -> bool {
-        self.backend_type != "client backend"
+        self.backend_type
+            .as_deref()
+            .is_some_and(|kind| kind != "client backend")
     }
 }
 
@@ -129,6 +137,11 @@ fn activity_sql(caps: &ServerCaps) -> String {
 ///
 /// La cantidad de filas está acotada por `max_connections`, así que traerlas todas y filtrar del
 /// lado del cliente evita ir al servidor cada vez que alguien destilda una casilla.
+///
+/// Casi toda columna se lee como opcional a propósito: para las sesiones de otros roles,
+/// `pg_stat_activity` devuelve NULL en todo lo que no sea el `pid` salvo que el rol conectado sea
+/// superusuario o miembro de `pg_read_all_stats`. Leerlas como `String` hacía panic dentro de la
+/// tarea del monitoreo.
 pub async fn backends(client: &Client, caps: &ServerCaps) -> Result<Vec<Backend>> {
     let rows = client.query(activity_sql(caps).as_str(), &[]).await?;
 
@@ -264,9 +277,9 @@ mod tests {
             pid,
             database: Some("app".into()),
             user: Some("app".into()),
-            application_name: String::new(),
+            application_name: Some(String::new()),
             client_addr: None,
-            backend_type: "client backend".into(),
+            backend_type: Some("client backend".into()),
             state: Some("active".into()),
             wait_event_type: None,
             wait_event: None,
@@ -310,13 +323,19 @@ mod tests {
         let mut idle = backend(30, vec![]);
         idle.state = Some("idle".into());
         let mut interno = backend(31, vec![]);
-        interno.backend_type = "autovacuum launcher".into();
+        interno.backend_type = Some("autovacuum launcher".into());
         let activa = backend(32, vec![]);
+        // Sin permiso para ver el tipo, la sesión se trata como sesión de usuario: esconderla
+        // dejaría la lista y el total de conexiones en cero para un rol sin privilegios.
+        let mut sin_permiso = backend(33, vec![]);
+        sin_permiso.backend_type = None;
+        sin_permiso.application_name = None;
 
         let filtro = ActivityFilter::default();
         assert!(!filtro.keeps(&idle));
         assert!(!filtro.keeps(&interno));
         assert!(filtro.keeps(&activa));
+        assert!(filtro.keeps(&sin_permiso));
 
         let todo = ActivityFilter {
             include_idle: true,

@@ -19,7 +19,10 @@ use crate::error::Result;
 #[serde(rename_all = "camelCase")]
 pub struct Setting {
     pub name: String,
-    pub value: String,
+    /// `None` en los parámetros marcados `GUC_SUPERUSER_ONLY` (`data_directory`, `hba_file`,
+    /// `ssl_key_file`, …) cuando el rol no es superusuario ni miembro de `pg_read_all_settings`:
+    /// `pg_settings` los sigue listando, pero con el valor en NULL.
+    pub value: Option<String>,
     pub unit: Option<String>,
     pub category: String,
     pub short_desc: String,

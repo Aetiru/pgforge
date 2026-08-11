@@ -14,8 +14,13 @@ export abstract class Tab {
   /** Identificador local. Existe desde antes que cualquier conexión, que puede tardar o fallar. */
   readonly key = `tab-${++sequence}`;
   readonly profileId: string;
-  readonly database: string;
-  readonly title: string;
+  /**
+   * Contra qué base corre, y con qué nombre aparece en la barra. Son `$state` y no `readonly`
+   * porque una pestaña de consulta puede cambiar de base sin cerrarse, y guardarla como archivo le
+   * cambia el nombre. Las de datos y diagrama los fijan al abrirse y no los vuelven a tocar.
+   */
+  database = $state("");
+  title = $state("");
 
   abstract readonly kind: TabKind;
 

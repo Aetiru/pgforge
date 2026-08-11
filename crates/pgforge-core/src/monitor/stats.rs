@@ -215,7 +215,9 @@ pub struct StatementStat {
     pub query_id: Option<i64>,
     pub database: Option<String>,
     pub user: Option<String>,
-    pub query: String,
+    /// `None` cuando el archivo de textos de la extensión ya no tiene el de esta fila. La entrada
+    /// con sus tiempos sigue valiendo, así que se muestra igual y sin el texto.
+    pub query: Option<String>,
     pub calls: i64,
     pub total_ms: f64,
     pub mean_ms: f64,

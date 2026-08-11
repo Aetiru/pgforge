@@ -24,7 +24,9 @@
     onsaved: (pendingRestart: boolean) => void;
   } = $props();
 
-  let value = $state(untrack(() => setting.value));
+  // Sin permiso para leerlo, el campo arranca vacío en vez de con `null`: escribir uno nuevo sigue
+  // estando permitido, porque `ALTER SYSTEM` no exige poder ver el valor de ahora.
+  let value = $state(untrack(() => setting.value ?? ""));
   let error = $state<string | null>(null);
   let saving = $state(false);
   let preview = $state<string | null>(null);

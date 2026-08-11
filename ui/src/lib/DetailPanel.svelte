@@ -26,14 +26,24 @@
   import Sql from "./Sql.svelte";
   import TableDialog from "./TableDialog.svelte";
   import TriggerDialog from "./TriggerDialog.svelte";
+  import CommentDialog from "./CommentDialog.svelte";
+  import DatabaseDialog from "./DatabaseDialog.svelte";
+  import DomainDialog from "./DomainDialog.svelte";
+  import PartitionDialog from "./PartitionDialog.svelte";
+  import SchemaDialog from "./SchemaDialog.svelte";
+  import SequenceDialog from "./SequenceDialog.svelte";
+  import TypeDialog from "./TypeDialog.svelte";
   import ViewDialog from "./ViewDialog.svelte";
   import { confirmMutation, isReadOnly, readOnlyReason } from "./access.svelte";
   import { envLook, GROUP_LOOK, kindLabel, lookOf } from "./badges";
   import { explorer, type Row } from "./explorer.svelte";
+  import { dataTargetOf, queryTargetOf } from "./tree-actions";
   import {
     dataOpen,
+    databaseApply,
     ddlApply,
     describeError,
+    domainApply,
     extensionApply,
     extensionInfo,
     fdwApply,
@@ -57,14 +67,20 @@
     relationPrivileges,
     roleApply,
     roleInfo,
+    schemaApply,
     schemaPrivileges,
+    sequenceApply,
     tableConstraints,
     tableIndexes,
+    tablePartitions,
     tableSecurity,
     tableTriggers,
     triggerApply,
+    typeApply,
+    typeInfo,
     viewApply,
     type ColumnGrant,
+    type CommentTarget,
     type ConstraintInfo,
     type Ddl,
     type DefaultGrant,
@@ -193,28 +209,11 @@
     setTimeout(() => (copied = false), 1500);
   }
 
-  /**
-   * Contra qué base abriría una consulta lo que está seleccionado. Los objetos la llevan encima;
-   * la fila del servidor recién conectado usa la del perfil.
-   */
-  const queryTarget = $derived.by<{ database: string; title: string } | null>(() => {
-    if (!selected) return null;
-    if (node) return { database: node.database, title: node.label };
-    if (selected.connected && profile) {
-      return { database: profile.database, title: profile.name };
-    }
-    return null;
-  });
-
-  /**
-   * Las relaciones que tienen filas para mostrar. Las vistas y las materializadas entran: se abren
-   * en solo lectura, y el propio panel explica por qué.
-   */
-  const dataTarget = $derived.by<number | null>(() => {
-    const kinds = ["table", "partitionedTable", "view", "materializedView", "foreignTable"];
-    if (!node || typeof node.kind !== "string" || !kinds.includes(node.kind)) return null;
-    return node.oid ?? null;
-  });
+  // Las mismas reglas que usan el menú del clic derecho y Ctrl+Q: viven en `tree-actions.ts` para
+  // que las tres puertas abran exactamente lo mismo. Las vistas y las materializadas también tienen
+  // datos que mostrar: se abren en solo lectura, y el propio panel explica por qué.
+  const queryTarget = $derived(queryTargetOf(selected, profile));
+  const dataTarget = $derived(dataTargetOf(node));
 
   /** Solo las tablas (particionadas o no) tienen columnas que se puedan crear, cambiar o borrar. */
   const isTable = $derived(node?.kind === "table" || node?.kind === "partitionedTable");
@@ -247,6 +246,13 @@
   const isSchema = $derived(node?.kind === "schema");
   const isSequence = $derived(node?.kind === "sequence");
   const isDatabase = $derived(node?.kind === "database");
+  /** Los dominios también son `pg_type`, así que el árbol los trae con esta misma clase. */
+  const isType = $derived(node?.kind === "type");
+  const isPartitionedTable = $derived(node?.kind === "partitionedTable");
+
+  const isSchemasFolder = $derived(node !== null && folderOf(node.kind) === "schemas");
+  const isSequencesFolder = $derived(node !== null && folderOf(node.kind) === "sequences");
+  const isTypesFolder = $derived(node !== null && folderOf(node.kind) === "types");
 
   /**
    * Los tipos de objeto que tienen privilegios propios. Los índices y las restricciones no están:
@@ -614,6 +620,18 @@
   let privilegeDialog = $state<{ existing: PrivilegeExisting | null } | null>(null);
   let backupDialog = $state(false);
   let restoreDialog = $state(false);
+  let sequenceDialog = $state<{ existing: { oid: number; name: string } | null } | null>(null);
+  let typeDialog = $state<{
+    composite: boolean;
+    existing: { oid: number; name: string } | null;
+  } | null>(null);
+  let domainDialog = $state<{ existing: { oid: number; name: string } | null } | null>(null);
+  let schemaDialog = $state<{ existing: { name: string; owner: string } | null } | null>(null);
+  let databaseDialog = $state<{ existing: string | null } | null>(null);
+  let partitionDialog = $state<{ strategy: string } | null>(null);
+  let commentDialog = $state<{ target: CommentTarget; label: string; current: string | null } | null>(
+    null,
+  );
   let exportDialog = $state(false);
   let importDialog = $state(false);
   let revokeTarget = $state<{ grantee: string; privileges: string[] } | null>(null);
@@ -634,7 +652,12 @@
           | "role"
           | "extension"
           | "foreignDataWrapper"
-          | "foreignServer";
+          | "foreignServer"
+          | "sequence"
+          | "type"
+          | "domain"
+          | "schema"
+          | "database";
         label: string;
       }
     | { kind: "function"; schema: string; name: string; args: string; procedure: boolean }
@@ -931,6 +954,69 @@
     }
   }
 
+  /**
+   * Un tipo y un dominio son los dos `pg_type` y el árbol no los distingue, así que hay que
+   * preguntarle al servidor antes de saber qué formulario abrir.
+   */
+  async function openEditType() {
+    if (!selected || !node?.oid) return;
+    try {
+      const info = await typeInfo(selected.profileId, node.oid, node.database);
+      const existing = { oid: node.oid, name: node.label };
+      if (info.kind === "domain") domainDialog = { existing };
+      else typeDialog = { composite: info.kind === "composite", existing };
+    } catch (error) {
+      ddlError = describeError(error);
+    }
+  }
+
+  /** La estrategia de partición la manda el servidor: decide qué límite pide el formulario. */
+  async function openPartitionDialog() {
+    if (!selected || !node?.oid) return;
+    try {
+      const info = await tablePartitions(selected.profileId, node.oid, node.database);
+      partitionDialog = { strategy: info.strategy };
+    } catch (error) {
+      ddlError = describeError(error);
+    }
+  }
+
+  /** Sobre qué objeto se comenta, a partir del nodo seleccionado. */
+  function commentTargetOf(): CommentTarget | null {
+    if (!node) return null;
+    const schema = node.schema ?? "public";
+
+    switch (node.kind) {
+      case "table":
+      case "partitionedTable":
+        return { kind: "table", schema, name: node.label };
+      case "foreignTable":
+        return { kind: "foreignTable", schema, name: node.label };
+      case "view":
+        return { kind: "view", schema, name: node.label };
+      case "materializedView":
+        return { kind: "materializedView", schema, name: node.label };
+      case "sequence":
+        return { kind: "sequence", schema, name: node.label };
+      case "index":
+        return { kind: "index", schema, name: node.label };
+      case "type":
+        return { kind: "type", schema, name: node.label };
+      case "schema":
+        return { kind: "schema", name: node.label };
+      case "database":
+        return { kind: "database", name: node.label };
+      case "role":
+        return { kind: "role", name: node.label };
+      case "extension":
+        return { kind: "extension", name: node.label };
+      default:
+        return null;
+    }
+  }
+
+  const commentTarget = $derived(commentTargetOf());
+
   /** Recarga el nodo carpeta que pasó a tener un objeto nuevo, o refresca el DDL tras editarlo. */
   function afterViewSaved() {
     const wasCreate = viewDialog !== null && viewDialog.existing === null;
@@ -1155,6 +1241,94 @@
           }
           explorer.selected = null;
           break;
+        case "sequence":
+          await sequenceApply(
+            selected.profileId,
+            [
+              {
+                kind: "dropSequence",
+                schema: node.schema!,
+                name: dropTarget.label,
+                cascade: dropCascade,
+              },
+            ],
+            node.database,
+          );
+          {
+            const parent = parentOf(explorer.roots, selected);
+            if (parent) await explorer.reload(parent);
+          }
+          explorer.selected = null;
+          break;
+        case "type":
+          await typeApply(
+            selected.profileId,
+            [
+              {
+                kind: "dropType",
+                schema: node.schema!,
+                name: dropTarget.label,
+                cascade: dropCascade,
+              },
+            ],
+            node.database,
+          );
+          {
+            const parent = parentOf(explorer.roots, selected);
+            if (parent) await explorer.reload(parent);
+          }
+          explorer.selected = null;
+          break;
+        case "domain":
+          await domainApply(
+            selected.profileId,
+            [
+              {
+                kind: "dropDomain",
+                schema: node.schema!,
+                name: dropTarget.label,
+                cascade: dropCascade,
+              },
+            ],
+            node.database,
+          );
+          {
+            const parent = parentOf(explorer.roots, selected);
+            if (parent) await explorer.reload(parent);
+          }
+          explorer.selected = null;
+          break;
+        case "schema":
+          await schemaApply(
+            selected.profileId,
+            [
+              {
+                kind: "dropSchema",
+                name: dropTarget.label,
+                ifExists: false,
+                cascade: dropCascade,
+              },
+            ],
+            node.database,
+          );
+          {
+            const parent = parentOf(explorer.roots, selected);
+            if (parent) await explorer.reload(parent);
+          }
+          explorer.selected = null;
+          break;
+        case "database":
+          // `force` echa a las sesiones conectadas: sin eso, una base con alguien adentro no se
+          // borra y el error no dice quién es.
+          await databaseApply(selected.profileId, [
+            { kind: "dropDatabase", name: dropTarget.label, ifExists: false, force: dropCascade },
+          ]);
+          {
+            const parent = parentOf(explorer.roots, selected);
+            if (parent) await explorer.reload(parent);
+          }
+          explorer.selected = null;
+          break;
         case "foreignDataWrapper":
           await fdwApply(
             selected.profileId,
@@ -1217,6 +1391,16 @@
         return `¿Eliminar el wrapper foráneo ${dropTarget.label}?`;
       case "foreignServer":
         return `¿Eliminar el servidor foráneo ${dropTarget.label}? Se pierden sus mapeos de usuario.`;
+      case "sequence":
+        return `¿Eliminar la secuencia ${dropTarget.label}?`;
+      case "type":
+        return `¿Eliminar el tipo ${dropTarget.label}? Las columnas que lo usan lo necesitan.`;
+      case "domain":
+        return `¿Eliminar el dominio ${dropTarget.label}? Las columnas que lo usan lo necesitan.`;
+      case "schema":
+        return `¿Eliminar el esquema ${dropTarget.label}? Sin CASCADE falla si tiene algo adentro.`;
+      case "database":
+        return `¿Eliminar la base ${dropTarget.label}? Se pierde todo lo que tiene adentro.`;
     }
   });
 
@@ -1308,171 +1492,236 @@
 
         <div class="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
           {#if isTablesFolder && node?.schema}
-            <button class="btn btn-primary" onclick={() => (newTable = true)}>
-              <Icon name="plus" size={12} />
-              Nueva tabla
+            <button class="btn btn-primary btn-icon" title="Nueva tabla" aria-label="Nueva tabla" onclick={() => (newTable = true)}>
+              <Icon name="plus" size={14} />
             </button>
           {/if}
 
           {#if isViewsFolder && node?.schema}
             <button
-              class="btn btn-primary"
+              class="btn btn-primary btn-icon"
+              title="Nueva vista"
+              aria-label="Nueva vista"
               {...blocked}
               onclick={() => (viewDialog = { materialized: false, existing: null })}
             >
-              <Icon name="plus" size={12} />
-              Nueva vista
+              <Icon name="plus" size={14} />
             </button>
           {/if}
 
           {#if isMatViewsFolder && node?.schema}
             <button
-              class="btn btn-primary"
+              class="btn btn-primary btn-icon"
+              title="Nueva vista materializada"
+              aria-label="Nueva vista materializada"
               {...blocked}
               onclick={() => (viewDialog = { materialized: true, existing: null })}
             >
-              <Icon name="plus" size={12} />
-              Nueva vista materializada
+              <Icon name="plus" size={14} />
             </button>
           {/if}
 
           {#if isFunctionsFolder && node?.schema}
             <button
-              class="btn btn-primary"
+              class="btn btn-primary btn-icon"
+              title="Nueva función"
+              aria-label="Nueva función"
               {...blocked}
               onclick={() =>
                 (functionDialog = { sql: functionSkeleton(node!.schema!, false), isEdit: false })}
             >
-              <Icon name="plus" size={12} />
-              Nueva función
+              <Icon name="plus" size={14} />
             </button>
           {/if}
 
           {#if isProceduresFolder && node?.schema}
             <button
-              class="btn btn-primary"
+              class="btn btn-primary btn-icon"
+              title="Nuevo procedimiento"
+              aria-label="Nuevo procedimiento"
               {...blocked}
               onclick={() =>
                 (functionDialog = { sql: functionSkeleton(node!.schema!, true), isEdit: false })}
             >
-              <Icon name="plus" size={12} />
-              Nuevo procedimiento
+              <Icon name="plus" size={14} />
             </button>
           {/if}
 
           {#if isRolesFolder}
-            <button class="btn btn-primary" {...blocked} onclick={() => (roleDialog = { existing: null })}>
-              <Icon name="plus" size={12} />
-              Nuevo rol
+            <button class="btn btn-primary btn-icon" title="Nuevo rol" aria-label="Nuevo rol" {...blocked} onclick={() => (roleDialog = { existing: null })}>
+              <Icon name="plus" size={14} />
             </button>
           {/if}
 
           {#if isExtensionsFolder}
             <button
-              class="btn btn-primary"
+              class="btn btn-primary btn-icon"
+              title="Instalar extensión"
+              aria-label="Instalar extensión"
               {...blocked}
               onclick={() => (extensionDialog = { existing: null })}
             >
-              <Icon name="plus" size={12} />
-              Instalar extensión
+              <Icon name="plus" size={14} />
             </button>
           {/if}
 
           {#if isFdwsFolder}
-            <button class="btn btn-primary" {...blocked} onclick={() => (fdwDialog = { existing: null })}>
-              <Icon name="plus" size={12} />
-              Nuevo wrapper
+            <button class="btn btn-primary btn-icon" title="Nuevo wrapper" aria-label="Nuevo wrapper" {...blocked} onclick={() => (fdwDialog = { existing: null })}>
+              <Icon name="plus" size={14} />
             </button>
           {/if}
 
           {#if isForeignServersFolder}
             <button
-              class="btn btn-primary"
+              class="btn btn-primary btn-icon"
+              title="Nuevo servidor foráneo"
+              aria-label="Nuevo servidor foráneo"
               {...blocked}
               onclick={() => (foreignServerDialog = { existing: null })}
             >
-              <Icon name="plus" size={12} />
-              Nuevo servidor foráneo
+              <Icon name="plus" size={14} />
+            </button>
+          {/if}
+
+          {#if isSequencesFolder && node?.schema}
+            <button
+              class="btn btn-primary btn-icon"
+              title="Nueva secuencia"
+              aria-label="Nueva secuencia"
+              {...blocked}
+              onclick={() => (sequenceDialog = { existing: null })}
+            >
+              <Icon name="plus" size={14} />
+            </button>
+          {/if}
+
+          {#if isTypesFolder && node?.schema}
+            <button
+              class="btn btn-primary btn-icon"
+              title="Nueva enumeración"
+              aria-label="Nueva enumeración"
+              {...blocked}
+              onclick={() => (typeDialog = { composite: false, existing: null })}
+            >
+              <Icon name="plus" size={14} />
+            </button>
+            <button
+              class="btn btn-icon"
+              title="Nuevo compuesto"
+              aria-label="Nuevo compuesto"
+              {...blocked}
+              onclick={() => (typeDialog = { composite: true, existing: null })}
+            >
+              <Icon name="plus" size={14} />
+            </button>
+            <button class="btn btn-icon" title="Nuevo dominio" aria-label="Nuevo dominio" {...blocked} onclick={() => (domainDialog = { existing: null })}>
+              <Icon name="plus" size={14} />
+            </button>
+          {/if}
+
+          {#if isSchemasFolder}
+            <button
+              class="btn btn-primary btn-icon"
+              title="Nuevo esquema"
+              aria-label="Nuevo esquema"
+              {...blocked}
+              onclick={() => (schemaDialog = { existing: null })}
+            >
+              <Icon name="plus" size={14} />
+            </button>
+          {/if}
+
+          {#if isPartitionedTable && node?.oid}
+            <button
+              class="btn btn-icon"
+              aria-label="Nueva partición"
+              title="Crea o engancha una partición de esta tabla"
+              {...blocked}
+              onclick={openPartitionDialog}
+            >
+              <Icon name="plus" size={14} />
             </button>
           {/if}
 
           {#if dataTarget !== null && queryTarget}
             <button
-              class="btn btn-primary"
+              class="btn btn-primary btn-icon"
+              aria-label="Datos"
               title={`Abre los datos de ${selected.label}`}
               onclick={() =>
                 ondata(selected.profileId, queryTarget.database, queryTarget.title, dataTarget)}
             >
-              <Icon name="table" size={12} />
-              Datos
+              <Icon name="table" size={14} />
             </button>
           {/if}
 
           {#if queryTarget}
             <button
-              class="btn"
+              class="btn btn-icon"
+              aria-label="Consulta"
               title={`Abre una consulta contra ${queryTarget.database}`}
               onclick={() => onquery(selected.profileId, queryTarget.database, queryTarget.title)}
             >
-              <Icon name="sql" size={12} />
-              Consulta
+              <Icon name="sql" size={14} />
             </button>
           {/if}
 
           {#if isSchema && node}
             <button
-              class="btn"
+              class="btn btn-icon"
+              aria-label="Diagrama"
               title={`Dibuja las tablas de ${node.label} y sus claves foráneas`}
               onclick={() => onerd(selected.profileId, node.database, node.label)}
             >
-              <Icon name="diagram" size={12} />
-              Diagrama
+              <Icon name="diagram" size={14} />
             </button>
           {/if}
 
           {#if isTable && node}
             <button
-              class="btn"
+              class="btn btn-icon"
+              aria-label="Exportar"
               title={`Exporta ${node.label} a un archivo con COPY`}
               onclick={() => (exportDialog = true)}
             >
-              <Icon name="download" size={12} />
-              Exportar
+              <Icon name="download" size={14} />
             </button>
             <button
-              class="btn"
+              class="btn btn-icon"
+              aria-label="Importar"
               title={`Importa un archivo a ${node.label} con COPY`}
               {...blocked}
               onclick={() => (importDialog = true)}
             >
-              <Icon name="upload" size={12} />
-              Importar
+              <Icon name="upload" size={14} />
             </button>
           {/if}
 
           {#if isDatabase && node}
             <button
-              class="btn"
+              class="btn btn-icon"
+              aria-label="Backup"
               title={`Hace un backup de ${node.label} con pg_dump`}
               onclick={() => (backupDialog = true)}
             >
-              <Icon name="download" size={12} />
-              Backup
+              <Icon name="download" size={14} />
             </button>
             <button
-              class="btn"
+              class="btn btn-icon"
+              aria-label="Restaurar"
               title={`Restaura un backup sobre ${node.label} con pg_restore`}
               {...blocked}
               onclick={() => (restoreDialog = true)}
             >
-              <Icon name="upload" size={12} />
-              Restaurar
+              <Icon name="upload" size={14} />
             </button>
           {/if}
 
           {#if isView && node}
             <button
-              class="btn"
+              class="btn btn-icon"
+              title="Editar"
+              aria-label="Editar"
               {...blocked}
               onclick={() =>
                 (viewDialog = {
@@ -1480,14 +1729,15 @@
                   existing: { oid: node!.oid!, name: node!.label },
                 })}
             >
-              <Icon name="edit" size={12} />
-              Editar
+              <Icon name="edit" size={14} />
             </button>
           {/if}
 
           {#if isMaterializedView && node}
             <button
-              class="btn"
+              class="btn btn-icon"
+              title="Editar"
+              aria-label="Editar"
               {...blocked}
               onclick={() =>
                 (viewDialog = {
@@ -1495,168 +1745,279 @@
                   existing: { oid: node!.oid!, name: node!.label },
                 })}
             >
-              <Icon name="edit" size={12} />
-              Editar
+              <Icon name="edit" size={14} />
             </button>
             <button
-              class="btn"
+              class="btn btn-icon"
+              aria-label="Refrescar"
               title="Vuelve a calcular los datos guardados de la vista"
               {...blocked}
               onclick={() => (refreshTarget = { schema: node!.schema!, name: node!.label })}
             >
-              <Icon name="refresh" size={12} />
-              Refrescar
+              <Icon name="refresh" size={14} />
             </button>
           {/if}
 
           {#if (isFunction || isProcedure) && ddl}
-            <button class="btn" {...blocked} onclick={() => (functionDialog = { sql: ddl!.sql, isEdit: true })}>
-              <Icon name="edit" size={12} />
-              Editar
+            <button class="btn btn-icon" title="Editar" aria-label="Editar" {...blocked} onclick={() => (functionDialog = { sql: ddl!.sql, isEdit: true })}>
+              <Icon name="edit" size={14} />
             </button>
           {/if}
 
           {#if isRole}
-            <button class="btn" onclick={openEditRole}>
-              <Icon name="edit" size={12} />
-              Editar
+            <button class="btn btn-icon" title="Editar" aria-label="Editar" onclick={openEditRole}>
+              <Icon name="edit" size={14} />
             </button>
           {/if}
 
           {#if isExtension}
-            <button class="btn" onclick={openEditExtension}>
-              <Icon name="edit" size={12} />
-              Editar
+            <button class="btn btn-icon" title="Editar" aria-label="Editar" onclick={openEditExtension}>
+              <Icon name="edit" size={14} />
             </button>
           {/if}
 
           {#if isFdw}
-            <button class="btn" onclick={openEditFdw}>
-              <Icon name="edit" size={12} />
-              Editar
+            <button class="btn btn-icon" title="Editar" aria-label="Editar" onclick={openEditFdw}>
+              <Icon name="edit" size={14} />
             </button>
           {/if}
 
           {#if isForeignServer}
-            <button class="btn" onclick={openEditForeignServer}>
-              <Icon name="edit" size={12} />
-              Editar
+            <button class="btn btn-icon" title="Editar" aria-label="Editar" onclick={openEditForeignServer}>
+              <Icon name="edit" size={14} />
+            </button>
+          {/if}
+
+          {#if isSequence && node?.oid}
+            <button
+              class="btn btn-icon"
+              title="Editar"
+              aria-label="Editar"
+              {...blocked}
+              onclick={() => (sequenceDialog = { existing: { oid: node!.oid!, name: node!.label } })}
+            >
+              <Icon name="edit" size={14} />
+            </button>
+          {/if}
+
+          {#if isType && node?.oid}
+            <button class="btn btn-icon" title="Editar" aria-label="Editar" {...blocked} onclick={openEditType}>
+              <Icon name="edit" size={14} />
+            </button>
+          {/if}
+
+          {#if isSchema && node}
+            <button
+              class="btn btn-icon"
+              title="Editar"
+              aria-label="Editar"
+              {...blocked}
+              onclick={() =>
+                (schemaDialog = { existing: { name: node!.label, owner: node!.detail ?? "" } })}
+            >
+              <Icon name="edit" size={14} />
+            </button>
+          {/if}
+
+          {#if isDatabase && node}
+            <button class="btn btn-icon" title="Editar" aria-label="Editar" {...blocked} onclick={() => (databaseDialog = { existing: node!.label })}>
+              <Icon name="edit" size={14} />
+            </button>
+            <button class="btn btn-icon" title="Nueva base" aria-label="Nueva base" {...blocked} onclick={() => (databaseDialog = { existing: null })}>
+              <Icon name="plus" size={14} />
+            </button>
+          {/if}
+
+          {#if commentTarget}
+            <button
+              class="btn btn-icon"
+              aria-label="Comentario"
+              title="Documenta el objeto adentro de la propia base"
+              {...blocked}
+              onclick={() =>
+                (commentDialog = {
+                  target: commentTarget!,
+                  label: selected.label,
+                  current: node?.comment ?? null,
+                })}
+            >
+              <Icon name="edit" size={14} />
             </button>
           {/if}
 
           {#if isGroup}
-            <button class="btn btn-primary" onclick={() => ongroup(selected.group!)}>
-              <Icon name="edit" size={12} />
-              Renombrar
+            <button class="btn btn-primary btn-icon" title="Renombrar" aria-label="Renombrar" onclick={() => ongroup(selected.group!)}>
+              <Icon name="edit" size={14} />
             </button>
           {/if}
 
           {#if isServer}
             {#if selected.connected}
-              <button class="btn" onclick={() => explorer.disconnect(selected.profileId)}>
-                Desconectar
+              <button
+                class="btn btn-icon"
+                title="Desconectar"
+                aria-label="Desconectar"
+                onclick={() => explorer.disconnect(selected.profileId)}
+              >
+                <Icon name="unplug" size={14} />
               </button>
             {:else}
-              <button class="btn btn-primary" onclick={() => onconnect(selected.profileId)}>
-                Conectar
+              <button
+                class="btn btn-primary btn-icon"
+                title="Conectar"
+                aria-label="Conectar"
+                onclick={() => onconnect(selected.profileId)}
+              >
+                <Icon name="plug" size={14} />
               </button>
             {/if}
-            <button class="btn" onclick={() => onedit(selected.profileId)}>
-              <Icon name="edit" size={12} />
-              Editar
+            <button class="btn btn-icon" title="Editar" aria-label="Editar" onclick={() => onedit(selected.profileId)}>
+              <Icon name="edit" size={14} />
             </button>
           {/if}
 
           <!-- Lo que borra va último y en rojo: se llega a ello después de todo lo demás. -->
           {#if isTable && shape}
             <button
-              class="btn btn-danger-ghost"
+              class="btn btn-danger-ghost btn-icon"
+              aria-label="Eliminar"
               title="Eliminar la tabla"
               {...blocked}
               onclick={() => (dropTarget = { kind: "table", label: shape!.name })}
             >
-              <Icon name="trash" size={12} />
-              Eliminar
+              <Icon name="trash" size={14} />
             </button>
           {/if}
 
           {#if isView && node}
             <button
-              class="btn btn-danger-ghost"
+              class="btn btn-danger-ghost btn-icon"
+              title="Eliminar"
+              aria-label="Eliminar"
               {...blocked}
               onclick={() => (dropTarget = { kind: "view", label: node!.label })}
             >
-              <Icon name="trash" size={12} />
-              Eliminar
+              <Icon name="trash" size={14} />
             </button>
           {/if}
 
           {#if isMaterializedView && node}
             <button
-              class="btn btn-danger-ghost"
+              class="btn btn-danger-ghost btn-icon"
+              title="Eliminar"
+              aria-label="Eliminar"
               {...blocked}
               onclick={() => (dropTarget = { kind: "materializedView", label: node!.label })}
             >
-              <Icon name="trash" size={12} />
-              Eliminar
+              <Icon name="trash" size={14} />
             </button>
           {/if}
 
           {#if (isFunction || isProcedure) && ddl}
-            <button class="btn btn-danger-ghost" {...blocked} onclick={askDropFunction}>
-              <Icon name="trash" size={12} />
-              Eliminar
+            <button class="btn btn-danger-ghost btn-icon" title="Eliminar" aria-label="Eliminar" {...blocked} onclick={askDropFunction}>
+              <Icon name="trash" size={14} />
+            </button>
+          {/if}
+
+          {#if isSequence && node}
+            <button
+              class="btn btn-danger-ghost btn-icon"
+              title="Eliminar"
+              aria-label="Eliminar"
+              {...blocked}
+              onclick={() => (dropTarget = { kind: "sequence", label: node!.label })}
+            >
+              <Icon name="trash" size={14} />
+            </button>
+          {/if}
+
+          {#if isType && node}
+            <button
+              class="btn btn-danger-ghost btn-icon"
+              title="Eliminar"
+              aria-label="Eliminar"
+              {...blocked}
+              onclick={() => (dropTarget = { kind: "type", label: node!.label })}
+            >
+              <Icon name="trash" size={14} />
+            </button>
+          {/if}
+
+          {#if isSchema && node}
+            <button
+              class="btn btn-danger-ghost btn-icon"
+              aria-label="Eliminar"
+              title="Sin CASCADE falla si el esquema tiene algo adentro"
+              {...blocked}
+              onclick={() => (dropTarget = { kind: "schema", label: node!.label })}
+            >
+              <Icon name="trash" size={14} />
+            </button>
+          {/if}
+
+          {#if isDatabase && node}
+            <button
+              class="btn btn-danger-ghost btn-icon"
+              title="Eliminar"
+              aria-label="Eliminar"
+              {...blocked}
+              onclick={() => (dropTarget = { kind: "database", label: node!.label })}
+            >
+              <Icon name="trash" size={14} />
             </button>
           {/if}
 
           {#if isRole}
             <button
-              class="btn btn-danger-ghost"
+              class="btn btn-danger-ghost btn-icon"
+              title="Eliminar"
+              aria-label="Eliminar"
               {...blocked}
               onclick={() => (dropTarget = { kind: "role", label: selected.label })}
             >
-              <Icon name="trash" size={12} />
-              Eliminar
+              <Icon name="trash" size={14} />
             </button>
           {/if}
 
           {#if isExtension}
             <button
-              class="btn btn-danger-ghost"
+              class="btn btn-danger-ghost btn-icon"
+              title="Quitar"
+              aria-label="Quitar"
               {...blocked}
               onclick={() => (dropTarget = { kind: "extension", label: selected.label })}
             >
-              <Icon name="trash" size={12} />
-              Quitar
+              <Icon name="trash" size={14} />
             </button>
           {/if}
 
           {#if isFdw}
             <button
-              class="btn btn-danger-ghost"
+              class="btn btn-danger-ghost btn-icon"
+              title="Eliminar"
+              aria-label="Eliminar"
               {...blocked}
               onclick={() => (dropTarget = { kind: "foreignDataWrapper", label: selected.label })}
             >
-              <Icon name="trash" size={12} />
-              Eliminar
+              <Icon name="trash" size={14} />
             </button>
           {/if}
 
           {#if isForeignServer}
             <button
-              class="btn btn-danger-ghost"
+              class="btn btn-danger-ghost btn-icon"
+              title="Eliminar"
+              aria-label="Eliminar"
               {...blocked}
               onclick={() => (dropTarget = { kind: "foreignServer", label: selected.label })}
             >
-              <Icon name="trash" size={12} />
-              Eliminar
+              <Icon name="trash" size={14} />
             </button>
           {/if}
 
           {#if isServer}
-            <button class="btn btn-danger-ghost" onclick={() => ondelete(selected.profileId)}>
-              <Icon name="trash" size={12} />
-              Eliminar
+            <button class="btn btn-danger-ghost btn-icon" title="Eliminar" aria-label="Eliminar" onclick={() => ondelete(selected.profileId)}>
+              <Icon name="trash" size={14} />
             </button>
           {/if}
         </div>
@@ -2524,6 +2885,124 @@
   />
 {/if}
 
+{#if sequenceDialog && selected && node?.schema}
+  <SequenceDialog
+    profileId={selected.profileId}
+    database={node.database}
+    schema={node.schema}
+    existing={sequenceDialog.existing}
+    onclose={() => (sequenceDialog = null)}
+    onsaved={() => {
+      const wasCreate = sequenceDialog?.existing === null;
+      sequenceDialog = null;
+      if (wasCreate) {
+        if (selected) explorer.reload(selected);
+      } else {
+        refreshDdl();
+      }
+    }}
+  />
+{/if}
+
+{#if typeDialog && selected && node?.schema}
+  <TypeDialog
+    profileId={selected.profileId}
+    database={node.database}
+    schema={node.schema}
+    composite={typeDialog.composite}
+    existing={typeDialog.existing}
+    onclose={() => (typeDialog = null)}
+    onsaved={() => {
+      const wasCreate = typeDialog?.existing === null;
+      typeDialog = null;
+      if (wasCreate) {
+        if (selected) explorer.reload(selected);
+      } else {
+        refreshDdl();
+      }
+    }}
+  />
+{/if}
+
+{#if domainDialog && selected && node?.schema}
+  <DomainDialog
+    profileId={selected.profileId}
+    database={node.database}
+    schema={node.schema}
+    existing={domainDialog.existing}
+    onclose={() => (domainDialog = null)}
+    onsaved={() => {
+      const wasCreate = domainDialog?.existing === null;
+      domainDialog = null;
+      if (wasCreate) {
+        if (selected) explorer.reload(selected);
+      } else {
+        refreshDdl();
+      }
+    }}
+  />
+{/if}
+
+{#if schemaDialog && selected && node}
+  <SchemaDialog
+    profileId={selected.profileId}
+    database={node.database}
+    existing={schemaDialog.existing}
+    onclose={() => (schemaDialog = null)}
+    onsaved={() => {
+      schemaDialog = null;
+      // Un esquema nuevo o renombrado cambia la lista de arriba, no el nodo de abajo.
+      const parent = selected ? parentOf(explorer.roots, selected) : null;
+      if (parent) explorer.reload(parent);
+      else if (selected) explorer.reload(selected);
+    }}
+  />
+{/if}
+
+{#if databaseDialog && selected}
+  <DatabaseDialog
+    profileId={selected.profileId}
+    existing={databaseDialog.existing}
+    onclose={() => (databaseDialog = null)}
+    onsaved={() => {
+      databaseDialog = null;
+      const parent = selected ? parentOf(explorer.roots, selected) : null;
+      if (parent) explorer.reload(parent);
+    }}
+  />
+{/if}
+
+{#if partitionDialog && selected && node?.schema}
+  <PartitionDialog
+    profileId={selected.profileId}
+    database={node.database}
+    schema={node.schema}
+    parent={node.label}
+    strategy={partitionDialog.strategy}
+    onclose={() => (partitionDialog = null)}
+    onsaved={() => {
+      partitionDialog = null;
+      if (selected) explorer.reload(selected);
+    }}
+  />
+{/if}
+
+{#if commentDialog && selected && node}
+  <CommentDialog
+    profileId={selected.profileId}
+    database={node.database}
+    target={commentDialog.target}
+    label={commentDialog.label}
+    current={commentDialog.current}
+    onclose={() => (commentDialog = null)}
+    onsaved={() => {
+      commentDialog = null;
+      const parent = selected ? parentOf(explorer.roots, selected) : null;
+      if (parent) explorer.reload(parent);
+    }}
+  />
+{/if}
+
 {#if functionDialog && selected}
   <FunctionDialog
     profileId={selected.profileId}
@@ -2717,6 +3196,12 @@
           ({node?.database}). Si el rol tiene objetos en otra base, hay que repetirlo desde ahí.
         </p>
       {/if}
+      <!-- Una base no admite CASCADE; lo que se le puede pedir es que eche a las sesiones. -->
+    {:else if dropTarget.kind === "database"}
+      <label class="check">
+        <input type="checkbox" bind:checked={dropCascade} />
+        FORCE (echa a las sesiones conectadas en vez de fallar)
+      </label>
       <!-- Una política no admite CASCADE: nada puede depender de ella. -->
     {:else if dropTarget.kind !== "policy"}
       <label class="check">

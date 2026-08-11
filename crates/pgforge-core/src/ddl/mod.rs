@@ -5,22 +5,36 @@
 //! es la que el propio servidor considera correcta. Para las tablas, que no tienen equivalente, se
 //! delega en `pg_dump`; ver [`pg_dump`] para el razonamiento.
 
+pub mod comment;
+pub mod database;
+pub mod domain;
 pub mod extension;
 pub mod fdw;
 pub mod function;
 pub mod index;
+pub mod partition;
 pub mod pg_dump;
 pub mod policy;
 pub mod privilege;
 pub mod role;
+pub mod schema;
+pub mod sequence;
 pub mod table;
 pub mod trigger;
+pub mod types;
 pub mod view;
 
+pub use comment::CommentChange;
+pub use database::DatabaseChange;
+pub use domain::DomainChange;
 pub use index::IndexDef;
+pub use partition::PartitionChange;
+pub use schema::SchemaChange;
+pub use sequence::SequenceChange;
 pub use table::{
     ColumnDef, ConstraintDef, Identity, RefAction, Statement as TableStatement, TableChange,
 };
+pub use types::TypeChange;
 pub use view::ViewChange;
 
 use serde::{Deserialize, Serialize};

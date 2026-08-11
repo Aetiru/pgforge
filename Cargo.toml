@@ -17,5 +17,9 @@ pgforge-core = { path = "crates/pgforge-core" }
 codegen-units = 1
 lto = true
 opt-level = "s"
-panic = "abort"
 strip = true
+
+# Sin `panic = "abort"` a propósito, aunque achique el binario: acá los panics no pasan en el hilo
+# principal sino adentro de tareas de tokio —el sondeo del dashboard, una ejecución de consulta—, y
+# abortar convierte cualquiera de ellos en la ventana cerrándose sola, con el SQL sin guardar
+# adentro. Que se desenrolle deja muerta la tarea y viva la aplicación.

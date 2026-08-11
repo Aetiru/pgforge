@@ -249,9 +249,10 @@ export interface Backend {
   pid: number;
   database: string | null;
   user: string | null;
-  applicationName: string;
+  /** `null` cuando el rol conectado no puede ver el detalle de esa sesión. */
+  applicationName: string | null;
   clientAddr: string | null;
-  backendType: string;
+  backendType: string | null;
   state: string | null;
   waitEventType: string | null;
   waitEvent: string | null;
@@ -353,7 +354,8 @@ export interface StatementStat {
   queryId: number | null;
   database: string | null;
   user: string | null;
-  query: string;
+  /** `null` si la extensión perdió el texto de esta entrada; los tiempos siguen valiendo. */
+  query: string | null;
   calls: number;
   totalMs: number;
   meanMs: number;
@@ -699,6 +701,10 @@ export const statementAtCursor = (sql: string, cursor: number) =>
 export const explainWarning = (sql: string, options?: ExplainOptions) =>
   invoke<string | null>("explain_warning", { sql, options: options ?? null });
 
+/** Guarda el texto de una pestaña de consulta como archivo. */
+export const sqlWriteFile = (path: string, sql: string) =>
+  invoke<void>("sql_write_file", { path, sql });
+
 // ---------------------------------------------------------------------------
 // Datos de una tabla
 // ---------------------------------------------------------------------------
@@ -1041,6 +1047,383 @@ export const viewQuery = (id: string, oid: number, database?: string) =>
   invoke<string>("view_query", { id, oid, database: database ?? null });
 
 // ---------------------------------------------------------------------------
+// Secuencias
+// ---------------------------------------------------------------------------
+
+/** La columna que posee la secuencia: al borrarse la columna se borra la secuencia con ella. */
+export interface OwnedBy {
+  schema: string;
+  table: string;
+  column: string;
+}
+
+/**
+ * A qué columna se ata la secuencia, o `none` para desatarla.
+ *
+ * Es una unión etiquetada y no un `OwnedBy | null` porque del lado de Rust un `null` sería
+ * indistinguible de «no lo toques».
+ */
+export type SequenceOwner =
+  | { kind: "none" }
+  | { kind: "column"; schema: string; table: string; column: string };
+
+/**
+ * Los parámetros de una secuencia. `null` en cualquiera es «no lo toques», no «poné el valor por
+ * omisión»: en un `ALTER` la diferencia es todo.
+ */
+export interface SequenceOptions {
+  /** `smallint`, `integer` o `bigint`. Va crudo. */
+  dataType?: string | null;
+  increment?: number | null;
+  minValue?: number | null;
+  maxValue?: number | null;
+  start?: number | null;
+  cache?: number | null;
+  cycle?: boolean | null;
+  /** `null` no la toca. */
+  ownedBy?: SequenceOwner | null;
+}
+
+export type SequenceChange =
+  | {
+      kind: "createSequence";
+      schema: string;
+      name: string;
+      ifNotExists: boolean;
+      options: SequenceOptions;
+    }
+  | { kind: "alterSequence"; schema: string; name: string; options: SequenceOptions }
+  /** Mueve la secuencia ahora. `START WITH` dice a dónde vuelve; esto la mueve de verdad. */
+  | { kind: "restartSequence"; schema: string; name: string; value: number | null }
+  | { kind: "renameSequence"; schema: string; name: string; newName: string }
+  | { kind: "setSequenceSchema"; schema: string; name: string; newSchema: string }
+  | { kind: "setSequenceOwner"; schema: string; name: string; owner: string }
+  | { kind: "dropSequence"; schema: string; name: string; cascade: boolean };
+
+export interface SequenceInfo {
+  schema: string;
+  name: string;
+  owner: string;
+  dataType: string;
+  start: number;
+  increment: number;
+  minValue: number;
+  maxValue: number;
+  cache: number;
+  cycle: boolean;
+  /** `null` si todavía no se usó, y también si el rol no puede leerla: el servidor no distingue. */
+  lastValue: number | null;
+  ownedBy: OwnedBy | null;
+  comment: string | null;
+}
+
+export const sequencePreview = (changes: SequenceChange[]) =>
+  invoke<DdlStatement[]>("sequence_preview", { changes });
+
+export const sequenceApply = (id: string, changes: SequenceChange[], database?: string) =>
+  invoke<void>("sequence_apply", { id, changes, database: database ?? null });
+
+export const sequenceInfo = (id: string, oid: number, database?: string) =>
+  invoke<SequenceInfo>("sequence_info", { id, oid, database: database ?? null });
+
+// ---------------------------------------------------------------------------
+// Tipos y dominios
+// ---------------------------------------------------------------------------
+
+/** Un campo de un tipo compuesto. El tipo va crudo, como el de una columna. */
+export interface TypeField {
+  name: string;
+  dataType: string;
+  collation?: string | null;
+}
+
+/** Dónde entra un valor nuevo de una enumeración. Sin posición va al final. */
+export type EnumPosition = { kind: "before"; value: string } | { kind: "after"; value: string };
+
+export type TypeChange =
+  | { kind: "createEnum"; schema: string; name: string; labels: string[] }
+  /** No hay `DROP VALUE`: sacar un valor exigiría recrear el tipo y todo lo que lo usa. */
+  | {
+      kind: "addEnumValue";
+      schema: string;
+      name: string;
+      value: string;
+      position: EnumPosition | null;
+      ifNotExists: boolean;
+    }
+  | { kind: "renameEnumValue"; schema: string; name: string; from: string; to: string }
+  | { kind: "createComposite"; schema: string; name: string; fields: TypeField[] }
+  | { kind: "addCompositeField"; schema: string; name: string; field: TypeField }
+  | { kind: "dropCompositeField"; schema: string; name: string; field: string; cascade: boolean }
+  | {
+      kind: "alterCompositeFieldType";
+      schema: string;
+      name: string;
+      field: string;
+      dataType: string;
+      collation: string | null;
+      cascade: boolean;
+    }
+  | { kind: "renameType"; schema: string; name: string; newName: string }
+  | { kind: "setTypeSchema"; schema: string; name: string; newSchema: string }
+  | { kind: "setTypeOwner"; schema: string; name: string; owner: string }
+  | { kind: "dropType"; schema: string; name: string; cascade: boolean };
+
+export type TypeKind = "enum" | "composite" | "domain" | "other";
+
+export interface TypeInfo {
+  schema: string;
+  name: string;
+  owner: string;
+  kind: TypeKind;
+  labels: string[];
+  fields: TypeField[];
+  comment: string | null;
+}
+
+export const typePreview = (changes: TypeChange[]) =>
+  invoke<DdlStatement[]>("type_preview", { changes });
+
+export const typeApply = (id: string, changes: TypeChange[], database?: string) =>
+  invoke<void>("type_apply", { id, changes, database: database ?? null });
+
+export const typeInfo = (id: string, oid: number, database?: string) =>
+  invoke<TypeInfo>("type_info", { id, oid, database: database ?? null });
+
+/** Una restricción `CHECK` de un dominio. `VALUE` es el valor que se está validando. */
+export interface DomainConstraint {
+  /** Vacío deja que el servidor lo nombre. */
+  name: string | null;
+  /** La expresión, cruda. */
+  check: string;
+  /** `NOT VALID`: no revisa lo que ya está guardado. */
+  notValid: boolean;
+}
+
+export type DomainChange =
+  | {
+      kind: "createDomain";
+      schema: string;
+      name: string;
+      dataType: string;
+      collation: string | null;
+      default: string | null;
+      notNull: boolean;
+      constraints: DomainConstraint[];
+    }
+  | { kind: "setDomainDefault"; schema: string; name: string; default: string | null }
+  | { kind: "setDomainNotNull"; schema: string; name: string; notNull: boolean }
+  | { kind: "addDomainConstraint"; schema: string; name: string; constraint: DomainConstraint }
+  | { kind: "validateDomainConstraint"; schema: string; name: string; constraint: string }
+  | {
+      kind: "dropDomainConstraint";
+      schema: string;
+      name: string;
+      constraint: string;
+      ifExists: boolean;
+      cascade: boolean;
+    }
+  | { kind: "renameDomain"; schema: string; name: string; newName: string }
+  | { kind: "setDomainSchema"; schema: string; name: string; newSchema: string }
+  | { kind: "setDomainOwner"; schema: string; name: string; owner: string }
+  | { kind: "dropDomain"; schema: string; name: string; cascade: boolean };
+
+export interface DomainInfo {
+  schema: string;
+  name: string;
+  owner: string;
+  dataType: string;
+  collation: string | null;
+  default: string | null;
+  notNull: boolean;
+  constraints: DomainConstraint[];
+  comment: string | null;
+}
+
+export const domainPreview = (changes: DomainChange[]) =>
+  invoke<DdlStatement[]>("domain_preview", { changes });
+
+export const domainApply = (id: string, changes: DomainChange[], database?: string) =>
+  invoke<void>("domain_apply", { id, changes, database: database ?? null });
+
+export const domainInfo = (id: string, oid: number, database?: string) =>
+  invoke<DomainInfo>("domain_info", { id, oid, database: database ?? null });
+
+// ---------------------------------------------------------------------------
+// Esquemas y bases
+// ---------------------------------------------------------------------------
+
+export type SchemaChange =
+  | { kind: "createSchema"; name: string; authorization: string | null; ifNotExists: boolean }
+  | { kind: "renameSchema"; name: string; newName: string }
+  | { kind: "setSchemaOwner"; name: string; owner: string }
+  /** Sin `CASCADE` falla si tiene algo adentro, a propósito. */
+  | { kind: "dropSchema"; name: string; ifExists: boolean; cascade: boolean };
+
+export const schemaPreview = (changes: SchemaChange[]) =>
+  invoke<DdlStatement[]>("schema_preview", { changes });
+
+export const schemaApply = (id: string, changes: SchemaChange[], database?: string) =>
+  invoke<void>("schema_apply", { id, changes, database: database ?? null });
+
+/** Lo que se puede pedir al crear una base. Cada campo vacío lo decide el servidor. */
+export interface DatabaseOptions {
+  owner?: string | null;
+  template?: string | null;
+  encoding?: string | null;
+  lcCollate?: string | null;
+  lcCtype?: string | null;
+  tablespace?: string | null;
+  /** `-1` es sin límite. */
+  connectionLimit?: number | null;
+  isTemplate?: boolean | null;
+}
+
+export type DatabaseChange =
+  | { kind: "createDatabase"; name: string; options: DatabaseOptions }
+  | { kind: "renameDatabase"; name: string; newName: string }
+  | { kind: "setDatabaseOwner"; name: string; owner: string }
+  | { kind: "setDatabaseConnectionLimit"; name: string; limit: number }
+  | { kind: "setDatabaseAllowConnections"; name: string; allow: boolean }
+  /** `force` echa a las sesiones conectadas en vez de fallar. */
+  | { kind: "dropDatabase"; name: string; ifExists: boolean; force: boolean };
+
+export interface DatabaseInfo {
+  name: string;
+  owner: string;
+  encoding: string;
+  collate: string;
+  ctype: string;
+  tablespace: string;
+  connectionLimit: number;
+  allowConnections: boolean;
+  isTemplate: boolean;
+  /** Bytes. `null` si el rol no puede leerlo. */
+  size: number | null;
+  comment: string | null;
+}
+
+export const databasePreview = (changes: DatabaseChange[]) =>
+  invoke<DdlStatement[]>("database_preview", { changes });
+
+/**
+ * Aplica los cambios **sin** transacción: `CREATE DATABASE` y `DROP DATABASE` no la admiten. Por eso
+ * conviene mandar un cambio por vez: una lista a medias deja hecho lo anterior.
+ */
+export const databaseApply = (id: string, changes: DatabaseChange[]) =>
+  invoke<void>("database_apply", { id, changes });
+
+export const databaseInfo = (id: string, name: string) =>
+  invoke<DatabaseInfo>("database_info", { id, name });
+
+// ---------------------------------------------------------------------------
+// Particiones
+// ---------------------------------------------------------------------------
+
+/** El límite de una partición. Los valores van crudos: admiten `MINVALUE`, `MAXVALUE` y funciones. */
+export type PartitionBound =
+  | { kind: "range"; from: string[]; to: string[] }
+  | { kind: "list"; values: string[] }
+  | { kind: "hash"; modulus: number; remainder: number }
+  /** Se lleva todo lo que no entra en ninguna otra. */
+  | { kind: "default" };
+
+export type PartitionChange =
+  | {
+      kind: "createPartition";
+      parentSchema: string;
+      parent: string;
+      schema: string;
+      name: string;
+      bound: PartitionBound;
+      /** Cuando la partición es a su vez particionada: `RANGE (dia)`, crudo. */
+      partitionBy: string | null;
+    }
+  /** El servidor revisa que ninguna fila de la tabla se salga del límite. */
+  | {
+      kind: "attachPartition";
+      parentSchema: string;
+      parent: string;
+      schema: string;
+      name: string;
+      bound: PartitionBound;
+    }
+  | {
+      kind: "detachPartition";
+      parentSchema: string;
+      parent: string;
+      schema: string;
+      name: string;
+      /** Sin bloquear a los lectores. Pide PostgreSQL 14 o más. */
+      concurrently: boolean;
+      /** Termina un `DETACH … CONCURRENTLY` que quedó a medias. */
+      finalize: boolean;
+    }
+  | { kind: "dropPartition"; schema: string; name: string; cascade: boolean };
+
+export interface PartitionInfo {
+  schema: string;
+  name: string;
+  /** El límite tal como lo escribe el servidor. */
+  bound: string;
+  partitioned: boolean;
+}
+
+export interface PartitioningInfo {
+  /** La estrategia tal como la escribe el servidor: `RANGE (creado)`, `LIST (region)`, … */
+  strategy: string;
+  partitions: PartitionInfo[];
+}
+
+/** Pide el perfil, a diferencia de las demás vistas previas: `CONCURRENTLY` depende de la versión. */
+export const partitionPreview = (id: string, changes: PartitionChange[]) =>
+  invoke<DdlStatement[]>("partition_preview", { id, changes });
+
+export const partitionApply = (id: string, changes: PartitionChange[], database?: string) =>
+  invoke<void>("partition_apply", { id, changes, database: database ?? null });
+
+export const tablePartitions = (id: string, oid: number, database?: string) =>
+  invoke<PartitioningInfo>("table_partitions", { id, oid, database: database ?? null });
+
+// ---------------------------------------------------------------------------
+// Comentarios
+// ---------------------------------------------------------------------------
+
+/** Sobre qué objeto se comenta. La lista es la de los nodos que muestra el árbol. */
+export type CommentTarget =
+  | { kind: "table"; schema: string; name: string }
+  | { kind: "column"; schema: string; table: string; column: string }
+  | { kind: "view"; schema: string; name: string }
+  | { kind: "materializedView"; schema: string; name: string }
+  | { kind: "foreignTable"; schema: string; name: string }
+  | { kind: "sequence"; schema: string; name: string }
+  | { kind: "index"; schema: string; name: string }
+  | { kind: "type"; schema: string; name: string }
+  | { kind: "domain"; schema: string; name: string }
+  | { kind: "schema"; name: string }
+  | { kind: "database"; name: string }
+  | { kind: "role"; name: string }
+  | { kind: "extension"; name: string }
+  /** La firma hace falta para distinguir entre sobrecargas. */
+  | { kind: "function"; schema: string; name: string; arguments: string }
+  | { kind: "procedure"; schema: string; name: string; arguments: string }
+  | { kind: "trigger"; schema: string; table: string; name: string }
+  | { kind: "constraint"; schema: string; table: string; name: string }
+  | { kind: "policy"; schema: string; table: string; name: string };
+
+export interface CommentChange {
+  target: CommentTarget;
+  /** `null` —o en blanco— borra el comentario: vacío no es lo mismo que ninguno. */
+  comment: string | null;
+}
+
+export const commentPreview = (changes: CommentChange[]) =>
+  invoke<DdlStatement[]>("comment_preview", { changes });
+
+export const commentApply = (id: string, changes: CommentChange[], database?: string) =>
+  invoke<void>("comment_apply", { id, changes, database: database ?? null });
+
+// ---------------------------------------------------------------------------
 // Funciones y procedimientos
 // ---------------------------------------------------------------------------
 
@@ -1328,7 +1711,8 @@ export type SettingType = "bool" | "integer" | "real" | "enum" | "string";
 
 export interface Setting {
   name: string;
-  value: string;
+  /** `null` en los parámetros que solo puede leer un superusuario (`data_directory`, `hba_file`, …). */
+  value: string | null;
   unit: string | null;
   category: string;
   shortDesc: string;

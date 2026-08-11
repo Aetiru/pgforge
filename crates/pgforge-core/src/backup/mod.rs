@@ -281,7 +281,7 @@ pub async fn run(
 /// `pg_restore` (que escribe en el servidor) solo hablan por stderr con `--verbose`.
 fn base_command(binary: &str, handle: &ServerHandle) -> Command {
     let mut command = Command::new(binary);
-    command
+    tools::hidden(&mut command)
         .env("PGSSLMODE", ssl_mode_env(handle.profile.ssl_mode))
         .env("PGAPPNAME", "pgforge")
         .stdin(Stdio::null())

@@ -13,6 +13,21 @@ use tokio::process::Command;
 use crate::caps::ServerVersion;
 use crate::error::{Error, Result};
 
+/// Lanza el proceso sin abrir una consola.
+///
+/// En Windows, un ejecutable de consola lanzado desde una aplicación gráfica se trae su propia
+/// ventana negra, que aparece y desaparece sola. Con `pg_dump` eso pasaba con solo mirar el detalle
+/// de una tabla —el DDL se delega en él—, así que el parpadeo era constante. `CREATE_NO_WINDOW`
+/// (`0x0800_0000`) lo evita; en el resto de los sistemas no hay nada que hacer.
+///
+/// Va en un solo lugar y no en cada sitio que lanza un proceso: el `cfg` repetido es exactamente el
+/// que se olvida al agregar la siguiente herramienta.
+pub(crate) fn hidden(command: &mut Command) -> &mut Command {
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000);
+    command
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tool {
     PgDump,
@@ -123,7 +138,7 @@ pub fn require(tool: Tool) -> Result<PathBuf> {
 /// Se saca de `--version`, que imprime algo como `pg_dump (PostgreSQL) 17.4`. El número menor puede
 /// faltar (`18beta1`), así que se toma como cero: lo que importa para decidir si sirve es el mayor.
 pub async fn version(path: &std::path::Path) -> Result<ServerVersion> {
-    let output = Command::new(path)
+    let output = hidden(&mut Command::new(path))
         .arg("--version")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

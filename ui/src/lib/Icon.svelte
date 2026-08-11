@@ -54,6 +54,10 @@
     | "upload"
     | "eye"
     | "eye-off"
+    | "save"
+    | "undo"
+    | "gauge"
+    | "unplug"
     | "diagram";
 
   const PATHS: Record<IconName, string> = {
@@ -86,6 +90,12 @@
     role: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     play: '<path d="M7 4.8l12 7.2-12 7.2z"/>',
+    // Disquete: nadie usa uno hace veinte años y sigue siendo lo que todos leen como «guardar».
+    save: '<path d="M4 5a1 1 0 0 1 1-1h11l4 4v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M8 4v5h7V4"/><rect x="8" y="13" width="8" height="7"/>',
+    // Flecha que vuelve sobre sus pasos: deshacer lo hecho desde que se abrió la transacción.
+    undo: '<path d="M4 9h11a5 5 0 0 1 0 10H9"/><path d="M8 5L4 9l4 4"/>',
+    // Aguja de un medidor: el plan con los tiempos reales, no el estimado.
+    gauge: '<path d="M4 17a9 9 0 1 1 16 0"/><path d="M12 17l4.5-5"/><circle cx="12" cy="17" r="1.2"/>',
     sql: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M6.5 10l2.5 2-2.5 2M12 14.5h5.5"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
     refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/>',
@@ -117,6 +127,9 @@
     extension:
       '<path d="M9 4.5a1.6 1.6 0 0 1 3.2 0c0 .45-.15.82-.15 1.2 0 .44.36.8.8.8H16a1 1 0 0 1 1 1v3.15c0 .44.36.8.8.8.38 0 .75-.15 1.2-.15a1.6 1.6 0 0 1 0 3.2c-.45 0-.82-.15-1.2-.15-.44 0-.8.36-.8.8V19a1 1 0 0 1-1 1h-3.15c-.44 0-.8-.36-.8-.8 0-.38.15-.75.15-1.2a1.6 1.6 0 0 0-3.2 0c0 .45.15.82.15 1.2 0 .44-.36.8-.8.8H5a1 1 0 0 1-1-1v-3.15c0-.44-.36-.8-.8-.8-.38 0-.75.15-1.2.15a1.6 1.6 0 0 1 0-3.2c.45 0 .82.15 1.2.15.44 0 .8-.36.8-.8V7.5a1 1 0 0 1 1-1h3.15c.44 0 .8-.36.8-.8 0-.38-.15-.75-.15-1.2z"/>',
     plug: '<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M6 8h12v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4z"/>',
+    // El mismo enchufe, tachado: desconectar es lo contrario de conectar y no otra cosa.
+    unplug:
+      '<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M6 8h12v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4z"/><path d="M3 3l18 18"/>',
     sliders:
       '<path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h6M14 18h6"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="12" cy="18" r="2"/>',
   };
