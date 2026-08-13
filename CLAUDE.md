@@ -23,6 +23,7 @@ cargo fmt --all --check
 cargo clippy -p pgforge-core -p pgforge-cli --all-targets   # CI usa RUSTFLAGS="-D warnings"
 cargo test -p pgforge-core -p pgforge-cli
 cargo clippy -p pgforge-app --all-targets && cargo test -p pgforge-app   # necesita ui/dist
+cargo deny check                # vulnerabilidades, licencias y registros de las dependencias
 ```
 
 De `src-tauri` no se prueba lo que toca red —eso vive en core y se prueba ahí—, pero sí sus comandos de **vista previa**, que son puros: `src-tauri/tests/preview.rs` los llama con la carga JSON tal como manda `ipc.ts`. Compilarlo exige que exista `ui/dist` (`generate_context!` lo verifica): correr `pnpm ui:build` antes. En CI ya lo dejó hecho el `pnpm tauri build --no-bundle` del mismo job, que además cubre las tres plataformas. Job del core corre contra **todo el rango soportado, PostgreSQL 13 a 17**, una instancia por versión, porque ahí se nota gating por versión mal puesto —los extremos atrapan lo que se sale del rango; las del medio, el salto de catálogo atado a una versión intermedia—.
@@ -206,7 +207,9 @@ Teclado del árbol, además de las flechas: escribir letras salta a la fila que 
 
 Formularios de mutación (`PolicyDialog`, `RoleDialog`, `TableDialog`, …) siguen todos la misma forma, cara visible de la regla de vista previa: copia editable de props tomada una sola vez con `untrack`, función `changes()` que arma el cambio, `validate()` que devuelve el problema o `null`, botón «Ver SQL» que llama al `*_preview`, y `submit()` que llama al `*_apply`. Al agregar objeto nuevo, copiar esa estructura en vez de inventar otra.
 
-`changes()` y `validate()` son funciones puras de lo escrito en pantalla; montar el componente para probarlas no aporta nada. Donde lógica es de verdad —diff contra lo que hay en servidor, campo que solo vale para algunos casos— se saca a `<objeto>-form.ts` al lado del diálogo (`role-form.ts`, `policy-form.ts`): componente queda con `$state` y bindings, archivo suelto se prueba con Vitest. Diálogos que solo juntan campos y los mandan no necesitan esa separación.
+`changes()` y `validate()` son funciones puras de lo escrito en pantalla; montar el componente para probarlas no aporta nada. Donde lógica es de verdad —diff contra lo que hay en servidor, campo que solo vale para algunos casos, orden en que se mandan las sentencias— se saca a `<objeto>-form.ts` al lado del diálogo (`role-form.ts`, `policy-form.ts`, `type-form.ts`, `column-form.ts`, `table-form.ts`, `index-form.ts`, `trigger-form.ts`): componente queda con `$state` y bindings, archivo suelto se prueba con Vitest. Diálogos que solo juntan campos y los mandan no necesitan esa separación.
+
+Dos que valen como ejemplo de qué se rompe callado: en `column-form.ts`, editar una columna no manda «cómo quedó» sino un cambio por cada cosa tocada, y el renombre va **primero** porque los que siguen corren después en la misma transacción y tienen que hablar del nombre nuevo; en `trigger-form.ts`, editar es `DROP` + `CREATE` —PostgreSQL no altera lo que define a un disparador— y el `DROP` nombra al trigger **como estaba**, no como quedó.
 
 ## Nota sobre `plan-proyecto-pgtool-rust.md`
 

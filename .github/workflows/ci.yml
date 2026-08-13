@@ -63,6 +63,19 @@ jobs:
         env:
           PGFORGE_TEST_URLS: postgres://postgres:pgforge@localhost:5432/postgres
 
+  # Lo que ningún test contesta: si alguna dependencia tiene una vulnerabilidad publicada, si alguna
+  # trae una licencia que no se puede distribuir, y si alguna sale de un registro que no es
+  # crates.io. Las reglas están en `deny.toml`. Va en un job aparte porque no compila nada: solo lee
+  # `Cargo.lock`, así que tarda segundos y no depende de la matriz de PostgreSQL.
+  dependencias:
+    name: dependencias
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories bans licenses sources
+
   ui:
     name: interfaz
     runs-on: ubuntu-latest

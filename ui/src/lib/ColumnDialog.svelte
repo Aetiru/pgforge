@@ -5,13 +5,13 @@
   import Modal from "./Modal.svelte";
   import SqlPreview from "./SqlPreview.svelte";
   import {
-    ddlApply,
-    ddlPreview,
-    describeError,
-    type Identity,
-    type TableChange,
-    type TableColumn,
-  } from "./ipc";
+    COMMON_TYPES,
+    IDENTITY_OPTIONS,
+    columnChanges,
+    columnForm,
+    validateColumn,
+  } from "./column-form";
+  import { ddlApply, ddlPreview, describeError, type TableColumn } from "./ipc";
 
   let {
     profileId,
@@ -32,100 +32,17 @@
     onsaved: () => void;
   } = $props();
 
-  const COMMON_TYPES = [
-    "bigint",
-    "integer",
-    "smallint",
-    "text",
-    "varchar(255)",
-    "numeric(12,2)",
-    "boolean",
-    "timestamptz",
-    "date",
-    "uuid",
-    "jsonb",
-    "bytea",
-  ];
-
-  const IDENTITY_OPTIONS: { value: Identity | ""; label: string }[] = [
-    { value: "", label: "Ninguna" },
-    { value: "always", label: "Siempre" },
-    { value: "byDefault", label: "Por defecto" },
-  ];
-
   // Copia editable, tomada una sola vez: en modo edición es lo que se compara contra el original
   // para mandar solo lo que de verdad cambió.
-  let name = $state(untrack(() => column?.name ?? ""));
-  let typeName = $state(untrack(() => column?.typeName ?? ""));
-  let notNull = $state(untrack(() => column?.notNull ?? false));
-  let defaultValue = $state(untrack(() => column?.default ?? ""));
-  let identity = $state<Identity | "">("");
-  let using = $state("");
+  let form = $state(untrack(() => columnForm(column)));
 
   let error = $state<string | null>(null);
   let saving = $state(false);
   let preview = $state<string | null>(null);
 
-  const typeChanged = $derived(column !== null && typeName.trim() !== column.typeName);
-
-  function validate(): string | null {
-    if (!name.trim()) return "Poné un nombre para la columna.";
-    if (!typeName.trim()) return "Poné un tipo para la columna.";
-    return null;
-  }
-
-  /** Los cambios pendientes. En alta siempre hay uno; en edición, solo lo que se tocó. */
-  function changes(): TableChange[] {
-    if (!column) {
-      return [
-        {
-          kind: "addColumn",
-          schema,
-          table,
-          column: {
-            name: name.trim(),
-            typeName: typeName.trim(),
-            notNull,
-            default: identity ? null : defaultValue.trim() || null,
-            identity: identity || null,
-          },
-        },
-      ];
-    }
-
-    const out: TableChange[] = [];
-    // El renombre va primero: los pasos siguientes ya tienen que referirse al nombre nuevo, porque
-    // se ejecutan en orden dentro de la misma transacción.
-    let current = column.name;
-    if (name.trim() !== column.name) {
-      out.push({ kind: "renameColumn", schema, table, column: current, newName: name.trim() });
-      current = name.trim();
-    }
-    if (typeName.trim() !== column.typeName) {
-      out.push({
-        kind: "alterColumnType",
-        schema,
-        table,
-        column: current,
-        typeName: typeName.trim(),
-        using: using.trim() || null,
-      });
-    }
-    if (notNull !== column.notNull) {
-      out.push({ kind: "setColumnNotNull", schema, table, column: current, notNull });
-    }
-    const original = column.default ?? "";
-    if (defaultValue.trim() !== original.trim()) {
-      out.push({
-        kind: "setColumnDefault",
-        schema,
-        table,
-        column: current,
-        default: defaultValue.trim() || null,
-      });
-    }
-    return out;
-  }
+  const typeChanged = $derived(column !== null && form.typeName.trim() !== column.typeName);
+  const validate = () => validateColumn(form);
+  const changes = () => columnChanges(form, { schema, table }, column);
 
   const pending = $derived(changes().length);
 
@@ -180,25 +97,25 @@
   <div class="grid grid-cols-2 gap-3">
     <label class="flex flex-col gap-1">
       <span class="label">Nombre</span>
-      <input class="field" data-autofocus bind:value={name} />
+      <input class="field" data-autofocus bind:value={form.name} />
     </label>
 
     <label class="flex flex-col gap-1">
       <span class="label">Tipo</span>
-      <input class="field" list="pgforge-column-types" bind:value={typeName} />
+      <input class="field" list="pgforge-column-types" bind:value={form.typeName} />
     </label>
 
     {#if column && typeChanged}
       <label class="col-span-2 flex flex-col gap-1">
         <span class="label">USING (opcional, solo si el cambio de tipo no es implícito)</span>
-        <input class="field" placeholder={`${column.name}::${typeName}`} bind:value={using} />
+        <input class="field" placeholder={`${column.name}::${form.typeName}`} bind:value={form.using} />
       </label>
     {/if}
 
     {#if !column}
       <label class="flex flex-col gap-1">
         <span class="label">Identidad</span>
-        <select class="field" bind:value={identity}>
+        <select class="field" bind:value={form.identity}>
           {#each IDENTITY_OPTIONS as option (option.value)}
             <option value={option.value}>{option.label}</option>
           {/each}
@@ -210,14 +127,14 @@
       <span class="label">Default</span>
       <input
         class="field"
-        disabled={!column && identity !== ""}
-        bind:value={defaultValue}
+        disabled={!column && form.identity !== ""}
+        bind:value={form.default}
         placeholder="expresión SQL, p. ej. now()"
       />
     </label>
 
     <label class="check col-span-2">
-      <input type="checkbox" bind:checked={notNull} />
+      <input type="checkbox" bind:checked={form.notNull} />
       NOT NULL
     </label>
 

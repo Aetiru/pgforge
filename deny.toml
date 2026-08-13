@@ -1,0 +1,54 @@
+# Configuración de `cargo deny`: qué se acepta del árbol de dependencias.
+#
+# Corre en CI (`cargo deny check`) y contesta tres preguntas que ningún test hace: si alguna
+# dependencia tiene una vulnerabilidad publicada, si alguna trae una licencia que no se puede
+# distribuir, y si alguna sale de un registro que no es crates.io.
+
+[graph]
+# Solo lo que de verdad se compila y se distribuye. Sin esto se auditan también las dependencias de
+# plataformas que la aplicación no soporta, y una alerta ahí no le llega a ningún usuario.
+targets = [
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+
+[advisories]
+version = 2
+# Una vulnerabilidad publicada frena el build. Excepciones acá, con el motivo y el aviso: un `ignore`
+# sin explicación es una alerta apagada que nadie vuelve a mirar.
+ignore = []
+
+[licenses]
+version = 2
+# Permisivas y compatibles con distribuir el binario. MPL-2.0 entra porque obliga a publicar los
+# cambios del archivo que uno toque, no del programa que lo usa.
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CDLA-Permissive-2.0",
+    "OpenSSL",
+    "BSL-1.0",
+    "CC0-1.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Dos versiones de la misma caja no son un error: es lo normal en un árbol de este tamaño y
+# resolverlo no depende de este repositorio. Lo que sí se avisa es cuando pasa.
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
