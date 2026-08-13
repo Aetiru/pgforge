@@ -10,6 +10,7 @@ const original: TableColumn = {
   notNull: false,
   default: null,
   generated: false,
+  comment: null,
 };
 
 describe("validateColumn", () => {
