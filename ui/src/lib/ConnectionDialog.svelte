@@ -192,7 +192,7 @@
         class="field"
         list="carpetas-de-conexiones"
         placeholder="Sin carpeta"
-        title="Agrupa este servidor con los demás que tengan el mismo nombre de carpeta"
+        title="Agrupa este servidor con los demás que tengan el mismo nombre de carpeta. Una barra anida: «Clientes/ACME» se dibuja adentro de «Clientes»"
         bind:value={form.group}
       />
       <datalist id="carpetas-de-conexiones">

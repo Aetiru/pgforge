@@ -2,17 +2,19 @@
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
   import { explorer } from "./explorer.svelte";
+  import { normalizeGroup } from "./folders.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
   let value = $state("");
   let error = $state<string | null>(null);
 
+  const name = $derived(normalizeGroup(value));
+
   function validate(): string | null {
-    const trimmed = value.trim();
-    if (!trimmed) return "Poné un nombre para la carpeta.";
-    if (explorer.groups.includes(trimmed) || explorer.pendingGroups.includes(trimmed)) {
-      return `Ya existe una carpeta «${trimmed}».`;
+    if (!name) return "Poné un nombre para la carpeta.";
+    if (explorer.groups.includes(name) || explorer.pendingGroups.includes(name)) {
+      return `Ya existe una carpeta «${name}».`;
     }
     return null;
   }
@@ -20,7 +22,7 @@
   function submit() {
     error = validate();
     if (error) return;
-    explorer.newGroup(value.trim());
+    explorer.newGroup(name);
     onclose();
   }
 </script>
@@ -40,8 +42,8 @@
 
   <p class="mt-2 text-xs muted">
     La carpeta agrupa conexiones guardadas: no toca nada en los servidores. Arrastrá servidores del
-    árbol para meterlos. Una carpeta que quede vacía no se guarda: desaparece al cerrar la
-    aplicación.
+    árbol para meterlos. Una barra anida —«Clientes/ACME» se dibuja adentro de «Clientes»—. Una
+    carpeta que quede vacía no se guarda: desaparece al cerrar la aplicación.
   </p>
 
   {#if error}

@@ -18,8 +18,9 @@ import {
   type TreeNode,
   type TreeOptions,
 } from "./ipc";
-import { folders, LOOSE_GROUP } from "./folders.svelte";
+import { folders, LOOSE_GROUP, normalizeGroup } from "./folders.svelte";
 import { folderForKind } from "./tree-actions";
+import { filterHits, matchesKind, parseQuery } from "./tree-query";
 
 /**
  * Qué representa una fila del árbol.
@@ -113,22 +114,55 @@ function groupDetail(servers: Row[]): string {
  */
 const LOOSE_LABEL = "Sin carpeta";
 
-function groupRow(name: string | null, servers: Row[]): Row {
+/**
+ * Las carpetas anidan con `/`: `Clientes/ACME` se dibuja adentro de `Clientes`.
+ *
+ * Sigue sin haber una lista de carpetas guardada —una carpeta es el nombre que comparten unos
+ * perfiles—, así que el anidamiento tampoco es una entidad: es un nombre con un tramo más. Eso es lo
+ * que hace que crear, mover y renombrar sigan siendo lo de antes, sin un árbol de carpetas que
+ * mantener sincronizado con los perfiles.
+ */
+const SEPARATOR = "/";
+
+/** El nombre que se muestra: el último tramo, porque los de arriba ya son las carpetas de arriba. */
+function leafName(path: string): string {
+  const at = path.lastIndexOf(SEPARATOR);
+  return at < 0 ? path : path.slice(at + 1);
+}
+
+/** La carpeta que la contiene, o `""` si es de primer nivel. */
+function parentPath(path: string): string {
+  const at = path.lastIndexOf(SEPARATOR);
+  return at < 0 ? "" : path.slice(0, at);
+}
+
+/** La carpeta y todas las que la contienen: `a/b/c` da `a`, `a/b` y `a/b/c`. */
+function ancestry(path: string): string[] {
+  const parts = path.split(SEPARATOR);
+  return parts.map((_, index) => parts.slice(0, index + 1).join(SEPARATOR));
+}
+
+/** Todas las filas de servidor que cuelgan de estas filas, a cualquier profundidad. */
+function serversUnder(rows: Row[]): Row[] {
+  return rows.flatMap((row) => (row.kind === "group" ? serversUnder(row.children ?? []) : [row]));
+}
+
+function groupRow(name: string | null, level: number, children: Row[]): Row {
   return {
     kind: "group",
     key: `g:${name ?? ""}`,
     profileId: "",
     group: name ?? undefined,
     node: null,
-    level: 0,
-    label: name ?? LOOSE_LABEL,
-    detail: groupDetail(servers),
-    hasChildren: servers.length > 0,
+    level,
+    label: name === null ? LOOSE_LABEL : leafName(name),
+    detail: groupDetail(serversUnder(children)),
+    hasChildren: children.length > 0,
     // Si estaba cerrada la última vez, sigue cerrada: es lo primero que se toca cuando hay veinte
     // conexiones y se trabaja con tres.
     expanded: folders.isOpen(name ?? LOOSE_GROUP),
     loading: false,
-    children: servers,
+    children,
     connected: false,
   };
 }
@@ -192,18 +226,30 @@ class Explorer {
     return folders.empty;
   }
 
-  /** Todas las filas de servidor, estén dentro de una carpeta o sueltas. */
+  /** Todas las filas de servidor, estén dentro de una carpeta —a cualquier profundidad— o sueltas. */
   get servers(): Row[] {
-    return this.roots.flatMap((row) => (row.kind === "group" ? (row.children ?? []) : [row]));
+    return serversUnder(this.roots);
+  }
+
+  /** Las filas de carpeta, de cualquier nivel, en el orden en que se muestran. */
+  private get groupRows(): Row[] {
+    const out: Row[] = [];
+    const walk = (rows: Row[]) => {
+      for (const row of rows) {
+        if (row.kind !== "group") continue;
+        out.push(row);
+        walk(row.children ?? []);
+      }
+    };
+    walk(this.roots);
+    return out;
   }
 
   /** Las carpetas existentes, para ofrecerlas al elegir dónde va un servidor. */
   get groups(): string[] {
     // La sección de los servidores sueltos es una fila de carpeta sin nombre: no es una carpeta a
     // la que se pueda mandar nada, es la ausencia de carpeta.
-    return this.roots
-      .filter((row) => row.kind === "group" && row.group !== undefined)
-      .map((row) => row.group!);
+    return this.groupRows.filter((row) => row.group !== undefined).map((row) => row.group!);
   }
 
   /** Relee los perfiles guardados y vuelve a armar el árbol con ellos. */
@@ -218,7 +264,7 @@ class Explorer {
    * no hace nada —quien la llama valida antes y avisa—.
    */
   newGroup(name: string) {
-    const trimmed = name.trim();
+    const trimmed = normalizeGroup(name);
     if (!trimmed) return;
     const exists =
       this.profiles.some((profile) => profile.group === trimmed) ||
@@ -227,7 +273,7 @@ class Explorer {
 
     folders.remember(trimmed);
     this.rebuild();
-    const row = this.roots.find((item) => item.kind === "group" && item.group === trimmed);
+    const row = this.groupRows.find((item) => item.group === trimmed);
     if (row) this.selected = row;
   }
 
@@ -241,9 +287,7 @@ class Explorer {
 
     const previous = new Map(this.servers.map((row) => [row.profileId, row]));
     // Por clave y no por nombre: la sección de los sueltos no tiene nombre.
-    const previousGroups = new Map(
-      this.roots.filter((row) => row.kind === "group").map((row) => [row.key, row]),
-    );
+    const previousGroups = new Map(this.groupRows.map((row) => [row.key, row]));
 
     const rowOf = (profile: ConnectionProfile, level: number) => {
       const existing = previous.get(profile.id);
@@ -257,12 +301,13 @@ class Explorer {
 
     // Las carpetas que siguen existiendo se reutilizan tal cual: si no, cada guardado de un perfil
     // las cerraría y dejaría la selección apuntando a una fila que ya no está en el árbol.
-    const groupOf = (name: string | null, servers: Row[]) => {
+    const groupOf = (name: string | null, level: number, children: Row[]) => {
       const existing = previousGroups.get(`g:${name ?? ""}`);
-      if (!existing) return groupRow(name, servers);
-      existing.children = servers;
-      existing.detail = groupDetail(servers);
-      existing.hasChildren = servers.length > 0;
+      if (!existing) return groupRow(name, level, children);
+      existing.children = children;
+      existing.level = level;
+      existing.detail = groupDetail(serversUnder(children));
+      existing.hasChildren = children.length > 0;
       return existing;
     };
 
@@ -283,28 +328,43 @@ class Explorer {
     // perfiles: se saca de la lista para no mostrarla dos veces.
     folders.keepEmpty(this.pendingGroups.filter((name) => !grouped.has(name)));
 
+    // Toda carpeta con servidores existe, y las que la contienen también: `Clientes` se dibuja
+    // aunque el único perfil esté en `Clientes/ACME`.
+    const paths = new Set<string>();
+    for (const name of [...grouped.keys(), ...this.pendingGroups]) {
+      for (const ancestor of ancestry(name)) paths.add(ancestor);
+    }
+
     // Las carpetas van arriba y los servidores sueltos abajo, como en cualquier explorador de
     // archivos. Una carpeta nueva arranca abierta: se acaba de crear para poner algo adentro. Las
     // pendientes se intercalan por nombre con las que tienen servidores, y salen vacías.
     //
-    // Un servidor de carpeta se queda en el nivel 0, igual que uno suelto: la carpeta se dibuja como
-    // encabezado de sección y ya agrupa a la vista, así que sangrar además cobra dos veces el mismo
-    // ancho —y el ancho es lo que le falta a los nombres del final del árbol—.
-    const groupNames = [...grouped.keys(), ...this.pendingGroups].sort(byName);
+    // Un servidor se queda en el nivel de su carpeta y no un escalón más adentro: la carpeta se
+    // dibuja como encabezado de sección y ya agrupa a la vista, así que sangrar además cobra dos
+    // veces el mismo ancho —y el ancho es lo que le falta a los nombres del final del árbol—. Lo que
+    // sí sangra es una carpeta dentro de otra, que es de lo que se trata anidarlas.
+    const childGroups = (prefix: string) =>
+      [...paths].filter((path) => parentPath(path) === prefix).sort(byName);
+
+    const buildGroup = (path: string, level: number): Row =>
+      groupOf(path, level, [
+        ...childGroups(path).map((child) => buildGroup(child, level + 1)),
+        ...(grouped.get(path) ?? []).map((profile) => rowOf(profile, level)),
+      ]);
+
+    const roots = childGroups("");
     const looseRows = loose.map((profile) => rowOf(profile, 0));
     this.roots = [
-      ...groupNames.map((name) =>
-        groupOf(name, (grouped.get(name) ?? []).map((profile) => rowOf(profile, 0))),
-      ),
+      ...roots.map((name) => buildGroup(name, 0)),
       // Con carpetas, los sueltos van bajo su propio rótulo: es el destino visible para sacar un
       // servidor de una carpeta. Sin ninguna carpeta no hace falta, porque no hay nada de qué
       // distinguirlos.
-      ...(groupNames.length > 0 && looseRows.length > 0 ? [groupOf(null, looseRows)] : looseRows),
+      ...(roots.length > 0 && looseRows.length > 0 ? [groupOf(null, 0, looseRows)] : looseRows),
     ];
 
     // Una carpeta renombrada o vaciada deja de existir: seguir mostrándola en el detalle sería
     // mostrar algo que ya no está en el árbol.
-    if (this.selected?.kind === "group" && !this.roots.includes(this.selected)) {
+    if (this.selected?.kind === "group" && !this.groupRows.includes(this.selected)) {
       this.selected = null;
     }
   }
@@ -377,10 +437,18 @@ class Explorer {
     }
   }
 
-  /** Vuelve a contar los conectados de la carpeta que contiene a `row`, si está en una. */
+  /**
+   * Vuelve a contar los conectados de la carpeta que contiene a `row` y de las que la contienen: el
+   * contador de una carpeta incluye lo que hay en las de adentro.
+   */
   private refreshGroupDetail(row: Row) {
-    const group = this.roots.find((item) => item.kind === "group" && item.group === row.group);
-    if (group?.children) group.detail = groupDetail(group.children);
+    if (row.group === undefined) return;
+    const affected = new Set(ancestry(row.group));
+    for (const group of this.groupRows) {
+      if (group.group !== undefined && affected.has(group.group)) {
+        group.detail = groupDetail(serversUnder(group.children ?? []));
+      }
+    }
   }
 
   /** `true` si la fila no se puede abrir todavía porque su servidor está desconectado. */
@@ -537,12 +605,16 @@ class Explorer {
   async searchServer(profileId: string, database: string, pattern: string) {
     this.hits = null;
     this.searchError = null;
-    if (pattern.trim() === "") return;
+
+    // El prefijo de tipo es vocabulario de la interfaz: al servidor se le manda el texto solo y el
+    // resultado se acota acá, para no mantener la misma tabla de prefijos de los dos lados.
+    const query = parseQuery(pattern);
+    if (query.text === "") return;
 
     this.searching = true;
     this.hitProfile = profileId;
     try {
-      this.hits = await treeSearch(profileId, database, pattern, this.options);
+      this.hits = filterHits(query, await treeSearch(profileId, database, query.text, this.options));
     } catch (error) {
       this.searchError = describeError(error);
       this.hits = [];
@@ -708,6 +780,66 @@ class Explorer {
 
   select(row: Row) {
     this.selected = row;
+    // Elegir una fila es empezar de nuevo: lo que estaba marcado deja de estarlo, como en cualquier
+    // lista. Marcar es lo que pide la tecla, y para eso están `toggleMark` y `mark`.
+    this.marked = [];
+  }
+
+  // -------------------------------------------------------------------------
+  // Selección múltiple
+  //
+  // Solo de servidores. Lo que se hace con varios a la vez —moverlos a una carpeta, desconectarlos—
+  // es de la conexión y no del catálogo; marcar veinte tablas no habilita nada que se pueda hacer
+  // con las veinte.
+  // -------------------------------------------------------------------------
+
+  /** Las claves de las filas de servidor marcadas, además de la elegida. */
+  marked = $state<string[]>([]);
+
+  isMarked(row: Row): boolean {
+    return this.marked.includes(row.key);
+  }
+
+  /**
+   * Los servidores sobre los que actúa una acción de varios: los marcados, o solo el elegido si no
+   * hay ninguna marca. Así el menú de la fila hace lo mismo con uno que con diez.
+   */
+  get markedServers(): Row[] {
+    const marked = this.servers.filter((row) => this.marked.includes(row.key));
+    if (marked.length > 0) return marked;
+    return this.selected?.kind === "server" ? [this.selected] : [];
+  }
+
+  /** Marca o desmarca una fila sin perder lo que ya estaba marcado. */
+  toggleMark(row: Row) {
+    if (row.kind !== "server") return;
+    this.marked = this.isMarked(row)
+      ? this.marked.filter((key) => key !== row.key)
+      : [...this.marked, row.key];
+    this.selected = row;
+  }
+
+  /** Deja marcadas exactamente esas filas y elige la última, que es donde quedó el cursor. */
+  mark(rows: Row[]) {
+    const servers = rows.filter((row) => row.kind === "server");
+    if (servers.length === 0) return;
+    this.marked = servers.map((row) => row.key);
+    this.selected = servers[servers.length - 1];
+  }
+
+  clearMarks() {
+    this.marked = [];
+  }
+
+  /**
+   * Mueve a una carpeta todos los servidores marcados. Va de a uno y no de una: cada perfil se
+   * guarda por su cuenta, así que si uno falla los anteriores ya quedaron movidos y el error dice
+   * dónde se cortó, en vez de dejar el archivo a medio escribir.
+   */
+  async moveMarkedToGroup(group: string | null) {
+    for (const row of this.markedServers) {
+      await this.moveToGroup(row.profileId, group);
+    }
   }
 }
 
@@ -738,12 +870,16 @@ function passesFilter(row: Row, onlyConnected: boolean): boolean {
  * Con búsqueda activa se muestran las coincidencias y sus ancestros, sin importar si el nodo
  * estaba expandido. Solo alcanza a lo que ya se trajo del servidor: el árbol se carga por niveles
  * y buscar en todo el catálogo sería otra cosa.
+ *
+ * La búsqueda admite el prefijo de tipo (`t:factura`), que acota a una familia de objetos: con él,
+ * un `t:` solo ya sirve para listar las tablas de todo lo que esté abierto.
  */
 export function visibleRows(rows: Row[], search = "", onlyConnected = false): Row[] {
-  const needle = search.trim().toLowerCase();
+  const query = parseQuery(search);
+  const needle = query.text.toLowerCase();
   const out: Row[] = [];
 
-  if (needle === "") {
+  if (needle === "" && query.kinds === null) {
     const walk = (list: Row[]) => {
       for (const row of list) {
         if (!passesFilter(row, onlyConnected)) continue;
@@ -762,9 +898,10 @@ export function visibleRows(rows: Row[], search = "", onlyConnected = false): Ro
       const matched: Row[] = [];
       if (row.children) collect(row.children, matched);
 
-      if (matched.length > 0 || row.label.toLowerCase().includes(needle)) {
-        into.push(row, ...matched);
-      }
+      const hit =
+        matchesKind(query, row.node?.kind) &&
+        (needle === "" || row.label.toLowerCase().includes(needle));
+      if (matched.length > 0 || hit) into.push(row, ...matched);
     }
   };
   collect(rows, out);

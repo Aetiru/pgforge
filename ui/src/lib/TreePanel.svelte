@@ -15,6 +15,8 @@
     queryTargetOf,
   } from "./tree-actions";
   import { guideAt, guideSpans } from "./tree-guides";
+  import { parseQuery } from "./tree-query";
+  import { stickyIndex } from "./tree-sticky";
 
   let {
     onconnect,
@@ -119,7 +121,26 @@
     rows.slice(start, Math.min(rows.length, indexAt(scrollTop + viewportHeight) + 1 + OVERSCAN)),
   );
 
-  const needle = $derived(explorer.search.trim().toLowerCase());
+  // El resaltado marca el texto buscado, no el prefijo que lo acota: `t:factura` resalta «factura».
+  const needle = $derived(parseQuery(explorer.search).text.toLowerCase());
+
+  /**
+   * El rótulo que queda anclado arriba: la carpeta de la que cuelga lo que se está viendo. Se dibuja
+   * a la altura del desplazamiento en vez de con `position: sticky` porque las filas son absolutas
+   * —la ventana deslizante las posiciona a mano— y ahí `sticky` no tiene flujo al que pegarse.
+   */
+  const sticky = $derived.by(() => {
+    if (rows.length === 0) return null;
+    const at = stickyIndex(
+      rows.map((row) => ({
+        level: row.level,
+        isSection: isSection(row),
+        isGroup: row.kind === "group",
+      })),
+      indexAt(scrollTop),
+    );
+    return at === null ? null : rows[at];
+  });
 
   /**
    * Las guías de sangría que se dibujan: solo la cadena de la fila elegida (ver `tree-guides`). Se
@@ -131,6 +152,41 @@
       rows.findIndex((row) => row.key === explorer.selected?.key),
     ),
   );
+
+  /**
+   * El clic, con lo que agregan Ctrl y Shift.
+   *
+   * Marcar es solo de servidores: mover a una carpeta o desconectar valen para varios a la vez, y no
+   * hay nada que hacer con veinte tablas marcadas. Sobre cualquier otra fila las teclas no cambian
+   * nada, que es mejor que marcar algo que después no habilita ninguna acción.
+   */
+  function onRowClick(event: MouseEvent, row: Row) {
+    if (row.kind === "server" && (event.ctrlKey || event.metaKey)) {
+      explorer.toggleMark(row);
+      return;
+    }
+    if (row.kind === "server" && event.shiftKey) {
+      markRange(row);
+      return;
+    }
+    activate(row);
+  }
+
+  /** Marca los servidores que hay entre la fila elegida y `row`, en el orden en que se ven. */
+  function markRange(row: Row) {
+    const to = rows.indexOf(row);
+    const from = rows.findIndex((item) => item.key === explorer.selected?.key);
+    if (to < 0) return;
+    if (from < 0) {
+      explorer.mark([row]);
+      return;
+    }
+    const [start, end] = from <= to ? [from, to] : [to, from];
+    // La fila del clic queda elegida aunque el rango se haya marcado de abajo hacia arriba: el
+    // cursor está donde uno lo dejó, no donde empezó.
+    const range = rows.slice(start, end + 1);
+    explorer.mark(from <= to ? range : [...range].reverse());
+  }
 
   function activate(row: Row) {
     explorer.select(row);
@@ -168,9 +224,23 @@
   function openMenu(event: MouseEvent, row: Row) {
     event.preventDefault();
     // Abrir el menú también selecciona: lo que se hace desde él es sobre esta fila, y verla marcada
-    // evita el clic derecho sobre una tabla con otra resaltada.
-    explorer.select(row);
+    // evita el clic derecho sobre una tabla con otra resaltada. Sobre una fila ya marcada no se
+    // pierde el bloque: el menú es justamente por donde se actúa sobre todo lo marcado.
+    if (!explorer.isMarked(row)) explorer.select(row);
+    else explorer.selected = row;
     menu = { x: event.clientX, y: event.clientY, row };
+  }
+
+  /** Cuántos servidores marcados hay para actuar sobre ellos de una vez. */
+  const markedCount = $derived(explorer.marked.length);
+
+  function disconnectMarked() {
+    const rows = explorer.markedServers.filter((row) => row.connected);
+    menu = null;
+    explorer.clearMarks();
+    for (const row of rows) {
+      explorer.disconnect(row.profileId).catch((error) => (moveError = describeError(error)));
+    }
   }
 
   /**
@@ -422,6 +492,12 @@
         event.preventDefault();
         rename();
         break;
+      case "Escape":
+        // Solo si hay algo marcado: si no, el Escape es de quien esté escuchando más afuera.
+        if (explorer.marked.length === 0) return;
+        event.preventDefault();
+        explorer.clearMarks();
+        break;
       default:
         // Una letra suelta es type-ahead. Con Ctrl, Alt o Meta es el atajo de otro, y el espacio ya
         // se usó arriba para abrir la fila.
@@ -456,8 +532,13 @@
     dropGroup = undefined;
     if (!profileId) return;
     // Mover un servidor reescribe el archivo de conexiones: si no se pudo, hay que decirlo, o la
-    // fila vuelve a su lugar sin explicación.
-    explorer.moveToGroup(profileId, group).catch((error) => (moveError = describeError(error)));
+    // fila vuelve a su lugar sin explicación. Con varios marcados se mueven todos, que es lo que se
+    // ve al arrastrar: la fila que se agarró es una del bloque resaltado.
+    const moved =
+      explorer.marked.length > 0
+        ? explorer.moveMarkedToGroup(group)
+        : explorer.moveToGroup(profileId, group);
+    moved.catch((error) => (moveError = describeError(error)));
   }
 
   /**
@@ -618,6 +699,31 @@
     {/if}
 
     <div class="relative" style="height: {offsets[rows.length]}px">
+      <!--
+        El rótulo anclado. Va detrás de las filas en el orden del marcado pero por encima en `z`, y
+        con fondo opaco: lo que pasa por abajo tiene que desaparecer debajo de él y no transparentar.
+        Un clic lleva a la fila de verdad, que es lo que uno quiere cuando se perdió y mira el rótulo.
+      -->
+      {#if sticky}
+        <button
+          class="absolute left-0 z-10 flex w-full items-center gap-1.5 bg-zinc-50 pr-2 text-left
+                 text-[11px] font-semibold tracking-wide uppercase muted dark:bg-zinc-900"
+          style="top: {scrollTop}px; height: {SECTION_HEIGHT}px; padding-left: {INDENT_BASE +
+            sticky.level * INDENT + 22}px"
+          title="Ir a {sticky.label}"
+          tabindex="-1"
+          onclick={() => {
+            const at = rows.findIndex((row) => row.key === sticky!.key);
+            if (at >= 0) goTo(at);
+          }}
+        >
+          <span class="min-w-0 truncate">{sticky.label}</span>
+          {#if sticky.detail}
+            <span class="seg-count ml-auto tabular-nums">{sticky.detail}</span>
+          {/if}
+        </button>
+      {/if}
+
       {#each visible as row, index (start + index)}
         {@const at = start + index}
         {@const isGroup = row.kind === "group"}
@@ -625,6 +731,7 @@
         {@const look = lookOf(row.node?.kind ?? null)}
         {@const section = isSection(row)}
         {@const isSelected = explorer.selected?.key === row.key}
+        {@const isMarked = explorer.isMarked(row)}
         {@const isDropTarget = dragging !== null && dropGroup === dropTargetOf(row)}
         {@const environment = environmentOf(row.profileId)}
         <!-- El teclado lo maneja el contenedor: las filas fuera de la ventana no están en el DOM. -->
@@ -632,7 +739,7 @@
         <div
           id="tree-{row.key}"
           class="group absolute left-0 flex w-full items-center gap-1.5 rounded-md pr-1 text-sm
-                 {isSelected
+                 {isSelected || isMarked
             ? 'bg-blue-50 text-blue-900 dark:bg-blue-950/60 dark:text-blue-100'
             : 'hover:bg-zinc-100 dark:hover:bg-zinc-800/70'}
                  {separated(at) ? 'border-t border-zinc-200/80 dark:border-zinc-800' : ''}
@@ -644,7 +751,7 @@
           tabindex="-1"
           aria-expanded={row.hasChildren ? row.expanded : undefined}
           aria-selected={isSelected}
-          onclick={() => activate(row)}
+          onclick={(event) => onRowClick(event, row)}
           oncontextmenu={(event) => openMenu(event, row)}
           ondblclick={() => {
             // Doble clic sobre un servidor apagado: lo que se quiere es entrar.
@@ -652,6 +759,9 @@
           }}
           draggable={isServer}
           ondragstart={(event) => {
+            // Arrastrar una fila que no está marcada arrastra solo esa: las marcas de antes no
+            // tienen por qué venirse con ella.
+            if (!explorer.isMarked(row)) explorer.clearMarks();
             dragging = row.profileId;
             event.dataTransfer?.setData("text/plain", row.label);
             if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
@@ -947,6 +1057,24 @@
     tabindex="-1"
     onclick={(event) => event.stopPropagation()}
   >
+    <!--
+      Con varios marcados, lo primero del menú es lo que se hace con todos: si no, el clic derecho
+      sobre un bloque resaltado actúa sobre uno solo y la marca no sirvió para nada. Conectar no
+      está: cada servidor puede pedir su contraseña, y encadenar diez diálogos no es una acción de
+      lote sino diez interrupciones.
+    -->
+    {#if menuIsServer && markedCount > 1}
+      <button class="row-menu" onclick={disconnectMarked}>
+        <span class="flex items-center gap-2">
+          <Icon name="unplug" size={13} /> Desconectar los {markedCount}
+        </span>
+      </button>
+      <p class="px-2 py-1 text-[11px] muted">
+        Arrastralos a una carpeta para moverlos todos juntos.
+      </p>
+      <div class="divider-t my-1"></div>
+    {/if}
+
     {#if explorer.needsConnection(menu.row)}
       <button class="row-menu" onclick={connect}>
         <span class="flex items-center gap-2"><Icon name="plug" size={13} /> Conectar</span>

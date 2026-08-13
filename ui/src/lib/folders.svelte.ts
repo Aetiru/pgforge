@@ -81,17 +81,49 @@ class Folders {
     save(EMPTY_KEY, this.empty);
   }
 
-  /** Sigue al renombrado de una carpeta, para no perder que estaba cerrada. */
+  /**
+   * Sigue al renombrado de una carpeta, para no perder que estaba cerrada o vacía. Arrastra a las
+   * carpetas de adentro con la misma regla que el almacén de perfiles (ver `renamedPath`).
+   */
   rename(from: string, to?: string) {
-    if (this.collapsed.includes(from)) {
-      this.setOpen(from, true);
-      if (to) this.setOpen(to, false);
-    }
-    if (this.empty.includes(from)) {
-      this.forget(from);
-      if (to) this.remember(to);
-    }
+    const move = (names: string[]) =>
+      names
+        .map((name) => renamedPath(name, from, to))
+        .filter((name): name is string => name !== null);
+
+    this.collapsed = move(this.collapsed);
+    save(COLLAPSED_KEY, this.collapsed);
+    this.empty = move(this.empty);
+    save(EMPTY_KEY, this.empty);
   }
+}
+
+/**
+ * Deja el nombre de una carpeta como lo va a guardar el núcleo: sin espacios en los bordes de cada
+ * tramo y sin tramos vacíos, para que `Clientes / ACME` y `Clientes/ACME` sean la misma y no dos
+ * parecidas. Es el espejo de `normalize_group` de Rust, acá para poder validar antes de guardar.
+ */
+export function normalizeGroup(value: string): string {
+  return value
+    .split("/")
+    .map((part) => part.trim())
+    .filter((part) => part !== "")
+    .join("/");
+}
+
+/**
+ * Cómo queda `name` cuando la carpeta `from` pasa a llamarse `to`, o se deshace si `to` no viene.
+ * `null` cuando deja de ser una carpeta —lo que estaba en la que se deshizo queda suelto—.
+ *
+ * Es la misma regla que aplica `ProfileStore::rename_group` del lado de Rust: renombrar arrastra a
+ * las carpetas de adentro, y deshacer las sube un escalón en vez de hacerlas desaparecer.
+ */
+export function renamedPath(name: string, from: string, to?: string): string | null {
+  if (name === from) return to ?? null;
+  if (!name.startsWith(`${from}/`)) return name;
+
+  const rest = name.slice(from.length + 1);
+  return to ? `${to}/${rest}` : rest;
 }
 
 export const folders = new Folders();
