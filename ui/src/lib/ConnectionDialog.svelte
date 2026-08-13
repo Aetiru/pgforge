@@ -357,14 +357,14 @@
       </label>
 
       <!--
-        La huella del certificado del servidor real no coincide con 127.0.0.1: por un túnel, «validar
-        cadena y nombre» valida solo la cadena, como «validar la cadena». Se avisa para no prometer de
-        más.
+        Por un túnel el nombre validado no es aquel al que conecta el cliente —un puerto local— sino
+        el del campo «Servidor». Se avisa porque de ahí sale el único error posible de esta
+        combinación: un certificado emitido para otro nombre, o para una IP sin SAN de IP.
       -->
       {#if form.sslMode === "verifyFull"}
         <p class="col-span-2 text-xs muted">
-          Por un túnel, «validar cadena y nombre del servidor» valida solo la cadena: la conexión
-          termina en un puerto local y el nombre nunca coincide.
+          Por un túnel, el nombre se valida contra «{form.host || "el servidor"}»: el certificado del
+          servidor tiene que estar emitido para ese nombre, no para el puerto local del túnel.
         </p>
       {/if}
 

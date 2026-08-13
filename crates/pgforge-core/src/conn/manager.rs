@@ -94,13 +94,13 @@ fn build_config(
 
 /// Destino efectivo de una conexión: el host y puerto a los que de verdad se conecta el cliente.
 ///
-/// Sin túnel coincide con el del perfil. Con túnel apunta al puerto local del forward y baja
-/// `verify_hostname`, porque la conexión termina en `127.0.0.1` y el nombre del certificado del
-/// servidor real nunca coincidiría con esa dirección.
+/// Sin túnel coincide con el del perfil. Con túnel apunta al puerto local del forward, y entonces
+/// `server_name` lleva el host del perfil: la conexión termina en `127.0.0.1`, pero el certificado
+/// lo presenta el servidor del otro lado del bastión y es su nombre el que TLS tiene que validar.
 struct Endpoint {
     host: String,
     port: u16,
-    verify_hostname: bool,
+    server_name: Option<String>,
 }
 
 impl Endpoint {
@@ -110,12 +110,12 @@ impl Endpoint {
             Some(forward) => Endpoint {
                 host: "127.0.0.1".to_owned(),
                 port: forward.local_port(),
-                verify_hostname: false,
+                server_name: Some(profile.host.clone()),
             },
             None => Endpoint {
                 host: profile.host.clone(),
                 port: profile.port,
-                verify_hostname: true,
+                server_name: None,
             },
         }
     }
@@ -140,7 +140,7 @@ fn build_pool(
         recycling_method: RecyclingMethod::Fast,
     };
 
-    let manager = match tls::connector(profile, endpoint.verify_hostname)? {
+    let manager = match tls::connector(profile, endpoint.server_name.as_deref())? {
         Some(connector) => Manager::from_config(cfg, connector, manager_config),
         None => Manager::from_config(cfg, NoTls, manager_config),
     };
@@ -379,7 +379,7 @@ impl ServerHandle {
             statement_timeout_ms,
         );
 
-        let session = match tls::connector(&self.profile, endpoint.verify_hostname)? {
+        let session = match tls::connector(&self.profile, endpoint.server_name.as_deref())? {
             Some(connector) => {
                 let (client, connection) = config.connect(connector).await?;
                 spawn_connection(client, connection)
@@ -400,7 +400,7 @@ impl ServerHandle {
     pub async fn cancel(&self, token: &CancelToken) -> Result<()> {
         // La cancelación abre una conexión nueva; a través de un túnel también viaja por el forward,
         // porque el token guarda la dirección local a la que conectó la sesión original.
-        match tls::connector(&self.profile, self.endpoint().verify_hostname)? {
+        match tls::connector(&self.profile, self.endpoint().server_name.as_deref())? {
             Some(connector) => token.cancel_query(connector).await?,
             None => token.cancel_query(NoTls).await?,
         }
