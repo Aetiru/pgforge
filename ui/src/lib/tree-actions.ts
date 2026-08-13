@@ -6,7 +6,7 @@
  * consulta cada fila tiene que ser una sola. Es pura, así que se prueba sin montar nada.
  */
 
-import type { ConnectionProfile, TreeNode } from "./ipc";
+import type { ConnectionProfile, FolderKind, NodeKind, TreeNode } from "./ipc";
 import type { Row } from "./explorer.svelte";
 
 /** Contra qué base abriría una consulta o una grilla lo que está seleccionado. */
@@ -46,6 +46,42 @@ export function dataTargetOf(node: TreeNode | null): number | null {
 export function erdTargetOf(node: TreeNode | null): { database: string; schema: string } | null {
   if (!node || node.kind !== "schema") return null;
   return { database: node.database, schema: node.label };
+}
+
+/**
+ * En qué carpeta del árbol vive cada tipo de objeto.
+ *
+ * Es lo que convierte una coincidencia de la búsqueda en un camino: sabiendo el tipo se baja
+ * directo al cajón que le toca en vez de abrir los ocho del esquema. `null` para lo que no cuelga
+ * de un esquema —una base, un rol— o para lo que la búsqueda no devuelve.
+ */
+const FOLDER_OF: Partial<Record<string, FolderKind>> = {
+  table: "tables",
+  partitionedTable: "tables",
+  view: "views",
+  materializedView: "materializedViews",
+  foreignTable: "foreignTables",
+  sequence: "sequences",
+  function: "functions",
+  procedure: "procedures",
+  type: "types",
+};
+
+export function folderForKind(kind: NodeKind): FolderKind | null {
+  return typeof kind === "string" ? (FOLDER_OF[kind] ?? null) : null;
+}
+
+/**
+ * La cadena de conexión del perfil, para pegarla en `psql` o en otra herramienta.
+ *
+ * **Nunca lleva la contraseña**: vive en el almacén del sistema operativo y sacarla de ahí para
+ * dejarla en el portapapeles es exactamente lo que ese almacén evita. El usuario va escapado porque
+ * un rol puede llamarse `admin@casa` y ahí la arroba parte la URL en dos.
+ */
+export function connectionUrl(profile: ConnectionProfile): string {
+  const user = encodeURIComponent(profile.user);
+  const database = encodeURIComponent(profile.database);
+  return `postgres://${user}@${profile.host}:${profile.port}/${database}`;
 }
 
 /** El nombre completo del objeto, tal como se escribe en una consulta. */

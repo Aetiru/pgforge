@@ -125,6 +125,21 @@ export interface TreeOptions {
   showSystemSchemas: boolean;
 }
 
+/**
+ * Una coincidencia de la búsqueda contra el servidor. Refleja `introspect::SearchHit`.
+ *
+ * Trae el esquema, el OID y el tipo porque con eso alcanza para abrir el camino hasta el objeto en
+ * el árbol: el tipo dice en qué carpeta vive.
+ */
+export interface SearchHit {
+  kind: NodeKind;
+  database: string;
+  schema: string;
+  label: string;
+  detail?: string;
+  oid: number;
+}
+
 export interface Ddl {
   sql: string;
   source: "catalog" | "pgDump";
@@ -229,6 +244,18 @@ export const connectedServers = () => invoke<string[]>("connected_servers");
 
 export const treeChildren = (id: string, parent: TreeNode | null, options: TreeOptions) =>
   invoke<TreeNode[]>("tree_children", { id, parent, options });
+
+/**
+ * Busca objetos por nombre en una base, contra el catálogo del servidor. Es lo que el filtro del
+ * árbol no puede hacer: ese solo alcanza lo que ya se trajo.
+ */
+export const treeSearch = (
+  id: string,
+  database: string,
+  pattern: string,
+  options: TreeOptions,
+  limit?: number,
+) => invoke<SearchHit[]>("tree_search", { id, database, pattern, options, limit: limit ?? null });
 
 export const objectDdl = (id: string, node: TreeNode) =>
   invoke<Ddl>("object_ddl", { id, node });

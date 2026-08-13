@@ -147,6 +147,55 @@
     if (profile) connect(profile);
   }
 
+  /**
+   * Contra qué base buscaría en el servidor: la del objeto elegido, o la del perfil si lo elegido
+   * es un servidor conectado. Es la misma regla con la que se abre una consulta (`tree-actions`),
+   * y por eso sale de la misma función: dos reglas parecidas para «dónde estoy parado» terminan
+   * distinto el día que alguien toca una.
+   */
+  const searchTarget = $derived(
+    explorer.selected
+      ? queryTargetOf(explorer.selected, profileOf(explorer.selected.profileId))
+      : null,
+  );
+
+  function searchServer() {
+    const row = explorer.selected;
+    if (!row || !searchTarget || explorer.search.trim() === "") return;
+    explorer.searchServer(row.profileId, searchTarget.database, explorer.search);
+  }
+
+  /** Limpiar la búsqueda también cierra el resultado del servidor: es la misma caja. */
+  function clearSearch() {
+    explorer.search = "";
+    explorer.clearHits();
+  }
+
+  function editProfile(profileId: string) {
+    const profile = profileOf(profileId);
+    if (profile) dialog = { profile };
+  }
+
+  /**
+   * Abre el diálogo con una copia del servidor. La copia lleva identificador propio, así que
+   * guardarla crea un perfil nuevo en vez de pisar el original.
+   *
+   * La contraseña no se copia: está en el almacén del sistema operativo bajo el identificador
+   * viejo, y ese es justamente el punto de tenerla ahí. La copia la vuelve a pedir al conectar.
+   */
+  function duplicateProfile(profileId: string) {
+    const profile = profileOf(profileId);
+    if (!profile) return;
+    dialog = {
+      profile: {
+        ...$state.snapshot(profile),
+        id: crypto.randomUUID(),
+        name: `${profile.name} (copia)`,
+        savePassword: false,
+      },
+    };
+  }
+
   async function remove(profile: ConnectionProfile) {
     confirmDelete = null;
     try {
@@ -396,22 +445,36 @@
               <input
                 class="field w-full py-1 pr-7 pl-7"
                 placeholder="Buscar"
-                title="Busca entre los objetos ya cargados en el árbol"
+                title="Filtra lo que el árbol ya trajo. Enter busca en el servidor."
                 bind:value={explorer.search}
                 onkeydown={(event) => {
-                  if (event.key === "Escape") explorer.search = "";
+                  if (event.key === "Escape") clearSearch();
+                  // Enter es lo que uno aprieta cuando el filtro no encontró lo que buscaba, así
+                  // que ahí es donde tiene que estar la búsqueda que sí alcanza todo el catálogo.
+                  if (event.key === "Enter") searchServer();
                 }}
               />
               {#if explorer.search}
                 <button
                   class="btn btn-ghost btn-icon absolute top-1/2 right-0.5 size-6 -translate-y-1/2"
                   aria-label="Limpiar la búsqueda"
-                  onclick={() => (explorer.search = "")}
+                  onclick={clearSearch}
                 >
                   <Icon name="close" size={11} />
                 </button>
               {/if}
             </div>
+            <button
+              class="btn btn-icon"
+              title={searchTarget
+                ? `Buscar «${explorer.search}» en el catálogo de ${searchTarget.database}`
+                : "Elegí una base o un objeto del árbol para buscar en el servidor"}
+              aria-label="Buscar en el servidor"
+              disabled={!searchTarget || explorer.search.trim() === "" || explorer.searching}
+              onclick={searchServer}
+            >
+              <Icon name="compass" />
+            </button>
             <button
               class="btn btn-icon"
               title="Contraer todo"
@@ -442,6 +505,9 @@
             <TreePanel
               onconnect={connectById}
               onnew={() => (dialog = { profile: null })}
+              onedit={editProfile}
+              onduplicate={duplicateProfile}
+              ondelete={(profileId) => (confirmDelete = profileOf(profileId))}
               ongroup={(name) => (groupDialog = name)}
               onquery={openQuery}
               ondata={openData}
@@ -588,10 +654,7 @@
           {:else}
             <DetailPanel
               onconnect={connectById}
-              onedit={(profileId) => {
-                const profile = profileOf(profileId);
-                if (profile) dialog = { profile };
-              }}
+              onedit={editProfile}
               ondelete={(profileId) => (confirmDelete = profileOf(profileId))}
               ongroup={(name) => (groupDialog = name)}
               onquery={openQuery}

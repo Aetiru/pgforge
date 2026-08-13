@@ -1,16 +1,27 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
   import { environmentOf, isReadOnly } from "./access.svelte";
-  import { envLook, GROUP_LOOK, lookOf, READ_ONLY_LOOK, tagLook } from "./badges";
+  import { envLook, lookOf, READ_ONLY_LOOK, tagLook } from "./badges";
   import { explorer, visibleRows, type Row } from "./explorer.svelte";
   import { describeError, folderOf } from "./ipc";
-  import { dataTargetOf, erdTargetOf, qualifiedNameOf, queryTargetOf } from "./tree-actions";
+  import {
+    connectionUrl,
+    dataTargetOf,
+    erdTargetOf,
+    qualifiedNameOf,
+    queryTargetOf,
+  } from "./tree-actions";
+  import { guideAt, guideSpans } from "./tree-guides";
 
   let {
     onconnect,
     onnew,
+    onedit,
+    onduplicate,
+    ondelete,
     ongroup,
     onquery,
     ondata,
@@ -19,6 +30,12 @@
     onconnect: (profileId: string) => void;
     /** Abre el diálogo de servidor nuevo desde el estado vacío. */
     onnew?: () => void;
+    /** Abre el diálogo del servidor para editarlo. */
+    onedit?: (profileId: string) => void;
+    /** Abre el diálogo con una copia del servidor, para guardarla como uno nuevo. */
+    onduplicate?: (profileId: string) => void;
+    /** Pide confirmación y borra el perfil. */
+    ondelete?: (profileId: string) => void;
     /** Abre el diálogo para renombrar o deshacer una carpeta de conexiones. */
     ongroup?: (name: string) => void;
     onquery: (profileId: string, database: string, title: string) => void;
@@ -27,9 +44,11 @@
   } = $props();
 
   /**
-   * Un servidor ocupa dos líneas —nombre arriba, a dónde apunta abajo— y todo lo demás una sola. Es
-   * la única fila que se lee eligiendo entre veinte parecidas; las tablas de un esquema se recorren
-   * y ahí lo que sirve es que entren muchas.
+   * El árbol tiene tres registros y no uno con quince variantes: una **carpeta** —de conexiones o de
+   * catálogo— es un encabezado de sección, un **servidor** una ficha de dos líneas —nombre arriba, a
+   * dónde apunta abajo— y todo lo demás una fila densa. El servidor es la única que se lee eligiendo
+   * entre veinte parecidas; las tablas de un esquema se recorren, y ahí lo que sirve es que entren
+   * muchas.
    *
    * Las alturas dejan de ser iguales, así que la ventana visible ya no sale de una división: se
    * acumulan los desplazamientos una vez por lista y se busca en ellos por bisección. Un esquema con
@@ -37,9 +56,23 @@
    */
   const ROW_HEIGHT = 28;
   const SERVER_HEIGHT = 42;
+  const SECTION_HEIGHT = 24;
   const OVERSCAN = 8;
 
-  const heightOf = (row: Row) => (row.kind === "server" ? SERVER_HEIGHT : ROW_HEIGHT);
+  /** Sangría por nivel y desde dónde arranca la primera, las dos en píxeles. */
+  const INDENT = 11;
+  const INDENT_BASE = 6;
+
+  /**
+   * Si la fila agrupa en vez de nombrar algo: la carpeta de conexiones y las del catálogo («Tablas»,
+   * «Índices»). Se dibujan como rótulo —versalita, sin ícono, con el contador a la derecha—, así que
+   * el ojo separa contenedor de objeto por la forma y no por el color de un ícono de carpeta.
+   */
+  const isSection = (row: Row) =>
+    row.kind === "group" || (row.node !== null && folderOf(row.node.kind) !== null);
+
+  const heightOf = (row: Row) =>
+    row.kind === "server" ? SERVER_HEIGHT : isSection(row) ? SECTION_HEIGHT : ROW_HEIGHT;
 
   let scrollTop = $state(0);
   let viewportHeight = $state(600);
@@ -88,6 +121,17 @@
 
   const needle = $derived(explorer.search.trim().toLowerCase());
 
+  /**
+   * Las guías de sangría que se dibujan: solo la cadena de la fila elegida (ver `tree-guides`). Se
+   * recalculan al cambiar la selección o la lista, no una vez por fila dibujada.
+   */
+  const guides = $derived(
+    guideSpans(
+      rows.map((row) => row.level),
+      rows.findIndex((row) => row.key === explorer.selected?.key),
+    ),
+  );
+
   function activate(row: Row) {
     explorer.select(row);
     // Un contenedor se abre con el mismo clic que lo selecciona: pedir doble clic para algo tan
@@ -105,6 +149,13 @@
    */
   let menu = $state<{ x: number; y: number; row: Row } | null>(null);
 
+  /**
+   * Cuánto alto reservarle al menú para que no se abra pasando el borde de abajo. Es el caso más
+   * largo —un servidor conectado, con todo lo del perfil— y no el promedio: quedarse corto acá se
+   * paga con un menú recortado justo en «Eliminar».
+   */
+  const MENU_HEIGHT = 340;
+
   const menuProfile = $derived(
     menu ? explorer.profiles.find((profile) => profile.id === menu?.row.profileId) : undefined,
   );
@@ -112,6 +163,7 @@
   const menuData = $derived(menu ? dataTargetOf(menu.row.node) : null);
   const menuErd = $derived(menu ? erdTargetOf(menu.row.node) : null);
   const menuName = $derived(menu ? qualifiedNameOf(menu.row.node) : null);
+  const menuIsServer = $derived(menu?.row.kind === "server");
 
   function openMenu(event: MouseEvent, row: Row) {
     event.preventDefault();
@@ -157,6 +209,38 @@
     if (row) onconnect(row.profileId);
   }
 
+  function disconnect() {
+    const profileId = menu?.row.profileId;
+    menu = null;
+    if (profileId) {
+      explorer.disconnect(profileId).catch((error) => (moveError = describeError(error)));
+    }
+  }
+
+  function editServer() {
+    const profileId = menu?.row.profileId;
+    menu = null;
+    if (profileId) onedit?.(profileId);
+  }
+
+  function duplicateServer() {
+    const profileId = menu?.row.profileId;
+    menu = null;
+    if (profileId) onduplicate?.(profileId);
+  }
+
+  function deleteServer() {
+    const profileId = menu?.row.profileId;
+    menu = null;
+    if (profileId) ondelete?.(profileId);
+  }
+
+  async function copyUrl() {
+    const profile = menuProfile;
+    menu = null;
+    if (profile) await navigator.clipboard.writeText(connectionUrl(profile)).catch(() => {});
+  }
+
   function reload() {
     const row = menu?.row;
     menu = null;
@@ -179,6 +263,25 @@
       viewport.scrollTop = top + height - viewportHeight;
     }
   }
+
+  /**
+   * La selección también llega de afuera del árbol: «Revelar en el árbol» desde una pestaña de
+   * datos, o el servidor que se acaba de conectar. Sin esto la fila queda elegida en algún punto
+   * del desplazamiento que nadie está mirando.
+   *
+   * Lo que se lee adentro va en `untrack` a propósito: si el efecto dependiera del desplazamiento,
+   * alejarse de la fila elegida con la rueda haría que el árbol volviera solo, peleando con el
+   * usuario. Depende únicamente de qué fila está elegida.
+   */
+  $effect(() => {
+    const key = explorer.selected?.key;
+    if (!key) return;
+
+    untrack(() => {
+      const index = rows.findIndex((row) => row.key === key);
+      if (index >= 0) reveal(index);
+    });
+  });
 
   function move(delta: number) {
     if (rows.length === 0) return;
@@ -329,7 +432,54 @@
     <Alert tone="bad" onclose={() => (moveError = null)}>{moveError}</Alert>
   {/if}
 
-  {#if explorer.roots.length === 0}
+  {#if explorer.hits !== null}
+    <!--
+      El resultado de buscar contra el servidor reemplaza al árbol mientras dura. No se mezcla con
+      las filas: lo que se encontró puede estar en esquemas que el árbol nunca abrió, y meterlo
+      adentro obligaría a inventar ramas para poder colgarlo.
+    -->
+    <div class="flex items-center gap-2 px-3 py-1.5 text-[11px] muted">
+      {#if explorer.searching}
+        <span class="spinner"></span>
+        <span>Buscando en el servidor…</span>
+      {:else}
+        <span>
+          {explorer.hits.length}
+          {explorer.hits.length === 1 ? "coincidencia" : "coincidencias"} en el servidor
+        </span>
+      {/if}
+      <button class="btn btn-ghost btn-sm ml-auto" onclick={() => explorer.clearHits()}>
+        Volver al árbol
+      </button>
+    </div>
+
+    {#if explorer.searchError}
+      <Alert tone="bad">{explorer.searchError}</Alert>
+    {:else if explorer.hits.length === 0 && !explorer.searching}
+      <Empty
+        icon="search"
+        title="Sin coincidencias en el servidor"
+        hint="No hay ninguna tabla, vista, secuencia, función ni tipo cuyo nombre contenga «{explorer.search}» en esa base."
+      />
+    {:else}
+      {#each explorer.hits as hit (`${hit.schema}.${hit.oid}`)}
+        {@const look = lookOf(hit.kind)}
+        <button
+          class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 pl-3 text-left text-sm
+                 hover:bg-zinc-100 dark:hover:bg-zinc-800/70"
+          title="Revelar en el árbol"
+          onclick={() => explorer.revealHit(hit)}
+        >
+          <Icon name={look.icon} class={look.tone} />
+          <span class="min-w-0 truncate">{hit.label}</span>
+          <span class="min-w-0 shrink-[100] truncate text-xs muted">{hit.schema}</span>
+          {#if hit.detail}
+            <span class="ml-auto shrink-0 pl-1 text-xs muted">{hit.detail}</span>
+          {/if}
+        </button>
+      {/each}
+    {/if}
+  {:else if explorer.roots.length === 0}
     <Empty
       icon="server"
       title="Todavía no hay servidores"
@@ -378,8 +528,8 @@
         {@const at = start + index}
         {@const isGroup = row.kind === "group"}
         {@const isServer = row.kind === "server"}
-        {@const look = isGroup ? GROUP_LOOK : lookOf(row.node?.kind ?? null)}
-        {@const isFolder = row.node !== null && folderOf(row.node.kind) !== null}
+        {@const look = lookOf(row.node?.kind ?? null)}
+        {@const section = isSection(row)}
         {@const isSelected = explorer.selected?.key === row.key}
         {@const isDropTarget = dragging !== null && dropGroup === dropTargetOf(row)}
         {@const environment = environmentOf(row.profileId)}
@@ -394,8 +544,8 @@
                  {separated(at) ? 'border-t border-zinc-200/80 dark:border-zinc-800' : ''}
                  {isDropTarget && dropGroup !== null ? 'bg-blue-100/70 dark:bg-blue-900/40' : ''}
                  {dragging === row.profileId ? 'opacity-40' : ''}"
-          style="top: {offsets[at]}px; height: {heightOf(row)}px; padding-left: {4 +
-            row.level * 13}px"
+          style="top: {offsets[at]}px; height: {heightOf(row)}px; padding-left: {INDENT_BASE +
+            row.level * INDENT}px"
           role="treeitem"
           tabindex="-1"
           aria-expanded={row.hasChildren ? row.expanded : undefined}
@@ -429,14 +579,17 @@
           }}
         >
           <!--
-            Guías de indentación: en un árbol de cinco niveles, saber de qué esquema cuelga una
-            tabla no debería requerir contar sangrías con el dedo.
+            Guías de indentación: saber de qué esquema cuelga una tabla no debería requerir contar
+            sangrías con el dedo. Se dibuja solo la cadena de la fila elegida —dibujarlas todas deja
+            cinco rayas fijas por fila, que es ruido permanente por una pregunta ocasional—.
           -->
           {#each { length: row.level }, depth (depth)}
-            <span
-              class="pointer-events-none absolute inset-y-0 w-px bg-zinc-200 dark:bg-zinc-800"
-              style="left: {10 + depth * 13}px"
-            ></span>
+            {#if guideAt(guides, at, depth)}
+              <span
+                class="pointer-events-none absolute inset-y-0 w-px bg-zinc-300 dark:bg-zinc-700"
+                style="left: {INDENT_BASE + depth * INDENT + 8}px"
+              ></span>
+            {/if}
           {/each}
 
           <!--
@@ -444,12 +597,14 @@
             arranca en el servidor y baja por todo lo que cuelga de él, así que no hay que rastrear
             la sangría hasta la raíz para saber que se está editando producción. Sin entorno marcado
             queda para la fila elegida, que necesita el mismo píxel.
+
+            Mismo ancho en el servidor que en lo que cuelga de él: es una sola columna que baja, y
+            un escalón en la raíz la partía en dos.
           -->
           {#if environment}
             {@const badge = envLook(environment)}
             <span
-              class="pointer-events-none absolute inset-y-0 left-0 rounded-r {badge.spine}
-                     {isServer ? 'w-[3px]' : 'w-0.5'}"
+              class="pointer-events-none absolute inset-y-0 left-0 w-0.5 rounded-r {badge.spine}"
             ></span>
           {:else if isSelected}
             <span
@@ -480,14 +635,26 @@
             {/if}
           </button>
 
-          {#if isServer}
-            <span
-              class="dot {row.connected ? 'dot-on' : 'dot-off'}"
-              title={row.connected ? "Conectado" : "Sin conectar"}
-            ></span>
-          {/if}
+          <!--
+            Una sección no lleva ícono: la carpeta gris del catálogo y la de conexiones eran dos
+            formas iguales para dos cosas distintas, y el ámbar de esta última chocaba con el de las
+            secuencias y con el del resaltado de la búsqueda. Ahora agrupar se nota por el rótulo.
 
-          <Icon name={look.icon} class={look.tone} />
+            El punto de conexión va encima del ícono del servidor y no antes: como columna propia
+            corría los íconos de las raíces media pulgada respecto de todo el resto del árbol.
+          -->
+          {#if !section}
+            <span class="relative grid shrink-0 place-items-center">
+              <Icon name={look.icon} class={look.tone} />
+              {#if isServer}
+                <span
+                  class="dot absolute -right-1 -bottom-0.5 ring-2 ring-zinc-50 dark:ring-zinc-900
+                         {row.connected ? 'dot-on' : 'dot-off'}"
+                  title={row.connected ? "Conectado" : "Sin conectar"}
+                ></span>
+              {/if}
+            </span>
+          {/if}
 
           <!--
             El nombre y lo que lo acompaña van en columna: en un servidor son dos líneas —nombre
@@ -498,7 +665,9 @@
           <span class="flex min-w-0 flex-1 flex-col justify-center gap-px">
             <span class="flex min-w-0 items-center gap-1.5">
               <span
-                class="min-w-0 truncate {isServer || isGroup ? 'font-medium' : ''}"
+                class="min-w-0 truncate {isServer ? 'font-medium' : ''}
+                       {section ? 'text-[11px] font-semibold tracking-wide uppercase' : ''}
+                       {section && !isSelected ? 'muted' : ''}"
                 title={row.comment ?? row.label}
               >
                 {#each pieces(row.label) as piece, position (position)}
@@ -527,12 +696,6 @@
                 <span class="tag {badge.tone} shrink-0" title={badge.title}>{badge.label}</span>
               {/if}
 
-              {#if !isServer && row.detail && !isFolder}
-                <span class="min-w-0 shrink-[100] truncate text-xs muted" title={row.detail}>
-                  {row.detail}
-                </span>
-              {/if}
-
               {#if !isServer && row.error}
                 <span
                   class="min-w-0 shrink-[100] truncate text-xs text-rose-600 dark:text-rose-400"
@@ -551,19 +714,13 @@
                   <span class="min-w-0 shrink truncate" title={row.detail}>{row.detail}</span>
                 {/if}
 
+                <!-- Solo lectura, sin la palabra: el candado dice lo mismo y el texto se comía el
+                     host. El entorno tampoco se repite acá —ya lo dice la línea del borde, y
+                     producción además la pastilla de arriba—. -->
                 {#if isReadOnly(row.profileId)}
-                  <span
-                    class="flex shrink-0 items-center gap-0.5"
-                    title={READ_ONLY_LOOK.title}
-                  >
+                  <span class="shrink-0" title={READ_ONLY_LOOK.title}>
                     <Icon name={READ_ONLY_LOOK.icon} size={10} />
-                    {READ_ONLY_LOOK.label}
                   </span>
-                {/if}
-
-                {#if environment && environment !== "prod"}
-                  {@const badge = envLook(environment)}
-                  <span class="shrink-0" title={badge.title}>{badge.label}</span>
                 {/if}
 
                 {#if row.error}
@@ -611,12 +768,6 @@
               </button>
             {/if}
 
-            <!-- El contador de una carpeta va al final y alineado: leerlo en columna es lo que
-                 permite comparar de un vistazo qué esquema tiene qué. -->
-            {#if isFolder && row.detail}
-              <span class="seg-count tabular-nums">{row.detail}</span>
-            {/if}
-
             <!-- «Conectar» era una palabra fija en cada servidor apagado: con veinte, era una
                  columna de texto repetido comiéndose el nombre. Ahora es un ícono que aparece al
                  pasar por encima o al elegir la fila —doble clic y Enter siguen conectando—. -->
@@ -637,6 +788,18 @@
                 <Icon name="plug" size={12} />
               </button>
             {/if}
+
+            <!--
+              Lo que describe a la fila va al final, en columna: el tipo de una columna, el tamaño
+              de una tabla y el contador de una sección se comparan de un vistazo cuando están
+              alineados, y pegados al nombre lo empujaban a truncarse. El contador de una sección
+              lleva pastilla; el resto es texto, que se achica primero.
+            -->
+            {#if row.detail && section}
+              <span class="seg-count tabular-nums">{row.detail}</span>
+            {:else if row.detail && !isServer}
+              <span class="max-w-28 truncate text-xs muted" title={row.detail}>{row.detail}</span>
+            {/if}
           </span>
         </div>
       {/each}
@@ -653,8 +816,8 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="card fixed z-40 min-w-52 p-1 text-sm shadow-lg"
-    style="left: {Math.min(menu.x, window.innerWidth - 230)}px;
-           top: {Math.min(menu.y, window.innerHeight - 220)}px"
+    style="left: {Math.min(menu.x, window.innerWidth - 250)}px;
+           top: {Math.min(menu.y, window.innerHeight - MENU_HEIGHT)}px"
     role="menu"
     tabindex="-1"
     onclick={(event) => event.stopPropagation()}
@@ -662,6 +825,12 @@
     {#if explorer.needsConnection(menu.row)}
       <button class="row-menu" onclick={connect}>
         <span class="flex items-center gap-2"><Icon name="plug" size={13} /> Conectar</span>
+      </button>
+    {:else if menuIsServer}
+      <button class="row-menu" onclick={disconnect}>
+        <span class="flex items-center gap-2">
+          <Icon name="unplug" size={13} /> Desconectar
+        </span>
       </button>
     {/if}
 
@@ -692,10 +861,47 @@
       </button>
     {/if}
 
+    {#if menuIsServer}
+      <button class="row-menu" onclick={copyUrl}>
+        <span class="flex items-center gap-2">
+          <Icon name="copy" size={13} /> Copiar la cadena de conexión
+        </span>
+      </button>
+    {/if}
+
     {#if menu.row.hasChildren && !explorer.needsConnection(menu.row)}
       <button class="row-menu" onclick={reload}>
         <span class="flex items-center gap-2"><Icon name="refresh" size={13} /> Refrescar</span>
       </button>
+    {/if}
+
+    <!--
+      Lo que se le hace al perfil, separado de lo que se le hace al servidor: editar, duplicar y
+      eliminar no tocan el servidor de PostgreSQL, tocan lo que esta aplicación tiene guardado. Sin
+      esto había que ir al panel de detalle para cualquiera de las tres.
+    -->
+    {#if menuIsServer && (onedit || onduplicate || ondelete)}
+      <div class="divider-t my-1"></div>
+
+      {#if onedit}
+        <button class="row-menu" onclick={editServer}>
+          <span class="flex items-center gap-2"><Icon name="edit" size={13} /> Editar</span>
+        </button>
+      {/if}
+
+      {#if onduplicate}
+        <button class="row-menu" onclick={duplicateServer}>
+          <span class="flex items-center gap-2">
+            <Icon name="copy" size={13} /> Duplicar
+          </span>
+        </button>
+      {/if}
+
+      {#if ondelete}
+        <button class="row-menu text-rose-600 dark:text-rose-400" onclick={deleteServer}>
+          <span class="flex items-center gap-2"><Icon name="trash" size={13} /> Eliminar</span>
+        </button>
+      {/if}
     {/if}
   </div>
 {/if}

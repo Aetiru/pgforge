@@ -2,15 +2,20 @@ import {
   connect as ipcConnect,
   disconnect as ipcDisconnect,
   describeError,
+  folderOf,
   listProfiles,
   renameGroup as ipcRenameGroup,
   saveProfile,
   treeChildren,
+  treeSearch,
   type ConnectionProfile,
+  type FolderKind,
+  type SearchHit,
   type ServerCaps,
   type TreeNode,
   type TreeOptions,
 } from "./ipc";
+import { folderForKind } from "./tree-actions";
 
 /**
  * Qué representa una fila del árbol.
@@ -46,6 +51,14 @@ export interface Row {
   connected: boolean;
 }
 
+/**
+ * La segunda línea de un servidor. Lleva el usuario y no solo el host: dos perfiles contra el mismo
+ * servidor con roles distintos —uno de solo lectura, otro de mantenimiento— son idénticos sin él.
+ */
+function serverDetail(profile: ConnectionProfile): string {
+  return `${profile.user}@${profile.host}:${profile.port}`;
+}
+
 function serverRow(profile: ConnectionProfile, level: number): Row {
   return {
     kind: "server",
@@ -55,7 +68,7 @@ function serverRow(profile: ConnectionProfile, level: number): Row {
     node: null,
     level,
     label: profile.name,
-    detail: `${profile.host}:${profile.port}`,
+    detail: serverDetail(profile),
     hasChildren: true,
     expanded: false,
     loading: false,
@@ -113,6 +126,9 @@ function childRow(parent: Row, node: TreeNode): Row {
 
 const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" });
 
+/** Los cajones donde puede estar una relación, en el orden en que conviene mirarlos. */
+const RELATION_FOLDERS: FolderKind[] = ["tables", "views", "materializedViews", "foreignTables"];
+
 class Explorer {
   profiles = $state<ConnectionProfile[]>([]);
   caps = $state<Record<string, ServerCaps>>({});
@@ -126,6 +142,16 @@ class Explorer {
    * conexiones guardadas, las tres que están en uso quedan sepultadas entre las diecisiete que no.
    */
   onlyConnected = $state(false);
+
+  /**
+   * El resultado de la última búsqueda contra el servidor, que reemplaza al árbol mientras está.
+   * `null` = no se buscó nada y se está viendo el árbol; una lista vacía = se buscó y no hubo nada.
+   */
+  hits = $state.raw<SearchHit[] | null>(null);
+  searching = $state(false);
+  searchError = $state<string | null>(null);
+  /** Contra qué servidor se buscó, para poder revelar lo que se elija del resultado. */
+  private hitProfile: string | null = null;
 
   /**
    * Carpetas creadas en la interfaz que todavía no tienen ningún servidor. Viven solo acá, en
@@ -187,7 +213,7 @@ class Explorer {
       const existing = previous.get(profile.id);
       if (!existing) return serverRow(profile, level);
       existing.label = profile.name;
-      existing.detail = `${profile.host}:${profile.port}`;
+      existing.detail = serverDetail(profile);
       existing.group = profile.group;
       existing.level = level;
       return existing;
@@ -224,10 +250,14 @@ class Explorer {
     // Las carpetas van arriba y los servidores sueltos abajo, como en cualquier explorador de
     // archivos. Una carpeta nueva arranca abierta: se acaba de crear para poner algo adentro. Las
     // pendientes se intercalan por nombre con las que tienen servidores, y salen vacías.
+    //
+    // Un servidor de carpeta se queda en el nivel 0, igual que uno suelto: la carpeta se dibuja como
+    // encabezado de sección y ya agrupa a la vista, así que sangrar además cobra dos veces el mismo
+    // ancho —y el ancho es lo que le falta a los nombres del final del árbol—.
     const groupNames = [...grouped.keys(), ...this.pendingGroups].sort(byName);
     this.roots = [
       ...groupNames.map((name) =>
-        groupOf(name, (grouped.get(name) ?? []).map((profile) => rowOf(profile, 1))),
+        groupOf(name, (grouped.get(name) ?? []).map((profile) => rowOf(profile, 0))),
       ),
       ...loose.map((profile) => rowOf(profile, 0)),
     ];
@@ -347,6 +377,210 @@ class Explorer {
     if (row.expanded) {
       await this.loadChildren(row);
     }
+  }
+
+  /**
+   * Relee un nodo y todo lo que tenga abierto debajo, dejando el árbol como estaba.
+   *
+   * `reload` es «traeme esto de nuevo» y por eso descarta lo de adentro. Después de un DDL hace
+   * falta lo contrario: el usuario está mirando una lista de tablas y lo que espera es ver aparecer
+   * la que acaba de crear, no que se le cierre el camino que abrió. Se releen solo las ramas
+   * abiertas, así que cuesta una consulta por nodo a la vista y ninguna por lo que está cerrado.
+   */
+  private async refreshOpen(row: Row) {
+    // Nada cargado: se va a leer solo cuando se lo abra, y ahí ya va a venir al día.
+    if (row.children === null) return;
+
+    const open = new Map(
+      row.children.filter((child) => child.expanded).map((child) => [child.key, child]),
+    );
+    await this.loadChildren(row);
+
+    for (const child of row.children ?? []) {
+      const previous = open.get(child.key);
+      if (!previous) continue;
+
+      child.expanded = true;
+      // Lo que tenía cargado el nodo viejo se le presta al nuevo solo para que `refreshOpen` sepa
+      // que hay algo que releer; la llamada de abajo lo reemplaza por lo que diga el servidor.
+      child.children = previous.children;
+      await this.refreshOpen(child);
+    }
+
+    // La selección apunta a una fila que se acaba de reemplazar: sin volver a apuntarla, el panel
+    // de detalle sigue mostrando el objeto viejo.
+    const selected = this.selected;
+    if (selected) {
+      const fresh = row.children?.find((child) => child.key === selected.key);
+      if (fresh) this.selected = fresh;
+    }
+  }
+
+  /**
+   * Pone al día lo que esté abierto de un servidor. Lo llama la pestaña de consulta después de un
+   * DDL: el editor y el árbol miran el mismo servidor por conexiones distintas, y hasta ahora una
+   * tabla borrada desde el editor seguía en el árbol hasta refrescar a mano.
+   *
+   * Se refresca el servidor entero y no la base donde se corrió: `CREATE ROLE` y `CREATE DATABASE`
+   * no cuelgan de ninguna base, y acertar el nodo exacto por el texto del SQL es justo lo que no se
+   * puede hacer bien.
+   */
+  async refreshServer(profileId: string) {
+    const server = this.rowFor(profileId);
+    if (!server?.connected || !server.expanded) return;
+    await this.refreshOpen(server);
+  }
+
+  /**
+   * Busca objetos por nombre contra el catálogo del servidor.
+   *
+   * El filtro de la barra recorre lo que ya se trajo, que es justo lo que uno ya había abierto y no
+   * necesita buscar. Esto va al servidor y trae también lo que el árbol nunca abrió.
+   */
+  async searchServer(profileId: string, database: string, pattern: string) {
+    this.hits = null;
+    this.searchError = null;
+    if (pattern.trim() === "") return;
+
+    this.searching = true;
+    this.hitProfile = profileId;
+    try {
+      this.hits = await treeSearch(profileId, database, pattern, this.options);
+    } catch (error) {
+      this.searchError = describeError(error);
+      this.hits = [];
+    } finally {
+      this.searching = false;
+    }
+  }
+
+  /** Vuelve del resultado de la búsqueda al árbol. */
+  clearHits() {
+    this.hits = null;
+    this.searchError = null;
+    this.hitProfile = null;
+  }
+
+  /**
+   * Abre el camino hasta una coincidencia y cierra el resultado: elegir uno es haber terminado de
+   * buscar. Si el objeto ya no está —lo borró otro entre la búsqueda y el clic—, el árbol queda
+   * parado en su esquema, que sigue siendo un lugar razonable.
+   */
+  async revealHit(hit: SearchHit): Promise<Row | null> {
+    const profileId = this.hitProfile;
+    if (!profileId) return null;
+
+    const folder = folderForKind(hit.kind);
+    if (!folder) return null;
+
+    const row = await this.revealObject(profileId, hit.database, hit.schema, hit.oid, folder);
+    this.clearHits();
+    return row;
+  }
+
+  /** Baja un escalón: deja `row` leído y abierto, y devuelve el hijo que se buscaba. */
+  private async descend(row: Row, match: (node: TreeNode) => boolean): Promise<Row | null> {
+    if (row.children === null) await this.loadChildren(row);
+    row.expanded = true;
+    return row.children?.find((child) => child.node !== null && match(child.node)) ?? null;
+  }
+
+  /** Abre el camino hasta una base y la deja elegida. `null` si el servidor no está conectado. */
+  async revealDatabase(profileId: string, database: string): Promise<Row | null> {
+    const server = this.rowFor(profileId);
+    if (!server?.connected) return null;
+
+    const row = await this.descend(
+      server,
+      (node) => node.kind === "database" && node.label === database,
+    );
+    if (row) this.selected = row;
+    return row;
+  }
+
+  /**
+   * Abre el camino hasta una relación y la deja elegida.
+   *
+   * Los cajones de relaciones se prueban en orden en vez de ir directo al que corresponde: lo único
+   * que lleva encima una pestaña de datos es el OID, no de qué tipo es el objeto. Abrir los cuatro
+   * de una serían cuatro consultas para encontrar algo que casi siempre está en «Tablas»; el que no
+   * tenía nada se vuelve a cerrar, para no dejar el esquema entero desplegado por una búsqueda.
+   */
+  async revealRelation(
+    profileId: string,
+    database: string,
+    schema: string,
+    oid: number,
+  ): Promise<Row | null> {
+    const schemaRow = await this.revealSchema(profileId, database, schema);
+    if (!schemaRow) return null;
+
+    for (const kind of RELATION_FOLDERS) {
+      const found = await this.openFolder(schemaRow, kind, oid);
+      if (found) return found;
+    }
+
+    // Se llegó hasta el esquema pero el objeto no está: pudo borrarlo otro, o quedar escondido por
+    // las opciones del árbol. Dejarlo elegido es mejor que no mover nada y parecer que falló.
+    this.selected = schemaRow;
+    return null;
+  }
+
+  /**
+   * Lo mismo, sabiendo en qué carpeta vive el objeto. Es el caso de la búsqueda contra el servidor,
+   * que devuelve el tipo: se baja derecho al cajón en vez de probar cuatro.
+   */
+  async revealObject(
+    profileId: string,
+    database: string,
+    schema: string,
+    oid: number,
+    folder: FolderKind,
+  ): Promise<Row | null> {
+    const schemaRow = await this.revealSchema(profileId, database, schema);
+    if (!schemaRow) return null;
+
+    const found = await this.openFolder(schemaRow, folder, oid);
+    if (found) return found;
+
+    this.selected = schemaRow;
+    return null;
+  }
+
+  /** Abre el camino hasta un esquema: base, carpeta «Esquemas» y el esquema mismo. */
+  private async revealSchema(
+    profileId: string,
+    database: string,
+    schema: string,
+  ): Promise<Row | null> {
+    const databaseRow = await this.revealDatabase(profileId, database);
+    if (!databaseRow) return null;
+
+    const schemas = await this.descend(databaseRow, (node) => folderOf(node.kind) === "schemas");
+    if (!schemas) return null;
+
+    return await this.descend(schemas, (node) => node.kind === "schema" && node.label === schema);
+  }
+
+  /**
+   * Busca el objeto en una carpeta del esquema. Si no está, la vuelve a cerrar: probar cuatro
+   * cajones no tiene por qué dejar el esquema entero desplegado.
+   */
+  private async openFolder(
+    schemaRow: Row,
+    kind: FolderKind,
+    oid: number,
+  ): Promise<Row | null> {
+    const folder = await this.descend(schemaRow, (node) => folderOf(node.kind) === kind);
+    if (!folder) return null;
+
+    const found = await this.descend(folder, (node) => node.oid === oid);
+    if (found) {
+      this.selected = found;
+      return found;
+    }
+    folder.expanded = false;
+    return null;
   }
 
   /** Descarta lo cargado de los servidores conectados; se usa al cambiar las opciones. */

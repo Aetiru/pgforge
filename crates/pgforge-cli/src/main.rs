@@ -55,6 +55,23 @@ enum Command {
         system: bool,
     },
 
+    /// Busca objetos por nombre en una base, sin recorrer el árbol.
+    Search {
+        #[arg(long)]
+        url: String,
+        /// Base donde buscar. Por omisión, la de la cadena de conexión.
+        #[arg(long)]
+        database: Option<String>,
+        /// Incluir pg_catalog, information_schema y los esquemas temporales.
+        #[arg(long)]
+        system: bool,
+        /// Cuántas coincidencias traer como máximo.
+        #[arg(long, default_value_t = 50)]
+        limit: i64,
+        /// Parte del nombre a buscar, por ejemplo client
+        pattern: String,
+    },
+
     /// Imprime el grafo de relaciones de un esquema: las tablas y sus claves foráneas.
     Graph {
         #[arg(long)]
@@ -324,6 +341,13 @@ async fn main() -> ExitCode {
         }
         Command::Server { url } => server(&url).await,
         Command::Tree { url, depth, system } => tree(&url, depth, system).await,
+        Command::Search {
+            url,
+            database,
+            system,
+            limit,
+            pattern,
+        } => search(&url, database.as_deref(), system, limit, &pattern).await,
         Command::Graph {
             url,
             database,
@@ -830,6 +854,35 @@ async fn tree(url: &str, depth: usize, system: bool) -> Result<()> {
             for child in children.into_iter().rev() {
                 stack.push((child, level + 1));
             }
+        }
+    }
+
+    Ok(())
+}
+
+async fn search(
+    url: &str,
+    database: Option<&str>,
+    system: bool,
+    limit: i64,
+    pattern: &str,
+) -> Result<()> {
+    let handle = connect(url).await?;
+    let database = database.unwrap_or_else(|| handle.default_database());
+    let options = TreeOptions {
+        show_system_schemas: system,
+    };
+
+    let hits = introspect::search(&handle, database, pattern, options, limit).await?;
+    if hits.is_empty() {
+        println!("(sin coincidencias)");
+        return Ok(());
+    }
+
+    for hit in &hits {
+        match &hit.detail {
+            Some(detail) => println!("{}.{} · {detail}", hit.schema, hit.label),
+            None => println!("{}.{}", hit.schema, hit.label),
         }
     }
 

@@ -9,9 +9,11 @@
 
 mod graph;
 mod node;
+mod search;
 
 pub use graph::{schema_graph, GraphColumn, GraphEdge, GraphTable, SchemaGraph};
 pub use node::{Folder, NodeKind, NodeTag, TreeNode};
+pub use search::{search, SearchHit};
 
 use crate::conn::ServerHandle;
 use crate::error::{Error, Result};

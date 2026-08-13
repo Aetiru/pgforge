@@ -3,6 +3,7 @@
   import { readOnlyReason } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import DataGrid, { type Column } from "./DataGrid.svelte";
+  import { explorer } from "./explorer.svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
   import { PAGE_SIZES, paging } from "./paging.svelte";
@@ -135,6 +136,19 @@
     <button class="btn" disabled={tab.loading || tab.saving} onclick={() => tab.load()}>
       <Icon name="refresh" size={12} />
       Refrescar
+    </button>
+
+    <!-- Llegar desde la grilla hasta dónde vive la tabla eran cinco niveles a mano cada vez. -->
+    <button
+      class="btn btn-icon"
+      disabled={tab.shape === null}
+      title="Revelar la tabla en el árbol"
+      aria-label="Revelar en el árbol"
+      onclick={() =>
+        tab.shape &&
+        explorer.revealRelation(tab.profileId, tab.database, tab.shape.schema, tab.shape.oid)}
+    >
+      <Icon name="compass" size={12} />
     </button>
 
     {#if tab.editable}

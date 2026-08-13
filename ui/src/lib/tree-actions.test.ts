@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { dataTargetOf, erdTargetOf, qualifiedNameOf, queryTargetOf } from "./tree-actions";
+import {
+  connectionUrl,
+  dataTargetOf,
+  erdTargetOf,
+  folderForKind,
+  qualifiedNameOf,
+  queryTargetOf,
+} from "./tree-actions";
 import type { Row } from "./explorer.svelte";
 import type { ConnectionProfile, NodeKind, TreeNode } from "./ipc";
 
@@ -90,6 +97,38 @@ describe("erdTargetOf", () => {
     });
     expect(erdTargetOf(node("table"))).toBeNull();
     expect(erdTargetOf(null)).toBeNull();
+  });
+});
+
+describe("folderForKind", () => {
+  it("manda cada tipo al cajón donde el árbol lo muestra", () => {
+    expect(folderForKind("table")).toBe("tables");
+    expect(folderForKind("partitionedTable")).toBe("tables");
+    expect(folderForKind("materializedView")).toBe("materializedViews");
+    expect(folderForKind("sequence")).toBe("sequences");
+    expect(folderForKind("procedure")).toBe("procedures");
+    expect(folderForKind("type")).toBe("types");
+  });
+
+  it("no hay cajón para lo que no cuelga de un esquema", () => {
+    expect(folderForKind("database")).toBeNull();
+    expect(folderForKind("role")).toBeNull();
+    expect(folderForKind({ folder: "tables" })).toBeNull();
+  });
+});
+
+describe("connectionUrl", () => {
+  const profile = (extra: Partial<ConnectionProfile>) =>
+    ({ ...PROFILE, host: "db.local", port: 5432, user: "app", ...extra }) as ConnectionProfile;
+
+  it("arma la URL con lo que identifica al servidor", () => {
+    expect(connectionUrl(profile({}))).toBe("postgres://app@db.local:5432/postgres");
+  });
+
+  it("escapa el usuario y la base: una arroba adentro partiría la URL", () => {
+    expect(connectionUrl(profile({ user: "admin@casa", database: "mi base" }))).toBe(
+      "postgres://admin%40casa@db.local:5432/mi%20base",
+    );
   });
 });
 

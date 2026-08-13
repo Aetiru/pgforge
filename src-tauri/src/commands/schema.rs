@@ -1,11 +1,15 @@
 //! Árbol de objetos y DDL.
 
 use pgforge_core::ddl::{self, Ddl};
-use pgforge_core::introspect::{self, SchemaGraph, TreeNode, TreeOptions};
+use pgforge_core::introspect::{self, SchemaGraph, SearchHit, TreeNode, TreeOptions};
 use pgforge_core::{ProfileId, Result};
 use tauri::State;
 
 use crate::state::AppState;
+
+/// Cuántas coincidencias se traen si la interfaz no pide otra cosa. Es un techo de lectura, no de
+/// pantalla: con más de doscientos nombres parecidos el problema es el patrón, no la lista.
+const SEARCH_LIMIT: i64 = 200;
 
 /// Hijos de un nodo del árbol. Con `parent` en `null` devuelve las bases del servidor.
 #[tauri::command]
@@ -17,6 +21,28 @@ pub async fn tree_children(
 ) -> Result<Vec<TreeNode>> {
     let handle = state.manager.require(id).await?;
     introspect::children(&handle, parent.as_ref(), options.unwrap_or_default()).await
+}
+
+/// Busca objetos por nombre en una base. El árbol se carga por niveles, así que filtrar lo ya
+/// traído solo encuentra lo que uno ya había abierto.
+#[tauri::command]
+pub async fn tree_search(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: String,
+    pattern: String,
+    options: Option<TreeOptions>,
+    limit: Option<i64>,
+) -> Result<Vec<SearchHit>> {
+    let handle = state.manager.require(id).await?;
+    introspect::search(
+        &handle,
+        &database,
+        &pattern,
+        options.unwrap_or_default(),
+        limit.unwrap_or(SEARCH_LIMIT),
+    )
+    .await
 }
 
 #[tauri::command]

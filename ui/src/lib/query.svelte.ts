@@ -1,5 +1,7 @@
 import type { SQLNamespace } from "@codemirror/lang-sql";
 import { save } from "@tauri-apps/plugin-dialog";
+import { changesCatalog } from "./ddl-tags";
+import { explorer } from "./explorer.svelte";
 import { paging } from "./paging.svelte";
 import { Tab, tabs } from "./tabs.svelte";
 import {
@@ -88,6 +90,14 @@ async function schemaFor(profileId: string, database: string): Promise<EditorSch
   return pending;
 }
 
+/**
+ * Tira los nombres cacheados de una base. Después de un `CREATE TABLE` el autocompletado seguía
+ * ofreciendo el catálogo de antes —sin la tabla recién creada— hasta cerrar la ventana.
+ */
+export function invalidateSchema(profileId: string, database: string) {
+  namespaces.delete(`${profileId}:${database}`);
+}
+
 export class QueryTab extends Tab {
   readonly kind = "query" as const;
 
@@ -134,6 +144,12 @@ export class QueryTab extends Tab {
 
   /** Dónde se guardó el texto, para que el siguiente Ctrl+S no vuelva a preguntar. */
   filePath = $state<string | null>(null);
+
+  /**
+   * Se corrió DDL y todavía no se avisó al árbol ni al autocompletado. No es `$state`: no se dibuja
+   * en ningún lado, solo decide si hay que releer el catálogo cuando la transacción cierra.
+   */
+  private catalogDirty = false;
 
   get result(): ResultSet | null {
     return this.results[this.shown] ?? null;
@@ -293,6 +309,7 @@ export class QueryTab extends Tab {
         ];
         if (event.outcome.kind === "command") {
           this.log("info", `${event.outcome.tag}: ${event.outcome.affected}`);
+          if (changesCatalog(event.outcome.tag)) this.catalogDirty = true;
         } else if (event.outcome.truncated) {
           this.log(
             "notice",
@@ -337,8 +354,26 @@ export class QueryTab extends Tab {
         if (event.executed > 1) {
           this.log("info", `${event.executed} sentencias en ${event.seconds.toFixed(3)} s.`);
         }
+        // Sin `await`: el resultado ya está en pantalla y releer el catálogo no debe hacerlo esperar.
+        void this.syncCatalog();
         break;
     }
+  }
+
+  /**
+   * Le avisa al árbol y al autocompletado que el catálogo cambió.
+   *
+   * Con una transacción abierta no se avisa todavía: el árbol lee por otra conexión y ahí el objeto
+   * nuevo **no existe** —volvería a traer lo de antes y a dejarlo desaparecido hasta el próximo
+   * refresco a mano—. La marca queda puesta y se resuelve al confirmar.
+   */
+  private async syncCatalog() {
+    if (!this.catalogDirty || this.txStatus !== "idle") return;
+    this.catalogDirty = false;
+
+    invalidateSchema(this.profileId, this.database);
+    void this.loadSchema();
+    await explorer.refreshServer(this.profileId);
   }
 
   async cancel() {
@@ -383,6 +418,10 @@ export class QueryTab extends Tab {
     try {
       this.txStatus = await action(this.tabId);
       this.log("info", done);
+      // Recién ahora el DDL de la transacción existe para las otras conexiones. Un `ROLLBACK` pasa
+      // por acá igual: descartar el cambio también deja al árbol pidiendo una relectura, porque lo
+      // que se ve puede venir de una lectura hecha en el medio.
+      void this.syncCatalog();
     } catch (error) {
       this.log("error", describeError(error));
       this.view = "messages";

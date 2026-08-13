@@ -28,6 +28,7 @@ pub fn run() {
             commands::servers::disconnect,
             commands::servers::connected_servers,
             commands::schema::tree_children,
+            commands::schema::tree_search,
             commands::schema::object_ddl,
             commands::schema::schema_graph,
             commands::schema::erd_export_svg,
