@@ -15,6 +15,7 @@ import {
   type TreeNode,
   type TreeOptions,
 } from "./ipc";
+import { folders, LOOSE_GROUP } from "./folders.svelte";
 import { folderForKind } from "./tree-actions";
 
 /**
@@ -98,7 +99,7 @@ function groupDetail(servers: Row[]): string {
  */
 const LOOSE_LABEL = "Sin carpeta";
 
-function groupRow(name: string | null, servers: Row[], expanded: boolean): Row {
+function groupRow(name: string | null, servers: Row[]): Row {
   return {
     kind: "group",
     key: `g:${name ?? ""}`,
@@ -109,7 +110,9 @@ function groupRow(name: string | null, servers: Row[], expanded: boolean): Row {
     label: name ?? LOOSE_LABEL,
     detail: groupDetail(servers),
     hasChildren: servers.length > 0,
-    expanded,
+    // Si estaba cerrada la última vez, sigue cerrada: es lo primero que se toca cuando hay veinte
+    // conexiones y se trabaja con tres.
+    expanded: folders.isOpen(name ?? LOOSE_GROUP),
     loading: false,
     children: servers,
     connected: false,
@@ -164,12 +167,16 @@ class Explorer {
   private hitProfile: string | null = null;
 
   /**
-   * Carpetas creadas en la interfaz que todavía no tienen ningún servidor. Viven solo acá, en
-   * memoria: como una carpeta es un nombre compartido entre perfiles y no hay lista de carpetas
-   * guardada aparte, una que quede vacía no tiene dónde persistir y desaparece al reiniciar. En
-   * cuanto se le arrastra el primer servidor pasa a existir de verdad y sale de esta lista.
+   * Carpetas creadas en la interfaz que todavía no tienen ningún servidor.
+   *
+   * Como una carpeta es un nombre compartido entre perfiles y no hay lista de carpetas guardada
+   * aparte, una que quede vacía no tiene dónde persistir del lado de Rust: vive en `folders`, que
+   * la recuerda en esta máquina. En cuanto se le arrastra el primer servidor pasa a existir de
+   * verdad entre los perfiles y sale de esa lista.
    */
-  pendingGroups = $state<string[]>([]);
+  get pendingGroups(): string[] {
+    return folders.empty;
+  }
 
   /** Todas las filas de servidor, estén dentro de una carpeta o sueltas. */
   get servers(): Row[] {
@@ -204,7 +211,7 @@ class Explorer {
       this.pendingGroups.includes(trimmed);
     if (exists) return;
 
-    this.pendingGroups.push(trimmed);
+    folders.remember(trimmed);
     this.rebuild();
     const row = this.roots.find((item) => item.kind === "group" && item.group === trimmed);
     if (row) this.selected = row;
@@ -238,7 +245,7 @@ class Explorer {
     // las cerraría y dejaría la selección apuntando a una fila que ya no está en el árbol.
     const groupOf = (name: string | null, servers: Row[]) => {
       const existing = previousGroups.get(`g:${name ?? ""}`);
-      if (!existing) return groupRow(name, servers, true);
+      if (!existing) return groupRow(name, servers);
       existing.children = servers;
       existing.detail = groupDetail(servers);
       existing.hasChildren = servers.length > 0;
@@ -260,7 +267,7 @@ class Explorer {
 
     // Una carpeta vacía pendiente que acaba de recibir un servidor ya existe de verdad entre los
     // perfiles: se saca de la lista para no mostrarla dos veces.
-    this.pendingGroups = this.pendingGroups.filter((name) => !grouped.has(name));
+    folders.keepEmpty(this.pendingGroups.filter((name) => !grouped.has(name)));
 
     // Las carpetas van arriba y los servidores sueltos abajo, como en cualquier explorador de
     // archivos. Una carpeta nueva arranca abierta: se acaba de crear para poner algo adentro. Las
@@ -307,7 +314,7 @@ class Explorer {
     // carpeta vacía —no persiste al reiniciar—.
     const from = profile.group ?? null;
     if (from && !this.profiles.some((item) => item.id !== profileId && item.group === from)) {
-      if (!this.pendingGroups.includes(from)) this.pendingGroups.push(from);
+      folders.remember(from);
     }
 
     // Sin contraseña: el comando deja intacta la que ya esté guardada.
@@ -318,6 +325,8 @@ class Explorer {
   /** Renombra una carpeta, o la deshace si no se pasa nombre nuevo. */
   async renameGroup(from: string, to?: string) {
     await ipcRenameGroup(from, to);
+    // Que estuviera cerrada, o vacía, es de la carpeta y no de su nombre: se muda con ella.
+    folders.rename(from, to);
     await this.refreshProfiles();
   }
 
@@ -366,12 +375,23 @@ class Explorer {
 
     if (row.expanded) {
       row.expanded = false;
+      this.rememberOpen(row);
       return;
     }
     if (row.children === null) {
       await this.loadChildren(row);
     }
     row.expanded = true;
+    this.rememberOpen(row);
+  }
+
+  /**
+   * Una carpeta cerrada sigue cerrada la próxima vez que se abre la aplicación. Solo las carpetas:
+   * lo que se abrió adentro de un servidor no tiene sentido restaurarlo, porque al arrancar no hay
+   * ninguna conexión abierta de dónde volver a leerlo.
+   */
+  private rememberOpen(row: Row) {
+    if (row.kind === "group") folders.setOpen(row.group ?? LOOSE_GROUP, row.expanded);
   }
 
   async loadChildren(row: Row) {
