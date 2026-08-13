@@ -26,6 +26,8 @@ cargo clippy -p pgforge-app --all-targets && cargo test -p pgforge-app   # neces
 cargo deny check                # vulnerabilidades, licencias y registros de las dependencias
 ```
 
+`cargo deny` corre en CI en su propio job (no compila nada: lee `Cargo.lock`). Reglas en `deny.toml`: una vulnerabilidad publicada frena el build, y las excepciones van con el motivo escrito —hoy una sola, el `rsa` que arrastra `russh`, que no tiene versión corregida—. «Sin mantenimiento» solo frena si la caja la pide este workspace: lo que llega por abajo de Tauri no se puede accionar desde acá. Todos los `Cargo.toml` llevan `publish = false`: nada de esto va a crates.io.
+
 De `src-tauri` no se prueba lo que toca red —eso vive en core y se prueba ahí—, pero sí sus comandos de **vista previa**, que son puros: `src-tauri/tests/preview.rs` los llama con la carga JSON tal como manda `ipc.ts`. Compilarlo exige que exista `ui/dist` (`generate_context!` lo verifica): correr `pnpm ui:build` antes. En CI ya lo dejó hecho el `pnpm tauri build --no-bundle` del mismo job, que además cubre las tres plataformas. Job del core corre contra **todo el rango soportado, PostgreSQL 13 a 17**, una instancia por versión, porque ahí se nota gating por versión mal puesto —los extremos atrapan lo que se sale del rango; las del medio, el salto de catálogo atado a una versión intermedia—.
 
 CLI = forma rápida de ejercitar core sin levantar ventana; sirve para comprobar a mano lo que test todavía no cubre:

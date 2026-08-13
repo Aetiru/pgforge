@@ -16,9 +16,17 @@ targets = [
 
 [advisories]
 version = 2
-# Una vulnerabilidad publicada frena el build. Excepciones acá, con el motivo y el aviso: un `ignore`
-# sin explicación es una alerta apagada que nadie vuelve a mirar.
-ignore = []
+# Una caja sin mantenimiento solo frena el build si la pedimos nosotros: las que llegan por abajo de
+# Tauri —los bindings de GTK3, `unic-*`, `proc-macro-error`— no se pueden cambiar desde este
+# repositorio, y una alerta que nadie puede accionar termina apagando la atención sobre las que sí.
+unmaintained = "workspace"
+ignore = [
+    # `rsa`, por debajo de `russh`: el ataque Marvin recupera la clave midiendo tiempos de
+    # **descifrado** RSA, que es lo que hace un servidor SSH, no el cliente. Acá `russh` la usa para
+    # autenticarse con una clave del usuario y verificar la del host, y todavía no hay versión
+    # corregida («No safe upgrade is available»). Revisar cuando `russh` suba a un `rsa` parcheado.
+    "RUSTSEC-2023-0071",
+]
 
 [licenses]
 version = 2
@@ -48,6 +56,10 @@ confidence-threshold = 0.9
 # resolverlo no depende de este repositorio. Lo que sí se avisa es cuando pasa.
 multiple-versions = "warn"
 wildcards = "deny"
+# Las cajas del propio workspace se piden por ruta, y ahí el comodín de versión es lo normal: lo que
+# se quiere prohibir es un comodín contra una caja de crates.io, que deja el build a merced de lo
+# que publiquen mañana.
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"

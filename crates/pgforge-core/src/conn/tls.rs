@@ -9,6 +9,7 @@ use std::sync::Arc;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::client::WebPkiServerVerifier;
 use rustls::crypto::{verify_tls12_signature, verify_tls13_signature, CryptoProvider};
+use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, DigitallySignedStruct, RootCertStore, SignatureScheme};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -107,9 +108,10 @@ fn client_config_verifying(
 
     if let Some(path) = &profile.root_cert {
         let pem = std::fs::read(path)?;
-        let mut cursor = std::io::Cursor::new(pem);
         let mut added = 0usize;
-        for cert in rustls_pemfile::certs(&mut cursor) {
+        // El PEM lo lee `rustls-pki-types`, que ya viene con rustls, y no `rustls-pemfile`, que es
+        // una envoltura del mismo código y quedó sin mantenimiento (RUSTSEC-2025-0134).
+        for cert in CertificateDer::pem_slice_iter(&pem) {
             let cert = cert.map_err(|e| {
                 Error::Config(format!(
                     "el certificado raíz {} no es válido: {e}",
