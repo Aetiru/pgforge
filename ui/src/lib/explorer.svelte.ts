@@ -88,15 +88,25 @@ function groupDetail(servers: Row[]): string {
     : `${servers.length}`;
 }
 
-function groupRow(name: string, servers: Row[], expanded: boolean): Row {
+/**
+ * Una sección de servidores. Con `name` en `null` es la de los que no están en ninguna carpeta.
+ *
+ * Esa sección existe para que soltar un servidor fuera de toda carpeta tenga **dónde** soltarse:
+ * antes el destino era el fondo del panel, que no se ve y que encima cambia de tamaño con la
+ * cantidad de filas. Solo aparece si hay al menos una carpeta: sin ninguna, «sin carpeta» sería el
+ * título de la lista entera.
+ */
+const LOOSE_LABEL = "Sin carpeta";
+
+function groupRow(name: string | null, servers: Row[], expanded: boolean): Row {
   return {
     kind: "group",
-    key: `g:${name}`,
+    key: `g:${name ?? ""}`,
     profileId: "",
-    group: name,
+    group: name ?? undefined,
     node: null,
     level: 0,
-    label: name,
+    label: name ?? LOOSE_LABEL,
     detail: groupDetail(servers),
     hasChildren: servers.length > 0,
     expanded,
@@ -168,7 +178,11 @@ class Explorer {
 
   /** Las carpetas existentes, para ofrecerlas al elegir dónde va un servidor. */
   get groups(): string[] {
-    return this.roots.filter((row) => row.kind === "group").map((row) => row.group!);
+    // La sección de los servidores sueltos es una fila de carpeta sin nombre: no es una carpeta a
+    // la que se pueda mandar nada, es la ausencia de carpeta.
+    return this.roots
+      .filter((row) => row.kind === "group" && row.group !== undefined)
+      .map((row) => row.group!);
   }
 
   /** Relee los perfiles guardados y vuelve a armar el árbol con ellos. */
@@ -205,8 +219,9 @@ class Explorer {
     const profiles = this.profiles;
 
     const previous = new Map(this.servers.map((row) => [row.profileId, row]));
+    // Por clave y no por nombre: la sección de los sueltos no tiene nombre.
     const previousGroups = new Map(
-      this.roots.filter((row) => row.kind === "group").map((row) => [row.group!, row]),
+      this.roots.filter((row) => row.kind === "group").map((row) => [row.key, row]),
     );
 
     const rowOf = (profile: ConnectionProfile, level: number) => {
@@ -221,8 +236,8 @@ class Explorer {
 
     // Las carpetas que siguen existiendo se reutilizan tal cual: si no, cada guardado de un perfil
     // las cerraría y dejaría la selección apuntando a una fila que ya no está en el árbol.
-    const groupOf = (name: string, servers: Row[]) => {
-      const existing = previousGroups.get(name);
+    const groupOf = (name: string | null, servers: Row[]) => {
+      const existing = previousGroups.get(`g:${name ?? ""}`);
       if (!existing) return groupRow(name, servers, true);
       existing.children = servers;
       existing.detail = groupDetail(servers);
@@ -255,11 +270,15 @@ class Explorer {
     // encabezado de sección y ya agrupa a la vista, así que sangrar además cobra dos veces el mismo
     // ancho —y el ancho es lo que le falta a los nombres del final del árbol—.
     const groupNames = [...grouped.keys(), ...this.pendingGroups].sort(byName);
+    const looseRows = loose.map((profile) => rowOf(profile, 0));
     this.roots = [
       ...groupNames.map((name) =>
         groupOf(name, (grouped.get(name) ?? []).map((profile) => rowOf(profile, 0))),
       ),
-      ...loose.map((profile) => rowOf(profile, 0)),
+      // Con carpetas, los sueltos van bajo su propio rótulo: es el destino visible para sacar un
+      // servidor de una carpeta. Sin ninguna carpeta no hace falta, porque no hay nada de qué
+      // distinguirlos.
+      ...(groupNames.length > 0 && looseRows.length > 0 ? [groupOf(null, looseRows)] : looseRows),
     ];
 
     // Una carpeta renombrada o vaciada deja de existir: seguir mostrándola en el detalle sería

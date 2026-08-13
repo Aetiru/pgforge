@@ -298,6 +298,76 @@
   }
 
   /**
+   * Escribir letras con el foco en el árbol salta a la fila que empieza así, como en cualquier
+   * lista de escritorio. No es lo mismo que la caja de búsqueda: acá no se filtra nada, se navega
+   * —en un esquema con cuatrocientas tablas, «fac» te deja en `facturas` sin sacar de pantalla lo
+   * que estabas mirando—.
+   *
+   * Las teclas se acumulan mientras se escriba seguido; pasada la pausa, la siguiente empieza otra
+   * palabra. Repetir la misma letra recorre las coincidencias, que es lo que uno espera al
+   * apretarla dos veces.
+   */
+  const TYPE_AHEAD_MS = 700;
+  let typed = "";
+  let typedAt = 0;
+
+  function typeAhead(char: string) {
+    const now = Date.now();
+    typed = now - typedAt > TYPE_AHEAD_MS ? char : typed + char;
+    typedAt = now;
+
+    const needle = typed.toLowerCase();
+    const current = rows.findIndex((row) => row.key === explorer.selected?.key);
+    const from = typed.length === 1 ? current + 1 : Math.max(current, 0);
+
+    for (let step = 0; step < rows.length; step++) {
+      const index = (from + step) % rows.length;
+      if (rows[index].label.toLowerCase().startsWith(needle)) {
+        goTo(index);
+        return;
+      }
+    }
+  }
+
+  /**
+   * Abre todos los hermanos de la fila elegida, que es lo que hace `*` en un árbol. Sirve para
+   * «mostrame las columnas de todas estas tablas» sin abrir una por una; cada hermano cuesta su
+   * consulta, así que van en orden y no todas de golpe.
+   */
+  async function expandSiblings() {
+    const row = explorer.selected;
+    if (!row) return;
+    const at = rows.findIndex((item) => item.key === row.key);
+    if (at < 0) return;
+
+    // El bloque de hermanos termina donde aparece una fila de nivel menor: esa ya es el padre o el
+    // tío, y sus hijos no son hermanos de nadie de acá.
+    const family: Row[] = [];
+    for (let index = at; index >= 0; index--) {
+      if (rows[index].level < row.level) break;
+      if (rows[index].level === row.level) family.push(rows[index]);
+    }
+    for (let index = at + 1; index < rows.length; index++) {
+      if (rows[index].level < row.level) break;
+      if (rows[index].level === row.level) family.push(rows[index]);
+    }
+
+    for (const sibling of family) {
+      if (sibling.hasChildren && !sibling.expanded && !explorer.needsConnection(sibling)) {
+        await explorer.toggle(sibling);
+      }
+    }
+  }
+
+  /** `F2` renombra lo que se pueda renombrar: una carpeta de conexiones o el perfil de un servidor. */
+  function rename() {
+    const row = explorer.selected;
+    if (!row) return;
+    if (row.kind === "group" && row.group !== undefined) ongroup?.(row.group);
+    else if (row.kind === "server") onedit?.(row.profileId);
+  }
+
+  /**
    * El teclado se maneja en el contenedor y no en cada fila: con la ventana deslizante, las filas
    * de arriba y de abajo ni siquiera existen en el DOM, así que no hay adónde mover el foco. El
    * árbol entero es un punto de tabulación y la fila elegida se anuncia con `aria-activedescendant`.
@@ -344,6 +414,28 @@
         if (explorer.needsConnection(row)) onconnect(row.profileId);
         else activate(row);
         break;
+      case "*":
+        event.preventDefault();
+        void expandSiblings();
+        break;
+      case "F2":
+        event.preventDefault();
+        rename();
+        break;
+      default:
+        // Una letra suelta es type-ahead. Con Ctrl, Alt o Meta es el atajo de otro, y el espacio ya
+        // se usó arriba para abrir la fila.
+        if (
+          event.key.length === 1 &&
+          event.key !== " " &&
+          !event.ctrlKey &&
+          !event.altKey &&
+          !event.metaKey
+        ) {
+          event.preventDefault();
+          typeAhead(event.key);
+        }
+        break;
     }
   }
 
@@ -353,7 +445,9 @@
    * más difícil de lo que parece.
    */
   function dropTargetOf(row: Row): string | null {
-    return row.kind === "group" ? row.group! : (row.group ?? null);
+    // Vale igual para la sección de los sueltos, que es una carpeta sin nombre: soltar ahí saca al
+    // servidor de la suya, que es lo que uno espera al arrastrarlo hasta ese rótulo.
+    return row.group ?? null;
   }
 
   function onDrop(group: string | null) {
@@ -736,7 +830,7 @@
           </span>
 
           <span class="ml-auto flex shrink-0 items-center gap-0.5 pl-1">
-            {#if isGroup && ongroup}
+            {#if isGroup && row.group !== undefined && ongroup}
               <button
                 class="btn btn-ghost btn-icon size-6 opacity-0 focus-visible:opacity-100
                        group-hover:opacity-100"

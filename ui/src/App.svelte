@@ -68,6 +68,8 @@
   let groupDialog = $state<string | null>(null);
   /** Abierto mientras se crea una carpeta nueva. */
   let newGroupDialog = $state(false);
+  /** El menú con lo que no se usa todos los días del árbol. */
+  let treeMenu = $state(false);
   let banner = $state<string | null>(null);
   let sidebarWidth = $state(300);
   let sidebarOpen = $state(true);
@@ -309,7 +311,7 @@
   });
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} onclick={() => (treeMenu = false)} />
 
 <div class="flex h-full flex-col">
   <header class="divider-b flex items-center gap-3 px-3 py-2">
@@ -477,28 +479,86 @@
             </button>
             <button
               class="btn btn-icon"
-              title="Contraer todo"
-              aria-label="Contraer todo"
-              onclick={() => explorer.collapseAll()}
-            >
-              <Icon name="collapse" />
-            </button>
-            <button
-              class="btn btn-icon"
-              title="Nueva carpeta"
-              aria-label="Nueva carpeta"
-              onclick={() => (newGroupDialog = true)}
-            >
-              <Icon name="folder" />
-            </button>
-            <button
-              class="btn btn-icon"
               title="Nuevo servidor"
               aria-label="Nuevo servidor"
               onclick={() => (dialog = { profile: null })}
             >
               <Icon name="plus" />
             </button>
+
+            <!--
+              Todo lo demás del árbol vive acá adentro. Eran siete controles repartidos entre la
+              barra y el pie del panel, en 300 píxeles de ancho: lo que se usa todos los días es
+              buscar y agregar un servidor, y el resto se abre cuando hace falta.
+            -->
+            <div class="relative">
+              <button
+                class="btn btn-icon"
+                title="Más opciones del árbol"
+                aria-label="Más opciones del árbol"
+                aria-expanded={treeMenu}
+                onclick={(event) => {
+                  event.stopPropagation();
+                  treeMenu = !treeMenu;
+                }}
+              >
+                <Icon name="dots" />
+              </button>
+
+              {#if treeMenu}
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div
+                  class="card absolute top-full right-0 z-40 mt-1 min-w-60 p-1 text-sm shadow-lg"
+                  role="menu"
+                  tabindex="-1"
+                  onclick={(event) => event.stopPropagation()}
+                >
+                  <button
+                    class="row-menu"
+                    onclick={() => {
+                      treeMenu = false;
+                      newGroupDialog = true;
+                    }}
+                  >
+                    <span class="flex items-center gap-2">
+                      <Icon name="folder" size={13} /> Nueva carpeta
+                    </span>
+                  </button>
+                  <button
+                    class="row-menu"
+                    onclick={() => {
+                      treeMenu = false;
+                      explorer.collapseAll();
+                    }}
+                  >
+                    <span class="flex items-center gap-2">
+                      <Icon name="collapse" size={13} /> Contraer todo
+                    </span>
+                  </button>
+
+                  <div class="divider-t my-1"></div>
+
+                  <!-- Filtra sin releer nada del servidor: es cambiar qué se dibuja, no qué se
+                       cargó. -->
+                  <label class="check px-2 py-1" title="Esconde los servidores sin conectar">
+                    <input type="checkbox" bind:checked={explorer.onlyConnected} />
+                    Solo servidores conectados
+                  </label>
+                  <label class="check px-2 py-1">
+                    <input
+                      type="checkbox"
+                      checked={explorer.options.showSystemSchemas}
+                      onchange={(event) => {
+                        explorer.options = { showSystemSchemas: event.currentTarget.checked };
+                        explorer.reloadAll();
+                      }}
+                    />
+                    Mostrar objetos del sistema
+                  </label>
+                </div>
+              {/if}
+            </div>
           </div>
 
           <div class="min-h-0 flex-1 px-1 pb-1">
@@ -515,24 +575,6 @@
             />
           </div>
 
-          <div class="divider-t flex flex-col gap-1.5 px-3 py-2">
-            <!-- Filtra sin releer nada del servidor: es cambiar qué se dibuja, no qué se cargó. -->
-            <label class="check" title="Esconde los servidores guardados que no están conectados">
-              <input type="checkbox" bind:checked={explorer.onlyConnected} />
-              Solo servidores conectados
-            </label>
-            <label class="check">
-              <input
-                type="checkbox"
-                checked={explorer.options.showSystemSchemas}
-                onchange={(event) => {
-                  explorer.options = { showSystemSchemas: event.currentTarget.checked };
-                  explorer.reloadAll();
-                }}
-              />
-              Mostrar objetos del sistema
-            </label>
-          </div>
         </aside>
 
         <!--
