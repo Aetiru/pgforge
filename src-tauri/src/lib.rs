@@ -7,9 +7,34 @@ pub mod commands;
 pub mod state;
 
 use tauri::Manager;
+use tauri_plugin_log::{Target, TargetKind};
+
+/// Cuánto puede crecer el archivo de registro antes de rotar, y cuántos se conservan.
+///
+/// Un archivo suelto que crece sin techo termina siendo inútil de dos maneras: ocupa lugar y nadie
+/// lo abre. Con dos megas alcanza para varias sesiones de trabajo, y guardar los anteriores permite
+/// mirar la corrida donde pasó el problema y no solo la actual.
+const LOG_MAX_BYTES: u128 = 2 * 1024 * 1024;
+const LOG_KEEP: usize = 3;
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                // Al archivo va todo lo que importa; a la consola, para `pnpm dev`. La interfaz
+                // escribe en el mismo archivo desde `ipc.ts`, que es por donde pasa todo error que
+                // el usuario llega a ver.
+                .targets([
+                    Target::new(TargetKind::LogDir {
+                        file_name: Some("pgforge".to_owned()),
+                    }),
+                    Target::new(TargetKind::Stdout),
+                ])
+                .max_file_size(LOG_MAX_BYTES)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(LOG_KEEP))
+                .level(tauri_plugin_log::log::LevelFilter::Info)
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
@@ -60,6 +85,7 @@ pub fn run() {
             commands::query::query_explain,
             commands::query::statement_at_cursor,
             commands::query::sql_write_file,
+            commands::query::sql_read_file,
             commands::query::schema_snapshot,
             commands::query::history_recent,
             commands::query::history_search,

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { open } from "@tauri-apps/plugin-dialog";
   import Alert from "./lib/Alert.svelte";
   import Confirm from "./lib/Confirm.svelte";
   import ConnectionDialog from "./lib/ConnectionDialog.svelte";
@@ -18,7 +19,7 @@
   import { openErd, ErdTab } from "./lib/erd.svelte";
   import { environmentOf, guard } from "./lib/access.svelte";
   import { explorer } from "./lib/explorer.svelte";
-  import { openQuery, saveQueryTab, QueryTab } from "./lib/query.svelte";
+  import { openQuery, openSqlFiles, saveQueryTab, QueryTab } from "./lib/query.svelte";
   import { queryTargetOf } from "./lib/tree-actions";
   import { tabs, type Tab, type TabKind } from "./lib/tabs.svelte";
   import { theme } from "./lib/theme.svelte";
@@ -254,6 +255,37 @@
     openQuery(row.profileId, queryTarget.database, queryTarget.title);
   }
 
+  /**
+   * Contra qué base se abre un archivo `.sql`. El archivo no lo dice: primero manda la pestaña que
+   * se está mirando —abrir un script mientras se trabaja sobre una base es contra esa base— y si
+   * no hay ninguna, lo elegido en el árbol.
+   */
+  const sqlTarget = $derived.by(() => {
+    const current = tabs.current;
+    if (current instanceof QueryTab) {
+      return { profileId: current.profileId, database: current.database };
+    }
+    const row = explorer.selected;
+    if (row && queryTarget) return { profileId: row.profileId, database: queryTarget.database };
+    return null;
+  });
+
+  async function openSqlDialog() {
+    if (!sqlTarget) return;
+    try {
+      const chosen = await open({
+        title: "Abrir una consulta",
+        multiple: true,
+        filters: [{ name: "SQL", extensions: ["sql"] }],
+      });
+      if (!chosen) return;
+      const paths = Array.isArray(chosen) ? chosen : [chosen];
+      await openSqlFiles(paths, sqlTarget.profileId, sqlTarget.database);
+    } catch (error) {
+      banner = describeError(error);
+    }
+  }
+
   function onKeydown(event: KeyboardEvent) {
     if (!(event.ctrlKey || event.metaKey)) return;
 
@@ -271,6 +303,10 @@
         // donde `Ctrl+S` si no lo tomaría el navegador que hay debajo de la ventana de Tauri.
         event.preventDefault();
         if (tabs.current instanceof QueryTab) saveQueryTab(tabs.current, event.shiftKey);
+        break;
+      case "o":
+        event.preventDefault();
+        openSqlDialog();
         break;
     }
   }
@@ -388,7 +424,14 @@
       </button>
 
       {#if info}
-        <span class="text-xs muted">v{info.version}</span>
+        <!-- La ruta del registro cuelga de la versión: es lo que se pide junto con ella cuando algo
+             falla, y no merece un lugar propio en la barra. -->
+        <span
+          class="text-xs select-text muted"
+          title={info.logDir ? `Registro en ${info.logDir}` : undefined}
+        >
+          v{info.version}
+        </span>
       {/if}
     </div>
   </header>
@@ -677,6 +720,20 @@
             onclick={newQuery}
           >
             <Icon name="plus" size={13} />
+          </button>
+
+          <!-- Guardar existía desde el principio; abrir, no. Un `.sql` que ya está en disco había
+               que abrirlo en otro editor y pegarlo acá. -->
+          <button
+            class="btn btn-ghost btn-icon shrink-0 self-center"
+            disabled={sqlTarget === null}
+            aria-label="Abrir un archivo SQL"
+            title={sqlTarget
+              ? `Abrir un archivo .sql contra ${sqlTarget.database} (Ctrl+O)`
+              : "Elegí una base o un objeto de un servidor conectado"}
+            onclick={openSqlDialog}
+          >
+            <Icon name="upload" size={13} />
           </button>
         </div>
 

@@ -19,6 +19,7 @@ import {
   queryRun,
   queryTxStatus,
   schemaSnapshot,
+  sqlReadFile,
   sqlWriteFile,
   type CoreError,
   type ExplainOptions,
@@ -478,6 +479,37 @@ export async function saveQueryTab(tab: QueryTab, askPath: boolean) {
     tab.log("error", describeError(error));
     tab.view = "messages";
   }
+}
+
+/**
+ * Abre archivos `.sql` en pestañas nuevas, una por archivo.
+ *
+ * Contra qué base corren no lo dice el archivo: lo decide quien lo abre, igual que una pestaña
+ * vacía. Cada pestaña queda con su ruta puesta, así que el primer `Ctrl+S` guarda encima sin
+ * preguntar, que es lo que uno espera de un archivo que abrió.
+ */
+export async function openSqlFiles(
+  paths: string[],
+  profileId: string,
+  database: string,
+): Promise<QueryTab | null> {
+  let last: QueryTab | null = null;
+
+  for (const path of paths) {
+    const name = path.split(/[\\/]/).pop() ?? "consulta.sql";
+    const tab = await openQuery(profileId, database, name);
+    last = tab;
+    try {
+      tab.sql = await sqlReadFile(path);
+      tab.filePath = path;
+    } catch (error) {
+      // La pestaña queda abierta y vacía con el motivo adentro: cerrarla sola escondería el error.
+      tab.log("error", `No se pudo abrir ${path}: ${describeError(error)}`);
+      tab.view = "messages";
+    }
+  }
+
+  return last;
 }
 
 /** Abre una pestaña de consulta contra una base y la deja seleccionada. */

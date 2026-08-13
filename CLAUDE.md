@@ -94,11 +94,15 @@ Servidores se agrupan en **carpetas de conexiones**: campo `group` del perfil. N
 
 ### Errores
 
-`pgforge_core::Error` traduce errores del servidor a variantes con significado: `Canceled` (usuario apretó cancelar, no es falla), `Permission`, `Conflict` (datos cambiaron entre lectura y escritura), `Database` (con `code`, `detail`, `hint` y `position` para resaltar en editor). Cruza el IPC como `ErrorPayload`, enum etiquetado con `kind`; interfaz lo consume con tipo `CoreError` de `ui/src/lib/ipc.ts` (`describeError`, `isCanceled`).
+`pgforge_core::Error` traduce errores del servidor a variantes con significado: `Canceled` (usuario apretó cancelar, no es falla), `Permission`, `Conflict` (datos cambiaron entre lectura y escritura), `Database` (con `code`, `detail`, `hint` y `position` para resaltar en editor). Cruza el IPC como `ErrorPayload`, enum etiquetado con `kind`; interfaz lo consume con tipo `CoreError` de `ui/src/lib/ipc/core.ts` (`describeError`, `isCanceled`).
 
 ### La frontera del IPC
 
-`ui/src/lib/ipc.ts` = **único** lugar de la interfaz que habla con Rust: declara tipos espejo de los del core y envuelve cada `invoke`. Ningún componente llama a `invoke` por su cuenta. Al agregar comando hay que tocar tres puntos: módulo del core, comando en `src-tauri/src/commands/` **más su registro en el `generate_handler!` de `src-tauri/src/lib.rs`**, y la función y tipos en `ipc.ts`.
+`ui/src/lib/ipc/` = **único** lugar de la interfaz que habla con Rust: declara tipos espejo de los del core y envuelve cada `invoke`. Ningún componente llama a `invoke` por su cuenta. Al agregar comando hay que tocar tres puntos: módulo del core, comando en `src-tauri/src/commands/` **más su registro en el `generate_handler!` de `src-tauri/src/lib.rs`**, y la función y tipos en el módulo de `ipc/` que corresponda al dominio.
+
+Adentro de `ipc/` hay un módulo por dominio —`core` (el error y los ayudantes), `servers`, `schema`, `monitor`, `backup`, `query`, `data`, `ddl`, `objects`, `settings`, `security`— y un `index.ts` que los reexporta, así que quien importa sigue escribiendo `from "./ipc"`. Era un archivo de dos mil líneas: la regla no cambió, cambió que ahora se puede leer el pedazo que a uno le toca.
+
+`describeError` no solo arma el texto: **escribe el error en el registro**, porque es el único embudo por el que pasa todo error que el usuario llega a ver. El registro lo maneja `tauri-plugin-log` (`src-tauri/src/lib.rs`), con archivo en el directorio de registros del sistema, rotación por tamaño y los tres últimos guardados; la ruta viaja en `AppInfo::log_dir` y la interfaz la muestra en el `title` de la versión. Una cancelación no se anota: no es una falla.
 
 Convenciones de serde que interfaz da por hechas: `#[serde(rename_all = "camelCase")]` en todo, y enums como uniones etiquetadas — `kind` para variantes de datos (`Change`, `TableChange`, `Outcome`, `NodeKind`) y `type` para eventos de canal (`QueryEvent`, `MonitorEvent`, `MaintenanceEvent`). Flujos largos (ejecución de consultas, sondeo del dashboard, mantenimiento) no devuelven resultado: mandan eventos por `Channel` de Tauri.
 

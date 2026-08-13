@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Permisos de la ventana principal. Se agregan solo los que cada etapa necesita.",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:allow-save", "dialog:allow-open"]
+  "permissions": ["core:default", "dialog:allow-save", "dialog:allow-open", "log:default"]
 }

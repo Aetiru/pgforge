@@ -22,12 +22,22 @@ use serde::Serialize;
 pub struct AppInfo {
     version: String,
     min_postgres_major: i32,
+    /// Dónde quedan los archivos de registro. Se lo dice a la interfaz para que el usuario pueda
+    /// encontrarlos sin tener que saber dónde los pone cada sistema operativo.
+    log_dir: Option<String>,
 }
 
 #[tauri::command]
-pub fn app_info() -> AppInfo {
+pub fn app_info(app: tauri::AppHandle) -> AppInfo {
+    use tauri::Manager;
+
     AppInfo {
         version: env!("CARGO_PKG_VERSION").to_owned(),
         min_postgres_major: ServerVersion::from_num(MIN_SUPPORTED_VERSION_NUM).major(),
+        log_dir: app
+            .path()
+            .app_log_dir()
+            .ok()
+            .map(|path| path.display().to_string()),
     }
 }

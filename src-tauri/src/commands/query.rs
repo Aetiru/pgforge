@@ -453,6 +453,17 @@ pub fn sql_write_file(path: String, sql: String) -> Result<()> {
     Ok(())
 }
 
+/// Lee un archivo de SQL para abrirlo en una pestaña. Misma excepción que el de arriba.
+///
+/// El texto se lee con pérdida (`from_utf8_lossy`) en vez de fallar: un script viejo guardado en
+/// Latin-1 tiene que poder abrirse y arreglarse, y negarse a mostrarlo por un acento roto no ayuda
+/// a nadie.
+#[tauri::command]
+pub fn sql_read_file(path: String) -> Result<String> {
+    let bytes = std::fs::read(path)?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
 /// Advertencia previa a un `EXPLAIN ANALYZE`, que ejecuta la sentencia de verdad.
 ///
 /// Es una consulta al núcleo y no una regla escrita en la interfaz para que la CLI avise lo mismo.
