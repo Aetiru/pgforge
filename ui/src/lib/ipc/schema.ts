@@ -3,7 +3,7 @@
  * el grafo del diagrama.
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./core";
 
 import type { RefAction } from "./ddl";
 
@@ -130,8 +130,21 @@ export interface SchemaGraph {
   edges: GraphEdge[];
 }
 
-export const treeChildren = (id: string, parent: TreeNode | null, options: TreeOptions) =>
-  invoke<TreeNode[]>("tree_children", { id, parent, options });
+/**
+ * Hijos de un nodo del árbol.
+ *
+ * `requestId` es opcional y solo sirve para poder cancelar: con él, `readCancel` aborta la consulta
+ * del lado del servidor en vez de dejar a la ventana esperando algo que ya no le importa a nadie.
+ */
+export const treeChildren = (
+  id: string,
+  parent: TreeNode | null,
+  options: TreeOptions,
+  requestId?: string,
+) => invoke<TreeNode[]>("tree_children", { id, parent, options, requestId: requestId ?? null });
+
+/** Aborta una lectura en curso. Si ya terminó no hace nada, y eso no es un error. */
+export const readCancel = (requestId: string) => invoke<void>("read_cancel", { requestId });
 
 /**
  * Busca objetos por nombre en una base, contra el catálogo del servidor. Es lo que el filtro del
@@ -145,8 +158,8 @@ export const treeSearch = (
   limit?: number,
 ) => invoke<SearchHit[]>("tree_search", { id, database, pattern, options, limit: limit ?? null });
 
-export const objectDdl = (id: string, node: TreeNode) =>
-  invoke<Ddl>("object_ddl", { id, node });
+export const objectDdl = (id: string, node: TreeNode, requestId?: string) =>
+  invoke<Ddl>("object_ddl", { id, node, requestId: requestId ?? null });
 
 /** Tablas y claves foráneas de un esquema. Sin posiciones: el layout lo calcula `erd.ts`. */
 export const schemaGraph = (id: string, database: string, schema: string) =>

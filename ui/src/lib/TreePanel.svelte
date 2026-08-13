@@ -707,19 +707,29 @@
             ></span>
           {/if}
 
+          <!--
+            Mientras carga, el mismo botón cancela: la rueda que gira es justo donde el ojo está
+            mirando cuando la espera se hace larga, y una lectura contra un esquema enorme puede
+            tardar minutos. Al pasar por encima, la rueda se convierte en una cruz.
+          -->
           <button
-            class="relative grid size-4 shrink-0 place-items-center rounded text-zinc-400
-                   hover:text-zinc-900 dark:hover:text-zinc-100"
+            class="group/chevron relative grid size-4 shrink-0 place-items-center rounded
+                   text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
             onclick={(event) => {
               event.stopPropagation();
-              explorer.toggle(row);
+              if (row.loading) explorer.cancelLoad(row);
+              else explorer.toggle(row);
             }}
-            aria-label={row.expanded ? "Contraer" : "Expandir"}
+            aria-label={row.loading ? "Cancelar la lectura" : row.expanded ? "Contraer" : "Expandir"}
+            title={row.loading ? "Cancelar la lectura" : undefined}
             tabindex="-1"
-            disabled={!row.hasChildren || explorer.needsConnection(row)}
+            disabled={!row.loading && (!row.hasChildren || explorer.needsConnection(row))}
           >
             {#if row.loading}
-              <span class="spinner"></span>
+              <span class="spinner group-hover/chevron:hidden"></span>
+              <span class="hidden group-hover/chevron:block">
+                <Icon name="close" size={11} />
+              </span>
             {:else if row.hasChildren && !explorer.needsConnection(row)}
               <Icon
                 name="chevron"
@@ -743,8 +753,12 @@
               {#if isServer}
                 <span
                   class="dot absolute -right-1 -bottom-0.5 ring-2 ring-zinc-50 dark:ring-zinc-900
-                         {row.connected ? 'dot-on' : 'dot-off'}"
-                  title={row.connected ? "Conectado" : "Sin conectar"}
+                         {row.down ? 'dot-down' : row.connected ? 'dot-on' : 'dot-off'}"
+                  title={row.down
+                    ? "El servidor dejó de responder"
+                    : row.connected
+                      ? "Conectado"
+                      : "Sin conectar"}
                 ></span>
               {/if}
             </span>
@@ -859,6 +873,23 @@
                 }}
               >
                 <Icon name="refresh" size={11} />
+              </button>
+            {/if}
+
+            <!-- Un servidor caído sí muestra el botón fijo: es lo único que se puede hacer con él,
+                 y esconderlo detrás del mouse convierte un problema en una adivinanza. -->
+            {#if isServer && row.down}
+              <button
+                class="btn btn-ghost btn-icon size-6 text-rose-600 dark:text-rose-400"
+                title="El servidor dejó de responder. Reconectar."
+                aria-label="Reconectar"
+                tabindex="-1"
+                onclick={(event) => {
+                  event.stopPropagation();
+                  onconnect(row.profileId);
+                }}
+              >
+                <Icon name="refresh" size={12} />
               </button>
             {/if}
 

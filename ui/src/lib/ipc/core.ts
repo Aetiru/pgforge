@@ -3,7 +3,7 @@
  * ningún dominio. Los demás módulos lo importan de acá.
  */
 
-import { Channel } from "@tauri-apps/api/core";
+import { Channel, invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { error as logError } from "@tauri-apps/plugin-log";
 
 /** Error del núcleo tal como cruza el IPC. Refleja `pgforge_core::error::ErrorPayload`. */
@@ -22,9 +22,50 @@ export type CoreError =
     }
   /** La clave del host SSH no está en `known_hosts`, o cambió. La interfaz muestra la huella. */
   | { kind: "sshHostKey"; host: string; fingerprint: string; changed: boolean }
+  /** El servidor no está del otro lado: se cayó, lo reiniciaron o se cortó la red. */
+  | { kind: "disconnected"; message: string }
   | { kind: "other"; message: string };
 
 export { Channel };
+
+/**
+ * Quién se entera de que un servidor dejó de responder.
+ *
+ * Un corte no es un error de la operación que se estaba haciendo: es del vínculo, y cualquier otra
+ * cosa contra ese servidor va a fallar igual. Enterarse en cada sitio que llama —y hay decenas—
+ * sería repetir el mismo `catch` en toda la aplicación, así que el aviso sale de un solo lugar: el
+ * `invoke` de acá abajo, que ve pasar todas las llamadas y todos los errores.
+ */
+type ServerDownHandler = (profileId: string) => void;
+
+let serverDown: ServerDownHandler | null = null;
+
+export function onServerDown(handler: ServerDownHandler) {
+  serverDown = handler;
+}
+
+/**
+ * `invoke` de Tauri, con el corte de conexión avisado de paso.
+ *
+ * Todos los módulos de `ipc/` llaman a este y no al de Tauri. El identificador del servidor sale
+ * del propio argumento `id`, que es el que llevan casi todos los comandos; los pocos que no lo
+ * llevan —los de vista previa, que son puros— tampoco pueden cortarse por una conexión caída.
+ */
+export async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await tauriInvoke<T>(command, args);
+  } catch (error) {
+    if ((error as CoreError)?.kind === "disconnected" && typeof args?.id === "string") {
+      serverDown?.(args.id);
+    }
+    throw error;
+  }
+}
+
+/** `true` si el error dice que el servidor dejó de estar del otro lado. */
+export function isDisconnected(error: unknown): boolean {
+  return (error as CoreError)?.kind === "disconnected";
+}
 
 /** `160004` se muestra como `16.4`. */
 export function formatVersion(versionNum: number): string {
@@ -70,6 +111,8 @@ function errorText(error: unknown): string {
       return e.changed
         ? `La clave del host SSH ${e.host} cambió (huella ${e.fingerprint}). Podría ser un intermediario.`
         : `El host SSH ${e.host} no está verificado (huella ${e.fingerprint}).`;
+    case "disconnected":
+      return `Se perdió la conexión con el servidor: ${e.message}`;
     case "other":
       return e.message;
     default:

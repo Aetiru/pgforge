@@ -54,6 +54,7 @@ pub fn run() {
             commands::servers::connected_servers,
             commands::schema::tree_children,
             commands::schema::tree_search,
+            commands::schema::read_cancel,
             commands::schema::object_ddl,
             commands::schema::schema_graph,
             commands::schema::erd_export_svg,

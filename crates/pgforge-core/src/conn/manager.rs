@@ -257,6 +257,51 @@ async fn fetch_caps(client: &Client) -> Result<ServerCaps> {
     })
 }
 
+tokio::task_local! {
+    /// Dónde deja `client()` el token de la conexión que entrega, cuando alguien lo está esperando.
+    static CANCEL_SINK: CancelSink;
+}
+
+/// Las conexiones que usó una lectura, para poder abortarla desde afuera.
+///
+/// Una consulta del árbol o un DDL de lectura no tienen sesión propia como la pestaña de consulta:
+/// toman una conexión del pool, la usan y la devuelven. Sin esto, una lectura contra un catálogo
+/// enorme deja la ventana esperando sin nada que apretar. Se guardan **todos** los tokens porque
+/// una sola operación puede pedir más de una conexión —los hijos de una base son cuatro consultas—
+/// y cancelar solo la primera dejaría corriendo a las demás.
+#[derive(Clone, Default)]
+pub struct CancelSink {
+    tokens: Arc<std::sync::Mutex<Vec<CancelToken>>>,
+}
+
+impl CancelSink {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn push(&self, token: CancelToken) {
+        if let Ok(mut tokens) = self.tokens.lock() {
+            tokens.push(token);
+        }
+    }
+
+    /// Los tokens anotados hasta ahora.
+    pub fn tokens(&self) -> Vec<CancelToken> {
+        self.tokens
+            .lock()
+            .map(|tokens| tokens.clone())
+            .unwrap_or_default()
+    }
+}
+
+/// Corre una lectura anotando en `sink` las conexiones que vaya usando.
+///
+/// Vale para cualquier función del núcleo que pida sus conexiones con `ServerHandle::client`: no
+/// hace falta que sepa nada de cancelación ni cambiarle la firma.
+pub async fn cancelable<T>(sink: CancelSink, future: impl std::future::Future<Output = T>) -> T {
+    CANCEL_SINK.scope(sink, future).await
+}
+
 /// Un servidor conectado.
 pub struct ServerHandle {
     pub profile: ConnectionProfile,
@@ -288,6 +333,9 @@ impl ServerHandle {
     }
 
     /// Toma una conexión de la base indicada, abriendo el pool correspondiente la primera vez.
+    ///
+    /// Si la llamada corre adentro de un [`cancelable`], el token de la conexión entregada se anota
+    /// ahí: es lo que permite abortar después una lectura que ya está esperando al servidor.
     pub async fn client(&self, database: &str) -> Result<Object> {
         let pool = {
             let mut pools = self.pools.lock().await;
@@ -305,7 +353,11 @@ impl ServerHandle {
                 }
             }
         };
-        pool.get().await.map_err(map_pool_error)
+        let client = pool.get().await.map_err(map_pool_error)?;
+        // Fuera de un `cancelable` no hay dónde anotarlo y el `try_with` falla en silencio, que es
+        // exactamente lo que corresponde: la mayoría de las lecturas no se cancelan.
+        let _ = CANCEL_SINK.try_with(|sink| sink.push(client.cancel_token()));
+        Ok(client)
     }
 
     /// Abre una conexión propia, fuera del pool.

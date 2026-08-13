@@ -3,7 +3,7 @@
  * esquemas, bases y particiones. Cada uno con su `*_preview` y su `*_apply`.
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./core";
 
 // ---------------------------------------------------------------------------
 // Estructura de tablas

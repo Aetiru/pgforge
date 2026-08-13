@@ -3,7 +3,10 @@ import {
   disconnect as ipcDisconnect,
   describeError,
   folderOf,
+  isCanceled,
   listProfiles,
+  onServerDown,
+  readCancel,
   renameGroup as ipcRenameGroup,
   saveProfile,
   treeChildren,
@@ -46,10 +49,21 @@ export interface Row {
   hasChildren: boolean;
   expanded: boolean;
   loading: boolean;
+  /** Identificador de la lectura en curso, para poder abortarla. */
+  request?: string;
   error?: string;
   children: Row[] | null;
   /** Solo significa algo en las filas de servidor. */
   connected: boolean;
+  /**
+   * El servidor dejó de responder, pero la aplicación lo sigue teniendo por conectado.
+   *
+   * Son dos cosas distintas a propósito: `connected` en `false` cierra todas las pestañas de ese
+   * servidor (ver el efecto de `App.svelte`), y perder una consulta a medio escribir por un corte
+   * de red de tres segundos sería peor que el corte. La fila se marca, se ofrece reconectar, y lo
+   * que había abierto sigue ahí.
+   */
+  down?: boolean;
 }
 
 /**
@@ -338,7 +352,11 @@ class Explorer {
     if (row) {
       row.connected = true;
       row.error = undefined;
+      row.down = false;
       row.children = null;
+      // Reconectar sobre un servidor que se había caído tiene que volver a leer: lo que estaba
+      // cargado es de antes del corte, y adentro de esa ventana pudo cambiar cualquier cosa.
+      row.expanded = false;
       await this.toggle(row);
       this.refreshGroupDetail(row);
     }
@@ -370,6 +388,27 @@ class Explorer {
     return row.kind === "server" && !row.connected;
   }
 
+  /**
+   * Marca que un servidor dejó de responder. Lo llama la frontera del IPC (`onServerDown`) cuando
+   * cualquier comando falla por conexión caída: así el árbol se entera del corte aunque lo haya
+   * descubierto una pestaña de consulta, y no una vez por cada cosa que se intente.
+   */
+  markDown(profileId: string) {
+    const row = this.rowFor(profileId);
+    if (!row || !row.connected || row.down) return;
+    row.down = true;
+    row.error = "sin conexión";
+  }
+
+  /** Lo contrario: algo volvió a funcionar contra ese servidor. */
+  private markUp(profileId: string) {
+    const row = this.rowFor(profileId);
+    if (row?.down) {
+      row.down = false;
+      row.error = undefined;
+    }
+  }
+
   async toggle(row: Row) {
     if (!row.hasChildren || this.needsConnection(row)) return;
 
@@ -397,16 +436,35 @@ class Explorer {
   async loadChildren(row: Row) {
     row.loading = true;
     row.error = undefined;
+    // Cada lectura lleva su identificador para poder abortarla: un esquema con miles de objetos
+    // contra un servidor cargado tarda, y esperar sin nada que apretar no es una opción.
+    row.request = crypto.randomUUID();
     try {
-      const nodes = await treeChildren(row.profileId, row.node, this.options);
+      const nodes = await treeChildren(row.profileId, row.node, this.options, row.request);
       row.children = nodes.map((node) => childRow(row, node));
+      // Leer del servidor salió bien: si estaba marcado como caído, ya no lo está.
+      this.markUp(row.profileId);
     } catch (error) {
-      // El nodo queda expandido y vacío con el motivo a la vista, en vez de fallar en silencio.
-      row.error = describeError(error);
-      row.children = [];
+      // Cancelar no es fallar: el nodo vuelve a quedar cerrado y sin cargar, como antes de abrirlo,
+      // así que el próximo intento lo lee de nuevo en vez de mostrar una lista vacía.
+      if (isCanceled(error)) {
+        row.children = null;
+        row.expanded = false;
+      } else {
+        // El nodo queda expandido y vacío con el motivo a la vista, en vez de fallar en silencio.
+        row.error = describeError(error);
+        row.children = [];
+      }
     } finally {
       row.loading = false;
+      row.request = undefined;
     }
+  }
+
+  /** Aborta la lectura de un nodo que está cargando. */
+  async cancelLoad(row: Row) {
+    if (!row.request) return;
+    await readCancel(row.request).catch(() => {});
   }
 
   async reload(row: Row) {
@@ -654,6 +712,10 @@ class Explorer {
 }
 
 export const explorer = new Explorer();
+
+// El corte de conexión lo detecta la frontera del IPC, que ve pasar todas las llamadas; acá se
+// dice qué hacer con ese aviso. Se engancha una sola vez, al cargar el módulo.
+onServerDown((profileId) => explorer.markDown(profileId));
 
 /**
  * Si la fila sobrevive al filtro de «solo conectados».

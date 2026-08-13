@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use pgforge_core::conn::CancelSink;
 use pgforge_core::monitor::{ActivityFilter, Monitor};
 use pgforge_core::sql::{HistoryStore, QuerySession};
 use pgforge_core::{ConnectionManager, ProfileId, ProfileStore};
@@ -93,6 +94,16 @@ pub struct QueryEntry {
     pub notices: Arc<Mutex<Option<Channel<QueryEvent>>>>,
 }
 
+/// Una lectura en curso que se puede abortar: la carga de un nodo del árbol o el DDL de un objeto.
+///
+/// No tienen sesión propia como la pestaña de consulta —toman una conexión del pool y la devuelven—,
+/// así que lo que se guarda es el `CancelSink` donde el núcleo anota los tokens de las conexiones
+/// que la lectura fue usando.
+pub struct ReadEntry {
+    pub profile: ProfileId,
+    pub sink: CancelSink,
+}
+
 pub struct AppState {
     pub manager: ConnectionManager,
     pub store: Mutex<ProfileStore>,
@@ -104,6 +115,8 @@ pub struct AppState {
     /// identificador único y ambas se cancelan igual, avisándole a la tarea que corte.
     pub copies: Mutex<HashMap<String, ExternalTask>>,
     pub queries: Mutex<HashMap<String, QueryEntry>>,
+    /// Lecturas del árbol y del DDL en curso, por identificador de pedido.
+    pub reads: Mutex<HashMap<String, ReadEntry>>,
     pub history: Mutex<HistoryStore>,
 }
 
@@ -120,6 +133,7 @@ impl AppState {
             restores: Mutex::new(HashMap::new()),
             copies: Mutex::new(HashMap::new()),
             queries: Mutex::new(HashMap::new()),
+            reads: Mutex::new(HashMap::new()),
         })
     }
 }

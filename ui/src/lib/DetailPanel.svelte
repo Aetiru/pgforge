@@ -61,7 +61,9 @@
     databasePrivileges,
     defaultPrivileges,
     functionPrivileges,
+    isCanceled,
     objectDdl,
+    readCancel,
     policyApply,
     privilegeApply,
     relationPrivileges,
@@ -164,23 +166,29 @@
     if (!current || !hasDdl || !selected) return;
 
     const profileId = selected.profileId;
+    const request = crypto.randomUUID();
     let cancelled = false;
+    let done = false;
     loading = true;
 
-    objectDdl(profileId, current)
+    objectDdl(profileId, current, request)
       .then((result) => {
         if (!cancelled) ddl = result;
       })
       .catch((error) => {
-        if (!cancelled) ddlError = describeError(error);
+        if (!cancelled && !isCanceled(error)) ddlError = describeError(error);
       })
       .finally(() => {
+        done = true;
         if (!cancelled) loading = false;
       });
 
-    // Cambiar de nodo rápido no debe dejar que una respuesta vieja pise a la nueva.
+    // Cambiar de nodo rápido no debe dejar que una respuesta vieja pise a la nueva; y si la lectura
+    // todavía está corriendo, además se aborta contra el servidor. El DDL de una tabla lo genera
+    // `pg_dump`: seguir esperándolo para tirarlo a la basura es trabajo del servidor y del disco.
     return () => {
       cancelled = true;
+      if (!done) void readCancel(request).catch(() => {});
     };
   });
 

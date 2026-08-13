@@ -149,6 +149,14 @@ pub enum ErrorPayload {
         fingerprint: String,
         changed: bool,
     },
+    /// El servidor no está del otro lado: se cayó, lo reiniciaron o se cortó la red.
+    ///
+    /// Va aparte de `Other` porque no es un error de la operación que se estaba haciendo sino del
+    /// vínculo: cualquier otra cosa contra ese servidor va a fallar igual, y la interfaz puede
+    /// marcarlo entero en vez de mostrar el mismo cartel una vez por intento.
+    Disconnected {
+        message: String,
+    },
     Other {
         message: String,
     },
@@ -185,6 +193,9 @@ impl From<&Error> for ErrorPayload {
                 host: host.clone(),
                 fingerprint: fingerprint.clone(),
                 changed: *changed,
+            },
+            Error::Connection(_) | Error::ConnectionClosed => ErrorPayload::Disconnected {
+                message: err.to_string(),
             },
             other => ErrorPayload::Other {
                 message: other.to_string(),

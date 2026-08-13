@@ -2,7 +2,7 @@
  * Perfiles de conexión, carpetas y datos de la aplicación: lo que hay antes de estar conectado.
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./core";
 
 export type SslMode = "disable" | "prefer" | "require" | "verifyCa" | "verifyFull";
 

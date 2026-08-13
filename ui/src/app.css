@@ -291,6 +291,12 @@ textarea {
   @apply bg-zinc-300 dark:bg-zinc-600;
 }
 
+/* Conectado pero sin respuesta: no es lo mismo que apagado, y el rojo es el único color que se
+   entiende sin leer el `title`. */
+.dot-down {
+  @apply bg-rose-500 shadow-[0_0_0_2px] shadow-rose-500/20;
+}
+
 .spinner {
   @apply size-3 animate-spin rounded-full border border-zinc-300 border-t-blue-600
     dark:border-zinc-600 dark:border-t-blue-400;
