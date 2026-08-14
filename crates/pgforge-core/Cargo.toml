@@ -16,6 +16,12 @@ bytes = "1.10.1"
 deadpool-postgres = "0.14.1"
 futures-util = { version = "0.3.33", default-features = false, features = ["std", "sink"] }
 keyring = { version = "3.6.3", features = ["apple-native", "sync-secret-service", "windows-native"] }
+# Solo para preguntarle a la API de GitHub si hay una versión nueva (`update`). Se elige
+# `rustls-no-provider` y no `rustls`: esa última prende `aws-lc-rs`, que en Windows pide NASM y cmake
+# —lo mismo que se evita en `russh` y en `rustls`—. El proveedor lo pone el propio crate al construir
+# el cliente, con la configuración de `conn::tls::web_config`. `reqwest` ya estaba en el árbol por
+# debajo de Tauri, así que lo que se agrega es el TLS y no el cliente entero.
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "http2", "rustls-no-provider", "system-proxy"] }
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 rustls = { version = "0.23.43", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 rustls-native-certs = "0.8.4"

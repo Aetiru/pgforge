@@ -36,6 +36,9 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
+        // Para abrir la página de una release en el navegador del sistema. Un `<a href>` adentro de
+        // la ventana navegaría la propia aplicación a GitHub, que es lo último que se quiere.
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             app.manage(state::AppState::new(config_dir)?);
@@ -91,6 +94,9 @@ pub fn run() {
             commands::query::history_recent,
             commands::query::history_search,
             commands::query::history_clear,
+            commands::query::saved_list,
+            commands::query::saved_save,
+            commands::query::saved_delete,
             commands::data::data_open,
             commands::data::data_page,
             commands::data::data_preview,
@@ -174,6 +180,8 @@ pub fn run() {
             commands::backup::restore_plan,
             commands::backup::restore_run,
             commands::backup::restore_cancel,
+            commands::update::update_check,
+            commands::update::update_open,
         ])
         .run(tauri::generate_context!())
         .expect("no se pudo iniciar la aplicación");

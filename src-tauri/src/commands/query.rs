@@ -12,7 +12,7 @@ use std::time::Instant;
 use pgforge_core::error::ErrorPayload;
 use pgforge_core::sql::{
     self, completion, explain, history::Entry as HistoryEntry, ColumnType, ExplainOptions, Limits,
-    NewEntry, Outcome, Plan, QuerySession, SchemaSnapshot, TxStatus,
+    NewEntry, NewQuery, Outcome, Plan, QuerySession, SavedQuery, SchemaSnapshot, TxStatus,
 };
 use pgforge_core::{Error, ProfileId, Result};
 use serde::Serialize;
@@ -301,6 +301,24 @@ pub async fn history_search(
 #[tauri::command]
 pub async fn history_clear(state: State<'_, AppState>) -> Result<()> {
     state.history.lock().await.clear()
+}
+
+/// Las consultas guardadas, por nombre.
+#[tauri::command]
+pub async fn saved_list(state: State<'_, AppState>) -> Result<Vec<SavedQuery>> {
+    state.saved.lock().await.list()
+}
+
+/// Guarda una consulta nueva o reescribe una existente. El reloj lo pone acá quien tiene el sistema
+/// operativo, no el núcleo, igual que en el historial.
+#[tauri::command]
+pub async fn saved_save(state: State<'_, AppState>, query: NewQuery) -> Result<SavedQuery> {
+    state.saved.lock().await.save(&query, epoch_seconds())
+}
+
+#[tauri::command]
+pub async fn saved_delete(state: State<'_, AppState>, saved_id: i64) -> Result<bool> {
+    state.saved.lock().await.delete(saved_id)
 }
 
 /// Pide al servidor que aborte lo que la pestaña esté ejecutando.

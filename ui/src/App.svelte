@@ -15,6 +15,7 @@
   import Modal from "./lib/Modal.svelte";
   import QueryPanel from "./lib/QueryPanel.svelte";
   import TreePanel from "./lib/TreePanel.svelte";
+  import UpdateDialog from "./lib/UpdateDialog.svelte";
   import { openData, DataTab } from "./lib/data.svelte";
   import { openErd, ErdTab } from "./lib/erd.svelte";
   import { environmentOf, guard } from "./lib/access.svelte";
@@ -24,6 +25,7 @@
   import { parseQuery, PREFIX_HELP } from "./lib/tree-query";
   import { tabs, type Tab, type TabKind } from "./lib/tabs.svelte";
   import { theme } from "./lib/theme.svelte";
+  import { updates } from "./lib/update.svelte";
   import {
     appInfo,
     deleteProfile,
@@ -100,6 +102,9 @@
   $effect(() => {
     appInfo().then((value) => (info = value));
     explorer.refreshProfiles().catch((error) => (banner = describeError(error)));
+    // Sin `await` y sin `catch`: la comprobación de versión no bloquea el arranque y su falla no se
+    // le muestra a nadie (ver `update.svelte.ts`).
+    updates.check();
   });
 
   const connectedServers = $derived(explorer.servers.filter((row) => row.connected));
@@ -425,14 +430,29 @@
       </button>
 
       {#if info}
+        {#if updates.release}
+          <!-- Aparece solo cuando hay algo más nuevo publicado. Es una pastilla y no un cartel: la
+               versión nueva no interrumpe lo que se estaba haciendo. -->
+          <button
+            class="tag-ok flex items-center gap-1"
+            title="pgforge {updates.release.version} está disponible"
+            onclick={() => (updates.showing = true)}
+          >
+            <Icon name="download" size={11} />
+            {updates.release.version}
+          </button>
+        {/if}
+
         <!-- La ruta del registro cuelga de la versión: es lo que se pide junto con ella cuando algo
-             falla, y no merece un lugar propio en la barra. -->
-        <span
+             falla, y no merece un lugar propio en la barra. Hacer clic vuelve a preguntar por una
+             versión nueva sin esperar al próximo día. -->
+        <button
           class="text-xs select-text muted"
-          title={info.logDir ? `Registro en ${info.logDir}` : undefined}
+          title="{info.logDir ? `Registro en ${info.logDir}\n` : ''}Buscar una versión nueva"
+          onclick={() => updates.check(true)}
         >
           v{info.version}
-        </span>
+        </button>
       {/if}
     </div>
   </header>
@@ -807,6 +827,10 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
 
 {#if groupDialog}
   <GroupDialog name={groupDialog} onclose={() => (groupDialog = null)} />
+{/if}
+
+{#if updates.showing && info}
+  <UpdateDialog current={info.version} onclose={() => (updates.showing = false)} />
 {/if}
 
 {#if newGroupDialog}

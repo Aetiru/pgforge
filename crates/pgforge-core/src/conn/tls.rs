@@ -23,6 +23,46 @@ fn provider() -> Arc<CryptoProvider> {
     Arc::new(rustls::crypto::ring::default_provider())
 }
 
+/// Los certificados raíz del sistema, sin los del perfil.
+///
+/// Un certificado ilegible del almacén no debería impedir usar los demás, así que se descartan de a
+/// uno en vez de fallar entero.
+fn native_roots() -> RootCertStore {
+    let mut roots = RootCertStore::empty();
+    for cert in rustls_native_certs::load_native_certs().certs {
+        let _ = roots.add(cert);
+    }
+    roots
+}
+
+/// Configuración TLS para hablar HTTPS con un servicio web, hoy solo la API de releases de GitHub.
+///
+/// Vive acá y no en `update` para que el proyecto tenga una sola historia de TLS: el mismo proveedor
+/// criptográfico (`ring`, el que se elige en todo el árbol para no arrastrar NASM ni cmake al CI) y
+/// las mismas raíces del sistema. A diferencia de una conexión a PostgreSQL, acá no hay escala de
+/// modos: contra un servicio público en internet, cualquier cosa que no sea validar nombre y cadena
+/// no tendría sentido.
+pub fn web_config() -> Result<ClientConfig> {
+    let roots = native_roots();
+    if roots.is_empty() {
+        return Err(Error::Config(
+            "no hay certificados raíz disponibles para validar la conexión".to_owned(),
+        ));
+    }
+
+    let provider = provider();
+    let verifier = WebPkiServerVerifier::builder_with_provider(Arc::new(roots), provider.clone())
+        .build()
+        .map_err(|e| Error::Config(format!("no se pudo preparar la validación TLS: {e}")))?;
+
+    Ok(ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .expect("las versiones por omisión siempre son válidas")
+        .dangerous()
+        .with_custom_certificate_verifier(verifier)
+        .with_no_client_auth())
+}
+
 /// Conector TLS de una conexión.
 ///
 /// Envuelve al de `rustls` con un solo agregado: poder reemplazar el nombre que `tokio-postgres` le
@@ -98,13 +138,7 @@ fn client_config_verifying(
     profile: &ConnectionProfile,
     check_hostname: bool,
 ) -> Result<ClientConfig> {
-    let mut roots = RootCertStore::empty();
-
-    let native = rustls_native_certs::load_native_certs();
-    for cert in native.certs {
-        // Un certificado ilegible del almacén del sistema no debería impedir usar los demás.
-        let _ = roots.add(cert);
-    }
+    let mut roots = native_roots();
 
     if let Some(path) = &profile.root_cert {
         let pem = std::fs::read(path)?;

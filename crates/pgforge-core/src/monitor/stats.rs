@@ -3,7 +3,7 @@
 use serde::Serialize;
 use tokio_postgres::Client;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -224,35 +224,72 @@ pub struct StatementStat {
     pub rows: i64,
 }
 
-/// `true` si `pg_stat_statements` está instalada en esta base.
-pub async fn has_statement_stats(client: &Client) -> Result<bool> {
+/// Qué versión de `pg_stat_statements` está instalada en esta base, si está.
+///
+/// Interesa la versión de la **extensión**, no la del servidor: la vista la define el archivo de la
+/// extensión, y una base creada hace años —o migrada con `pg_upgrade`— puede seguir con la 1.7
+/// aunque el servidor sea la 14. Ahí las columnas todavía se llaman `total_time` y `mean_time`.
+pub async fn statement_stats_version(client: &Client) -> Result<Option<String>> {
     let row = client
-        .query_one(
-            "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'pg_stat_statements')",
+        .query_opt(
+            "SELECT extversion FROM pg_catalog.pg_extension WHERE extname = 'pg_stat_statements'",
             &[],
         )
         .await?;
-    Ok(row.get(0))
+    Ok(row.map(|row| row.get(0)))
+}
+
+/// `true` si `pg_stat_statements` está instalada en esta base.
+pub async fn has_statement_stats(client: &Client) -> Result<bool> {
+    Ok(statement_stats_version(client).await?.is_some())
+}
+
+/// `true` si esa versión de la extensión ya usa `total_exec_time` en vez de `total_time`.
+///
+/// El corte es la 1.8, la que vino con PostgreSQL 13: ahí se separó el tiempo de planificación del
+/// de ejecución y las dos columnas se renombraron. Una versión que no se puede interpretar se
+/// asume nueva, que es lo que trae cualquier servidor del rango soportado sin que nadie la fije.
+fn uses_exec_time(extversion: &str) -> bool {
+    let mut parts = extversion.split('.');
+    let major: u32 = match parts.next().and_then(|part| part.parse().ok()) {
+        Some(major) => major,
+        None => return true,
+    };
+    // `unwrap_or(0)`: una versión sin minor (`"2"`) es posterior a cualquier `1.x`.
+    let minor: u32 = parts.next().and_then(|part| part.parse().ok()).unwrap_or(0);
+
+    (major, minor) >= (1, 8)
 }
 
 pub async fn statements(client: &Client, limit: i64) -> Result<Vec<StatementStat>> {
-    // Los nombres de columna cambiaron en PostgreSQL 13 (`total_time` pasó a `total_exec_time`),
-    // pero la versión mínima soportada ya usa los nuevos.
+    let extversion = statement_stats_version(client).await?.ok_or_else(|| {
+        Error::Config("la extensión pg_stat_statements no está instalada en esta base".to_owned())
+    })?;
+
+    // Los nombres salen de una lista cerrada de dos, no de nada que escriba el usuario.
+    let (total, mean) = if uses_exec_time(&extversion) {
+        ("total_exec_time", "mean_exec_time")
+    } else {
+        ("total_time", "mean_time")
+    };
+
     let rows = client
         .query(
-            "SELECT s.queryid,
-                    d.datname::text,
-                    r.rolname::text,
-                    s.query,
-                    s.calls,
-                    s.total_exec_time,
-                    s.mean_exec_time,
-                    s.rows
-               FROM pg_stat_statements s
-               LEFT JOIN pg_catalog.pg_database d ON d.oid = s.dbid
-               LEFT JOIN pg_catalog.pg_roles r ON r.oid = s.userid
-              ORDER BY s.total_exec_time DESC
-              LIMIT $1",
+            &format!(
+                "SELECT s.queryid,
+                        d.datname::text,
+                        r.rolname::text,
+                        s.query,
+                        s.calls,
+                        s.{total},
+                        s.{mean},
+                        s.rows
+                   FROM pg_stat_statements s
+                   LEFT JOIN pg_catalog.pg_database d ON d.oid = s.dbid
+                   LEFT JOIN pg_catalog.pg_roles r ON r.oid = s.userid
+                  ORDER BY s.{total} DESC
+                  LIMIT $1"
+            ),
             &[&limit],
         )
         .await?;
@@ -296,5 +333,22 @@ mod tests {
         // Estos sostienen una restricción: que nadie los consulte no los hace prescindibles.
         assert!(!index(0, true, false).is_unused());
         assert!(!index(0, false, true).is_unused());
+    }
+
+    #[test]
+    fn las_columnas_de_pg_stat_statements_salen_de_la_version_de_la_extension() {
+        // El corte está en la 1.8, la de PostgreSQL 13.
+        assert!(!uses_exec_time("1.7"), "la 1.7 todavía tiene total_time");
+        assert!(!uses_exec_time("1.6"));
+        assert!(uses_exec_time("1.8"));
+        assert!(uses_exec_time("1.9"));
+        // Como texto, "1.10" sería anterior a "1.9": se comparan como números.
+        assert!(uses_exec_time("1.10"));
+        assert!(uses_exec_time("1.11"));
+        assert!(uses_exec_time("2.0"));
+        // Sin minor y sin poder interpretarla se asume nueva, que es lo que trae cualquier
+        // servidor del rango soportado.
+        assert!(uses_exec_time("2"));
+        assert!(uses_exec_time("vaya a saber"));
     }
 }
