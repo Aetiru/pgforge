@@ -11,10 +11,12 @@ pub mod completion;
 pub mod exec;
 pub mod explain;
 pub mod history;
+pub mod saved;
 pub mod split;
 
 pub use completion::{Relation, SchemaSnapshot};
 pub use exec::{ColumnType, Limits, Outcome, QuerySession, TxStatus, DEFAULT_MAX_ROWS};
 pub use explain::{ExplainOptions, Plan, PlanNode};
 pub use history::{HistoryStore, NewEntry};
+pub use saved::{NewQuery, SavedQuery, SavedStore};
 pub use split::{at_cursor, split, Statement};

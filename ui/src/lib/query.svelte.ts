@@ -51,7 +51,7 @@ export interface ErrorMark {
   message: string;
 }
 
-export type ResultView = "rows" | "plan" | "messages" | "history";
+export type ResultView = "rows" | "plan" | "messages" | "history" | "saved";
 
 /**
  * Lo que el editor necesita del catálogo: el árbol que espera `@codemirror/lang-sql` para completar
@@ -145,6 +145,26 @@ export class QueryTab extends Tab {
 
   /** Dónde se guardó el texto, para que el siguiente Ctrl+S no vuelva a preguntar. */
   filePath = $state<string | null>(null);
+
+  /**
+   * De qué consulta guardada salió el texto, si salió de alguna.
+   *
+   * Se conserva para que volver a guardar reescriba esa y no cree una copia con otro nombre. Es
+   * independiente de `filePath`: una cosa es un archivo del disco y la otra una consulta con nombre
+   * adentro de la aplicación, y una pestaña puede tener las dos o ninguna.
+   */
+  savedId = $state<number | null>(null);
+  /** El nombre con el que se guardó, para proponerlo la próxima vez. */
+  savedName = $state<string | null>(null);
+
+  /** Trae al editor una consulta guardada. */
+  applySaved(saved: { id: number; name: string; sql: string }) {
+    this.sql = saved.sql;
+    this.savedId = saved.id;
+    this.savedName = saved.name;
+    this.title = saved.name;
+    this.view = "rows";
+  }
 
   /**
    * Se corrió DDL y todavía no se avisó al árbol ni al autocompletado. No es `$state`: no se dibuja
@@ -452,6 +472,23 @@ export class QueryTab extends Tab {
       }
     } finally {
       this.running = false;
+    }
+  }
+}
+
+/**
+ * Suelta el vínculo de las pestañas con una consulta guardada que se borró.
+ *
+ * Sin esto la pestaña queda apuntando a un identificador que ya no existe: el próximo «Guardar»
+ * intenta reescribir lo borrado, no toca ninguna fila y termina en un «la consulta guardada ya no
+ * existe» sin salida —el usuario quería guardar, no reescribir—. Suelto el vínculo, ese mismo botón
+ * la guarda de nuevo como una consulta nueva.
+ */
+export function forgetSaved(savedId: number) {
+  for (const tab of tabs.all) {
+    if (tab instanceof QueryTab && tab.savedId === savedId) {
+      tab.savedId = null;
+      // El nombre se conserva: sigue siendo el título de la pestaña y lo que se propone al guardar.
     }
   }
 }

@@ -55,6 +55,7 @@
     | "eye"
     | "eye-off"
     | "save"
+    | "star"
     | "undo"
     | "gauge"
     | "unplug"
@@ -92,6 +93,9 @@
     play: '<path d="M7 4.8l12 7.2-12 7.2z"/>',
     // Disquete: nadie usa uno hace veinte años y sigue siendo lo que todos leen como «guardar».
     save: '<path d="M4 5a1 1 0 0 1 1-1h11l4 4v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M8 4v5h7V4"/><rect x="8" y="13" width="8" height="7"/>',
+    // Estrella: guardar la consulta con nombre. Va aparte del disquete, que es guardar en un
+    // archivo del disco; son dos cosas distintas y el mismo ícono para las dos las confundía.
+    star: '<path d="M12 3.6l2.6 5.3 5.9.9-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.8l5.9-.9z"/>',
     // Flecha que vuelve sobre sus pasos: deshacer lo hecho desde que se abrió la transacción.
     undo: '<path d="M4 9h11a5 5 0 0 1 0 10H9"/><path d="M8 5L4 9l4 4"/>',
     // Aguja de un medidor: el plan con los tiempos reales, no el estimado.

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use pgforge_core::conn::CancelSink;
 use pgforge_core::monitor::{ActivityFilter, Monitor};
-use pgforge_core::sql::{HistoryStore, QuerySession};
+use pgforge_core::sql::{HistoryStore, QuerySession, SavedStore};
 use pgforge_core::{ConnectionManager, ProfileId, ProfileStore};
 use tauri::ipc::Channel;
 use tokio::sync::{oneshot, Mutex};
@@ -118,6 +118,9 @@ pub struct AppState {
     /// Lecturas del árbol y del DDL en curso, por identificador de pedido.
     pub reads: Mutex<HashMap<String, ReadEntry>>,
     pub history: Mutex<HistoryStore>,
+    /// Las consultas que el usuario decidió conservar. Archivo aparte del historial: son cosas
+    /// distintas y el `user_version` del esquema es del archivo (ver `sql::saved`).
+    pub saved: Mutex<SavedStore>,
 }
 
 impl AppState {
@@ -127,6 +130,7 @@ impl AppState {
             manager: ConnectionManager::new(),
             store: Mutex::new(ProfileStore::load(config_dir.join("connections.json"))?),
             history: Mutex::new(HistoryStore::open(config_dir.join("history.db"))?),
+            saved: Mutex::new(SavedStore::open(config_dir.join("saved.db"))?),
             monitors: Mutex::new(HashMap::new()),
             maintenance: Mutex::new(HashMap::new()),
             backups: Mutex::new(HashMap::new()),

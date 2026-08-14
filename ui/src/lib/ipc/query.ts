@@ -157,6 +157,45 @@ export const historySearch = (text: string, limit?: number) =>
 
 export const historyClear = () => invoke<void>("history_clear");
 
+/**
+ * Una consulta que el usuario decidió conservar, con nombre. Espejo de `pgforge_core::sql::saved`.
+ *
+ * Distinta del historial: eso es lo que pasó y se vacía sin que duela; esto es lo que se guarda a
+ * propósito. El servidor y la base son de dónde salió, no una atadura: se puede abrir contra otra.
+ */
+export interface SavedQuery {
+  id: number;
+  name: string;
+  sql: string;
+  profileId: string | null;
+  database: string | null;
+  /** Segundos desde el epoch. */
+  createdAt: number;
+  updatedAt: number;
+}
+
+export const savedList = () => invoke<SavedQuery[]>("saved_list");
+
+/** Con `id` reescribe esa consulta; sin él guarda una nueva. Un nombre repetido devuelve conflicto. */
+export const savedSave = (query: {
+  id?: number | null;
+  name: string;
+  sql: string;
+  profileId?: string | null;
+  database?: string | null;
+}) =>
+  invoke<SavedQuery>("saved_save", {
+    query: {
+      id: query.id ?? null,
+      name: query.name,
+      sql: query.sql,
+      profileId: query.profileId ?? null,
+      database: query.database ?? null,
+    },
+  });
+
+export const savedDelete = (savedId: number) => invoke<boolean>("saved_delete", { savedId });
+
 export const statementAtCursor = (sql: string, cursor: number) =>
   invoke<SqlStatement | null>("statement_at_cursor", { sql, cursor });
 

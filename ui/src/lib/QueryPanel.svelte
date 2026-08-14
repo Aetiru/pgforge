@@ -8,6 +8,8 @@
   import Icon from "./Icon.svelte";
   import PlanTree from "./PlanTree.svelte";
   import ResultGrid from "./ResultGrid.svelte";
+  import SaveQueryDialog from "./SaveQueryDialog.svelte";
+  import SavedPanel from "./SavedPanel.svelte";
   import FontSize from "./FontSize.svelte";
   import SqlEditor from "./SqlEditor.svelte";
   import { editorSplit } from "./editor.svelte";
@@ -25,6 +27,9 @@
   let { tab }: { tab: QueryTab } = $props();
 
   let exportOpen = $state(false);
+  let saveOpen = $state(false);
+  /** Se incrementa al guardar, para que el panel de guardadas relea sin volver a montarse. */
+  let savedStamp = $state(0);
   let editor = $state<ReturnType<typeof SqlEditor> | null>(null);
   let databases = $state<string[]>([]);
   let switching = $state<string | null>(null);
@@ -143,6 +148,7 @@
     { value: "plan", label: "Plan" },
     { value: "messages", label: "Mensajes" },
     { value: "history", label: "Historial" },
+    { value: "saved", label: "Guardadas" },
   ] as const;
 </script>
 
@@ -256,6 +262,19 @@
       onclick={() => saveQueryTab(tab, false)}
     >
       <Icon name="save" size={14} />
+    </button>
+
+    <!-- Guardar con nombre no es guardar en un archivo: queda adentro de la aplicación, en la
+         pestaña «Guardadas», y no depende de acordarse dónde se dejó el .sql. -->
+    <button
+      class="btn btn-icon"
+      aria-label="Guardar la consulta con un nombre"
+      title={tab.savedName
+        ? `Guarda los cambios en «${tab.savedName}»`
+        : "Guarda la consulta con un nombre para volver a abrirla"}
+      onclick={() => (saveOpen = true)}
+    >
+      <Icon name="star" size={14} />
     </button>
 
     <span class="toolbar-sep"></span>
@@ -521,6 +540,8 @@
             tab.view = "rows";
           }}
         />
+      {:else if tab.view === "saved"}
+        <SavedPanel reload={savedStamp} onpick={(saved) => tab.applySaved(saved)} />
       {:else if tab.messages.length === 0}
         <Empty
           icon="info"
@@ -555,6 +576,14 @@
     database={tab.database}
     source={{ kind: "query", sql: tab.ranSql }}
     onclose={() => (exportOpen = false)}
+  />
+{/if}
+
+{#if saveOpen}
+  <SaveQueryDialog
+    {tab}
+    onsaved={() => (savedStamp += 1)}
+    onclose={() => (saveOpen = false)}
   />
 {/if}
 
