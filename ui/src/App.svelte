@@ -21,6 +21,7 @@
   import { explorer } from "./lib/explorer.svelte";
   import { openQuery, openSqlFiles, saveQueryTab, QueryTab } from "./lib/query.svelte";
   import { queryTargetOf } from "./lib/tree-actions";
+  import { parseQuery, PREFIX_HELP } from "./lib/tree-query";
   import { tabs, type Tab, type TabKind } from "./lib/tabs.svelte";
   import { theme } from "./lib/theme.svelte";
   import {
@@ -164,7 +165,7 @@
 
   function searchServer() {
     const row = explorer.selected;
-    if (!row || !searchTarget || explorer.search.trim() === "") return;
+    if (!row || !searchTarget || parseQuery(explorer.search).text === "") return;
     explorer.searchServer(row.profileId, searchTarget.database, explorer.search);
   }
 
@@ -490,7 +491,8 @@
               <input
                 class="field w-full py-1 pr-7 pl-7"
                 placeholder="Buscar"
-                title="Filtra lo que el árbol ya trajo. Enter busca en el servidor."
+                title="Filtra lo que el árbol ya trajo. Enter busca en el servidor.
+Con prefijo se acota al tipo — {PREFIX_HELP}"
                 bind:value={explorer.search}
                 onkeydown={(event) => {
                   if (event.key === "Escape") clearSearch();
@@ -515,7 +517,7 @@
                 ? `Buscar «${explorer.search}» en el catálogo de ${searchTarget.database}`
                 : "Elegí una base o un objeto del árbol para buscar en el servidor"}
               aria-label="Buscar en el servidor"
-              disabled={!searchTarget || explorer.search.trim() === "" || explorer.searching}
+              disabled={!searchTarget || parseQuery(explorer.search).text === "" || explorer.searching}
               onclick={searchServer}
             >
               <Icon name="compass" />

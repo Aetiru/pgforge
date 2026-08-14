@@ -1,0 +1,66 @@
+# Configuración de `cargo deny`: qué se acepta del árbol de dependencias.
+#
+# Corre en CI (`cargo deny check`) y contesta tres preguntas que ningún test hace: si alguna
+# dependencia tiene una vulnerabilidad publicada, si alguna trae una licencia que no se puede
+# distribuir, y si alguna sale de un registro que no es crates.io.
+
+[graph]
+# Solo lo que de verdad se compila y se distribuye. Sin esto se auditan también las dependencias de
+# plataformas que la aplicación no soporta, y una alerta ahí no le llega a ningún usuario.
+targets = [
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+
+[advisories]
+version = 2
+# Una caja sin mantenimiento solo frena el build si la pedimos nosotros: las que llegan por abajo de
+# Tauri —los bindings de GTK3, `unic-*`, `proc-macro-error`— no se pueden cambiar desde este
+# repositorio, y una alerta que nadie puede accionar termina apagando la atención sobre las que sí.
+unmaintained = "workspace"
+ignore = [
+    # `rsa`, por debajo de `russh`: el ataque Marvin recupera la clave midiendo tiempos de
+    # **descifrado** RSA, que es lo que hace un servidor SSH, no el cliente. Acá `russh` la usa para
+    # autenticarse con una clave del usuario y verificar la del host, y todavía no hay versión
+    # corregida («No safe upgrade is available»). Revisar cuando `russh` suba a un `rsa` parcheado.
+    "RUSTSEC-2023-0071",
+]
+
+[licenses]
+version = 2
+# Permisivas y compatibles con distribuir el binario. MPL-2.0 entra porque obliga a publicar los
+# cambios del archivo que uno toque, no del programa que lo usa.
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CDLA-Permissive-2.0",
+    "OpenSSL",
+    "BSL-1.0",
+    "CC0-1.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Dos versiones de la misma caja no son un error: es lo normal en un árbol de este tamaño y
+# resolverlo no depende de este repositorio. Lo que sí se avisa es cuando pasa.
+multiple-versions = "warn"
+wildcards = "deny"
+# Las cajas del propio workspace se piden por ruta, y ahí el comodín de versión es lo normal: lo que
+# se quiere prohibir es un comodín contra una caja de crates.io, que deja el build a merced de lo
+# que publiquen mañana.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

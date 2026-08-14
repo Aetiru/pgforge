@@ -9,8 +9,11 @@ use std::sync::Arc;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::client::WebPkiServerVerifier;
 use rustls::crypto::{verify_tls12_signature, verify_tls13_signature, CryptoProvider};
+use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, DigitallySignedStruct, RootCertStore, SignatureScheme};
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio_postgres::tls::MakeTlsConnect;
 use tokio_postgres_rustls::MakeRustlsConnect;
 
 use super::profile::{ConnectionProfile, SslMode};
@@ -20,17 +23,50 @@ fn provider() -> Arc<CryptoProvider> {
     Arc::new(rustls::crypto::ring::default_provider())
 }
 
+/// Conector TLS de una conexión.
+///
+/// Envuelve al de `rustls` con un solo agregado: poder reemplazar el nombre que `tokio-postgres` le
+/// pasa —el host al que conecta el cliente— por el del servidor real. Los dos coinciden salvo por un
+/// túnel SSH, donde el cliente conecta a `127.0.0.1` pero quien presenta el certificado es el
+/// servidor del otro lado del bastión. Ese nombre es el que rustls valida contra el certificado y el
+/// que viaja en el SNI, así que sin reemplazarlo `verify-full` no tendría nada que comparar y el
+/// servidor elegiría su certificado por omisión en vez del que corresponde al nombre pedido.
+#[derive(Clone)]
+pub struct Connector {
+    inner: MakeRustlsConnect,
+    server_name: Option<String>,
+}
+
+impl<S> MakeTlsConnect<S> for Connector
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    type Stream = <MakeRustlsConnect as MakeTlsConnect<S>>::Stream;
+    type TlsConnect = <MakeRustlsConnect as MakeTlsConnect<S>>::TlsConnect;
+    type Error = <MakeRustlsConnect as MakeTlsConnect<S>>::Error;
+
+    fn make_tls_connect(
+        &mut self,
+        domain: &str,
+    ) -> std::result::Result<Self::TlsConnect, Self::Error> {
+        let domain = self.server_name.as_deref().unwrap_or(domain);
+        // Calificado entero porque `MakeRustlsConnect` implementa el trait para muchos flujos y el
+        // método suelto no dice cuál es el de acá.
+        <MakeRustlsConnect as MakeTlsConnect<S>>::make_tls_connect(&mut self.inner, domain)
+    }
+}
+
 /// Construye el conector TLS que corresponde al modo del perfil.
 ///
 /// Devuelve `None` cuando el modo es `disable`, en cuyo caso la conexión va en claro.
 ///
-/// `verify_hostname` en `false` degrada `verify-full` a validar solo la cadena del certificado, sin
-/// exigir que el nombre coincida. Es lo que corresponde cuando se llega por un túnel SSH: la conexión
-/// termina en `127.0.0.1`, que nunca va a coincidir con el nombre del certificado del servidor real.
+/// `server_name` es el nombre por el que se conoce al servidor cuando no es el mismo al que conecta
+/// el cliente —o sea, el host del perfil cuando se llega por un túnel SSH—. Con `None` vale el del
+/// destino, que es el caso directo.
 pub fn connector(
     profile: &ConnectionProfile,
-    verify_hostname: bool,
-) -> Result<Option<MakeRustlsConnect>> {
+    server_name: Option<&str>,
+) -> Result<Option<Connector>> {
     if profile.ssl_mode == SslMode::Disable {
         return Ok(None);
     }
@@ -39,10 +75,13 @@ pub fn connector(
         SslMode::Disable => unreachable!("descartado arriba"),
         SslMode::Prefer | SslMode::Require => client_config_without_verification(),
         SslMode::VerifyCa => client_config_verifying(profile, false)?,
-        SslMode::VerifyFull => client_config_verifying(profile, verify_hostname)?,
+        SslMode::VerifyFull => client_config_verifying(profile, true)?,
     };
 
-    Ok(Some(MakeRustlsConnect::new(config)))
+    Ok(Some(Connector {
+        inner: MakeRustlsConnect::new(config),
+        server_name: server_name.map(str::to_owned),
+    }))
 }
 
 fn client_config_without_verification() -> ClientConfig {
@@ -69,9 +108,10 @@ fn client_config_verifying(
 
     if let Some(path) = &profile.root_cert {
         let pem = std::fs::read(path)?;
-        let mut cursor = std::io::Cursor::new(pem);
         let mut added = 0usize;
-        for cert in rustls_pemfile::certs(&mut cursor) {
+        // El PEM lo lee `rustls-pki-types`, que ya viene con rustls, y no `rustls-pemfile`, que es
+        // una envoltura del mismo código y quedó sin mantenimiento (RUSTSEC-2025-0134).
+        for cert in CertificateDer::pem_slice_iter(&pem) {
             let cert = cert.map_err(|e| {
                 Error::Config(format!(
                     "el certificado raíz {} no es válido: {e}",
@@ -179,8 +219,8 @@ impl ServerCertVerifier for AcceptAnyServer {
 }
 
 /// Verificador de `verify-ca`: valida que el certificado esté firmado por una raíz de confianza,
-/// pero no que el nombre coincida. Es lo que corresponde cuando se llega al servidor por una IP o
-/// por un túnel, donde el nombre nunca va a coincidir.
+/// pero no que el nombre coincida. Es lo que pide quien tiene su propia autoridad certificadora y
+/// certificados emitidos para nombres que no son por los que él llega al servidor.
 #[derive(Debug)]
 struct ChainOnly {
     roots: Arc<RootCertStore>,

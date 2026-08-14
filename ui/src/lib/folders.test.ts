@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { folders, LOOSE_GROUP } from "./folders.svelte";
+import { folders, LOOSE_GROUP, normalizeGroup, renamedPath } from "./folders.svelte";
 
 /**
  * Los tests corren en Node y no en un navegador —son de lógica pura, sin DOM—, así que el
@@ -95,5 +95,35 @@ describe("renombrar", () => {
 
     expect(folders.isOpen("ventas")).toBe(true);
     expect(folders.empty).toEqual([]);
+  });
+});
+
+describe("carpetas anidadas", () => {
+  it("normaliza tramo por tramo, como el almacén de perfiles", () => {
+    expect(normalizeGroup("  Clientes / ACME ")).toBe("Clientes/ACME");
+    expect(normalizeGroup("Clientes//ACME")).toBe("Clientes/ACME");
+    expect(normalizeGroup("   /  ")).toBe("");
+  });
+
+  it("renombrar arrastra a las de adentro", () => {
+    expect(renamedPath("Clientes/ACME", "Clientes", "Cuentas")).toBe("Cuentas/ACME");
+    expect(renamedPath("Clientes", "Clientes", "Cuentas")).toBe("Cuentas");
+  });
+
+  it("deshacer sube un escalón a las de adentro y suelta a la propia", () => {
+    expect(renamedPath("Clientes/ACME", "Clientes")).toBe("ACME");
+    expect(renamedPath("Clientes", "Clientes")).toBeNull();
+  });
+
+  it("una carpeta que solo comparte el prefijo no se toca", () => {
+    expect(renamedPath("Clientescopia", "Clientes", "Cuentas")).toBe("Clientescopia");
+  });
+
+  it("lo recordado de una carpeta viaja con las de adentro", () => {
+    folders.setOpen("Clientes/ACME", false);
+    folders.rename("Clientes", "Cuentas");
+
+    expect(folders.isOpen("Cuentas/ACME")).toBe(false);
+    expect(folders.isOpen("Clientes/ACME")).toBe(true);
   });
 });

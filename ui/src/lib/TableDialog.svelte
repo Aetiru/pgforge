@@ -4,14 +4,9 @@
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
   import SqlPreview from "./SqlPreview.svelte";
-  import {
-    ddlApply,
-    ddlPreview,
-    describeError,
-    type ColumnDef,
-    type Identity,
-    type TableChange,
-  } from "./ipc";
+  import { COMMON_TYPES, IDENTITY_OPTIONS } from "./column-form";
+  import { blankColumn, tableChange, validateTable, type DraftColumn } from "./table-form";
+  import { ddlApply, ddlPreview, describeError, type Identity } from "./ipc";
 
   let {
     profileId,
@@ -27,44 +22,6 @@
     oncreated: () => void;
   } = $props();
 
-  /** Tipos comunes, solo como sugerencia: el que valida un tipo de verdad es el servidor. */
-  const COMMON_TYPES = [
-    "bigint",
-    "integer",
-    "smallint",
-    "text",
-    "varchar(255)",
-    "numeric(12,2)",
-    "boolean",
-    "timestamptz",
-    "date",
-    "uuid",
-    "jsonb",
-    "bytea",
-  ];
-
-  const IDENTITY_OPTIONS: { value: Identity | ""; label: string }[] = [
-    { value: "", label: "Ninguna" },
-    { value: "always", label: "Siempre" },
-    { value: "byDefault", label: "Por defecto" },
-  ];
-
-  /** Una fila del formulario. `key` es solo para que Svelte identifique la fila; no viaja al núcleo. */
-  interface DraftColumn extends ColumnDef {
-    key: string;
-  }
-
-  function blankColumn(): DraftColumn {
-    return {
-      key: crypto.randomUUID(),
-      name: "",
-      typeName: "",
-      notNull: false,
-      default: null,
-      identity: null,
-    };
-  }
-
   let name = $state("");
   let columns = $state<DraftColumn[]>([blankColumn()]);
   let error = $state<string | null>(null);
@@ -79,24 +36,8 @@
     columns = columns.filter((column) => column.key !== key);
   }
 
-  function change(): TableChange {
-    return {
-      kind: "createTable",
-      schema,
-      name: name.trim(),
-      columns: columns.map(({ key: _key, ...column }) => column),
-    };
-  }
-
-  function validate(): string | null {
-    if (!name.trim()) return "Poné un nombre para la tabla.";
-    if (columns.length === 0) return "Una tabla necesita al menos una columna.";
-    for (const column of columns) {
-      if (!column.name.trim()) return "Todas las columnas necesitan un nombre.";
-      if (!column.typeName.trim()) return `La columna ${column.name} necesita un tipo.`;
-    }
-    return null;
-  }
+  const change = () => tableChange(schema, name, columns);
+  const validate = () => validateTable(name, columns);
 
   async function showPreview() {
     error = null;

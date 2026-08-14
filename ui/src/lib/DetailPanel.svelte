@@ -1,6 +1,14 @@
 <script lang="ts">
+  /**
+   * El panel del nodo elegido en el árbol.
+   *
+   * Lo que hace acá es coordinar: leer lo que cada sección necesita, abrir el diálogo que
+   * corresponde y volver a leer lo que un cambio dejó viejo. Lo demás vive afuera —las banderas y
+   * el vocabulario de cada objeto en `detail-node.ts`, los botones de la cabecera y el borrado en
+   * `detail-actions.ts`, y cada sección en su componente de `detail/`—, que es lo que permite
+   * probar con Vitest la parte que decide sin montar el panel entero.
+   */
   import { untrack } from "svelte";
-  import Alert from "./Alert.svelte";
   import BackupDialog from "./BackupDialog.svelte";
   import RestoreDialog from "./RestoreDialog.svelte";
   import ExportDialog from "./ExportDialog.svelte";
@@ -17,13 +25,8 @@
   import Icon from "./Icon.svelte";
   import IndexDialog from "./IndexDialog.svelte";
   import PolicyDialog from "./PolicyDialog.svelte";
-  import PrivilegeDialog, {
-    type Existing as PrivilegeExisting,
-    type Subject as PrivilegeSubject,
-  } from "./PrivilegeDialog.svelte";
+  import PrivilegeDialog, { type Existing as PrivilegeExisting } from "./PrivilegeDialog.svelte";
   import RoleDialog from "./RoleDialog.svelte";
-  import FontSize from "./FontSize.svelte";
-  import Sql from "./Sql.svelte";
   import TableDialog from "./TableDialog.svelte";
   import TriggerDialog from "./TriggerDialog.svelte";
   import CommentDialog from "./CommentDialog.svelte";
@@ -34,73 +37,86 @@
   import SequenceDialog from "./SequenceDialog.svelte";
   import TypeDialog from "./TypeDialog.svelte";
   import ViewDialog from "./ViewDialog.svelte";
+  import Actions from "./detail/Actions.svelte";
+  import Columns from "./detail/Columns.svelte";
+  import Constraints from "./detail/Constraints.svelte";
+  import DdlSection from "./detail/Ddl.svelte";
+  import GroupServers from "./detail/GroupServers.svelte";
+  import Indexes from "./detail/Indexes.svelte";
+  import Mappings from "./detail/Mappings.svelte";
+  import Privileges from "./detail/Privileges.svelte";
+  import Properties from "./detail/Properties.svelte";
+  import Security from "./detail/Security.svelte";
+  import Triggers from "./detail/Triggers.svelte";
   import { confirmMutation, isReadOnly, readOnlyReason } from "./access.svelte";
-  import { envLook, GROUP_LOOK, kindLabel, lookOf } from "./badges";
+  import { GROUP_LOOK, kindLabel, lookOf } from "./badges";
+  import {
+    headerActions,
+    dropQuestion,
+    runDrop,
+    type DetailAction,
+    type DropTarget,
+  } from "./detail-actions";
+  import {
+    columnGroupsOf,
+    commentTargetOf,
+    flagsOf,
+    functionSkeleton,
+    pathOf,
+    privilegeGroupsOf,
+    privilegeSubjectOf,
+    propertiesOf,
+    type PrivilegeGroup,
+  } from "./detail-node";
   import { explorer, type Row } from "./explorer.svelte";
   import { dataTargetOf, queryTargetOf } from "./tree-actions";
   import {
     dataOpen,
-    databaseApply,
-    ddlApply,
-    describeError,
-    domainApply,
-    extensionApply,
-    extensionInfo,
-    fdwApply,
-    fdwInfo,
-    foreignServerApply,
-    foreignServerInfo,
-    userMappingApply,
-    userMappings,
-    folderOf,
-    formatVersion,
-    functionArgs,
-    functionDrop,
-    indexDrop,
-    columnPrivileges,
     databasePrivileges,
+    columnPrivileges,
     defaultPrivileges,
+    describeError,
+    extensionInfo,
+    fdwInfo,
+    foreignServerInfo,
+    functionArgs,
     functionPrivileges,
     isCanceled,
     objectDdl,
-    readCancel,
     policyApply,
     privilegeApply,
+    readCancel,
     relationPrivileges,
-    roleApply,
     roleInfo,
-    schemaApply,
     schemaPrivileges,
-    sequenceApply,
     tableConstraints,
     tableIndexes,
     tablePartitions,
     tableSecurity,
     tableTriggers,
-    triggerApply,
-    typeApply,
     typeInfo,
+    userMappingApply,
+    userMappings,
     viewApply,
     type ColumnGrant,
     type CommentTarget,
     type ConstraintInfo,
     type Ddl,
     type DefaultGrant,
+    type ExtensionInfo,
+    type FdwInfo,
     type Grantable,
     type IndexInfo,
     type PolicyChange,
     type PolicyInfo,
-    type ExtensionInfo,
-    type FdwInfo,
-    type ServerInfo,
-    type UserMapping,
     type PrivilegeGrant,
-    type RoleChange,
     type RoleInfo,
+    type ServerInfo,
     type TableColumn,
     type TableSecurity,
     type TableShape,
     type TriggerInfo,
+    type UserMapping,
   } from "./ipc";
 
   let {
@@ -141,6 +157,7 @@
   );
   const caps = $derived(selected ? (explorer.caps[selected.profileId] ?? null) : null);
   const look = $derived(isGroup ? GROUP_LOOK : lookOf(node?.kind ?? null));
+  const flags = $derived(flagsOf(node));
 
   /**
    * Lo que se le agrega a un botón que modifica algo cuando el servidor es de solo lectura.
@@ -154,16 +171,13 @@
       : {},
   );
 
-  /** Ni las carpetas, ni las bases, ni la fila del servidor tienen un DDL propio. */
-  const hasDdl = $derived(node !== null && folderOf(node.kind) === null && node.kind !== "database");
-
   $effect(() => {
     const current = node;
     ddl = null;
     ddlError = null;
     copied = false;
 
-    if (!current || !hasDdl || !selected) return;
+    if (!current || !flags.hasDdl || !selected) return;
 
     const profileId = selected.profileId;
     const request = crypto.randomUUID();
@@ -198,7 +212,7 @@
    * solo.
    */
   async function refreshDdl() {
-    if (!node || !hasDdl || !selected) return;
+    if (!node || !flags.hasDdl || !selected) return;
     loading = true;
     ddlError = null;
     try {
@@ -222,58 +236,10 @@
   // datos que mostrar: se abren en solo lectura, y el propio panel explica por qué.
   const queryTarget = $derived(queryTargetOf(selected, profile));
   const dataTarget = $derived(dataTargetOf(node));
-
-  /** Solo las tablas (particionadas o no) tienen columnas que se puedan crear, cambiar o borrar. */
-  const isTable = $derived(node?.kind === "table" || node?.kind === "partitionedTable");
-  /** El nodo carpeta "Tablas" de un esquema, donde vive el botón para crear una tabla nueva. */
-  const isTablesFolder = $derived(node !== null && folderOf(node.kind) === "tables");
-
-  const isView = $derived(node?.kind === "view");
-  const isMaterializedView = $derived(node?.kind === "materializedView");
-  const isViewsFolder = $derived(node !== null && folderOf(node.kind) === "views");
-  const isMatViewsFolder = $derived(node !== null && folderOf(node.kind) === "materializedViews");
-
-  const isFunction = $derived(node?.kind === "function");
-  const isProcedure = $derived(node?.kind === "procedure");
-  const isRoutine = $derived(isFunction || isProcedure);
-  const isFunctionsFolder = $derived(node !== null && folderOf(node.kind) === "functions");
-  const isProceduresFolder = $derived(node !== null && folderOf(node.kind) === "procedures");
-
-  const isRole = $derived(node?.kind === "role");
-  /** La única carpeta que no cuelga de una base: es hermana de todas ellas en la raíz. */
-  const isRolesFolder = $derived(node !== null && folderOf(node.kind) === "roles");
-
-  const isExtension = $derived(node?.kind === "extension");
-  const isExtensionsFolder = $derived(node !== null && folderOf(node.kind) === "extensions");
-
-  const isFdw = $derived(node?.kind === "foreignDataWrapper");
-  const isFdwsFolder = $derived(node !== null && folderOf(node.kind) === "fdws");
-  const isForeignServer = $derived(node?.kind === "foreignServer");
-  const isForeignServersFolder = $derived(node !== null && folderOf(node.kind) === "fservers");
-
-  const isSchema = $derived(node?.kind === "schema");
-  const isSequence = $derived(node?.kind === "sequence");
-  const isDatabase = $derived(node?.kind === "database");
-  /** Los dominios también son `pg_type`, así que el árbol los trae con esta misma clase. */
-  const isType = $derived(node?.kind === "type");
-  const isPartitionedTable = $derived(node?.kind === "partitionedTable");
-
-  const isSchemasFolder = $derived(node !== null && folderOf(node.kind) === "schemas");
-  const isSequencesFolder = $derived(node !== null && folderOf(node.kind) === "sequences");
-  const isTypesFolder = $derived(node !== null && folderOf(node.kind) === "types");
-
-  /**
-   * Los tipos de objeto que tienen privilegios propios. Los índices y las restricciones no están:
-   * no tienen ACL, heredan el de la tabla.
-   */
-  const hasPrivileges = $derived(
-    isTable || isSchema || isSequence || isDatabase || isView || isMaterializedView || isRoutine,
-  );
-
-  const isFolder = $derived(node !== null && folderOf(node.kind) !== null);
+  const commentTarget = $derived(commentTargetOf(node));
 
   // -------------------------------------------------------------------------
-  // Estructura: columnas de la tabla seleccionada
+  // Estructura: lo que cada sección le pide al servidor
   // -------------------------------------------------------------------------
 
   let shape = $state<TableShape | null>(null);
@@ -281,7 +247,7 @@
   let shapeLoading = $state(false);
 
   async function loadShape() {
-    if (!isTable || !node?.oid || !selected) {
+    if (!flags.isTable || !node?.oid || !selected) {
       shape = null;
       return;
     }
@@ -301,7 +267,7 @@
   let indexesLoading = $state(false);
 
   async function loadIndexes() {
-    if (!isTable || !node?.oid || !selected) {
+    if (!flags.isTable || !node?.oid || !selected) {
       indexes = null;
       return;
     }
@@ -321,7 +287,7 @@
   let constraintsLoading = $state(false);
 
   async function loadConstraints() {
-    if (!isTable || !node?.oid || !selected) {
+    if (!flags.isTable || !node?.oid || !selected) {
       constraints = null;
       return;
     }
@@ -341,7 +307,7 @@
   let triggersLoading = $state(false);
 
   async function loadTriggers() {
-    if (!isTable || !node?.oid || !selected) {
+    if (!flags.isTable || !node?.oid || !selected) {
       triggers = null;
       return;
     }
@@ -361,7 +327,7 @@
   let securityLoading = $state(false);
 
   async function loadSecurity() {
-    if (!isTable || !node?.oid || !selected) {
+    if (!flags.isTable || !node?.oid || !selected) {
       security = null;
       return;
     }
@@ -399,7 +365,7 @@
   let routineArgs = $state("");
 
   async function loadPrivileges() {
-    if (!selected || !node || !hasPrivileges) {
+    if (!selected || !node || !flags.hasPrivileges) {
       privileges = null;
       columnGrants = [];
       defaultGrants = [];
@@ -411,25 +377,25 @@
       const { profileId } = selected;
       const { oid, database } = node;
 
-      if (isDatabase) {
+      if (flags.isDatabase) {
         // Sin pasar la base: `pg_database` es un catálogo compartido, y abrir un pool contra la
         // base que se está mirando fallaría justamente cuando no se tiene CONNECT sobre ella.
         privileges = await databasePrivileges(profileId, node.label);
       } else if (oid === undefined) {
         privileges = null;
-      } else if (isSchema) {
+      } else if (flags.isSchema) {
         privileges = await schemaPrivileges(profileId, oid, database);
         // Los privilegios por omisión no son de ningún objeto: se guardan por esquema, así que es
         // acá donde alguien los va a buscar.
         defaultGrants = (await defaultPrivileges(profileId, database)).filter(
           (grant) => grant.schema === node.label,
         );
-      } else if (isRoutine) {
+      } else if (flags.isRoutine) {
         privileges = await functionPrivileges(profileId, oid, database);
         routineArgs = await functionArgs(profileId, oid, database);
       } else {
         privileges = await relationPrivileges(profileId, oid, database);
-        if (isTable) columnGrants = await columnPrivileges(profileId, oid, database);
+        if (flags.isTable) columnGrants = await columnPrivileges(profileId, oid, database);
       }
     } catch (error) {
       privilegesError = describeError(error);
@@ -438,83 +404,9 @@
     }
   }
 
-  /** El objeto del que habla el diálogo de privilegios, con el vocabulario que le corresponde. */
-  const privilegeSubject = $derived.by<PrivilegeSubject | null>(() => {
-    if (!node) return null;
-    if (isDatabase) return { on: "database", database: node.label };
-    if (isSchema) return { on: "schema", schema: node.label };
-    if (!node.schema) return null;
-    if (isSequence) return { on: "sequence", schema: node.schema, sequence: node.label };
-    if (isRoutine) {
-      return {
-        on: "function",
-        schema: node.schema,
-        name: node.label,
-        args: routineArgs,
-        procedure: isProcedure,
-      };
-    }
-    // Las vistas y las materializadas comparten el vocabulario de una tabla.
-    if (isTable || isView || isMaterializedView) {
-      return { on: "table", schema: node.schema, table: node.label };
-    }
-    return null;
-  });
-
-  /** Una fila de `aclexplode` por privilegio: se agrupan por `grantee` para mostrar una sola línea. */
-  const privilegeGroups = $derived.by<
-    { grantee: string; privileges: string[]; grantable: boolean }[]
-  >(() => {
-    if (!privileges) return [];
-    const byGrantee = new Map<
-      string,
-      { grantee: string; privileges: string[]; grantable: boolean }
-    >();
-    for (const grant of privileges) {
-      const group = byGrantee.get(grant.grantee);
-      const privilege = grant.privilege.toLowerCase();
-      if (group) {
-        group.privileges.push(privilege);
-        if (grant.grantable) group.grantable = true;
-      } else {
-        byGrantee.set(grant.grantee, {
-          grantee: grant.grantee,
-          privileges: [privilege],
-          grantable: grant.grantable,
-        });
-      }
-    }
-    return [...byGrantee.values()];
-  });
-
-  /**
-   * La clave de una fila de privilegios por columna. Va por JSON y no concatenando con un
-   * separador: un nombre de columna puede tener cualquier cosa adentro, incluido el separador.
-   */
-  function pairKey(column: string, grantee: string): string {
-    return JSON.stringify([column, grantee]);
-  }
-
-  /** Lo mismo que `privilegeGroups`, pero la fila es la combinación de columna y destinatario. */
-  const columnGroups = $derived.by<{ column: string; grantee: string; privileges: string[] }[]>(
-    () => {
-      const byPair = new Map<string, { column: string; grantee: string; privileges: string[] }>();
-      for (const grant of columnGrants) {
-        const key = pairKey(grant.column, grant.grantee);
-        const group = byPair.get(key);
-        if (group) {
-          group.privileges.push(grant.privilege);
-        } else {
-          byPair.set(key, {
-            column: grant.column,
-            grantee: grant.grantee,
-            privileges: [grant.privilege],
-          });
-        }
-      }
-      return [...byPair.values()];
-    },
-  );
+  const privilegeSubject = $derived(privilegeSubjectOf(node, flags, routineArgs));
+  const privilegeGroups = $derived(privilegeGroupsOf(privileges));
+  const columnGroups = $derived(columnGroupsOf(columnGrants));
 
   $effect(() => {
     // Depender de `node` (y no llamar directo) es lo que dispara de nuevo al cambiar de tabla.
@@ -554,10 +446,10 @@
 
   const sections = $derived.by<{ id: SectionId; label: string; count: number | null }[]>(() => {
     if (isServer) return [{ id: "info", label: "Propiedades", count: null }];
-    if (isDatabase) {
+    if (flags.isDatabase) {
       return [{ id: "info", label: "Propiedades", count: null }, privilegeSection];
     }
-    if (isTable) {
+    if (flags.isTable) {
       return [
         { id: "columns", label: "Columnas", count: shape?.columns.length ?? null },
         { id: "indexes", label: "Índices", count: indexes?.length ?? null },
@@ -568,14 +460,16 @@
         { id: "ddl", label: "DDL", count: null },
       ];
     }
-    if (isForeignServer) {
+    if (flags.isForeignServer) {
       return [
         { id: "mappings", label: "Mapeos de usuario", count: mappings.length },
         { id: "ddl", label: "DDL", count: null },
       ];
     }
-    if (hasPrivileges && hasDdl) return [privilegeSection, { id: "ddl", label: "DDL", count: null }];
-    if (hasDdl) return [{ id: "ddl", label: "DDL", count: null }];
+    if (flags.hasPrivileges && flags.hasDdl) {
+      return [privilegeSection, { id: "ddl", label: "DDL", count: null }];
+    }
+    if (flags.hasDdl) return [{ id: "ddl", label: "DDL", count: null }];
     return [];
   });
 
@@ -590,6 +484,13 @@
     section = untrack(() => sections)[0]?.id ?? "ddl";
   });
 
+  const properties = $derived(propertiesOf(isServer, node, profile, caps));
+  const path = $derived(pathOf(isServer, node, profile));
+
+  // -------------------------------------------------------------------------
+  // El árbol después de un cambio
+  // -------------------------------------------------------------------------
+
   /** Busca la fila del árbol que tiene a `target` entre sus hijos, para refrescarla tras un cambio. */
   function parentOf(rows: Row[], target: Row): Row | null {
     for (const row of rows) {
@@ -601,6 +502,34 @@
     }
     return null;
   }
+
+  /**
+   * Recarga la carpeta que contiene al nodo elegido y suelta la selección.
+   *
+   * Es el cierre de todo lo que hace desaparecer o renombrar un objeto: la fila que estaba elegida
+   * ya no coincide con lo que quedó en el servidor.
+   */
+  async function reloadParentAndClear() {
+    if (!selected) return;
+    const parent = parentOf(explorer.roots, selected);
+    if (parent) await explorer.reload(parent);
+    explorer.selected = null;
+  }
+
+  /** Un objeto nuevo cuelga del nodo elegido —una carpeta—, así que se recarga ese mismo nodo. */
+  function reloadSelected() {
+    if (selected) explorer.reload(selected);
+  }
+
+  /** El cierre de crear o editar: lo primero suma una fila, lo segundo cambia la que ya estaba. */
+  function afterSaved(wasCreate: boolean) {
+    if (wasCreate) reloadSelected();
+    else void reloadParentAndClear();
+  }
+
+  // -------------------------------------------------------------------------
+  // Diálogos
+  // -------------------------------------------------------------------------
 
   let newTable = $state(false);
   let newIndex = $state(false);
@@ -637,40 +566,18 @@
   let schemaDialog = $state<{ existing: { name: string; owner: string } | null } | null>(null);
   let databaseDialog = $state<{ existing: string | null } | null>(null);
   let partitionDialog = $state<{ strategy: string } | null>(null);
-  let commentDialog = $state<{ target: CommentTarget; label: string; current: string | null } | null>(
-    null,
-  );
+  let commentDialog = $state<{
+    target: CommentTarget;
+    label: string;
+    current: string | null;
+  } | null>(null);
   let exportDialog = $state(false);
   let importDialog = $state(false);
   let revokeTarget = $state<{ grantee: string; privileges: string[] } | null>(null);
   let revokeCascade = $state(false);
   let revoking = $state(false);
   let revokeError = $state<string | null>(null);
-  let dropTarget = $state<
-    | {
-        kind:
-          | "table"
-          | "column"
-          | "index"
-          | "constraint"
-          | "view"
-          | "materializedView"
-          | "trigger"
-          | "policy"
-          | "role"
-          | "extension"
-          | "foreignDataWrapper"
-          | "foreignServer"
-          | "sequence"
-          | "type"
-          | "domain"
-          | "schema"
-          | "database";
-        label: string;
-      }
-    | { kind: "function"; schema: string; name: string; args: string; procedure: boolean }
-    | null
-  >(null);
+  let dropTarget = $state<DropTarget | null>(null);
   let dropCascade = $state(false);
   /** Solo se usa para índices: CASCADE y CONCURRENTLY son mutuamente excluyentes en Postgres. */
   let dropConcurrently = $state(false);
@@ -684,55 +591,221 @@
   let dropping = $state(false);
   let dropError = $state<string | null>(null);
 
-  function afterTableCreated() {
-    newTable = false;
-    if (selected) explorer.reload(selected);
-  }
+  // -------------------------------------------------------------------------
+  // La barra de la cabecera
+  // -------------------------------------------------------------------------
 
-  function afterColumnSaved() {
-    columnDialog = null;
-    loadShape();
-  }
+  const actions = $derived(
+    selected
+      ? headerActions({
+          flags,
+          node,
+          isServer,
+          isGroup,
+          connected: selected.connected,
+          label: selected.label,
+          hasShape: shape !== null,
+          hasDdl: ddl !== null,
+          dataTarget,
+          queryTarget,
+          hasCommentTarget: commentTarget !== null,
+        })
+      : [],
+  );
 
-  function afterIndexCreated() {
-    newIndex = false;
-    loadIndexes();
-  }
+  /**
+   * Qué hace cada botón de la cabecera. Casi todos abren un diálogo; los pocos que preguntan algo
+   * al servidor antes —la firma de una función, la estrategia de una partición— lo hacen porque sin
+   * esa respuesta el formulario no se puede armar.
+   */
+  function run(action: DetailAction) {
+    if (!selected) return;
+    const current = node;
 
-  function afterTriggerSaved() {
-    triggerDialog = null;
-    loadTriggers();
-  }
-
-  function afterPolicySaved() {
-    policyDialog = null;
-    loadSecurity();
-  }
-
-  /** Trae el rol tal como ya existe antes de abrir la edición: acá no hay nada precargado, a
-   * diferencia de una columna, que ya viene con `shape`. */
-  async function openEditRole() {
-    if (!selected || !node?.oid) return;
-    try {
-      const info = await roleInfo(selected.profileId, node.oid, node.database);
-      roleDialog = { existing: info };
-    } catch (error) {
-      ddlError = describeError(error);
+    switch (action.kind) {
+      case "newTable":
+        newTable = true;
+        break;
+      case "newView":
+        viewDialog = { materialized: false, existing: null };
+        break;
+      case "newMaterializedView":
+        viewDialog = { materialized: true, existing: null };
+        break;
+      case "newFunction":
+        functionDialog = { sql: functionSkeleton(current!.schema!, false), isEdit: false };
+        break;
+      case "newProcedure":
+        functionDialog = { sql: functionSkeleton(current!.schema!, true), isEdit: false };
+        break;
+      case "newRole":
+        roleDialog = { existing: null };
+        break;
+      case "installExtension":
+        extensionDialog = { existing: null };
+        break;
+      case "newFdw":
+        fdwDialog = { existing: null };
+        break;
+      case "newForeignServer":
+        foreignServerDialog = { existing: null };
+        break;
+      case "newSequence":
+        sequenceDialog = { existing: null };
+        break;
+      case "newEnum":
+        typeDialog = { composite: false, existing: null };
+        break;
+      case "newComposite":
+        typeDialog = { composite: true, existing: null };
+        break;
+      case "newDomain":
+        domainDialog = { existing: null };
+        break;
+      case "newSchema":
+        schemaDialog = { existing: null };
+        break;
+      case "newPartition":
+        void openPartitionDialog();
+        break;
+      case "openData":
+        ondata(selected.profileId, queryTarget!.database, queryTarget!.title, dataTarget!);
+        break;
+      case "openQuery":
+        onquery(selected.profileId, queryTarget!.database, queryTarget!.title);
+        break;
+      case "openErd":
+        onerd(selected.profileId, current!.database, current!.label);
+        break;
+      case "export":
+        exportDialog = true;
+        break;
+      case "import":
+        importDialog = true;
+        break;
+      case "backup":
+        backupDialog = true;
+        break;
+      case "restore":
+        restoreDialog = true;
+        break;
+      case "editView":
+        viewDialog = {
+          materialized: false,
+          existing: { oid: current!.oid!, name: current!.label },
+        };
+        break;
+      case "editMaterializedView":
+        viewDialog = { materialized: true, existing: { oid: current!.oid!, name: current!.label } };
+        break;
+      case "refreshMaterializedView":
+        refreshTarget = { schema: current!.schema!, name: current!.label };
+        break;
+      case "editFunction":
+        functionDialog = { sql: ddl!.sql, isEdit: true };
+        break;
+      case "editRole":
+        void openEditRole();
+        break;
+      case "editExtension":
+        void openEditExtension();
+        break;
+      case "editFdw":
+        void openEditFdw();
+        break;
+      case "editForeignServer":
+        void openEditForeignServer();
+        break;
+      case "editSequence":
+        sequenceDialog = { existing: { oid: current!.oid!, name: current!.label } };
+        break;
+      case "editType":
+        void openEditType();
+        break;
+      case "editSchema":
+        schemaDialog = { existing: { name: current!.label, owner: current!.detail ?? "" } };
+        break;
+      case "editDatabase":
+        databaseDialog = { existing: current!.label };
+        break;
+      case "newDatabase":
+        databaseDialog = { existing: null };
+        break;
+      case "comment":
+        commentDialog = {
+          target: commentTarget!,
+          label: selected.label,
+          current: current?.comment ?? null,
+        };
+        break;
+      case "renameGroup":
+        ongroup(selected.group!);
+        break;
+      case "connect":
+        onconnect(selected.profileId);
+        break;
+      case "disconnect":
+        explorer.disconnect(selected.profileId);
+        break;
+      case "editServer":
+        onedit(selected.profileId);
+        break;
+      case "deleteServer":
+        ondelete(selected.profileId);
+        break;
+      case "dropTable":
+        dropTarget = { kind: "table", label: shape!.name };
+        break;
+      case "dropView":
+        dropTarget = { kind: "view", label: current!.label };
+        break;
+      case "dropMaterializedView":
+        dropTarget = { kind: "materializedView", label: current!.label };
+        break;
+      case "dropFunction":
+        void askDropFunction();
+        break;
+      case "dropSequence":
+        dropTarget = { kind: "sequence", label: current!.label };
+        break;
+      case "dropType":
+        dropTarget = { kind: "type", label: current!.label };
+        break;
+      case "dropSchema":
+        dropTarget = { kind: "schema", label: current!.label };
+        break;
+      case "dropDatabase":
+        dropTarget = { kind: "database", label: current!.label };
+        break;
+      case "dropRole":
+        dropTarget = { kind: "role", label: selected.label };
+        break;
+      case "dropExtension":
+        dropTarget = { kind: "extension", label: selected.label };
+        break;
+      case "dropFdw":
+        dropTarget = { kind: "foreignDataWrapper", label: selected.label };
+        break;
+      case "dropForeignServer":
+        dropTarget = { kind: "foreignServer", label: selected.label };
+        break;
     }
   }
 
-  function afterRoleSaved() {
-    const wasCreate = roleDialog !== null && roleDialog.existing === null;
-    roleDialog = null;
-    if (!selected) return;
-    if (wasCreate) {
-      explorer.reload(selected);
-    } else {
-      // Renombrar cambia lo que el árbol muestra: se recarga la carpeta "Roles" y se limpia la
-      // selección, porque la fila que estaba elegida ya no coincide con el rol que quedó.
-      const parent = parentOf(explorer.roots, selected);
-      if (parent) explorer.reload(parent);
-      explorer.selected = null;
+  // -------------------------------------------------------------------------
+  // Lo que hay que preguntarle al servidor antes de abrir un formulario
+  // -------------------------------------------------------------------------
+
+  /**
+   * Trae el rol tal como ya existe antes de abrir la edición: acá no hay nada precargado, a
+   * diferencia de una columna, que ya viene con `shape`.
+   */
+  async function openEditRole() {
+    if (!selected || !node?.oid) return;
+    try {
+      roleDialog = { existing: await roleInfo(selected.profileId, node.oid, node.database) };
+    } catch (error) {
+      ddlError = describeError(error);
     }
   }
 
@@ -740,52 +813,13 @@
   async function openEditExtension() {
     if (!selected || !node) return;
     try {
-      const info = await extensionInfo(selected.profileId, node.label, node.database);
-      extensionDialog = { existing: info };
+      extensionDialog = {
+        existing: await extensionInfo(selected.profileId, node.label, node.database),
+      };
     } catch (error) {
       ddlError = describeError(error);
     }
   }
-
-  function afterExtensionSaved() {
-    const wasInstall = extensionDialog !== null && extensionDialog.existing === null;
-    extensionDialog = null;
-    if (!selected) return;
-    // Instalar suma un nodo a la carpeta; actualizar o cambiar de esquema cambia el detalle del nodo.
-    // En ambos casos se recarga la carpeta "Extensiones" para reflejarlo.
-    if (wasInstall) {
-      explorer.reload(selected);
-    } else {
-      const parent = parentOf(explorer.roots, selected);
-      if (parent) explorer.reload(parent);
-      explorer.selected = null;
-    }
-  }
-
-  // --- Datos externos (wrappers, servidores foráneos, mapeos) ---
-
-  /** Al abrir el detalle de un servidor foráneo se listan sus mapeos de usuario. */
-  $effect(() => {
-    if (!isForeignServer || !selected || !node) {
-      mappings = [];
-      return;
-    }
-    const profileId = selected.profileId;
-    const database = node.database;
-    const server = node.label;
-    let cancelled = false;
-    mappingsError = null;
-    userMappings(profileId, server, database)
-      .then((result) => {
-        if (!cancelled) mappings = result;
-      })
-      .catch((error) => {
-        if (!cancelled) mappingsError = describeError(error);
-      });
-    return () => {
-      cancelled = true;
-    };
-  });
 
   async function openEditFdw() {
     if (!selected || !node) return;
@@ -801,161 +835,6 @@
     try {
       foreignServerDialog = {
         existing: await foreignServerInfo(selected.profileId, node.label, node.database),
-      };
-    } catch (error) {
-      ddlError = describeError(error);
-    }
-  }
-
-  /** Recarga la carpeta del nodo tras crear/editar un wrapper o servidor, y limpia la selección. */
-  function reloadFolderAndClear(wasCreate: boolean) {
-    if (!selected) return;
-    if (wasCreate) {
-      explorer.reload(selected);
-    } else {
-      const parent = parentOf(explorer.roots, selected);
-      if (parent) explorer.reload(parent);
-      explorer.selected = null;
-    }
-  }
-
-  function afterFdwSaved() {
-    const wasCreate = fdwDialog?.existing == null;
-    fdwDialog = null;
-    reloadFolderAndClear(wasCreate);
-  }
-
-  function afterForeignServerSaved() {
-    const wasCreate = foreignServerDialog?.existing == null;
-    foreignServerDialog = null;
-    reloadFolderAndClear(wasCreate);
-  }
-
-  function reloadMappings() {
-    if (!selected || !node) return;
-    userMappings(selected.profileId, node.label, node.database)
-      .then((result) => (mappings = result))
-      .catch((error) => (mappingsError = describeError(error)));
-  }
-
-  function afterMappingSaved() {
-    userMappingDialog = null;
-    reloadMappings();
-  }
-
-  async function confirmMappingDrop() {
-    if (!mappingDrop || !selected || !node) return;
-    try {
-      await userMappingApply(
-        selected.profileId,
-        [{ kind: "drop", server: node.label, user: mappingDrop.user }],
-        node.database,
-      );
-      mappingDrop = null;
-      reloadMappings();
-    } catch (error) {
-      mappingsError = describeError(error);
-    }
-  }
-
-  const TIMING_LABEL: Record<TriggerInfo["timing"], string> = {
-    before: "BEFORE",
-    after: "AFTER",
-    insteadOf: "INSTEAD OF",
-  };
-  const EVENT_LABEL: Record<TriggerInfo["events"][number], string> = {
-    insert: "INSERT",
-    update: "UPDATE",
-    delete: "DELETE",
-    truncate: "TRUNCATE",
-  };
-
-  function triggerSummary(t: TriggerInfo): string {
-    const events = t.events.map((event) => EVENT_LABEL[event]).join(" OR ");
-    return `${TIMING_LABEL[t.timing]} ${events} · ${t.level === "row" ? "ROW" : "STATEMENT"}`;
-  }
-
-  function afterPrivilegeSaved() {
-    privilegeDialog = null;
-    loadPrivileges();
-  }
-
-  async function confirmRevoke() {
-    if (!revokeTarget || !selected || !node || !privilegeSubject) return;
-    if (!(await confirmMutation(selected.profileId, "Se van a revocar privilegios."))) return;
-    revoking = true;
-    revokeError = null;
-    try {
-      await privilegeApply(
-        selected.profileId,
-        [
-          {
-            kind: "revoke",
-            // Los privilegios salen de lo que devolvió el catálogo para este mismo objeto, así que
-            // pertenecen a su vocabulario por construcción.
-            target: { ...privilegeSubject, privileges: revokeTarget.privileges } as Grantable,
-            grantee: revokeTarget.grantee,
-            grantOptionOnly: false,
-            cascade: revokeCascade,
-          },
-        ],
-        node.database,
-      );
-      revokeTarget = null;
-      revokeCascade = false;
-      await loadPrivileges();
-    } catch (error) {
-      revokeError = describeError(error);
-    } finally {
-      revoking = false;
-    }
-  }
-
-  function afterConstraintCreated() {
-    newConstraint = false;
-    loadConstraints();
-    // Agregar una primary key o un unique puede cambiar si la grilla de datos de la tabla es
-    // editable: se relee la forma para que ese estado no quede desactualizado en el panel.
-    loadShape();
-  }
-
-  function closeDropDialog() {
-    dropTarget = null;
-    dropCascade = false;
-    dropConcurrently = false;
-    reassignFirst = false;
-    reassignTo = "CURRENT_USER";
-    dropError = null;
-  }
-
-  /** Un punto de partida mínimo: mejor que una pantalla en blanco, sin fingir saber qué necesita. */
-  function functionSkeleton(schema: string, procedure: boolean): string {
-    return procedure
-      ? `CREATE PROCEDURE ${schema}.nombre()\nLANGUAGE plpgsql\nAS $$\nBEGIN\nEND;\n$$;`
-      : `CREATE FUNCTION ${schema}.nombre()\nRETURNS void\nLANGUAGE plpgsql\nAS $$\nBEGIN\nEND;\n$$;`;
-  }
-
-  function afterFunctionSaved() {
-    const wasCreate = functionDialog !== null && !functionDialog.isEdit;
-    functionDialog = null;
-    if (wasCreate) {
-      if (selected) explorer.reload(selected);
-    } else {
-      refreshDdl();
-    }
-  }
-
-  /** Busca la firma completa antes de confirmar: sin ella no se puede armar el DROP FUNCTION. */
-  async function askDropFunction() {
-    if (!selected || !node?.oid || !node.schema) return;
-    try {
-      const args = await functionArgs(selected.profileId, node.oid, node.database);
-      dropTarget = {
-        kind: "function",
-        schema: node.schema,
-        name: node.label,
-        args,
-        procedure: isProcedure,
       };
     } catch (error) {
       ddlError = describeError(error);
@@ -989,52 +868,121 @@
     }
   }
 
-  /** Sobre qué objeto se comenta, a partir del nodo seleccionado. */
-  function commentTargetOf(): CommentTarget | null {
-    if (!node) return null;
-    const schema = node.schema ?? "public";
-
-    switch (node.kind) {
-      case "table":
-      case "partitionedTable":
-        return { kind: "table", schema, name: node.label };
-      case "foreignTable":
-        return { kind: "foreignTable", schema, name: node.label };
-      case "view":
-        return { kind: "view", schema, name: node.label };
-      case "materializedView":
-        return { kind: "materializedView", schema, name: node.label };
-      case "sequence":
-        return { kind: "sequence", schema, name: node.label };
-      case "index":
-        return { kind: "index", schema, name: node.label };
-      case "type":
-        return { kind: "type", schema, name: node.label };
-      case "schema":
-        return { kind: "schema", name: node.label };
-      case "database":
-        return { kind: "database", name: node.label };
-      case "role":
-        return { kind: "role", name: node.label };
-      case "extension":
-        return { kind: "extension", name: node.label };
-      default:
-        return null;
+  /** Busca la firma completa antes de confirmar: sin ella no se puede armar el DROP FUNCTION. */
+  async function askDropFunction() {
+    if (!selected || !node?.oid || !node.schema) return;
+    try {
+      const args = await functionArgs(selected.profileId, node.oid, node.database);
+      dropTarget = {
+        kind: "function",
+        schema: node.schema,
+        name: node.label,
+        args,
+        procedure: flags.isProcedure,
+      };
+    } catch (error) {
+      ddlError = describeError(error);
     }
   }
 
-  const commentTarget = $derived(commentTargetOf());
+  // -------------------------------------------------------------------------
+  // Datos externos (wrappers, servidores foráneos, mapeos)
+  // -------------------------------------------------------------------------
 
-  /** Recarga el nodo carpeta que pasó a tener un objeto nuevo, o refresca el DDL tras editarlo. */
-  function afterViewSaved() {
-    const wasCreate = viewDialog !== null && viewDialog.existing === null;
-    viewDialog = null;
-    if (wasCreate) {
-      if (selected) explorer.reload(selected);
-    } else {
-      refreshDdl();
+  /** Al abrir el detalle de un servidor foráneo se listan sus mapeos de usuario. */
+  $effect(() => {
+    if (!flags.isForeignServer || !selected || !node) {
+      mappings = [];
+      return;
+    }
+    const profileId = selected.profileId;
+    const database = node.database;
+    const server = node.label;
+    let cancelled = false;
+    mappingsError = null;
+    userMappings(profileId, server, database)
+      .then((result) => {
+        if (!cancelled) mappings = result;
+      })
+      .catch((error) => {
+        if (!cancelled) mappingsError = describeError(error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  function reloadMappings() {
+    if (!selected || !node) return;
+    userMappings(selected.profileId, node.label, node.database)
+      .then((result) => (mappings = result))
+      .catch((error) => (mappingsError = describeError(error)));
+  }
+
+  async function confirmMappingDrop() {
+    if (!mappingDrop || !selected || !node) return;
+    try {
+      await userMappingApply(
+        selected.profileId,
+        [{ kind: "drop", server: node.label, user: mappingDrop.user }],
+        node.database,
+      );
+      mappingDrop = null;
+      reloadMappings();
+    } catch (error) {
+      mappingsError = describeError(error);
     }
   }
+
+  // -------------------------------------------------------------------------
+  // Privilegios
+  // -------------------------------------------------------------------------
+
+  function editPrivileges(group: PrivilegeGroup) {
+    privilegeDialog = {
+      existing: {
+        grantee: group.grantee,
+        privileges: group.privileges,
+        grantable: group.grantable,
+        columns: columnGrants.filter((grant) => grant.grantee === group.grantee),
+      },
+    };
+  }
+
+  async function confirmRevoke() {
+    if (!revokeTarget || !selected || !node || !privilegeSubject) return;
+    if (!(await confirmMutation(selected.profileId, "Se van a revocar privilegios."))) return;
+    revoking = true;
+    revokeError = null;
+    try {
+      await privilegeApply(
+        selected.profileId,
+        [
+          {
+            kind: "revoke",
+            // Los privilegios salen de lo que devolvió el catálogo para este mismo objeto, así que
+            // pertenecen a su vocabulario por construcción.
+            target: { ...privilegeSubject, privileges: revokeTarget.privileges } as Grantable,
+            grantee: revokeTarget.grantee,
+            grantOptionOnly: false,
+            cascade: revokeCascade,
+          },
+        ],
+        node.database,
+      );
+      revokeTarget = null;
+      revokeCascade = false;
+      await loadPrivileges();
+    } catch (error) {
+      revokeError = describeError(error);
+    } finally {
+      revoking = false;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Refrescar y borrar
+  // -------------------------------------------------------------------------
 
   async function confirmRefresh() {
     if (!refreshTarget || !selected) return;
@@ -1064,6 +1012,15 @@
     }
   }
 
+  function closeDropDialog() {
+    dropTarget = null;
+    dropCascade = false;
+    dropConcurrently = false;
+    reassignFirst = false;
+    reassignTo = "CURRENT_USER";
+    dropError = null;
+  }
+
   async function confirmDrop() {
     if (!dropTarget || !selected || !node) return;
     if (!(await confirmMutation(selected.profileId, "Se va a eliminar un objeto del servidor.")))
@@ -1071,296 +1028,19 @@
     dropping = true;
     dropError = null;
     try {
-      switch (dropTarget.kind) {
-        case "table":
-          await ddlApply(
-            selected.profileId,
-            [{ kind: "dropTable", schema: shape!.schema, name: shape!.name, cascade: dropCascade }],
-            node.database,
-          );
-          {
-            const parent = parentOf(explorer.roots, selected);
-            if (parent) await explorer.reload(parent);
-          }
-          explorer.selected = null;
-          break;
-        case "column":
-          await ddlApply(
-            selected.profileId,
-            [
-              {
-                kind: "dropColumn",
-                schema: shape!.schema,
-                table: shape!.name,
-                column: dropTarget.label,
-                cascade: dropCascade,
-              },
-            ],
-            node.database,
-          );
-          await loadShape();
-          break;
-        case "index":
-          await indexDrop(
-            selected.profileId,
-            shape!.schema,
-            dropTarget.label,
-            dropCascade,
-            dropConcurrently,
-            node.database,
-          );
-          await loadIndexes();
-          break;
-        case "constraint":
-          await ddlApply(
-            selected.profileId,
-            [
-              {
-                kind: "dropConstraint",
-                schema: shape!.schema,
-                table: shape!.name,
-                name: dropTarget.label,
-                cascade: dropCascade,
-              },
-            ],
-            node.database,
-          );
-          await loadConstraints();
-          await loadShape();
-          break;
-        case "trigger":
-          await triggerApply(
-            selected.profileId,
-            [
-              {
-                kind: "dropTrigger",
-                schema: shape!.schema,
-                table: shape!.name,
-                name: dropTarget.label,
-                cascade: dropCascade,
-              },
-            ],
-            node.database,
-          );
-          await loadTriggers();
-          break;
-        case "view":
-          await viewApply(
-            selected.profileId,
-            [
-              {
-                kind: "dropView",
-                schema: node.schema!,
-                name: dropTarget.label,
-                cascade: dropCascade,
-              },
-            ],
-            node.database,
-          );
-          {
-            const parent = parentOf(explorer.roots, selected);
-            if (parent) await explorer.reload(parent);
-          }
-          explorer.selected = null;
-          break;
-        case "materializedView":
-          await viewApply(
-            selected.profileId,
-            [
-              {
-                kind: "dropMaterializedView",
-                schema: node.schema!,
-                name: dropTarget.label,
-                cascade: dropCascade,
-              },
-            ],
-            node.database,
-          );
-          {
-            const parent = parentOf(explorer.roots, selected);
-            if (parent) await explorer.reload(parent);
-          }
-          explorer.selected = null;
-          break;
-        case "function":
-          await functionDrop(
-            selected.profileId,
-            dropTarget.schema,
-            dropTarget.name,
-            dropTarget.args,
-            dropTarget.procedure,
-            dropCascade,
-            node.database,
-          );
-          {
-            const parent = parentOf(explorer.roots, selected);
-            if (parent) await explorer.reload(parent);
-          }
-          explorer.selected = null;
-          break;
-        case "policy":
-          await policyApply(
-            selected.profileId,
-            [
-              {
-                kind: "dropPolicy",
-                schema: shape!.schema,
-                table: shape!.name,
-                name: dropTarget.label,
-              },
-            ],
-            node.database,
-          );
-          await loadSecurity();
-          break;
-        case "role":
-          await roleApply(
-            selected.profileId,
-            [
-              ...(reassignFirst
-                ? ([
-                    {
-                      kind: "reassignOwned",
-                      from: dropTarget.label,
-                      to: reassignTo.trim() || "CURRENT_USER",
-                    },
-                    { kind: "dropOwned", role: dropTarget.label, cascade: false },
-                  ] as RoleChange[])
-                : []),
-              { kind: "dropRole", name: dropTarget.label },
-            ],
-            node.database,
-          );
-          {
-            const parent = parentOf(explorer.roots, selected);
-            if (parent) await explorer.reload(parent);
-          }
-          explorer.selected = null;
-          break;
-        case "extension":
-          await extensionApply(
-            selected.profileId,
-            [{ kind: "drop", name: dropTarget.label, cascade: dropCascade }],
-            node.database,
-          );
-          {
-            const parent = parentOf(explorer.roots, selected);
-            if (parent) await explorer.reload(parent);
-          }
-          explorer.selected = null;
-          break;
-        case "sequence":
-          await sequenceApply(
-            selected.profileId,
-            [
-              {
-                kind: "dropSequence",
-                schema: node.schema!,
-                name: dropTarget.label,
-                cascade: dropCascade,
-              },
-            ],
-            node.database,
-          );
-          {
-            const parent = parentOf(explorer.roots, selected);
-            if (parent) await explorer.reload(parent);
-          }
-          explorer.selected = null;
-          break;
-        case "type":
-          await typeApply(
-            selected.profileId,
-            [
-              {
-                kind: "dropType",
-                schema: node.schema!,
-                name: dropTarget.label,
-                cascade: dropCascade,
-              },
-            ],
-            node.database,
-          );
-          {
-            const parent = parentOf(explorer.roots, selected);
-            if (parent) await explorer.reload(parent);
-          }
-          explorer.selected = null;
-          break;
-        case "domain":
-          await domainApply(
-            selected.profileId,
-            [
-              {
-                kind: "dropDomain",
-                schema: node.schema!,
-                name: dropTarget.label,
-                cascade: dropCascade,
-              },
-            ],
-            node.database,
-          );
-          {
-            const parent = parentOf(explorer.roots, selected);
-            if (parent) await explorer.reload(parent);
-          }
-          explorer.selected = null;
-          break;
-        case "schema":
-          await schemaApply(
-            selected.profileId,
-            [
-              {
-                kind: "dropSchema",
-                name: dropTarget.label,
-                ifExists: false,
-                cascade: dropCascade,
-              },
-            ],
-            node.database,
-          );
-          {
-            const parent = parentOf(explorer.roots, selected);
-            if (parent) await explorer.reload(parent);
-          }
-          explorer.selected = null;
-          break;
-        case "database":
-          // `force` echa a las sesiones conectadas: sin eso, una base con alguien adentro no se
-          // borra y el error no dice quién es.
-          await databaseApply(selected.profileId, [
-            { kind: "dropDatabase", name: dropTarget.label, ifExists: false, force: dropCascade },
-          ]);
-          {
-            const parent = parentOf(explorer.roots, selected);
-            if (parent) await explorer.reload(parent);
-          }
-          explorer.selected = null;
-          break;
-        case "foreignDataWrapper":
-          await fdwApply(
-            selected.profileId,
-            [{ kind: "drop", name: dropTarget.label, cascade: dropCascade }],
-            node.database,
-          );
-          {
-            const parent = parentOf(explorer.roots, selected);
-            if (parent) await explorer.reload(parent);
-          }
-          explorer.selected = null;
-          break;
-        case "foreignServer":
-          await foreignServerApply(
-            selected.profileId,
-            [{ kind: "drop", name: dropTarget.label, cascade: dropCascade }],
-            node.database,
-          );
-          {
-            const parent = parentOf(explorer.roots, selected);
-            if (parent) await explorer.reload(parent);
-          }
-          explorer.selected = null;
-          break;
+      const stale = await runDrop(selected.profileId, dropTarget, node, shape, {
+        cascade: dropCascade,
+        concurrently: dropConcurrently,
+        reassignTo: reassignFirst ? reassignTo.trim() || "CURRENT_USER" : null,
+      });
+
+      for (const what of stale) {
+        if (what === "parent") await reloadParentAndClear();
+        else if (what === "shape") await loadShape();
+        else if (what === "indexes") await loadIndexes();
+        else if (what === "constraints") await loadConstraints();
+        else if (what === "triggers") await loadTriggers();
+        else if (what === "security") await loadSecurity();
       }
       closeDropDialog();
     } catch (error) {
@@ -1369,99 +1049,6 @@
       dropping = false;
     }
   }
-
-  const dropQuestion = $derived.by(() => {
-    if (!dropTarget) return "";
-    switch (dropTarget.kind) {
-      case "table":
-        return `¿Eliminar la tabla ${dropTarget.label}? Se pierden sus datos.`;
-      case "column":
-        return `¿Eliminar la columna ${dropTarget.label}? Se pierden sus valores en todas las filas.`;
-      case "index":
-        return `¿Eliminar el índice ${dropTarget.label}?`;
-      case "constraint":
-        return `¿Eliminar la restricción ${dropTarget.label}?`;
-      case "trigger":
-        return `¿Eliminar el trigger ${dropTarget.label}?`;
-      case "view":
-        return `¿Eliminar la vista ${dropTarget.label}?`;
-      case "materializedView":
-        return `¿Eliminar la vista materializada ${dropTarget.label}? Se pierden los datos guardados.`;
-      case "function":
-        return `¿Eliminar ${dropTarget.procedure ? "el procedimiento" : "la función"} ${dropTarget.name}(${dropTarget.args})?`;
-      case "policy":
-        return `¿Eliminar la política ${dropTarget.label}? Si es la única que dejaba ver filas, la tabla queda sin nada visible.`;
-      case "role":
-        return `¿Eliminar el rol ${dropTarget.label}?`;
-      case "extension":
-        return `¿Quitar la extensión ${dropTarget.label} de la base?`;
-      case "foreignDataWrapper":
-        return `¿Eliminar el wrapper foráneo ${dropTarget.label}?`;
-      case "foreignServer":
-        return `¿Eliminar el servidor foráneo ${dropTarget.label}? Se pierden sus mapeos de usuario.`;
-      case "sequence":
-        return `¿Eliminar la secuencia ${dropTarget.label}?`;
-      case "type":
-        return `¿Eliminar el tipo ${dropTarget.label}? Las columnas que lo usan lo necesitan.`;
-      case "domain":
-        return `¿Eliminar el dominio ${dropTarget.label}? Las columnas que lo usan lo necesitan.`;
-      case "schema":
-        return `¿Eliminar el esquema ${dropTarget.label}? Sin CASCADE falla si tiene algo adentro.`;
-      case "database":
-        return `¿Eliminar la base ${dropTarget.label}? Se pierde todo lo que tiene adentro.`;
-    }
-  });
-
-  /** Lo que no cabe en el encabezado: los datos de la conexión, o los de una base. */
-  const properties = $derived.by<{ label: string; value: string; bad?: boolean }[]>(() => {
-    if (!isServer) {
-      if (!node) return [];
-      const rows: { label: string; value: string; bad?: boolean }[] = [
-        { label: "Base de datos", value: node.database },
-      ];
-      if (node.schema) rows.push({ label: "Esquema", value: node.schema });
-      if (node.oid) rows.push({ label: "OID", value: String(node.oid) });
-      return rows;
-    }
-    if (!profile) return [];
-    const rows: { label: string; value: string; bad?: boolean }[] = [
-      { label: "Servidor", value: `${profile.host}:${profile.port}` },
-      { label: "Base inicial", value: profile.database },
-      { label: "Usuario", value: profile.user },
-      { label: "Cifrado", value: profile.sslMode },
-      {
-        label: "Entorno",
-        value: profile.environment ? envLook(profile.environment).title : "sin marcar",
-        bad: profile.environment === "prod",
-      },
-      { label: "Solo lectura", value: profile.readOnly ? "sí" : "no" },
-      { label: "Autocommit", value: profile.autocommit ? "sí" : "no" },
-    ];
-    if (caps) {
-      rows.push(
-        { label: "Versión", value: `PostgreSQL ${formatVersion(caps.version)}` },
-        { label: "Superusuario", value: caps.isSuperuser ? "sí" : "no" },
-        {
-          label: "Puede cancelar sesiones",
-          value: caps.canSignalBackends ? "sí" : "no (falta pg_signal_backend)",
-          bad: !caps.canSignalBackends,
-        },
-        {
-          label: "Ve todas las estadísticas",
-          value: caps.canReadAllStats ? "sí" : "no (falta pg_read_all_stats)",
-          bad: !caps.canReadAllStats,
-        },
-      );
-    }
-    return rows;
-  });
-
-  /** La ruta del objeto: base / esquema. Contesta «¿de dónde salió esto?» sin volver al árbol. */
-  const path = $derived.by(() => {
-    if (isServer) return profile ? `${profile.host}:${profile.port}` : "";
-    if (!node) return "";
-    return [node.database, node.schema].filter(Boolean).join(" / ");
-  });
 </script>
 
 <div class="flex h-full flex-col">
@@ -1498,537 +1085,7 @@
           {/if}
         </div>
 
-        <div class="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-          {#if isTablesFolder && node?.schema}
-            <button class="btn btn-primary btn-icon" title="Nueva tabla" aria-label="Nueva tabla" onclick={() => (newTable = true)}>
-              <Icon name="plus" size={14} />
-            </button>
-          {/if}
-
-          {#if isViewsFolder && node?.schema}
-            <button
-              class="btn btn-primary btn-icon"
-              title="Nueva vista"
-              aria-label="Nueva vista"
-              {...blocked}
-              onclick={() => (viewDialog = { materialized: false, existing: null })}
-            >
-              <Icon name="plus" size={14} />
-            </button>
-          {/if}
-
-          {#if isMatViewsFolder && node?.schema}
-            <button
-              class="btn btn-primary btn-icon"
-              title="Nueva vista materializada"
-              aria-label="Nueva vista materializada"
-              {...blocked}
-              onclick={() => (viewDialog = { materialized: true, existing: null })}
-            >
-              <Icon name="plus" size={14} />
-            </button>
-          {/if}
-
-          {#if isFunctionsFolder && node?.schema}
-            <button
-              class="btn btn-primary btn-icon"
-              title="Nueva función"
-              aria-label="Nueva función"
-              {...blocked}
-              onclick={() =>
-                (functionDialog = { sql: functionSkeleton(node!.schema!, false), isEdit: false })}
-            >
-              <Icon name="plus" size={14} />
-            </button>
-          {/if}
-
-          {#if isProceduresFolder && node?.schema}
-            <button
-              class="btn btn-primary btn-icon"
-              title="Nuevo procedimiento"
-              aria-label="Nuevo procedimiento"
-              {...blocked}
-              onclick={() =>
-                (functionDialog = { sql: functionSkeleton(node!.schema!, true), isEdit: false })}
-            >
-              <Icon name="plus" size={14} />
-            </button>
-          {/if}
-
-          {#if isRolesFolder}
-            <button class="btn btn-primary btn-icon" title="Nuevo rol" aria-label="Nuevo rol" {...blocked} onclick={() => (roleDialog = { existing: null })}>
-              <Icon name="plus" size={14} />
-            </button>
-          {/if}
-
-          {#if isExtensionsFolder}
-            <button
-              class="btn btn-primary btn-icon"
-              title="Instalar extensión"
-              aria-label="Instalar extensión"
-              {...blocked}
-              onclick={() => (extensionDialog = { existing: null })}
-            >
-              <Icon name="plus" size={14} />
-            </button>
-          {/if}
-
-          {#if isFdwsFolder}
-            <button class="btn btn-primary btn-icon" title="Nuevo wrapper" aria-label="Nuevo wrapper" {...blocked} onclick={() => (fdwDialog = { existing: null })}>
-              <Icon name="plus" size={14} />
-            </button>
-          {/if}
-
-          {#if isForeignServersFolder}
-            <button
-              class="btn btn-primary btn-icon"
-              title="Nuevo servidor foráneo"
-              aria-label="Nuevo servidor foráneo"
-              {...blocked}
-              onclick={() => (foreignServerDialog = { existing: null })}
-            >
-              <Icon name="plus" size={14} />
-            </button>
-          {/if}
-
-          {#if isSequencesFolder && node?.schema}
-            <button
-              class="btn btn-primary btn-icon"
-              title="Nueva secuencia"
-              aria-label="Nueva secuencia"
-              {...blocked}
-              onclick={() => (sequenceDialog = { existing: null })}
-            >
-              <Icon name="plus" size={14} />
-            </button>
-          {/if}
-
-          {#if isTypesFolder && node?.schema}
-            <button
-              class="btn btn-primary btn-icon"
-              title="Nueva enumeración"
-              aria-label="Nueva enumeración"
-              {...blocked}
-              onclick={() => (typeDialog = { composite: false, existing: null })}
-            >
-              <Icon name="plus" size={14} />
-            </button>
-            <button
-              class="btn btn-icon"
-              title="Nuevo compuesto"
-              aria-label="Nuevo compuesto"
-              {...blocked}
-              onclick={() => (typeDialog = { composite: true, existing: null })}
-            >
-              <Icon name="plus" size={14} />
-            </button>
-            <button class="btn btn-icon" title="Nuevo dominio" aria-label="Nuevo dominio" {...blocked} onclick={() => (domainDialog = { existing: null })}>
-              <Icon name="plus" size={14} />
-            </button>
-          {/if}
-
-          {#if isSchemasFolder}
-            <button
-              class="btn btn-primary btn-icon"
-              title="Nuevo esquema"
-              aria-label="Nuevo esquema"
-              {...blocked}
-              onclick={() => (schemaDialog = { existing: null })}
-            >
-              <Icon name="plus" size={14} />
-            </button>
-          {/if}
-
-          {#if isPartitionedTable && node?.oid}
-            <button
-              class="btn btn-icon"
-              aria-label="Nueva partición"
-              title="Crea o engancha una partición de esta tabla"
-              {...blocked}
-              onclick={openPartitionDialog}
-            >
-              <Icon name="plus" size={14} />
-            </button>
-          {/if}
-
-          {#if dataTarget !== null && queryTarget}
-            <button
-              class="btn btn-primary btn-icon"
-              aria-label="Datos"
-              title={`Abre los datos de ${selected.label}`}
-              onclick={() =>
-                ondata(selected.profileId, queryTarget.database, queryTarget.title, dataTarget)}
-            >
-              <Icon name="table" size={14} />
-            </button>
-          {/if}
-
-          {#if queryTarget}
-            <button
-              class="btn btn-icon"
-              aria-label="Consulta"
-              title={`Abre una consulta contra ${queryTarget.database}`}
-              onclick={() => onquery(selected.profileId, queryTarget.database, queryTarget.title)}
-            >
-              <Icon name="sql" size={14} />
-            </button>
-          {/if}
-
-          {#if isSchema && node}
-            <button
-              class="btn btn-icon"
-              aria-label="Diagrama"
-              title={`Dibuja las tablas de ${node.label} y sus claves foráneas`}
-              onclick={() => onerd(selected.profileId, node.database, node.label)}
-            >
-              <Icon name="diagram" size={14} />
-            </button>
-          {/if}
-
-          {#if isTable && node}
-            <button
-              class="btn btn-icon"
-              aria-label="Exportar"
-              title={`Exporta ${node.label} a un archivo con COPY`}
-              onclick={() => (exportDialog = true)}
-            >
-              <Icon name="download" size={14} />
-            </button>
-            <button
-              class="btn btn-icon"
-              aria-label="Importar"
-              title={`Importa un archivo a ${node.label} con COPY`}
-              {...blocked}
-              onclick={() => (importDialog = true)}
-            >
-              <Icon name="upload" size={14} />
-            </button>
-          {/if}
-
-          {#if isDatabase && node}
-            <button
-              class="btn btn-icon"
-              aria-label="Backup"
-              title={`Hace un backup de ${node.label} con pg_dump`}
-              onclick={() => (backupDialog = true)}
-            >
-              <Icon name="download" size={14} />
-            </button>
-            <button
-              class="btn btn-icon"
-              aria-label="Restaurar"
-              title={`Restaura un backup sobre ${node.label} con pg_restore`}
-              {...blocked}
-              onclick={() => (restoreDialog = true)}
-            >
-              <Icon name="upload" size={14} />
-            </button>
-          {/if}
-
-          {#if isView && node}
-            <button
-              class="btn btn-icon"
-              title="Editar"
-              aria-label="Editar"
-              {...blocked}
-              onclick={() =>
-                (viewDialog = {
-                  materialized: false,
-                  existing: { oid: node!.oid!, name: node!.label },
-                })}
-            >
-              <Icon name="edit" size={14} />
-            </button>
-          {/if}
-
-          {#if isMaterializedView && node}
-            <button
-              class="btn btn-icon"
-              title="Editar"
-              aria-label="Editar"
-              {...blocked}
-              onclick={() =>
-                (viewDialog = {
-                  materialized: true,
-                  existing: { oid: node!.oid!, name: node!.label },
-                })}
-            >
-              <Icon name="edit" size={14} />
-            </button>
-            <button
-              class="btn btn-icon"
-              aria-label="Refrescar"
-              title="Vuelve a calcular los datos guardados de la vista"
-              {...blocked}
-              onclick={() => (refreshTarget = { schema: node!.schema!, name: node!.label })}
-            >
-              <Icon name="refresh" size={14} />
-            </button>
-          {/if}
-
-          {#if (isFunction || isProcedure) && ddl}
-            <button class="btn btn-icon" title="Editar" aria-label="Editar" {...blocked} onclick={() => (functionDialog = { sql: ddl!.sql, isEdit: true })}>
-              <Icon name="edit" size={14} />
-            </button>
-          {/if}
-
-          {#if isRole}
-            <button class="btn btn-icon" title="Editar" aria-label="Editar" onclick={openEditRole}>
-              <Icon name="edit" size={14} />
-            </button>
-          {/if}
-
-          {#if isExtension}
-            <button class="btn btn-icon" title="Editar" aria-label="Editar" onclick={openEditExtension}>
-              <Icon name="edit" size={14} />
-            </button>
-          {/if}
-
-          {#if isFdw}
-            <button class="btn btn-icon" title="Editar" aria-label="Editar" onclick={openEditFdw}>
-              <Icon name="edit" size={14} />
-            </button>
-          {/if}
-
-          {#if isForeignServer}
-            <button class="btn btn-icon" title="Editar" aria-label="Editar" onclick={openEditForeignServer}>
-              <Icon name="edit" size={14} />
-            </button>
-          {/if}
-
-          {#if isSequence && node?.oid}
-            <button
-              class="btn btn-icon"
-              title="Editar"
-              aria-label="Editar"
-              {...blocked}
-              onclick={() => (sequenceDialog = { existing: { oid: node!.oid!, name: node!.label } })}
-            >
-              <Icon name="edit" size={14} />
-            </button>
-          {/if}
-
-          {#if isType && node?.oid}
-            <button class="btn btn-icon" title="Editar" aria-label="Editar" {...blocked} onclick={openEditType}>
-              <Icon name="edit" size={14} />
-            </button>
-          {/if}
-
-          {#if isSchema && node}
-            <button
-              class="btn btn-icon"
-              title="Editar"
-              aria-label="Editar"
-              {...blocked}
-              onclick={() =>
-                (schemaDialog = { existing: { name: node!.label, owner: node!.detail ?? "" } })}
-            >
-              <Icon name="edit" size={14} />
-            </button>
-          {/if}
-
-          {#if isDatabase && node}
-            <button class="btn btn-icon" title="Editar" aria-label="Editar" {...blocked} onclick={() => (databaseDialog = { existing: node!.label })}>
-              <Icon name="edit" size={14} />
-            </button>
-            <button class="btn btn-icon" title="Nueva base" aria-label="Nueva base" {...blocked} onclick={() => (databaseDialog = { existing: null })}>
-              <Icon name="plus" size={14} />
-            </button>
-          {/if}
-
-          {#if commentTarget}
-            <button
-              class="btn btn-icon"
-              aria-label="Comentario"
-              title="Documenta el objeto adentro de la propia base"
-              {...blocked}
-              onclick={() =>
-                (commentDialog = {
-                  target: commentTarget!,
-                  label: selected.label,
-                  current: node?.comment ?? null,
-                })}
-            >
-              <Icon name="edit" size={14} />
-            </button>
-          {/if}
-
-          {#if isGroup}
-            <button class="btn btn-primary btn-icon" title="Renombrar" aria-label="Renombrar" onclick={() => ongroup(selected.group!)}>
-              <Icon name="edit" size={14} />
-            </button>
-          {/if}
-
-          {#if isServer}
-            {#if selected.connected}
-              <button
-                class="btn btn-icon"
-                title="Desconectar"
-                aria-label="Desconectar"
-                onclick={() => explorer.disconnect(selected.profileId)}
-              >
-                <Icon name="unplug" size={14} />
-              </button>
-            {:else}
-              <button
-                class="btn btn-primary btn-icon"
-                title="Conectar"
-                aria-label="Conectar"
-                onclick={() => onconnect(selected.profileId)}
-              >
-                <Icon name="plug" size={14} />
-              </button>
-            {/if}
-            <button class="btn btn-icon" title="Editar" aria-label="Editar" onclick={() => onedit(selected.profileId)}>
-              <Icon name="edit" size={14} />
-            </button>
-          {/if}
-
-          <!-- Lo que borra va último y en rojo: se llega a ello después de todo lo demás. -->
-          {#if isTable && shape}
-            <button
-              class="btn btn-danger-ghost btn-icon"
-              aria-label="Eliminar"
-              title="Eliminar la tabla"
-              {...blocked}
-              onclick={() => (dropTarget = { kind: "table", label: shape!.name })}
-            >
-              <Icon name="trash" size={14} />
-            </button>
-          {/if}
-
-          {#if isView && node}
-            <button
-              class="btn btn-danger-ghost btn-icon"
-              title="Eliminar"
-              aria-label="Eliminar"
-              {...blocked}
-              onclick={() => (dropTarget = { kind: "view", label: node!.label })}
-            >
-              <Icon name="trash" size={14} />
-            </button>
-          {/if}
-
-          {#if isMaterializedView && node}
-            <button
-              class="btn btn-danger-ghost btn-icon"
-              title="Eliminar"
-              aria-label="Eliminar"
-              {...blocked}
-              onclick={() => (dropTarget = { kind: "materializedView", label: node!.label })}
-            >
-              <Icon name="trash" size={14} />
-            </button>
-          {/if}
-
-          {#if (isFunction || isProcedure) && ddl}
-            <button class="btn btn-danger-ghost btn-icon" title="Eliminar" aria-label="Eliminar" {...blocked} onclick={askDropFunction}>
-              <Icon name="trash" size={14} />
-            </button>
-          {/if}
-
-          {#if isSequence && node}
-            <button
-              class="btn btn-danger-ghost btn-icon"
-              title="Eliminar"
-              aria-label="Eliminar"
-              {...blocked}
-              onclick={() => (dropTarget = { kind: "sequence", label: node!.label })}
-            >
-              <Icon name="trash" size={14} />
-            </button>
-          {/if}
-
-          {#if isType && node}
-            <button
-              class="btn btn-danger-ghost btn-icon"
-              title="Eliminar"
-              aria-label="Eliminar"
-              {...blocked}
-              onclick={() => (dropTarget = { kind: "type", label: node!.label })}
-            >
-              <Icon name="trash" size={14} />
-            </button>
-          {/if}
-
-          {#if isSchema && node}
-            <button
-              class="btn btn-danger-ghost btn-icon"
-              aria-label="Eliminar"
-              title="Sin CASCADE falla si el esquema tiene algo adentro"
-              {...blocked}
-              onclick={() => (dropTarget = { kind: "schema", label: node!.label })}
-            >
-              <Icon name="trash" size={14} />
-            </button>
-          {/if}
-
-          {#if isDatabase && node}
-            <button
-              class="btn btn-danger-ghost btn-icon"
-              title="Eliminar"
-              aria-label="Eliminar"
-              {...blocked}
-              onclick={() => (dropTarget = { kind: "database", label: node!.label })}
-            >
-              <Icon name="trash" size={14} />
-            </button>
-          {/if}
-
-          {#if isRole}
-            <button
-              class="btn btn-danger-ghost btn-icon"
-              title="Eliminar"
-              aria-label="Eliminar"
-              {...blocked}
-              onclick={() => (dropTarget = { kind: "role", label: selected.label })}
-            >
-              <Icon name="trash" size={14} />
-            </button>
-          {/if}
-
-          {#if isExtension}
-            <button
-              class="btn btn-danger-ghost btn-icon"
-              title="Quitar"
-              aria-label="Quitar"
-              {...blocked}
-              onclick={() => (dropTarget = { kind: "extension", label: selected.label })}
-            >
-              <Icon name="trash" size={14} />
-            </button>
-          {/if}
-
-          {#if isFdw}
-            <button
-              class="btn btn-danger-ghost btn-icon"
-              title="Eliminar"
-              aria-label="Eliminar"
-              {...blocked}
-              onclick={() => (dropTarget = { kind: "foreignDataWrapper", label: selected.label })}
-            >
-              <Icon name="trash" size={14} />
-            </button>
-          {/if}
-
-          {#if isForeignServer}
-            <button
-              class="btn btn-danger-ghost btn-icon"
-              title="Eliminar"
-              aria-label="Eliminar"
-              {...blocked}
-              onclick={() => (dropTarget = { kind: "foreignServer", label: selected.label })}
-            >
-              <Icon name="trash" size={14} />
-            </button>
-          {/if}
-
-          {#if isServer}
-            <button class="btn btn-danger-ghost btn-icon" title="Eliminar" aria-label="Eliminar" onclick={() => ondelete(selected.profileId)}>
-              <Icon name="trash" size={14} />
-            </button>
-          {/if}
-        </div>
+        <Actions {actions} {blocked} onaction={run} />
       </div>
 
       {#if selected.comment}
@@ -2037,59 +1094,13 @@
     </header>
 
     {#if isGroup}
-      <!--
-        Una carpeta no tiene catálogo que mostrar: lo único que contiene son conexiones, así que el
-        panel es la lista de esas conexiones con lo que se puede hacer con cada una.
-      -->
       <div class="min-h-0 flex-1 overflow-auto p-4">
-        <div class="card overflow-hidden">
-          <div class="card-head">
-            <span class="card-title">Servidores de la carpeta</span>
-            <span class="ml-auto text-xs muted">
-              Arrastrá un servidor del árbol para meterlo o sacarlo
-            </span>
-          </div>
-
-          <table class="list-table">
-            <tbody>
-              {#each groupServers as server (server.profileId)}
-                <tr class="group">
-                  <td class="w-px whitespace-nowrap">
-                    <span class="flex items-center gap-1.5">
-                      <span class="dot {server.connected ? 'dot-on' : 'dot-off'}"></span>
-                      <span class="font-medium">{server.label}</span>
-                    </span>
-                  </td>
-                  <td class="text-xs muted">{server.detail}</td>
-                  <td class="w-40">
-                    <div class="row-actions">
-                      {#if server.connected}
-                        <button
-                          class="btn btn-sm"
-                          onclick={() => explorer.disconnect(server.profileId)}
-                        >
-                          Desconectar
-                        </button>
-                      {:else}
-                        <button class="btn btn-sm" onclick={() => onconnect(server.profileId)}>
-                          Conectar
-                        </button>
-                      {/if}
-                      <button
-                        class="btn btn-ghost btn-icon size-6"
-                        title="Editar el servidor"
-                        aria-label="Editar el servidor"
-                        onclick={() => onedit(server.profileId)}
-                      >
-                        <Icon name="edit" size={12} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
+        <GroupServers
+          servers={groupServers}
+          {onconnect}
+          ondisconnect={(profileId) => explorer.disconnect(profileId)}
+          onedit={(profileId) => onedit(profileId)}
+        />
       </div>
     {:else if isServer && !selected.connected}
       <Empty
@@ -2101,7 +1112,7 @@
           Conectar
         </button>
       </Empty>
-    {:else if isFolder && sections.length === 0}
+    {:else if flags.isFolder && sections.length === 0}
       <Empty
         icon="folder"
         title="Una carpeta del árbol"
@@ -2132,684 +1143,102 @@
 
       <div class="min-h-0 flex-1 overflow-auto p-4">
         {#if section === "info"}
-          <div class="card overflow-hidden">
-            <div class="card-head"><span class="card-title">Propiedades</span></div>
-            <table class="list-table">
-              <tbody>
-                {#each properties as row (row.label)}
-                  <tr>
-                    <td class="w-56 muted">{row.label}</td>
-                    <td class={row.bad ? "text-amber-700 dark:text-amber-400" : ""}>{row.value}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
+          <Properties rows={properties} />
         {:else if section === "columns"}
-          <div class="card overflow-hidden">
-            <div class="card-head">
-              <span class="card-title">Columnas</span>
-              {#if shape}
-                <button
-                  class="btn btn-sm ml-auto"
-                  {...blocked}
-                  onclick={() => (columnDialog = { column: null })}
-                >
-                  <Icon name="plus" size={11} />
-                  Columna
-                </button>
-              {/if}
-            </div>
-
-            {#if shapeLoading}
-              {@render pending("Leyendo columnas…")}
-            {:else if shapeError}
-              <Alert tone="bad" box class="m-3">{shapeError}</Alert>
-            {:else if shape}
-              <table class="list-table">
-                <thead>
-                  <tr>
-                    <th class="w-px whitespace-nowrap">Nombre</th>
-                    <th class="w-px whitespace-nowrap">Tipo</th>
-                    <th class="w-full">Valor por omisión</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each shape.columns as column (column.name)}
-                    <tr class="group">
-                      <td class="w-px font-medium whitespace-nowrap">
-                        {column.name}
-                        {#if column.notNull}
-                          <span class="tag tag-neutral ml-1">NOT NULL</span>
-                        {/if}
-                      </td>
-                      <td class="w-px font-mono text-xs whitespace-nowrap muted">
-                        {column.typeName}
-                      </td>
-                      <td class="max-w-0 truncate text-xs muted">
-                        {column.default ?? (column.generated ? "generada por el servidor" : "—")}
-                      </td>
-                      <td class="w-28">
-                        <div class="row-actions">
-                          {#if !column.generated}
-                            <button
-                              class="btn btn-ghost btn-icon size-6"
-                              title="Editar la columna"
-                              aria-label="Editar la columna"
-                              {...blocked}
-                              onclick={() => (columnDialog = { column })}
-                            >
-                              <Icon name="edit" size={12} />
-                            </button>
-                          {/if}
-                          <button
-                            class="btn btn-danger-ghost btn-icon size-6"
-                            title="Eliminar la columna"
-                            aria-label="Eliminar la columna"
-                            {...blocked}
-                            onclick={() => (dropTarget = { kind: "column", label: column.name })}
-                          >
-                            <Icon name="trash" size={12} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            {/if}
-          </div>
+          <Columns
+            {shape}
+            loading={shapeLoading}
+            error={shapeError}
+            {blocked}
+            onnew={() => (columnDialog = { column: null })}
+            onedit={(column) => (columnDialog = { column })}
+            ondrop={(column) => (dropTarget = { kind: "column", label: column })}
+          />
         {:else if section === "indexes"}
-          <div class="card overflow-hidden">
-            <div class="card-head">
-              <span class="card-title">Índices</span>
-              {#if shape}
-                <button class="btn btn-sm ml-auto" {...blocked} onclick={() => (newIndex = true)}>
-                  <Icon name="plus" size={11} />
-                  Índice
-                </button>
-              {/if}
-            </div>
-
-            {#if indexesLoading}
-              {@render pending("Leyendo índices…")}
-            {:else if indexesError}
-              <Alert tone="bad" box class="m-3">{indexesError}</Alert>
-            {:else if indexes && indexes.length === 0}
-              {@render nothing("No tiene índices propios.")}
-            {:else if indexes}
-              <table class="list-table">
-                <thead>
-                  <tr>
-                    <th class="w-px whitespace-nowrap">Nombre</th>
-                    <th class="w-full">Definición</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each indexes as index (index.oid)}
-                    <tr class="group">
-                      <td class="w-px font-medium whitespace-nowrap">
-                        {index.name}
-                        {#if index.primary}
-                          <span class="tag tag-info ml-1">primario</span>
-                        {:else if index.unique}
-                          <span class="tag tag-info ml-1">único</span>
-                        {/if}
-                        {#if !index.valid}
-                          <span class="tag tag-bad ml-1">inválido</span>
-                        {/if}
-                      </td>
-                      <td class="max-w-0 truncate font-mono text-xs muted" title={index.definition}>
-                        {index.definition}
-                      </td>
-                      <td class="w-16">
-                        <div class="row-actions">
-                          <button
-                            class="btn btn-danger-ghost btn-icon size-6"
-                            title="Eliminar el índice"
-                            aria-label="Eliminar el índice"
-                            {...blocked}
-                            onclick={() => (dropTarget = { kind: "index", label: index.name })}
-                          >
-                            <Icon name="trash" size={12} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            {/if}
-          </div>
+          <Indexes
+            {indexes}
+            loading={indexesLoading}
+            error={indexesError}
+            canCreate={shape !== null}
+            {blocked}
+            onnew={() => (newIndex = true)}
+            ondrop={(name) => (dropTarget = { kind: "index", label: name })}
+          />
         {:else if section === "constraints"}
-          <div class="card overflow-hidden">
-            <div class="card-head">
-              <span class="card-title">Restricciones</span>
-              {#if shape}
-                <button class="btn btn-sm ml-auto" {...blocked} onclick={() => (newConstraint = true)}>
-                  <Icon name="plus" size={11} />
-                  Restricción
-                </button>
-              {/if}
-            </div>
-
-            {#if constraintsLoading}
-              {@render pending("Leyendo restricciones…")}
-            {:else if constraintsError}
-              <Alert tone="bad" box class="m-3">{constraintsError}</Alert>
-            {:else if constraints && constraints.length === 0}
-              {@render nothing("No tiene restricciones propias.")}
-            {:else if constraints}
-              <table class="list-table">
-                <thead>
-                  <tr>
-                    <th class="w-px whitespace-nowrap">Nombre</th>
-                    <th class="w-full">Definición</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each constraints as constraint (constraint.oid)}
-                    <tr class="group">
-                      <td class="w-px font-medium whitespace-nowrap">
-                        {constraint.name}
-                        <span class="tag tag-neutral ml-1">{constraint.kind}</span>
-                      </td>
-                      <td
-                        class="max-w-0 truncate font-mono text-xs muted"
-                        title={constraint.definition}
-                      >
-                        {constraint.definition}
-                      </td>
-                      <td class="w-16">
-                        <div class="row-actions">
-                          <button
-                            class="btn btn-danger-ghost btn-icon size-6"
-                            title="Eliminar la restricción"
-                            aria-label="Eliminar la restricción"
-                            {...blocked}
-                            onclick={() =>
-                              (dropTarget = { kind: "constraint", label: constraint.name })}
-                          >
-                            <Icon name="trash" size={12} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            {/if}
-          </div>
+          <Constraints
+            {constraints}
+            loading={constraintsLoading}
+            error={constraintsError}
+            canCreate={shape !== null}
+            {blocked}
+            onnew={() => (newConstraint = true)}
+            ondrop={(name) => (dropTarget = { kind: "constraint", label: name })}
+          />
         {:else if section === "triggers"}
-          <div class="card overflow-hidden">
-            <div class="card-head">
-              <span class="card-title">Triggers</span>
-              {#if shape}
-                <button
-                  class="btn btn-sm ml-auto"
-                  {...blocked}
-                  onclick={() => (triggerDialog = { existing: null })}
-                >
-                  <Icon name="plus" size={11} />
-                  Trigger
-                </button>
-              {/if}
-            </div>
-
-            {#if triggersLoading}
-              {@render pending("Leyendo triggers…")}
-            {:else if triggersError}
-              <Alert tone="bad" box class="m-3">{triggersError}</Alert>
-            {:else if triggers && triggers.length === 0}
-              {@render nothing("No tiene triggers propios.")}
-            {:else if triggers}
-              <table class="list-table">
-                <thead>
-                  <tr>
-                    <th class="w-px whitespace-nowrap">Nombre</th>
-                    <th class="w-px whitespace-nowrap">Cuándo</th>
-                    <th class="w-full">Ejecuta</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each triggers as trigger (trigger.oid)}
-                    <tr class="group">
-                      <td class="w-px font-medium whitespace-nowrap">{trigger.name}</td>
-                      <td class="w-px text-xs whitespace-nowrap muted">{triggerSummary(trigger)}</td>
-                      <td class="max-w-0 truncate font-mono text-xs muted">
-                        {trigger.functionSchema}.{trigger.functionName}()
-                      </td>
-                      <td class="w-24">
-                        <div class="row-actions">
-                          <button
-                            class="btn btn-ghost btn-icon size-6"
-                            title="Editar el trigger"
-                            aria-label="Editar el trigger"
-                            {...blocked}
-                            onclick={() => (triggerDialog = { existing: trigger })}
-                          >
-                            <Icon name="edit" size={12} />
-                          </button>
-                          <button
-                            class="btn btn-danger-ghost btn-icon size-6"
-                            title="Eliminar el trigger"
-                            aria-label="Eliminar el trigger"
-                            {...blocked}
-                            onclick={() => (dropTarget = { kind: "trigger", label: trigger.name })}
-                          >
-                            <Icon name="trash" size={12} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            {/if}
-          </div>
+          <Triggers
+            {triggers}
+            loading={triggersLoading}
+            error={triggersError}
+            canCreate={shape !== null}
+            {blocked}
+            onnew={() => (triggerDialog = { existing: null })}
+            onedit={(trigger) => (triggerDialog = { existing: trigger })}
+            ondrop={(name) => (dropTarget = { kind: "trigger", label: name })}
+          />
         {:else if section === "security"}
-          <div class="card overflow-hidden">
-            <div class="card-head">
-              <span class="card-title">Seguridad por fila</span>
-              {#if shape}
-                <button
-                  class="btn btn-sm ml-auto"
-                  {...blocked}
-                  onclick={() => (policyDialog = { existing: null })}
-                >
-                  <Icon name="plus" size={11} />
-                  Política
-                </button>
-              {/if}
-            </div>
-
-            {#if securityLoading}
-              {@render pending("Leyendo las políticas…")}
-            {:else if securityError}
-              <Alert tone="bad" box class="m-3">{securityError}</Alert>
-            {:else if security}
-              <div class="flex flex-col gap-2 border-b border-zinc-200 p-3 dark:border-zinc-800">
-                <label class="check">
-                  <input
-                    type="checkbox"
-                    checked={security.enabled}
-                    onchange={() =>
-                      applySwitch({
-                        kind: "setRowSecurity",
-                        schema: shape!.schema,
-                        table: shape!.name,
-                        enabled: !security!.enabled,
-                      })}
-                  />
-                  Filtrar las filas según las políticas
-                </label>
-                <label class="check">
-                  <input
-                    type="checkbox"
-                    checked={security.forced}
-                    disabled={!security.enabled}
-                    onchange={() =>
-                      applySwitch({
-                        kind: "setForceRowSecurity",
-                        schema: shape!.schema,
-                        table: shape!.name,
-                        forced: !security!.forced,
-                      })}
-                  />
-                  Aplicarlo también al dueño de la tabla
-                </label>
-              </div>
-
-              <!-- Las tres combinaciones que engañan: filtro sin políticas no deja pasar nada,
-                   políticas sin filtro no hacen nada, y el dueño se saltea todo si no se fuerza. -->
-              {#if security.enabled && security.policies.length === 0}
-                <Alert tone="warn" box class="m-3">
-                  El filtro está activo y no hay ninguna política: la tabla no devuelve ninguna fila.
-                </Alert>
-              {:else if !security.enabled && security.policies.length > 0}
-                <Alert tone="warn" box class="m-3">
-                  Hay políticas definidas pero el filtro está apagado: no se aplica ninguna.
-                </Alert>
-              {:else if security.enabled && !security.forced}
-                <Alert tone="ok" box class="m-3">
-                  El dueño de la tabla se saltea el filtro. Para probar las políticas hay que
-                  conectarse con otro rol, o marcar la segunda casilla.
-                </Alert>
-              {/if}
-
-              {#if security.policies.length === 0}
-                {@render nothing("No tiene políticas.")}
-              {:else}
-                <table class="list-table">
-                  <thead>
-                    <tr>
-                      <th class="w-px whitespace-nowrap">Nombre</th>
-                      <th class="w-px whitespace-nowrap">Comando</th>
-                      <th class="w-px whitespace-nowrap">Roles</th>
-                      <th class="w-full">Condición</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {#each security.policies as policy (policy.oid)}
-                      <tr class="group">
-                        <td class="w-px font-medium whitespace-nowrap">{policy.name}</td>
-                        <td class="w-px whitespace-nowrap">
-                          <span class="tag tag-neutral font-mono">
-                            {policy.command.toUpperCase()}
-                          </span>
-                          {#if policy.kind === "restrictive"}
-                            <span class="tag tag-info">restrictiva</span>
-                          {/if}
-                        </td>
-                        <td class="w-px text-xs whitespace-nowrap muted">
-                          {policy.roles.length === 0 ? "PUBLIC" : policy.roles.join(", ")}
-                        </td>
-                        <td class="max-w-0 truncate font-mono text-xs muted">
-                          {policy.using ?? ""}{policy.using && policy.check ? " · " : ""}{policy.check
-                            ? `CHECK ${policy.check}`
-                            : ""}
-                        </td>
-                        <td class="w-24">
-                          <div class="row-actions">
-                            <button
-                              class="btn btn-ghost btn-icon size-6"
-                              title="Editar la política"
-                              aria-label="Editar la política"
-                              {...blocked}
-                              onclick={() => (policyDialog = { existing: policy })}
-                            >
-                              <Icon name="edit" size={12} />
-                            </button>
-                            <button
-                              class="btn btn-danger-ghost btn-icon size-6"
-                              title="Eliminar la política"
-                              aria-label="Eliminar la política"
-                              {...blocked}
-                              onclick={() => (dropTarget = { kind: "policy", label: policy.name })}
-                            >
-                              <Icon name="trash" size={12} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    {/each}
-                  </tbody>
-                </table>
-              {/if}
-            {/if}
-          </div>
+          <Security
+            {security}
+            loading={securityLoading}
+            error={securityError}
+            canCreate={shape !== null}
+            {blocked}
+            onnew={() => (policyDialog = { existing: null })}
+            onedit={(policy) => (policyDialog = { existing: policy })}
+            ondrop={(name) => (dropTarget = { kind: "policy", label: name })}
+            onenabled={(enabled) =>
+              applySwitch({
+                kind: "setRowSecurity",
+                schema: shape!.schema,
+                table: shape!.name,
+                enabled,
+              })}
+            onforced={(forced) =>
+              applySwitch({
+                kind: "setForceRowSecurity",
+                schema: shape!.schema,
+                table: shape!.name,
+                forced,
+              })}
+          />
         {:else if section === "privileges"}
-          <div class="card overflow-hidden">
-            <div class="card-head">
-              <span class="card-title">Privilegios</span>
-              <button
-                class="btn btn-sm ml-auto"
-                {...blocked}
-                onclick={() => (privilegeDialog = { existing: null })}
-              >
-                <Icon name="plus" size={11} />
-                Privilegio
-              </button>
-            </div>
-
-            {#if privilegesLoading}
-              {@render pending("Leyendo privilegios…")}
-            {:else if privilegesError}
-              <Alert tone="bad" box class="m-3">{privilegesError}</Alert>
-            {:else if privilegeGroups.length === 0}
-              {@render nothing(
-                "Nadie tiene privilegios propios: rige el default (el dueño puede todo).",
-              )}
-            {:else}
-              <table class="list-table">
-                <thead>
-                  <tr>
-                    <th class="w-px whitespace-nowrap">Rol</th>
-                    <th class="w-full">Privilegios</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each privilegeGroups as group (group.grantee)}
-                    <tr class="group">
-                      <td class="w-px font-medium whitespace-nowrap">{group.grantee}</td>
-                      <td>
-                        <span class="flex flex-wrap gap-1">
-                          <!-- Un mismo privilegio puede venir dos veces con otorgantes distintos:
-                               la clave es la posición y no el nombre. -->
-                          {#each group.privileges as privilege, position (position)}
-                            <span class="tag tag-neutral font-mono">{privilege.toUpperCase()}</span>
-                          {/each}
-                          {#if group.grantable}
-                            <span class="tag tag-info">con GRANT OPTION</span>
-                          {/if}
-                        </span>
-                      </td>
-                      <td class="w-24">
-                        <div class="row-actions">
-                          <button
-                            class="btn btn-ghost btn-icon size-6"
-                            title="Editar los privilegios"
-                            aria-label="Editar los privilegios"
-                            {...blocked}
-                            onclick={() =>
-                              (privilegeDialog = {
-                                existing: {
-                                  grantee: group.grantee,
-                                  privileges: group.privileges,
-                                  grantable: group.grantable,
-                                  columns: columnGrants.filter(
-                                    (grant) => grant.grantee === group.grantee,
-                                  ),
-                                },
-                              })}
-                          >
-                            <Icon name="edit" size={12} />
-                          </button>
-                          <button
-                            class="btn btn-danger-ghost btn-icon size-6"
-                            title="Revocar todo"
-                            aria-label="Revocar todo"
-                            {...blocked}
-                            onclick={() =>
-                              (revokeTarget = {
-                                grantee: group.grantee,
-                                privileges: group.privileges,
-                              })}
-                          >
-                            <Icon name="trash" size={12} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            {/if}
-          </div>
-
-          {#if columnGroups.length > 0}
-            <div class="card mt-3 overflow-hidden">
-              <div class="card-head">
-                <span class="card-title">Acotados a columnas</span>
-                <span class="seg-count">{columnGroups.length}</span>
-              </div>
-              <table class="list-table">
-                <thead>
-                  <tr>
-                    <th class="w-px whitespace-nowrap">Columna</th>
-                    <th class="w-px whitespace-nowrap">Rol</th>
-                    <th class="w-full">Privilegios</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each columnGroups as group (pairKey(group.column, group.grantee))}
-                    <tr>
-                      <td class="w-px font-mono whitespace-nowrap">{group.column}</td>
-                      <td class="w-px font-medium whitespace-nowrap">{group.grantee}</td>
-                      <td>
-                        <span class="flex flex-wrap gap-1">
-                          {#each group.privileges as privilege, position (position)}
-                            <span class="tag tag-neutral font-mono">{privilege}</span>
-                          {/each}
-                        </span>
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-          {/if}
-
-          {#if isSchema && defaultGrants.length > 0}
-            <div class="card mt-3 overflow-hidden">
-              <div class="card-head">
-                <span class="card-title">Por omisión</span>
-                <span class="text-xs muted">lo que van a recibir los objetos que se creen acá</span>
-              </div>
-              <table class="list-table">
-                <thead>
-                  <tr>
-                    <th class="w-px whitespace-nowrap">Cuando crea</th>
-                    <th class="w-px whitespace-nowrap">Sobre</th>
-                    <th class="w-px whitespace-nowrap">Rol</th>
-                    <th class="w-full">Privilegio</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each defaultGrants as grant, position (position)}
-                    <tr>
-                      <td class="w-px whitespace-nowrap">{grant.owner}</td>
-                      <td class="w-px whitespace-nowrap">{grant.objects}</td>
-                      <td class="w-px font-medium whitespace-nowrap">{grant.grantee}</td>
-                      <td>
-                        <span class="tag tag-neutral font-mono">{grant.privilege}</span>
-                        {#if grant.grantable}
-                          <span class="tag tag-info">con GRANT OPTION</span>
-                        {/if}
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-          {/if}
+          <Privileges
+            groups={privilegeGroups}
+            {columnGroups}
+            defaultGrants={flags.isSchema ? defaultGrants : []}
+            loading={privilegesLoading}
+            error={privilegesError}
+            {blocked}
+            onnew={() => (privilegeDialog = { existing: null })}
+            onedit={editPrivileges}
+            onrevoke={(group) =>
+              (revokeTarget = { grantee: group.grantee, privileges: group.privileges })}
+          />
         {:else if section === "mappings"}
-          <div class="card overflow-hidden">
-            <div class="card-head">
-              <span class="card-title">Mapeos de usuario</span>
-              <button
-                class="btn btn-sm ml-auto"
-                {...blocked}
-                onclick={() => (userMappingDialog = { existing: null })}
-              >
-                <Icon name="plus" size={11} />
-                Mapeo
-              </button>
-            </div>
-
-            {#if mappingsError}
-              <Alert tone="bad" box class="m-3">{mappingsError}</Alert>
-            {:else if mappings.length === 0}
-              {@render nothing("No tiene mapeos de usuario.")}
-            {:else}
-              <table class="list-table">
-                <thead>
-                  <tr>
-                    <th class="w-px whitespace-nowrap">Rol</th>
-                    <th class="w-full">Opciones</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each mappings as mapping (mapping.user)}
-                    <tr class="group">
-                      <td class="w-px font-medium whitespace-nowrap">{mapping.user}</td>
-                      <td class="max-w-0 truncate font-mono text-xs muted">
-                        {#if mapping.options === null}
-                          (ocultas)
-                        {:else}
-                          {mapping.options
-                            .map(([key, value]) => (key === "password" ? `${key}=••••` : `${key}=${value}`))
-                            .join(", ") || "—"}
-                        {/if}
-                      </td>
-                      <td class="w-24">
-                        <div class="row-actions">
-                          <button
-                            class="btn btn-ghost btn-icon size-6"
-                            title="Editar el mapeo"
-                            aria-label="Editar el mapeo"
-                            {...blocked}
-                            onclick={() => (userMappingDialog = { existing: mapping })}
-                          >
-                            <Icon name="edit" size={12} />
-                          </button>
-                          <button
-                            class="btn btn-danger-ghost btn-icon size-6"
-                            title="Quitar el mapeo"
-                            aria-label="Quitar el mapeo"
-                            onclick={() => (mappingDrop = { user: mapping.user })}
-                          >
-                            <Icon name="trash" size={12} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            {/if}
-          </div>
+          <Mappings
+            {mappings}
+            error={mappingsError}
+            {blocked}
+            onnew={() => (userMappingDialog = { existing: null })}
+            onedit={(mapping) => (userMappingDialog = { existing: mapping })}
+            ondrop={(user) => (mappingDrop = { user })}
+          />
         {:else if section === "ddl"}
-          <div class="card overflow-hidden">
-            <div class="card-head">
-              <span class="card-title">DDL</span>
-              {#if ddl}
-                <span class="text-xs muted">
-                  {ddl.source === "pgDump" ? "reconstruido con pg_dump" : "generado por PostgreSQL"}
-                </span>
-                <span class="ml-auto flex items-center gap-1">
-                  <FontSize />
-                  <button class="btn btn-sm" onclick={copy}>
-                    <Icon name={copied ? "check" : "copy"} size={11} />
-                    {copied ? "Copiado" : "Copiar"}
-                  </button>
-                </span>
-              {/if}
-            </div>
-
-            {#if loading}
-              {@render pending("Generando DDL…")}
-            {:else if ddlError}
-              <Alert tone="bad" box class="m-3">{ddlError}</Alert>
-            {:else if ddl}
-              <div class="overflow-auto px-4 py-3 leading-relaxed">
-                <Sql code={ddl.sql} />
-              </div>
-            {/if}
-          </div>
+          <DdlSection {ddl} {loading} error={ddlError} {copied} oncopy={copy} />
         {/if}
       </div>
     {/if}
   {/if}
 </div>
-
-{#snippet pending(text: string)}
-  <p class="flex items-center gap-2 px-3 py-4 text-sm muted">
-    <span class="spinner"></span>
-    {text}
-  </p>
-{/snippet}
-
-{#snippet nothing(text: string)}
-  <p class="px-3 py-4 text-sm muted">{text}</p>
-{/snippet}
 
 {#if newTable && selected && node?.schema}
   <TableDialog
@@ -2817,7 +1246,10 @@
     database={node.database}
     schema={node.schema}
     onclose={() => (newTable = false)}
-    oncreated={afterTableCreated}
+    oncreated={() => {
+      newTable = false;
+      reloadSelected();
+    }}
   />
 {/if}
 
@@ -2829,7 +1261,10 @@
     table={shape.name}
     column={columnDialog.column}
     onclose={() => (columnDialog = null)}
-    onsaved={afterColumnSaved}
+    onsaved={() => {
+      columnDialog = null;
+      loadShape();
+    }}
   />
 {/if}
 
@@ -2841,7 +1276,10 @@
     table={shape.name}
     columns={shape.columns}
     onclose={() => (newIndex = false)}
-    oncreated={afterIndexCreated}
+    oncreated={() => {
+      newIndex = false;
+      loadIndexes();
+    }}
   />
 {/if}
 
@@ -2853,7 +1291,13 @@
     table={shape.name}
     columns={shape.columns}
     onclose={() => (newConstraint = false)}
-    oncreated={afterConstraintCreated}
+    oncreated={() => {
+      newConstraint = false;
+      loadConstraints();
+      // Agregar una primary key o un unique puede cambiar si la grilla de datos de la tabla es
+      // editable: se relee la forma para que ese estado no quede desactualizado en el panel.
+      loadShape();
+    }}
   />
 {/if}
 
@@ -2865,7 +1309,10 @@
     table={shape.name}
     existing={triggerDialog.existing}
     onclose={() => (triggerDialog = null)}
-    onsaved={afterTriggerSaved}
+    onsaved={() => {
+      triggerDialog = null;
+      loadTriggers();
+    }}
   />
 {/if}
 
@@ -2877,7 +1324,10 @@
     table={shape.name}
     existing={policyDialog.existing}
     onclose={() => (policyDialog = null)}
-    onsaved={afterPolicySaved}
+    onsaved={() => {
+      policyDialog = null;
+      loadSecurity();
+    }}
   />
 {/if}
 
@@ -2889,7 +1339,12 @@
     materialized={viewDialog.materialized}
     existing={viewDialog.existing}
     onclose={() => (viewDialog = null)}
-    onsaved={afterViewSaved}
+    onsaved={() => {
+      const wasCreate = viewDialog?.existing === null;
+      viewDialog = null;
+      if (wasCreate) reloadSelected();
+      else refreshDdl();
+    }}
   />
 {/if}
 
@@ -2903,11 +1358,8 @@
     onsaved={() => {
       const wasCreate = sequenceDialog?.existing === null;
       sequenceDialog = null;
-      if (wasCreate) {
-        if (selected) explorer.reload(selected);
-      } else {
-        refreshDdl();
-      }
+      if (wasCreate) reloadSelected();
+      else refreshDdl();
     }}
   />
 {/if}
@@ -2923,11 +1375,8 @@
     onsaved={() => {
       const wasCreate = typeDialog?.existing === null;
       typeDialog = null;
-      if (wasCreate) {
-        if (selected) explorer.reload(selected);
-      } else {
-        refreshDdl();
-      }
+      if (wasCreate) reloadSelected();
+      else refreshDdl();
     }}
   />
 {/if}
@@ -2942,11 +1391,8 @@
     onsaved={() => {
       const wasCreate = domainDialog?.existing === null;
       domainDialog = null;
-      if (wasCreate) {
-        if (selected) explorer.reload(selected);
-      } else {
-        refreshDdl();
-      }
+      if (wasCreate) reloadSelected();
+      else refreshDdl();
     }}
   />
 {/if}
@@ -2962,7 +1408,7 @@
       // Un esquema nuevo o renombrado cambia la lista de arriba, no el nodo de abajo.
       const parent = selected ? parentOf(explorer.roots, selected) : null;
       if (parent) explorer.reload(parent);
-      else if (selected) explorer.reload(selected);
+      else reloadSelected();
     }}
   />
 {/if}
@@ -2990,7 +1436,7 @@
     onclose={() => (partitionDialog = null)}
     onsaved={() => {
       partitionDialog = null;
-      if (selected) explorer.reload(selected);
+      reloadSelected();
     }}
   />
 {/if}
@@ -3017,7 +1463,12 @@
     database={node?.database ?? ""}
     sql={functionDialog.sql}
     onclose={() => (functionDialog = null)}
-    onsaved={afterFunctionSaved}
+    onsaved={() => {
+      const wasCreate = functionDialog !== null && !functionDialog.isEdit;
+      functionDialog = null;
+      if (wasCreate) reloadSelected();
+      else refreshDdl();
+    }}
   />
 {/if}
 
@@ -3027,7 +1478,11 @@
     database={node?.database ?? ""}
     existing={roleDialog.existing}
     onclose={() => (roleDialog = null)}
-    onsaved={afterRoleSaved}
+    onsaved={() => {
+      const wasCreate = roleDialog?.existing == null;
+      roleDialog = null;
+      afterSaved(wasCreate);
+    }}
   />
 {/if}
 
@@ -3037,7 +1492,13 @@
     database={node.database}
     existing={extensionDialog.existing}
     onclose={() => (extensionDialog = null)}
-    onsaved={afterExtensionSaved}
+    onsaved={() => {
+      // Instalar suma un nodo a la carpeta; actualizar o cambiar de esquema cambia el detalle del
+      // nodo, y entonces lo que hay que releer es la carpeta que lo contiene.
+      const wasInstall = extensionDialog?.existing == null;
+      extensionDialog = null;
+      afterSaved(wasInstall);
+    }}
   />
 {/if}
 
@@ -3047,7 +1508,11 @@
     database={node.database}
     existing={fdwDialog.existing}
     onclose={() => (fdwDialog = null)}
-    onsaved={afterFdwSaved}
+    onsaved={() => {
+      const wasCreate = fdwDialog?.existing == null;
+      fdwDialog = null;
+      afterSaved(wasCreate);
+    }}
   />
 {/if}
 
@@ -3057,18 +1522,25 @@
     database={node.database}
     existing={foreignServerDialog.existing}
     onclose={() => (foreignServerDialog = null)}
-    onsaved={afterForeignServerSaved}
+    onsaved={() => {
+      const wasCreate = foreignServerDialog?.existing == null;
+      foreignServerDialog = null;
+      afterSaved(wasCreate);
+    }}
   />
 {/if}
 
-{#if userMappingDialog && selected && node && isForeignServer}
+{#if userMappingDialog && selected && node && flags.isForeignServer}
   <UserMappingDialog
     profileId={selected.profileId}
     database={node.database}
     server={node.label}
     existing={userMappingDialog.existing}
     onclose={() => (userMappingDialog = null)}
-    onsaved={afterMappingSaved}
+    onsaved={() => {
+      userMappingDialog = null;
+      reloadMappings();
+    }}
   />
 {/if}
 
@@ -3087,10 +1559,13 @@
     profileId={selected.profileId}
     database={node.database}
     subject={privilegeSubject}
-    columns={isTable ? (shape?.columns.map((column) => column.name) ?? []) : []}
+    columns={flags.isTable ? (shape?.columns.map((column) => column.name) ?? []) : []}
     existing={privilegeDialog.existing}
     onclose={() => (privilegeDialog = null)}
-    onsaved={afterPrivilegeSaved}
+    onsaved={() => {
+      privilegeDialog = null;
+      loadPrivileges();
+    }}
   />
 {/if}
 
@@ -3177,7 +1652,7 @@
 {#if dropTarget}
   <Confirm
     title="Eliminar"
-    message={dropQuestion}
+    message={dropQuestion(dropTarget)}
     confirmLabel="Eliminar"
     busy={dropping}
     error={dropError}

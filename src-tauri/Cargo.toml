@@ -7,6 +7,9 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
+# Nada de esto se publica en crates.io: la aplicación se distribuye como instalador. Decirlo evita
+# un `cargo publish` por accidente y deja que las cajas del workspace se pidan por ruta.
+publish = false
 
 [lib]
 name = "pgforge_app_lib"

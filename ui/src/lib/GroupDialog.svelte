@@ -4,6 +4,7 @@
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
   import { explorer } from "./explorer.svelte";
+  import { normalizeGroup } from "./folders.svelte";
   import { describeError } from "./ipc";
 
   let {
@@ -22,11 +23,16 @@
 
   const servers = $derived(explorer.servers.filter((row) => row.group === name));
 
+  const target = $derived(normalizeGroup(value));
+
   function validate(): string | null {
-    const trimmed = value.trim();
-    if (!trimmed) return "Poné un nombre, o deshacé la carpeta si no la querés más.";
-    if (trimmed !== name && explorer.groups.includes(trimmed)) {
-      return `Ya existe una carpeta «${trimmed}».`;
+    if (!target) return "Poné un nombre, o deshacé la carpeta si no la querés más.";
+    if (target !== name && explorer.groups.includes(target)) {
+      return `Ya existe una carpeta «${target}».`;
+    }
+    // Meterla adentro de sí misma no tiene destino posible: la carpeta que la contendría es ella.
+    if (target !== name && target.startsWith(`${name}/`)) {
+      return "Una carpeta no puede quedar adentro de sí misma.";
     }
     return null;
   }
@@ -47,11 +53,11 @@
   async function submit() {
     error = validate();
     if (error) return;
-    if (value.trim() === name) {
+    if (target === name) {
       onclose();
       return;
     }
-    await run(value.trim());
+    await run(target);
   }
 </script>
 
@@ -76,7 +82,8 @@
 
   <p class="mt-2 text-xs muted">
     La carpeta agrupa conexiones guardadas: no toca nada en los servidores. Se puede arrastrar un
-    servidor del árbol para meterlo o sacarlo.
+    servidor del árbol para meterlo o sacarlo. Una barra anida: renombrarla a «Clientes/ACME» la
+    mueve adentro de «Clientes», y lo que ya tenga adentro se muda con ella.
   </p>
 
   {#if servers.length > 0}
@@ -97,7 +104,8 @@
   {/if}
 
   {#snippet footer()}
-    <!-- Deshacer la carpeta no borra nada: los servidores quedan sueltos en el árbol. -->
+    <!-- Deshacer la carpeta no borra nada: sus servidores quedan sueltos en el árbol y las carpetas
+         que tenga adentro suben un escalón. -->
     <button class="btn btn-danger-ghost" disabled={busy} onclick={() => run(undefined)}>
       <Icon name="trash" size={12} />
       Deshacer la carpeta

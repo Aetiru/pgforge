@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { visibleRows, type Row } from "./explorer.svelte";
+import type { NodeKind } from "./ipc";
 
 /**
  * `visibleRows` es lo único del explorador que se puede probar sin servidor ni ventana: recibe el
@@ -109,5 +110,47 @@ describe("visibleRows", () => {
       "local",
       "ventas",
     ]);
+  });
+});
+
+describe("búsqueda con prefijo de tipo", () => {
+  /** Un nodo del catálogo con su clase, que es lo que mira el prefijo. */
+  function object(label: string, kind: NodeKind, parent: string): Row {
+    const row = node(label, parent);
+    row.node = {
+      id: label,
+      label,
+      kind,
+      hasChildren: false,
+      database: "app",
+    };
+    return row;
+  }
+
+  const tree = [
+    server("local", true, [
+      object("facturas", "table", "local"),
+      object("facturas_activas", "view", "local"),
+      object("facturas_id_seq", "sequence", "local"),
+    ]),
+  ];
+
+  it("acota a la familia sin dejar de mostrar el camino hasta ella", () => {
+    expect(visibleRows(tree, "t:factura").map((row) => row.label)).toEqual(["local", "facturas"]);
+  });
+
+  it("el prefijo solo lista la familia entera de lo que ya está cargado", () => {
+    expect(visibleRows(tree, "v:").map((row) => row.label)).toEqual([
+      "local",
+      "facturas_activas",
+    ]);
+  });
+
+  it("sin prefijo sigue buscando por nombre en todo", () => {
+    expect(visibleRows(tree, "factura")).toHaveLength(4);
+  });
+
+  it("el servidor no entra por su nombre cuando se acotó a un tipo", () => {
+    expect(visibleRows(tree, "t:local")).toEqual([]);
   });
 });

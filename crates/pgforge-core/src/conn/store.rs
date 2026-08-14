@@ -5,7 +5,9 @@
 
 use std::path::{Path, PathBuf};
 
-use super::profile::{normalize_group, ConnectionProfile, ProfileId};
+use super::profile::{
+    group_starts_with, normalize_group, ConnectionProfile, ProfileId, GROUP_SEPARATOR,
+};
 use super::secret::Password;
 use crate::error::{Error, Result};
 
@@ -50,11 +52,21 @@ impl ProfileStore {
 
     /// Las carpetas existentes, ordenadas como se muestran. Salen de los perfiles: no hay una lista
     /// de carpetas aparte que pueda quedar desincronizada con ellos.
+    ///
+    /// Las intermedias entran aunque no tengan servidores propios: si el único perfil está en
+    /// `Clientes/ACME`, `Clientes` igual existe —se ve en el árbol— y tiene que poder elegirse como
+    /// destino.
     pub fn groups(&self) -> Vec<String> {
         let mut names: Vec<String> = self
             .profiles
             .iter()
-            .filter_map(|profile| profile.group.clone())
+            .filter_map(|profile| profile.group.as_deref())
+            .flat_map(|group| {
+                group
+                    .match_indices(GROUP_SEPARATOR)
+                    .map(|(at, _)| group[..at].to_owned())
+                    .chain(std::iter::once(group.to_owned()))
+            })
             .collect();
         names.sort_by_key(|name| name.to_lowercase());
         names.dedup();
@@ -78,15 +90,38 @@ impl ProfileStore {
     /// Va acá y no en quien la muestra porque toca todos los perfiles de la carpeta y tiene que
     /// escribirlos de una sola vez: renombrar de a uno dejaría la lista partida en dos carpetas si
     /// algo falla a mitad de camino.
+    ///
+    /// Lo que cuelga de la carpeta se mueve con ella: renombrar `Clientes` a `Cuentas` deja a
+    /// `Clientes/ACME` como `Cuentas/ACME`. Deshacerla no borra ese anidamiento sino que lo sube un
+    /// escalón —`ACME` pasa a ser carpeta de primer nivel—: el usuario sacó **una** carpeta, no las
+    /// de adentro, y ver desaparecer una agrupación que no tocó es peor que tenerla un nivel arriba.
     pub fn rename_group(&mut self, from: &str, to: Option<&str>) -> Result<usize> {
+        let from = match normalize_group(Some(from)) {
+            Some(name) => name,
+            None => return Ok(0),
+        };
         let to = normalize_group(to);
         let mut moved = 0;
 
         for profile in &mut self.profiles {
-            if profile.group.as_deref() == Some(from) {
-                profile.group = to.clone();
-                moved += 1;
+            let Some(group) = profile.group.as_deref() else {
+                continue;
+            };
+            if !group_starts_with(group, &from) {
+                continue;
             }
+
+            // Lo que sigue después de la carpeta renombrada, sin la barra: vacío si es ella misma.
+            let rest = group[from.len()..]
+                .trim_start_matches(GROUP_SEPARATOR)
+                .to_owned();
+            profile.group = match (&to, rest.is_empty()) {
+                (Some(name), true) => Some(name.clone()),
+                (Some(name), false) => Some(format!("{name}/{rest}")),
+                (None, true) => None,
+                (None, false) => Some(rest),
+            };
+            moved += 1;
         }
 
         if moved > 0 {
@@ -290,6 +325,60 @@ mod tests {
         assert_eq!(store.rename_group("vieja", None).unwrap(), 1);
         assert_eq!(store.groups(), vec!["otra"]);
         assert!(store.profiles()[0].group.is_none());
+        let _ = std::fs::remove_file(store.path());
+    }
+
+    #[test]
+    fn una_carpeta_intermedia_existe_aunque_no_tenga_servidores_propios() {
+        let store = store_with(
+            "carpetas-anidadas",
+            &[
+                ("uno", Some("Clientes/ACME")),
+                ("dos", Some(" Clientes / EU ")),
+            ],
+        );
+
+        // El nombre se normaliza tramo por tramo, así que «Clientes / EU» y «Clientes/EU» son la
+        // misma carpeta; y «Clientes» se ofrece como destino aunque no tenga ningún servidor.
+        assert_eq!(
+            store.groups(),
+            vec!["Clientes", "Clientes/ACME", "Clientes/EU"]
+        );
+        let _ = std::fs::remove_file(store.path());
+    }
+
+    #[test]
+    fn renombrar_una_carpeta_arrastra_a_las_de_adentro() {
+        let mut store = store_with(
+            "renombrar-anidada",
+            &[
+                ("uno", Some("Clientes")),
+                ("dos", Some("Clientes/ACME")),
+                ("tres", Some("Clientescopia")),
+            ],
+        );
+
+        // La tercera no se mueve: comparte el prefijo pero no es la misma carpeta ni cuelga de ella.
+        assert_eq!(store.rename_group("Clientes", Some("Cuentas")).unwrap(), 2);
+        assert_eq!(
+            store.groups(),
+            vec!["Clientescopia", "Cuentas", "Cuentas/ACME"]
+        );
+        let _ = std::fs::remove_file(store.path());
+    }
+
+    #[test]
+    fn deshacer_una_carpeta_sube_un_escalon_a_las_de_adentro() {
+        let mut store = store_with(
+            "deshacer-anidada",
+            &[("uno", Some("Clientes")), ("dos", Some("Clientes/ACME"))],
+        );
+
+        assert_eq!(store.rename_group("Clientes", None).unwrap(), 2);
+        // El primero queda suelto y el segundo conserva su agrupación, un nivel arriba: se deshizo
+        // una carpeta, no las que tenía adentro.
+        assert!(store.profiles()[0].group.is_none());
+        assert_eq!(store.groups(), vec!["ACME"]);
         let _ = std::fs::remove_file(store.path());
     }
 

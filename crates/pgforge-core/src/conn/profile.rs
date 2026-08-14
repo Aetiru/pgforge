@@ -154,18 +154,36 @@ fn default_autocommit() -> bool {
     true
 }
 
-/// Normaliza el nombre de una carpeta de conexiones: sin espacios en los bordes, y una cadena
-/// vacía es «ninguna carpeta».
+/// Separador de carpetas anidadas. Una carpeta `Clientes/ACME` se muestra adentro de `Clientes`.
+pub const GROUP_SEPARATOR: char = '/';
+
+/// Normaliza el nombre de una carpeta de conexiones: sin espacios en los bordes de cada tramo, sin
+/// tramos vacíos, y una cadena vacía es «ninguna carpeta».
 ///
 /// No hay una lista de carpetas guardada aparte: una carpeta es el nombre que comparten unos
 /// perfiles. Por eso el nombre tiene que llegar siempre igual al almacén — `"Producción"` y
 /// `"Producción "` se verían como dos carpetas distintas— y por eso una carpeta desaparece sola
 /// cuando sale de ella el último servidor, sin dejar una entrada vacía que después nadie limpia.
+///
+/// El anidamiento sigue la misma idea: `Clientes/ACME` no es una entidad aparte de `Clientes`, es
+/// un nombre con un tramo más. Normalizar tramo por tramo es lo que hace que `Clientes / ACME` y
+/// `Clientes/ACME` sean la misma carpeta y no dos parecidas.
 pub fn normalize_group(value: Option<&str>) -> Option<String> {
-    value
+    let name = value?
+        .split(GROUP_SEPARATOR)
         .map(str::trim)
-        .filter(|name| !name.is_empty())
-        .map(str::to_owned)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("/");
+    (!name.is_empty()).then_some(name)
+}
+
+/// Si `name` es la carpeta `ancestor` o cuelga de ella.
+pub fn group_starts_with(name: &str, ancestor: &str) -> bool {
+    name == ancestor
+        || (name.len() > ancestor.len()
+            && name.starts_with(ancestor)
+            && name[ancestor.len()..].starts_with(GROUP_SEPARATOR))
 }
 
 impl ConnectionProfile {
