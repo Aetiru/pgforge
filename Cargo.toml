@@ -8,7 +8,9 @@ edition = "2021"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 authors = ["pgforge contributors"]
-repository = "https://github.com/pgforge/pgforge"
+# El repositorio de verdad, no un nombre de fantasía: de acá sale la dirección con la que el aviso de
+# versión nueva le pregunta a la API de releases (`pgforge_core::update`).
+repository = "https://github.com/Aetiru/pgforge"
 
 [workspace.dependencies]
 pgforge-core = { path = "crates/pgforge-core" }

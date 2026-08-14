@@ -51,6 +51,12 @@ pub enum Error {
     #[error("configuración inválida: {0}")]
     Config(String),
 
+    /// No se pudo averiguar si hay una versión nueva de pgforge. Va aparte de `Connection` a
+    /// propósito: esa variante cruza el IPC como `Disconnected` y haría que la interfaz marque como
+    /// caído un servidor de PostgreSQL, cuando lo único que falló fue una consulta a GitHub.
+    #[error("no se pudo comprobar si hay una versión nueva: {0}")]
+    UpdateCheck(String),
+
     #[error("no se pudo abrir el túnel SSH: {0}")]
     Ssh(String),
 

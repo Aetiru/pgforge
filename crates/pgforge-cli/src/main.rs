@@ -21,6 +21,7 @@ use pgforge_core::data;
 use pgforge_core::ddl::RefAction;
 use pgforge_core::introspect::{self, NodeKind, TreeNode, TreeOptions};
 use pgforge_core::sql::{self, ExplainOptions, Limits, Outcome, QuerySession};
+use pgforge_core::update;
 use pgforge_core::{caps::MIN_SUPPORTED_VERSION_NUM, ddl, Error, Result, ServerVersion};
 use tokio::sync::{mpsc, oneshot};
 
@@ -35,6 +36,9 @@ struct Cli {
 enum Command {
     /// Muestra la versión y el rango de PostgreSQL soportado.
     Info,
+
+    /// Pregunta a GitHub si hay una versión más nueva de pgforge.
+    Update,
 
     /// Conecta y describe el servidor.
     Server {
@@ -339,6 +343,7 @@ async fn main() -> ExitCode {
             info();
             Ok(())
         }
+        Command::Update => check_update().await,
         Command::Server { url } => server(&url).await,
         Command::Tree { url, depth, system } => tree(&url, depth, system).await,
         Command::Search {
@@ -526,6 +531,27 @@ fn info() {
         Some(path) => println!("pg_restore: {}", path.display()),
         None => println!("pg_restore: no encontrado"),
     }
+}
+
+async fn check_update() -> Result<()> {
+    let check = update::check(env!("CARGO_PKG_VERSION")).await?;
+
+    match check.newer {
+        Some(release) => {
+            println!(
+                "hay una versión nueva: {} (corriendo {})",
+                release.version, check.current
+            );
+            println!("{}", release.url);
+            if !release.notes.trim().is_empty() {
+                println!();
+                println!("{}", release.notes.trim());
+            }
+        }
+        None => println!("pgforge {} está al día", check.current),
+    }
+
+    Ok(())
 }
 
 async fn run_backup(url: &str, mut options: BackupOptions, dry_run: bool) -> Result<()> {

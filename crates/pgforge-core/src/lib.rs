@@ -16,6 +16,7 @@ pub mod introspect;
 pub mod monitor;
 pub mod settings;
 pub mod sql;
+pub mod update;
 
 pub use caps::{ServerCaps, ServerVersion};
 pub use conn::{
