@@ -60,6 +60,8 @@ pub fn run() {
             commands::schema::read_cancel,
             commands::schema::object_ddl,
             commands::schema::schema_graph,
+            commands::compare::schema_compare,
+            commands::compare::schema_names,
             commands::schema::erd_export_svg,
             commands::monitoring::monitor_start,
             commands::monitoring::monitor_stop,

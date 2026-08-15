@@ -59,7 +59,8 @@
     | "undo"
     | "gauge"
     | "unplug"
-    | "diagram";
+    | "diagram"
+    | "compare";
 
   const PATHS: Record<IconName, string> = {
     server:
@@ -104,6 +105,8 @@
     search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
     refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/>',
     chevron: '<path d="M9 6l6 6-6 6"/>',
+    // Dos flechas encontradas: lo que va de un esquema al otro y lo que vuelve.
+    compare: '<path d="M4 8h13M14 5l3 3-3 3"/><path d="M20 16H7M10 13l-3 3 3 3"/>',
     close: '<path d="M6 6l12 12M18 6L6 18"/>',
     copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
     dots: '<circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/>',

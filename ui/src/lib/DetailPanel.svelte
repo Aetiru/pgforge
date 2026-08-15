@@ -100,6 +100,7 @@
     viewApply,
     type ColumnGrant,
     type CommentTarget,
+    type CompareSide,
     type ConstraintInfo,
     type Ddl,
     type DefaultGrant,
@@ -127,6 +128,7 @@
     onquery,
     ondata,
     onerd,
+    oncompare,
   }: {
     onedit: (profileId: string) => void;
     ondelete: (profileId: string) => void;
@@ -137,6 +139,8 @@
     ondata: (profileId: string, database: string, title: string, oid: number) => void;
     /** Abre el diagrama ERD de un esquema. */
     onerd: (profileId: string, database: string, schema: string) => void;
+    /** Pide comparar este esquema contra otro; el otro lado lo elige un diálogo de `App`. */
+    oncompare: (source: CompareSide) => void;
   } = $props();
 
   let ddl = $state<Ddl | null>(null);
@@ -676,6 +680,13 @@
         break;
       case "openErd":
         onerd(selected.profileId, current!.database, current!.label);
+        break;
+      case "openCompare":
+        oncompare({
+          id: selected.profileId,
+          database: current!.database,
+          schema: current!.label,
+        });
         break;
       case "export":
         exportDialog = true;

@@ -228,7 +228,9 @@ Tauri a los tests puros de `src-tauri`.
 - **Exportar el plan de `EXPLAIN`** a JSON y visualización tipo flamegraph sobre `PlanTree.svelte`.
 - **Replicación lógica de solo lectura**: estado de `pg_stat_replication` y slots. Explícitamente
   fuera del alcance inicial; candidata natural a una fase posterior.
-- **Comparar esquemas / generar diff DDL** entre dos servidores o dos momentos.
+- ~~**Comparar esquemas / generar diff DDL** entre dos servidores~~ — hecho en `pgforge-core::compare`
+  (etapa 16). Queda pendiente la variante «contra un momento anterior»: exigiría guardar la
+  instantánea en un archivo con su formato y su versionado, y hoy los dos lados se leen en vivo.
 
 ---
 

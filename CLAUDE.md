@@ -39,6 +39,8 @@ cargo run -p pgforge-cli -- search --url postgres://postgres@localhost:5432/post
 cargo run -p pgforge-cli -- ddl   --url postgres://postgres@localhost:5432/postgres public.clientes
 cargo run -p pgforge-cli -- query --url postgres://postgres@localhost:5432/postgres --sql "SELECT 1"
 cargo run -p pgforge-cli -- update   # sin servidor: pregunta a GitHub si hay una versión más nueva
+cargo run -p pgforge-cli -- compare --url postgres://postgres@localhost:5434/postgres \
+    --target-url postgres://postgres@localhost:5438/postgres --schema public
 cargo run -p pgforge-cli -- data  --url postgres://postgres@localhost:5432/postgres public.clientes \
     --order creado --desc --where "estado = 'activo'" --limit 20
 ```
@@ -109,6 +111,18 @@ Cada cuánto se pregunta y qué versión se descartó viven en la interfaz (`upd
 Las dos cosas viven en SQLite adentro del directorio de configuración, pero en **archivos distintos** (`history.db` y `saved.db`), porque el `user_version` del esquema es del archivo y porque no son lo mismo: el historial (`sql::history`) es lo que pasó —se anota solo y se vacía entero sin que duela—, y `sql::saved` es lo que el usuario decidió conservar, con nombre. De ahí que ahí el nombre sea obligatorio y único sin distinguir mayúsculas, y que guardar con un nombre ocupado devuelva `Conflict` en vez de pisar: perder en silencio lo único que se pidió conservar es el peor final posible. Reescribir se pide con el `id`, y entonces la fecha de creación no se toca.
 
 Contra qué servidor y qué base se escribió se guarda como dato, no como atadura: correr el mismo `SELECT` contra desarrollo y contra producción es justo lo que se hace, así que ni se exige que el perfil siga existiendo ni se filtra por él. El historial busca en el servidor —crece sin techo— y las guardadas se filtran en la interfaz: son decenas, puestas a mano de a una. La pestaña recuerda de cuál salió (`QueryTab.savedId`), que es lo que hace que volver a guardar reescriba esa y no deje una copia; es independiente de `filePath`, que es un archivo del disco y otra cosa.
+
+### Comparar esquemas
+
+`pgforge-core::compare` responde qué tiene el esquema de un servidor que no tiene el de otro, y con qué SQL se los iguala. Tres piezas: `snapshot` es lo único que habla con el servidor, `diff` compara dos instantáneas y `sync` arma el script. Las dos últimas son **puras**, que es donde vive el riesgo: un `ALTER` mal armado se ve leyendo el texto, no conectando. `render` escribe el texto de cada objeto y lo usan las dos —lo que la interfaz muestra lado a lado es exactamente lo que el script ejecutaría, no una reconstrucción parecida—.
+
+**No hay `compare_apply`**, y es la regla de vista previa llevada hasta el final: la comparación termina en un informe y un script que se copia o se abre en una pestaña de consulta *contra el destino*. Cada sentencia viaja con su `Risk` (`safe` / `review` / `destructive`) y el orden de salida es el orden en que se puede correr —tipos, secuencias, tablas, restricciones, índices, vistas, y lo destructivo al final, para poder cortar el script ahí—. Lo que PostgreSQL no puede hacer con un `ALTER` no se inventa: va a `SyncPlan::warnings` con el motivo (el tipo base de un dominio, el orden de una enumeración, una columna generada).
+
+Se comparan tablas con sus columnas, restricciones e índices; vistas y materializadas; secuencias; y tipos —enumeraciones, compuestos, dominios y rangos—. Quedan afuera funciones, disparadores, políticas y permisos: el cuerpo de una función difiere por un espacio y el ruido tapa lo que importa. También quedan afuera las particiones (cuelgan de su madre: una diferencia aparecería repetida una vez por partición), las secuencias de una columna `serial`/`identity` (son parte de esa columna) y los datos —`last_value` es estado, no estructura—.
+
+Dos normalizaciones evitan diferencias que no lo son. `retarget` reescribe las referencias al esquema origen con el nombre del destino, que es lo mismo que hace falta para poder ejecutar el script del otro lado; sin eso, comparar `dev.pedidos` con `prod.pedidos` marcaría cada índice como distinto. Y el cuerpo de una vista se compara **también sin las calificaciones de columna, pero solo entre versiones mayores distintas**: PG 16 dejó de escribir `clientes.id` y pasó a escribir `id` en `pg_get_viewdef`, así que sin esa segunda pasada toda vista aparecería cambiada justo al comparar antes de una actualización. Entre servidores de la misma versión la comparación queda exacta, porque ahí una calificación de más la escribió alguien. Para no confundir `esquema.tabla` con `tabla.columna` sin analizar SQL, la instantánea trae los nombres de todos los esquemas de su base.
+
+De la interfaz: la pestaña es `CompareTab` (`compare.svelte.ts`), se abre desde el clic derecho de un esquema o el botón del panel de detalle, y `CompareDialog` elige el otro lado entre los servidores **conectados** —leer en vivo de los dos lados es la premisa, y conectar desde ahí pediría contraseña fuera del único lugar donde se piden—. El filtro por riesgo y el armado del texto son de la interfaz (`compare-script.ts`, puro y con Vitest) porque destildar «lo destructivo» tiene que rearmar el script en el acto; el equivalente para la línea de comandos es `compare::sync::script`. Desde la CLI: `pgforge compare --url … --target-url … --schema public [--sql]`.
 
 ### Errores
 

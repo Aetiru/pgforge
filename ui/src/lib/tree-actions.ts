@@ -42,8 +42,14 @@ export function dataTargetOf(node: TreeNode | null): number | null {
   return node.oid ?? null;
 }
 
-/** El esquema del que se puede dibujar un diagrama, o `null`. */
-export function erdTargetOf(node: TreeNode | null): { database: string; schema: string } | null {
+/**
+ * El esquema sobre el que trabajan las acciones que toman un esquema entero: el diagrama y la
+ * comparación contra otro servidor. `null` para cualquier otra fila.
+ *
+ * Es una sola función para las dos porque la pregunta es la misma —«¿esta fila es un esquema?»— y
+ * dos copias se desincronizarían el día que aparezca una tercera acción de esta clase.
+ */
+export function schemaTargetOf(node: TreeNode | null): { database: string; schema: string } | null {
   if (!node || node.kind !== "schema") return null;
   return { database: node.database, schema: node.label };
 }

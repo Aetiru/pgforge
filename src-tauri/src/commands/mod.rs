@@ -5,6 +5,7 @@
 //! sin necesidad de una ventana.
 
 pub mod backup;
+pub mod compare;
 pub mod data;
 pub mod ddl;
 pub mod monitoring;

@@ -8,6 +8,7 @@
 
 pub mod backup;
 pub mod caps;
+pub mod compare;
 pub mod conn;
 pub mod data;
 pub mod ddl;

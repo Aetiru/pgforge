@@ -2,6 +2,8 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import Alert from "./lib/Alert.svelte";
   import Confirm from "./lib/Confirm.svelte";
+  import CompareDialog from "./lib/CompareDialog.svelte";
+  import ComparePanel from "./lib/ComparePanel.svelte";
   import ConnectionDialog from "./lib/ConnectionDialog.svelte";
   import GroupDialog from "./lib/GroupDialog.svelte";
   import NewGroupDialog from "./lib/NewGroupDialog.svelte";
@@ -16,6 +18,7 @@
   import QueryPanel from "./lib/QueryPanel.svelte";
   import TreePanel from "./lib/TreePanel.svelte";
   import UpdateDialog from "./lib/UpdateDialog.svelte";
+  import { openCompare, CompareTab } from "./lib/compare.svelte";
   import { openData, DataTab } from "./lib/data.svelte";
   import { openErd, ErdTab } from "./lib/erd.svelte";
   import { environmentOf, guard } from "./lib/access.svelte";
@@ -33,6 +36,7 @@
     formatVersion,
     sshHostKey,
     type AppInfo,
+    type CompareSide,
     type ConnectionProfile,
     type Environment,
   } from "./lib/ipc";
@@ -43,6 +47,8 @@
     null,
   );
   let confirmDelete = $state<ConnectionProfile | null>(null);
+  /** Esquema desde el que se pidió comparar; el otro lado lo elige el diálogo. */
+  let compareSource = $state<CompareSide | null>(null);
   /**
    * Pestaña que se quiere cerrar con una transacción abierta. La pregunta va acá y no en
    * `QueryTab.dispose()`, que corre cuando la pestaña ya se cerró y no puede preguntar nada.
@@ -89,6 +95,7 @@
     query: "sql",
     data: "table",
     erd: "diagram",
+    compare: "compare",
   };
 
   /** Los mismos colores que las pastillas de entorno, aplicados al ícono de la pestaña. */
@@ -637,6 +644,7 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
               onquery={openQuery}
               ondata={openData}
               onerd={openErd}
+              oncompare={(source) => (compareSource = source)}
             />
           </div>
 
@@ -772,6 +780,10 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
             {#key tabs.current.key}
               <ErdPanel tab={tabs.current} />
             {/key}
+          {:else if tabs.current instanceof CompareTab}
+            {#key tabs.current.key}
+              <ComparePanel tab={tabs.current} />
+            {/key}
           {:else}
             <DetailPanel
               onconnect={connectById}
@@ -781,6 +793,7 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
               onquery={openQuery}
               ondata={openData}
               onerd={openErd}
+              oncompare={(source) => (compareSource = source)}
             />
           {/if}
         </div>
@@ -827,6 +840,14 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
 
 {#if groupDialog}
   <GroupDialog name={groupDialog} onclose={() => (groupDialog = null)} />
+{/if}
+
+{#if compareSource}
+  <CompareDialog
+    source={compareSource}
+    onclose={() => (compareSource = null)}
+    oncompare={(source, target) => void openCompare(source, target)}
+  />
 {/if}
 
 {#if updates.showing && info}
