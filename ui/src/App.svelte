@@ -15,6 +15,7 @@
   import Empty from "./lib/Empty.svelte";
   import Icon, { type IconName } from "./lib/Icon.svelte";
   import Modal from "./lib/Modal.svelte";
+  import Palette from "./lib/Palette.svelte";
   import ProcessPanel from "./lib/ProcessPanel.svelte";
   import QueryPanel from "./lib/QueryPanel.svelte";
   import TreePanel from "./lib/TreePanel.svelte";
@@ -81,6 +82,8 @@
   let groupDialog = $state<string | null>(null);
   /** Abierto mientras se crea una carpeta nueva. */
   let newGroupDialog = $state(false);
+  /** La paleta de comandos (Ctrl+K). */
+  let paletteOpen = $state(false);
   /** El menú con lo que no se usa todos los días del árbol. */
   let treeMenu = $state(false);
   let banner = $state<string | null>(null);
@@ -317,6 +320,11 @@
       case "b":
         event.preventDefault();
         sidebarOpen = !sidebarOpen;
+        break;
+      case "k":
+        // La misma tecla abre y cierra: es lo que uno intenta cuando se abrió sin querer.
+        event.preventDefault();
+        paletteOpen = !paletteOpen;
         break;
       case "q":
         event.preventDefault();
@@ -861,6 +869,16 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
     </footer>
   {/if}
 </div>
+
+{#if paletteOpen}
+  <Palette
+    onnewquery={newQuery}
+    onopensql={openSqlDialog}
+    onnewserver={() => (dialog = { profile: null })}
+    onconnect={connectById}
+    onclose={() => (paletteOpen = false)}
+  />
+{/if}
 
 {#if dialog}
   <ConnectionDialog
