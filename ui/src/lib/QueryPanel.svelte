@@ -3,7 +3,7 @@
   import Empty from "./Empty.svelte";
   import ExportDialog from "./ExportDialog.svelte";
   import { environmentOf, isReadOnly } from "./access.svelte";
-  import { envLook, READ_ONLY_LOOK } from "./badges";
+  import { envBar, envLook, READ_ONLY_LOOK } from "./badges";
   import HistoryPanel from "./HistoryPanel.svelte";
   import Icon from "./Icon.svelte";
   import IndexDialog from "./IndexDialog.svelte";
@@ -203,8 +203,11 @@
     Íconos y no palabras: la barra tenía nueve controles con texto y en una ventana angosta se
     partía en dos líneas, comiéndose el alto del editor. «Ejecutar» conserva la etiqueta porque es
     la acción que se busca sin mirar; el resto la lleva en el `title`.
+
+    El entorno pinta la barra entera y no solo su pastilla: lo que hay que mirar antes de apretar
+    «Ejecutar» es el botón, no el rótulo de la otra punta (ver `envBar`).
   -->
-  <header class="toolbar">
+  <header class="toolbar {envBar(environment)}">
     {#if tab.running}
       <button class="btn btn-danger" title="Cancela la consulta en curso" onclick={() => tab.cancel()}>
         <Icon name="close" size={12} />
@@ -231,7 +234,7 @@
         title="Ejecuta todas las sentencias del editor (Ctrl+Mayús+Enter)"
         onclick={() => tab.run(tab.sql)}
       >
-        <Icon name="sql" size={14} />
+        <Icon name="play-all" size={14} />
       </button>
     {/if}
 
@@ -251,8 +254,10 @@
       Autocommit
     </label>
 
+    <!-- El par va con los dos colores puestos: el rollback en rojo y el commit sin nada era una
+         advertencia sin su contraparte, y de un vistazo no se sabía cuál de los dos confirmaba. -->
     <button
-      class="btn btn-icon"
+      class="btn btn-icon text-emerald-600 dark:text-emerald-400"
       disabled={tab.tabId === null || tab.running || tab.txStatus === "idle"}
       aria-label="Commit"
       title="Confirma la transacción abierta en esta pestaña"
@@ -282,7 +287,7 @@
         explain(text, cursor, estimate);
       }}
     >
-      <Icon name="compass" size={14} />
+      <Icon name="plan" size={14} />
     </button>
     <button
       class="btn btn-icon"
@@ -380,7 +385,11 @@
     </span>
   </header>
 
-  <div class="min-h-0 shrink-0 overflow-hidden" style="height: {editorSplit.height}px">
+  <!-- Plegado, el editor se queda con todo el alto: por eso crece en vez de llevar altura fija. -->
+  <div
+    class="min-h-0 overflow-hidden {editorSplit.hidden ? 'flex-1' : 'shrink-0'}"
+    style={editorSplit.hidden ? "" : `height: ${editorSplit.height}px`}
+  >
     <SqlEditor
       bind:this={editor}
       bind:value={tab.sql}
@@ -396,7 +405,9 @@
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="group relative h-px shrink-0 bg-zinc-200 dark:bg-zinc-800"
+    class="group relative h-px shrink-0 bg-zinc-200 dark:bg-zinc-800 {editorSplit.hidden
+      ? 'hidden'
+      : ''}"
     onmousedown={startResize}
     ondblclick={() => editorSplit.reset()}
     title="Arrastrá para cambiar la altura del editor; doble clic para restablecerla. Vale para
@@ -408,8 +419,22 @@
     ></div>
   </div>
 
-  <div class="flex min-h-0 flex-1 flex-col">
+  <div class="flex min-h-0 flex-col {editorSplit.hidden ? 'shrink-0' : 'flex-1'}">
     <div class="divider-b flex items-center gap-2 px-2 py-1">
+      <!-- El botón queda del lado del panel que esconde, y sigue a la vista plegado: un panel que
+           se esconde sin dejar de dónde agarrarlo no se vuelve a abrir. -->
+      <button
+        class="btn btn-ghost btn-icon"
+        aria-label={editorSplit.hidden ? "Mostrar los resultados" : "Ocultar los resultados"}
+        aria-expanded={!editorSplit.hidden}
+        title={editorSplit.hidden
+          ? "Muestra de nuevo los resultados"
+          : "Pliega los resultados y le deja todo el alto al editor"}
+        onclick={() => editorSplit.toggle()}
+      >
+        <Icon name={editorSplit.hidden ? "eye" : "eye-off"} size={13} />
+      </button>
+
       <div class="seg" role="tablist">
         {#each VIEWS as item (item.value)}
           <button
@@ -510,7 +535,7 @@
       {/if}
     </div>
 
-    <div class="relative min-h-0 flex-1">
+    <div class="relative min-h-0 flex-1 {editorSplit.hidden ? 'hidden' : ''}">
       <!--
         Mientras corre, el estado vacío decía «todavía no ejecutaste nada», que es exactamente lo
         contrario de lo que está pasando. Va por encima y no en lugar de la grilla: al volver a

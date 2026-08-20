@@ -133,33 +133,53 @@ export function tagLook(tag: NodeTag) {
  * lo que cuelga de él: con veinte conexiones abiertas, saber a qué servidor pertenece la fila que se
  * está mirando no puede depender de subir con la vista hasta la raíz. Es un fondo y no un texto, así
  * que no puede salir de `tone`, que son las clases de la pastilla.
+ *
+ * `bar` es lo mismo para la barra de una pestaña de consulta o de datos: el borde izquierdo con el
+ * color del entorno y un fondo apenas teñido. La pastilla sola no alcanzaba —vive en la otra punta
+ * de la barra, entre otras dos, y con la pestaña ya abierta uno mira los botones y no el rótulo—,
+ * y el botón que se está por apretar es justo lo que hay que pintar. El tinte es translúcido a
+ * propósito: se lee sobre el fondo de los dos temas y no compite con lo que está escrito encima.
  */
 const ENVIRONMENTS: Record<
   Environment,
-  { label: string; tone: string; spine: string; title: string }
+  { label: string; tone: string; spine: string; bar: string; title: string }
 > = {
   dev: {
     label: "dev",
     tone: "tag-ok",
     spine: "bg-emerald-500/70",
+    bar: "border-l-[3px] border-l-emerald-500/70 bg-emerald-500/[0.06]",
     title: "Servidor de desarrollo",
   },
   test: {
     label: "test",
     tone: "tag-info",
     spine: "bg-blue-500/70",
+    bar: "border-l-[3px] border-l-blue-500/70 bg-blue-500/[0.06]",
     title: "Servidor de pruebas",
   },
   prod: {
     label: "prod",
     tone: "tag-bad",
+    // Producción pinta más fuerte que las otras dos, y además conserva la pastilla: el color solo
+    // no se le puede confiar a la única distinción que importa de verdad.
     spine: "bg-rose-500/80",
+    bar: "border-l-[3px] border-l-rose-500/80 bg-rose-500/[0.10]",
     title: "Servidor de producción: cada modificación pide una confirmación de más",
   },
 };
 
 export function envLook(environment: Environment) {
   return ENVIRONMENTS[environment];
+}
+
+/**
+ * Las clases de la barra de una pestaña según el entorno del servidor, o el hueco equivalente
+ * cuando no está marcado: sin el borde transparente, la barra se correría tres píxeles al abrir una
+ * pestaña contra un servidor con entorno.
+ */
+export function envBar(environment: Environment | null): string {
+  return environment === null ? "border-l-[3px] border-l-transparent" : ENVIRONMENTS[environment].bar;
 }
 
 /** Conexión abierta en solo lectura: el servidor rechaza toda escritura. */
