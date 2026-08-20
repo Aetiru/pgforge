@@ -6,11 +6,11 @@
   import { environmentOf, isReadOnly } from "./access.svelte";
   import { envLook, lookOf, READ_ONLY_LOOK, tagLook } from "./badges";
   import { explorer, visibleRows, type Row } from "./explorer.svelte";
-  import { describeError, folderOf } from "./ipc";
+  import { describeError, folderOf, type CompareSide } from "./ipc";
   import {
     connectionUrl,
     dataTargetOf,
-    erdTargetOf,
+    schemaTargetOf,
     qualifiedNameOf,
     queryTargetOf,
   } from "./tree-actions";
@@ -28,6 +28,7 @@
     onquery,
     ondata,
     onerd,
+    oncompare,
   }: {
     onconnect: (profileId: string) => void;
     /** Abre el diálogo de servidor nuevo desde el estado vacío. */
@@ -43,6 +44,8 @@
     onquery: (profileId: string, database: string, title: string) => void;
     ondata: (profileId: string, database: string, title: string, oid: number) => void;
     onerd: (profileId: string, database: string, schema: string) => void;
+    /** Pide comparar este esquema contra otro; el otro lado lo elige un diálogo de `App`. */
+    oncompare: (source: CompareSide) => void;
   } = $props();
 
   /**
@@ -217,7 +220,7 @@
   );
   const menuQuery = $derived(menu ? queryTargetOf(menu.row, menuProfile) : null);
   const menuData = $derived(menu ? dataTargetOf(menu.row.node) : null);
-  const menuErd = $derived(menu ? erdTargetOf(menu.row.node) : null);
+  const menuSchema = $derived(menu ? schemaTargetOf(menu.row.node) : null);
   const menuName = $derived(menu ? qualifiedNameOf(menu.row.node) : null);
   const menuIsServer = $derived(menu?.row.kind === "server");
 
@@ -268,9 +271,18 @@
 
   function openErd() {
     const row = menu?.row;
-    const target = menuErd;
+    const target = menuSchema;
     menu = null;
     if (row && target) onerd(row.profileId, target.database, target.schema);
+  }
+
+  function compare() {
+    const row = menu?.row;
+    const target = menuSchema;
+    menu = null;
+    if (row && target) {
+      oncompare({ id: row.profileId, database: target.database, schema: target.schema });
+    }
   }
 
   function connect() {
@@ -1100,10 +1112,15 @@
       </button>
     {/if}
 
-    {#if menuErd}
+    {#if menuSchema}
       <button class="row-menu" onclick={openErd}>
         <span class="flex items-center gap-2">
           <Icon name="diagram" size={13} /> Diagrama del esquema
+        </span>
+      </button>
+      <button class="row-menu" onclick={compare}>
+        <span class="flex items-center gap-2">
+          <Icon name="compare" size={13} /> Comparar con otro servidor
         </span>
       </button>
     {/if}

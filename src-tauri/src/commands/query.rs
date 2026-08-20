@@ -11,8 +11,9 @@ use std::time::Instant;
 
 use pgforge_core::error::ErrorPayload;
 use pgforge_core::sql::{
-    self, completion, explain, history::Entry as HistoryEntry, ColumnType, ExplainOptions, Limits,
-    NewEntry, NewQuery, Outcome, Plan, QuerySession, SavedQuery, SchemaSnapshot, TxStatus,
+    self, completion, explain, history::Entry as HistoryEntry, history::Source as HistorySource,
+    ColumnType, ExplainOptions, Limits, NewEntry, NewQuery, Outcome, Plan, QuerySession,
+    SavedQuery, SchemaSnapshot, TxStatus,
 };
 use pgforge_core::{Error, ProfileId, Result};
 use serde::Serialize;
@@ -239,6 +240,7 @@ pub async fn query_run(
     // Se registra lo que el usuario mandó a ejecutar, no cada sentencia por separado: es lo que va
     // a querer recuperar del historial, y es lo que reconoce cuando lo ve.
     let recorded = state.history.lock().await.record(&NewEntry {
+        source: HistorySource::Editor,
         profile_id: profile.to_string(),
         database,
         sql,

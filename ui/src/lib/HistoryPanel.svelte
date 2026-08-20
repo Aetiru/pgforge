@@ -115,6 +115,13 @@
             onclick={() => onpick(entry.sql)}
           >
             <span class="w-20 shrink-0 text-xs tabular-nums muted">{when(entry.startedAt)}</span>
+            <!-- Lo que salió de un diálogo se marca: el historial ya no es solo lo que uno escribió,
+                 es todo lo que la aplicación ejecutó contra el servidor. -->
+            {#if entry.source === "dialog"}
+              <span class="tag tag-neutral shrink-0" title="Lo aplicó un diálogo de la aplicación">
+                diálogo
+              </span>
+            {/if}
             <span
               class="min-w-0 flex-1 truncate font-mono text-xs
                      {entry.succeeded ? '' : 'text-rose-600 dark:text-rose-400'}"

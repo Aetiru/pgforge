@@ -1,5 +1,11 @@
 import type { IconName } from "./Icon.svelte";
-import { folderOf, type Environment, type NodeKind, type NodeTag } from "./ipc";
+import {
+  folderOf,
+  type CompareObject,
+  type Environment,
+  type NodeKind,
+  type NodeTag,
+} from "./ipc";
 
 /**
  * Ícono y color de cada tipo de nodo.
@@ -192,4 +198,38 @@ export function kindLabel(kind: NodeKind | null): string {
     foreignServer: "Servidor foráneo",
   };
   return names[kind as string] ?? String(kind);
+}
+
+/**
+ * Ícono, color y nombre de lo que aparece en el informe de comparación.
+ *
+ * El árbol no distingue entre una enumeración, un compuesto y un dominio —los tres son un «tipo»—,
+ * pero la comparación sí, porque lo que se puede hacer con cada uno es distinto. El ícono y el color
+ * los sigue poniendo `lookOf`, que es el único lugar donde vive esa tabla.
+ */
+export function compareLook(kind: CompareObject): NodeLook {
+  switch (kind) {
+    case "enum":
+    case "composite":
+    case "domain":
+    case "range":
+      return lookOf("type");
+    default:
+      return lookOf(kind);
+  }
+}
+
+export function compareLabel(kind: CompareObject): string {
+  switch (kind) {
+    case "enum":
+      return "Enumeración";
+    case "composite":
+      return "Tipo compuesto";
+    case "domain":
+      return "Dominio";
+    case "range":
+      return "Rango";
+    default:
+      return kindLabel(kind);
+  }
 }

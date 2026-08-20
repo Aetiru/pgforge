@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   connectionUrl,
   dataTargetOf,
-  erdTargetOf,
+  schemaTargetOf,
   folderForKind,
   qualifiedNameOf,
   queryTargetOf,
@@ -89,14 +89,14 @@ describe("dataTargetOf", () => {
   });
 });
 
-describe("erdTargetOf", () => {
+describe("schemaTargetOf", () => {
   it("solo un esquema tiene diagrama", () => {
-    expect(erdTargetOf(node("schema", { label: "public" }))).toEqual({
+    expect(schemaTargetOf(node("schema", { label: "public" }))).toEqual({
       database: "app",
       schema: "public",
     });
-    expect(erdTargetOf(node("table"))).toBeNull();
-    expect(erdTargetOf(null)).toBeNull();
+    expect(schemaTargetOf(node("table"))).toBeNull();
+    expect(schemaTargetOf(null)).toBeNull();
   });
 });
 

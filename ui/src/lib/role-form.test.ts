@@ -56,7 +56,7 @@ describe("roleChanges, rol nuevo", () => {
     form.name = "  escritor  ";
     form.login = true;
     form.password = "secreta";
-    form.memberOf = "lectores, escritores";
+    form.memberOf = ["lectores", "escritores"];
 
     const changes = roleChanges(form, null, []);
     expect(changes).toHaveLength(1);
@@ -103,7 +103,7 @@ describe("roleChanges, rol existente", () => {
     const form = roleForm(EXISTENTE);
     form.name = "lectora";
     form.superuser = true;
-    form.memberOf = "reportes";
+    form.memberOf = ["reportes"];
 
     expect(roleChanges(form, EXISTENTE, [])).toEqual([
       { kind: "renameRole", name: "lector", newName: "lectora" },
@@ -138,7 +138,7 @@ describe("roleChanges, rol existente", () => {
 
   it("compara las membresías contra las que había al abrir: otorga las nuevas y revoca las que se sacaron", () => {
     const form = roleForm(EXISTENTE);
-    form.memberOf = "reportes, auditoria";
+    form.memberOf = ["reportes", "auditoria"];
     form.adminOption = true;
 
     expect(roleChanges(form, EXISTENTE, ["reportes", "backups"])).toEqual([
@@ -147,9 +147,9 @@ describe("roleChanges, rol existente", () => {
     ]);
   });
 
-  it("ignora los espacios y las comas de más al leer la lista de membresías", () => {
+  it("ignora los nombres vacíos y los repetidos de la lista de membresías", () => {
     const form = roleForm(EXISTENTE);
-    form.memberOf = " reportes ,, ";
+    form.memberOf = [" reportes ", "", "reportes"];
 
     expect(roleChanges(form, EXISTENTE, [])).toEqual([
       { kind: "grantMembership", role: "reportes", member: "lector", adminOption: false },

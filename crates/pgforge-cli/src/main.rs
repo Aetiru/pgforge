@@ -14,6 +14,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use pgforge_core::backup::restore::{self, RestoreOptions};
 use pgforge_core::backup::tools::Tool;
 use pgforge_core::backup::{self, BackupOptions, Format};
+use pgforge_core::compare;
 use pgforge_core::conn::{
     tunnel, ConnectionManager, ConnectionProfile, HostKeyPolicy, Password, ServerHandle, SshTunnel,
 };
@@ -85,6 +86,31 @@ enum Command {
         database: Option<String>,
         /// Por ejemplo public
         schema: String,
+    },
+
+    /// Compara un esquema contra el de otro servidor.
+    Compare {
+        /// Servidor de origen: el estado que se quiere.
+        #[arg(long)]
+        url: String,
+        /// Servidor de destino: el que habría que llevar hasta el origen.
+        #[arg(long)]
+        target_url: String,
+        /// Esquema a comparar. Por omisión, public.
+        #[arg(long, default_value = "public")]
+        schema: String,
+        /// Esquema del destino, si se llama distinto. Por omisión, el mismo.
+        #[arg(long)]
+        target_schema: Option<String>,
+        /// Base del origen. Por omisión, la de la cadena de conexión.
+        #[arg(long)]
+        database: Option<String>,
+        /// Base del destino. Por omisión, la de su cadena de conexión.
+        #[arg(long)]
+        target_database: Option<String>,
+        /// Imprime el SQL de sincronización en vez del informe de diferencias.
+        #[arg(long)]
+        sql: bool,
     },
 
     /// Imprime el DDL de un objeto, indicado como esquema.nombre
@@ -358,6 +384,26 @@ async fn main() -> ExitCode {
             database,
             schema,
         } => graph(&url, database.as_deref(), &schema).await,
+        Command::Compare {
+            url,
+            target_url,
+            schema,
+            target_schema,
+            database,
+            target_database,
+            sql,
+        } => {
+            compare_schemas(
+                &url,
+                &target_url,
+                &schema,
+                target_schema.as_deref(),
+                database.as_deref(),
+                target_database.as_deref(),
+                sql,
+            )
+            .await
+        }
         Command::Ddl { url, object } => show_ddl(&url, &object).await,
         Command::Query {
             url,
@@ -913,6 +959,104 @@ async fn search(
     }
 
     Ok(())
+}
+
+/// Compara dos esquemas, cada uno en su servidor.
+///
+/// Es la forma de ejercitar `compare` sin ventana: el informe que imprime sale de la misma
+/// comparación que muestra la aplicación, y `--sql` imprime exactamente el script que ofrece copiar.
+#[allow(clippy::too_many_arguments)]
+async fn compare_schemas(
+    url: &str,
+    target_url: &str,
+    schema: &str,
+    target_schema: Option<&str>,
+    database: Option<&str>,
+    target_database: Option<&str>,
+    print_sql: bool,
+) -> Result<()> {
+    let source_handle = connect(url).await?;
+    let target_handle = connect(target_url).await?;
+
+    let source_database = database.unwrap_or_else(|| source_handle.default_database());
+    let target_database = target_database.unwrap_or_else(|| target_handle.default_database());
+    let target_schema = target_schema.unwrap_or(schema);
+
+    let comparison = compare::compare(
+        &source_handle,
+        source_database,
+        schema,
+        &target_handle,
+        target_database,
+        target_schema,
+    )
+    .await?;
+
+    if print_sql {
+        if comparison.plan.statements.is_empty() {
+            println!("-- no hay nada que sincronizar");
+        } else {
+            println!("{}", compare::sync::script(&comparison.plan.statements));
+        }
+        for warning in &comparison.plan.warnings {
+            println!("\n-- aviso: {warning}");
+        }
+        return Ok(());
+    }
+
+    let diff = &comparison.diff;
+    println!(
+        "origen  {} · {}.{} · PostgreSQL {}",
+        diff.source.server, diff.source.database, diff.source.schema, diff.source.version
+    );
+    println!(
+        "destino {} · {}.{} · PostgreSQL {}\n",
+        diff.target.server, diff.target.database, diff.target.schema, diff.target.version
+    );
+
+    if diff.entries.is_empty() {
+        println!("sin diferencias ({} objetos iguales)", diff.equal);
+        return Ok(());
+    }
+
+    for entry in &diff.entries {
+        println!("{} {}", mark(entry.status), entry.name);
+        for detail in &entry.details {
+            let text = match (&detail.source, &detail.target) {
+                (Some(source), Some(target)) => format!("{source}  ≠  {target}"),
+                (Some(source), None) => source.clone(),
+                (None, Some(target)) => target.clone(),
+                (None, None) => String::new(),
+            };
+            // El valor de una enumeración es su propio texto: repetirlo al lado del nombre no
+            // agrega nada.
+            if text == detail.name || text.is_empty() {
+                println!("    {} {}", mark(detail.status), detail.name);
+            } else {
+                println!("    {} {} · {text}", mark(detail.status), detail.name);
+            }
+        }
+    }
+
+    println!(
+        "\n{} diferencias, {} objetos iguales",
+        diff.entries.len(),
+        diff.equal
+    );
+    for warning in &comparison.plan.warnings {
+        println!("aviso: {warning}");
+    }
+
+    Ok(())
+}
+
+/// `+` falta en el destino, `-` sobra en el destino, `~` está en los dos y difiere.
+fn mark(status: compare::Status) -> char {
+    match status {
+        compare::Status::OnlySource => '+',
+        compare::Status::OnlyTarget => '-',
+        compare::Status::Different => '~',
+    }
 }
 
 async fn graph(url: &str, database: Option<&str>, schema: &str) -> Result<()> {

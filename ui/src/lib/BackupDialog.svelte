@@ -2,17 +2,8 @@
   import { open, save } from "@tauri-apps/plugin-dialog";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
-  import { bytes, duration } from "./format";
-  import {
-    Channel,
-    backupCancel,
-    backupPlan,
-    backupRun,
-    describeError,
-    type BackupEvent,
-    type BackupFormat,
-    type BackupOptions,
-  } from "./ipc";
+  import { tasks } from "./tasks.svelte";
+  import { backupPlan, describeError, type BackupFormat, type BackupOptions } from "./ipc";
 
   let {
     profileId,
@@ -61,12 +52,6 @@
   let warning = $state<string | null>(null);
   let planError = $state<string | null>(null);
 
-  let taskId = $state<string | null>(null);
-  let log = $state<string[]>([]);
-  let outcome = $state<string | null>(null);
-  let failed = $state(false);
-
-  const running = $derived(taskId !== null);
   const isDirectory = $derived(format === "directory");
   const admiteCompresion = $derived(format === "custom" || format === "directory");
 
@@ -124,52 +109,14 @@
     if (typeof chosen === "string") path = chosen;
   }
 
-  async function run() {
-    log = [];
-    outcome = null;
-    failed = false;
-
-    const channel = new Channel<BackupEvent>();
-    channel.onmessage = (event) => {
-      switch (event.type) {
-        case "started":
-          log = [...log, `» ${event.command.join(" ")}`];
-          break;
-        case "progress":
-          log = [...log, event.message];
-          break;
-        case "finished":
-          outcome = `Listo: ${event.path} (${bytes(event.bytes)}) en ${duration(event.seconds)}.`;
-          taskId = null;
-          break;
-        case "failed":
-          outcome = describeError(event.error);
-          failed = true;
-          taskId = null;
-          break;
-      }
-    };
-
-    try {
-      taskId = await backupRun(profileId, options, channel);
-    } catch (error) {
-      outcome = describeError(error);
-      failed = true;
-      taskId = null;
-    }
-  }
-
-  async function cancel() {
-    if (!taskId) return;
-    try {
-      await backupCancel(taskId);
-    } catch (error) {
-      outcome = describeError(error);
-    }
+  /** Lo larga y cierra: el backup sigue corriendo y se mira desde la vista de procesos. */
+  function run() {
+    tasks.backup({ profileId, options });
+    onclose();
   }
 </script>
 
-<Modal title="Backup" subtitle="base {database}" size="lg" busy={running} {onclose}>
+<Modal title="Backup" subtitle="base {database}" size="lg" {onclose}>
   <div class="seg" role="tablist">
     {#each FORMATS as item (item.value)}
       <button
@@ -177,7 +124,6 @@
         role="tab"
         aria-selected={format === item.value}
         title={item.hint}
-        disabled={running}
         onclick={() => (format = item.value)}
       >
         {item.label}
@@ -189,24 +135,24 @@
   <div class="mt-3 flex items-end gap-2">
     <label class="flex min-w-0 flex-1 flex-col gap-1">
       <span class="label">{isDirectory ? "Directorio" : "Archivo"}</span>
-      <input class="field font-mono text-xs" bind:value={path} disabled={running} />
+      <input class="field font-mono text-xs" bind:value={path} />
     </label>
-    <button class="btn" onclick={choose} disabled={running}>Elegir…</button>
+    <button class="btn" onclick={choose}>Elegir…</button>
   </div>
 
   <div class="mt-3">
     <span class="label">Qué incluir</span>
     <div class="mt-1 flex flex-col gap-1.5">
       <label class="check">
-        <input type="radio" value="all" bind:group={contents} disabled={running} />
+        <input type="radio" value="all" bind:group={contents} />
         El esquema y los datos
       </label>
       <label class="check">
-        <input type="radio" value="schema" bind:group={contents} disabled={running} />
+        <input type="radio" value="schema" bind:group={contents} />
         Solo el esquema
       </label>
       <label class="check">
-        <input type="radio" value="data" bind:group={contents} disabled={running} />
+        <input type="radio" value="data" bind:group={contents} />
         Solo los datos
       </label>
     </div>
@@ -214,11 +160,11 @@
 
   <div class="mt-3 flex flex-wrap gap-4">
     <label class="check">
-      <input type="checkbox" bind:checked={noOwner} disabled={running} />
+      <input type="checkbox" bind:checked={noOwner} />
       Sin los dueños (para restaurar con otro rol)
     </label>
     <label class="check">
-      <input type="checkbox" bind:checked={noPrivileges} disabled={running} />
+      <input type="checkbox" bind:checked={noPrivileges} />
       Sin los privilegios
     </label>
   </div>
@@ -234,7 +180,6 @@
             min="0"
             max="9"
             bind:value={compression}
-            disabled={running}
             placeholder="por omisión"
           />
         </label>
@@ -247,7 +192,6 @@
             type="number"
             min="1"
             bind:value={jobs}
-            disabled={running}
             placeholder="1"
           />
         </label>
@@ -268,40 +212,14 @@
              dark:bg-zinc-800/50">{command.join(" ")}</pre>
   {/if}
 
-  {#if log.length > 0 || outcome}
-    <div
-      class="mt-3 max-h-56 overflow-auto rounded-md border border-zinc-200 px-3 py-2 font-mono
-             text-xs select-text dark:border-zinc-800"
-    >
-      {#each log as line, index (index)}
-        <div class="whitespace-pre-wrap">{line}</div>
-      {/each}
-      {#if outcome}
-        <div
-          class={failed
-            ? "text-rose-600 dark:text-rose-400"
-            : "text-emerald-600 dark:text-emerald-400"}
-        >
-          {outcome}
-        </div>
-      {/if}
-    </div>
-  {/if}
+  <p class="mt-2 text-xs muted">
+    Corre en segundo plano: se sigue y se cancela desde la vista de procesos.
+  </p>
 
   {#snippet footer()}
-    {#if running}
-      <span class="flex items-center gap-2 text-xs muted">
-        <span class="spinner"></span>
-        en curso…
-      </span>
-    {/if}
-    <button class="btn ml-auto" onclick={onclose} disabled={running}>Cerrar</button>
-    {#if running}
-      <button class="btn btn-danger" onclick={cancel}>Cancelar el backup</button>
-    {:else}
-      <button class="btn btn-primary" onclick={run} disabled={command.length === 0}>
-        Hacer el backup
-      </button>
-    {/if}
+    <button class="btn ml-auto" onclick={onclose}>Cerrar</button>
+    <button class="btn btn-primary" onclick={run} disabled={command.length === 0}>
+      Hacer el backup
+    </button>
   {/snippet}
 </Modal>

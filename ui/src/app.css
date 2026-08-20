@@ -201,6 +201,14 @@ textarea {
   user-select: text;
 }
 
+/* WebView2 —o sea la ventana en Windows— dibuja su propio ojo y su propia cruz adentro de todo
+   `input[type=password]`. Los diálogos ya ponen un botón para mostrar la contraseña, así que sin
+   esto quedan dos ojos encimados y el de Edge tapado a medias por el nuestro. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+
 /* Etiqueta de campo en los formularios de los diálogos. */
 .label {
   @apply text-xs font-medium text-zinc-600 dark:text-zinc-400;
@@ -260,8 +268,10 @@ textarea {
   content: "";
 }
 
+/* El ancho máximo alcanza para el servidor y el nombre: con 56 el recorte se comía el título de
+   toda pestaña rotulada con las dos cosas. */
 .tab {
-  @apply flex max-w-56 shrink items-center gap-1.5 px-3 py-1.5 text-xs font-medium
+  @apply flex max-w-72 shrink items-center gap-1.5 px-3 py-1.5 text-xs font-medium
     whitespace-nowrap text-zinc-500 transition-colors hover:text-zinc-900 dark:text-zinc-400
     dark:hover:text-zinc-100;
 }
@@ -410,6 +420,9 @@ textarea {
   --cm-function: var(--color-sky-700);
   --cm-operator: var(--color-zinc-500);
 
+  /* El color del texto sin token. Lo necesita el SQL de adentro de un `$$ … $$`, que se dibuja
+     anidado en la cadena que ve `lang-sql` y sin esto heredaría el color de las cadenas. */
+  --cm-text: var(--color-zinc-800);
   --cm-gutter: var(--color-zinc-400);
   --cm-caret: var(--color-blue-600);
   --cm-selection: color-mix(in srgb, var(--color-blue-500) 22%, transparent);
@@ -442,6 +455,7 @@ textarea {
   --cm-function: var(--color-sky-400);
   --cm-operator: var(--color-zinc-400);
 
+  --cm-text: var(--color-zinc-100);
   --cm-gutter: var(--color-zinc-600);
   --cm-caret: var(--color-blue-400);
   --cm-selection: color-mix(in srgb, var(--color-blue-400) 28%, transparent);

@@ -31,6 +31,11 @@ de forma incremental y cada etapa entrega algo usable por sí sola:
 | 13 | Monitoreo: bloqueos, índices sin uso y bloat | listo |
 | 14 | Diagrama ERD del esquema | listo |
 | 15 | Red de seguridad: tests de vista previa e IPC | listo |
+| 16 | Comparación de esquemas entre servidores | listo |
+| 17 | Procesos en segundo plano | listo |
+| 18 | Plan de ejecución: copiar y sugerencias | listo |
+| 19 | Índices que sobran (duplicados y cubiertos) | listo |
+| 20 | Paleta de comandos, historial de lo aplicado e importar servidores | listo |
 
 Las etapas 11 en adelante son la capa de mejoras posterior a la primera release; su plan está en
 [`plan-mejoras.md`](plan-mejoras.md). La replicación (física y lógica) queda fuera del alcance inicial.

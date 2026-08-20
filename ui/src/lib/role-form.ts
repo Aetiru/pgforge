@@ -24,8 +24,9 @@ export interface RoleForm {
   password: string;
   /** `YYYY-MM-DD`; vacío es «sin vencimiento». */
   validUntil: string;
-  /** Como se escribe: nombres separados por coma. */
-  memberOf: string;
+  /** Los roles tildados en el selector. Antes era el texto crudo separado por comas, y un nombre
+   *  mal tipeado se descubría recién al fallar el `GRANT`. */
+  memberOf: string[];
   adminOption: boolean;
 }
 
@@ -43,7 +44,7 @@ export function roleForm(existing: RoleInfo | null): RoleForm {
     connectionLimit: existing && existing.connectionLimit !== -1 ? existing.connectionLimit : null,
     password: "",
     validUntil: validUntilDate(existing?.validUntil),
-    memberOf: "",
+    memberOf: [],
     adminOption: false,
   };
 }
@@ -59,11 +60,15 @@ export function validUntilDate(value: string | null | undefined): string {
   return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : "";
 }
 
+/** Las membresías elegidas, sin vacíos ni repetidas: un `GRANT` duplicado no falla, pero ensucia el
+ *  SQL de la vista previa con una línea que no hace nada. */
 export function memberOfList(form: RoleForm): string[] {
-  return form.memberOf
-    .split(",")
-    .map((role) => role.trim())
-    .filter((role) => role.length > 0);
+  const seen = new Set<string>();
+  for (const role of form.memberOf) {
+    const name = role.trim();
+    if (name) seen.add(name);
+  }
+  return [...seen];
 }
 
 function connectionLimitOf(form: RoleForm): number {

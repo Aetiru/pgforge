@@ -1,6 +1,7 @@
 import { Channel } from "@tauri-apps/api/core";
 
 import { invoke, type CoreError } from "./core";
+import type { TaskEvent } from "./tasks";
 
 // ---------------------------------------------------------------------------
 // Monitoreo
@@ -138,12 +139,6 @@ export interface MaintenancePlan {
   warning: string | null;
 }
 
-export type MaintenanceEvent =
-  | { type: "started"; sql: string }
-  | { type: "notice"; severity: string; message: string }
-  | { type: "finished"; seconds: number }
-  | { type: "failed"; error: CoreError };
-
 export const monitorStart = (
   id: string,
   channel: Channel<MonitorEvent>,
@@ -174,6 +169,22 @@ export const tableStats = (id: string, limit?: number) =>
 export const indexStats = (id: string, limit?: number) =>
   invoke<IndexStat[]>("index_stats", { id, limit: limit ?? null });
 
+/** Un índice que otro ya cubre: o es una copia, o sus columnas son el principio de las del otro. */
+export interface Redundancy {
+  schema: string;
+  table: string;
+  index: string;
+  coveredBy: string;
+  kind: "duplicate" | "prefix";
+  bytes: number;
+  scans: number;
+  /** La sentencia exacta que lo borraría. */
+  dropSql: string;
+}
+
+export const redundantIndexes = (id: string) =>
+  invoke<Redundancy[]>("redundant_indexes", { id });
+
 export const hasStatementStats = (id: string) => invoke<boolean>("has_statement_stats", { id });
 
 export const statementStats = (id: string, limit?: number) =>
@@ -191,7 +202,7 @@ export const maintenanceRun = (
   id: string,
   operation: Operation,
   target: Target,
-  channel: Channel<MaintenanceEvent>,
+  channel: Channel<TaskEvent>,
   database?: string,
 ) =>
   invoke<string>("maintenance_run", {
@@ -201,6 +212,3 @@ export const maintenanceRun = (
     channel,
     database: database ?? null,
   });
-
-export const maintenanceCancel = (taskId: string) =>
-  invoke<void>("maintenance_cancel", { taskId });

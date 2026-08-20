@@ -5,20 +5,21 @@
 //! respeta el que tiene la conexión, y la ventana puede pausarlo cuando deja de estar visible.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use pgforge_core::error::ErrorPayload;
 use pgforge_core::monitor::{
-    maintenance, ActivityFilter, IndexStat, Lock, Monitor, Operation, Snapshot, StatementStat,
-    TableBloat, TableStat, Target,
+    maintenance, ActivityFilter, IndexStat, Lock, Monitor, Operation, Redundancy, Snapshot,
+    StatementStat, TableBloat, TableStat, Target,
 };
 use pgforge_core::{Error, ProfileId, Result};
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 use tokio::sync::Mutex;
 
-use crate::state::{AppState, MaintenanceEntry, MonitorEntry, PollConfig, MIN_POLL_MS};
+use crate::commands::tasks::{self, TaskEvent};
+use crate::state::{AppState, MonitorEntry, PollConfig, MIN_POLL_MS};
 
 #[derive(Clone, Serialize)]
 #[serde(
@@ -226,6 +227,17 @@ pub async fn index_stats(
     Ok(stats)
 }
 
+/// Los índices que sobran porque otro los cubre. Solo lee: borrarlos es una decisión aparte.
+#[tauri::command]
+pub async fn redundant_indexes(
+    state: State<'_, AppState>,
+    id: ProfileId,
+) -> Result<Vec<Redundancy>> {
+    let monitor = monitor_of(&state, id).await?;
+    let sobran = monitor.lock().await.redundant_indexes().await?;
+    Ok(sobran)
+}
+
 #[tauri::command]
 pub async fn has_statement_stats(state: State<'_, AppState>, id: ProfileId) -> Result<bool> {
     let monitor = monitor_of(&state, id).await?;
@@ -285,20 +297,10 @@ pub async fn maintenance_plan(
     })
 }
 
-#[derive(Clone, Serialize)]
-#[serde(
-    tag = "type",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
-pub enum MaintenanceEvent {
-    Started { sql: String },
-    Notice { severity: String, message: String },
-    Finished { seconds: f64 },
-    Failed { error: ErrorPayload },
-}
-
-/// Lanza la tarea y devuelve su identificador, con el que se la puede cancelar.
+/// Lanza la tarea y devuelve su identificador, con el que se la puede cancelar (`task_cancel`).
+///
+/// Correrla y seguirla son dos cosas distintas: acá solo se arma la sentencia y se la larga, y de
+/// esperarla se encarga `tasks::spawn_statement`, el mismo que usa la creación de un índice.
 #[tauri::command]
 pub async fn maintenance_run(
     app: AppHandle,
@@ -307,81 +309,11 @@ pub async fn maintenance_run(
     database: Option<String>,
     operation: Operation,
     target: Target,
-    channel: Channel<MaintenanceEvent>,
+    channel: Channel<TaskEvent>,
 ) -> Result<String> {
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
     let sql = maintenance::statement(operation, &target, &handle.caps)?;
 
-    // Sin `statement_timeout`: el del perfil está pensado para consultas, y mataría el VACUUM.
-    let mut session = handle.open_session(&database, None).await?;
-    let notices = session.take_notices();
-    let cancel = session.cancel_token();
-    let task_id = uuid::Uuid::new_v4().to_string();
-
-    {
-        let sql = sql.clone();
-        let task_id = task_id.clone();
-        tokio::spawn(async move {
-            let _ = channel.send(MaintenanceEvent::Started { sql: sql.clone() });
-
-            // Los NOTICE llegan mientras la sentencia corre, así que hay que escucharlos en
-            // paralelo: si se leyeran después, el avance aparecería todo junto al final.
-            if let Some(mut notices) = notices {
-                let channel = channel.clone();
-                tokio::spawn(async move {
-                    while let Some(notice) = notices.recv().await {
-                        let _ = channel.send(MaintenanceEvent::Notice {
-                            severity: notice.severity,
-                            message: notice.message,
-                        });
-                    }
-                });
-            }
-
-            let started = Instant::now();
-            let event = match maintenance::run(&session, &sql).await {
-                Ok(()) => MaintenanceEvent::Finished {
-                    seconds: started.elapsed().as_secs_f64(),
-                },
-                Err(error) => MaintenanceEvent::Failed {
-                    error: ErrorPayload::from(&error),
-                },
-            };
-            let _ = channel.send(event);
-
-            app.state::<AppState>()
-                .maintenance
-                .lock()
-                .await
-                .remove(&task_id);
-        })
-    };
-
-    state.maintenance.lock().await.insert(
-        task_id.clone(),
-        MaintenanceEntry {
-            profile: id,
-            cancel,
-        },
-    );
-
-    Ok(task_id)
-}
-
-/// Cancela una tarea de mantenimiento en curso.
-#[tauri::command]
-pub async fn maintenance_cancel(state: State<'_, AppState>, task_id: String) -> Result<()> {
-    let (profile, cancel) = {
-        let tasks = state.maintenance.lock().await;
-        let entry = tasks
-            .get(&task_id)
-            .ok_or_else(|| Error::Config("la tarea ya no está en curso".to_owned()))?;
-        (entry.profile, entry.cancel.clone())
-    };
-
-    // Se le pide al servidor que aborte, en vez de abortar la tarea de Rust: matar la tarea local
-    // dejaría al servidor terminando el VACUUM sin que nadie lo esté mirando.
-    let handle = state.manager.require(profile).await?;
-    handle.cancel(&cancel).await
+    tasks::spawn_statement(app, &state, id, database, sql, channel).await
 }

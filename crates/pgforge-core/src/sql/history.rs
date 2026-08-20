@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 
 /// Versión del esquema del archivo. Subirla obliga a agregar el paso de migración de abajo.
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA: &str = "
     CREATE TABLE IF NOT EXISTS history (
@@ -27,15 +27,50 @@ const SCHEMA: &str = "
         seconds    REAL,
         row_count  INTEGER,
         succeeded  INTEGER NOT NULL,
-        error      TEXT
+        error      TEXT,
+        source     TEXT    NOT NULL DEFAULT 'editor'
     );
     CREATE INDEX IF NOT EXISTS history_reciente ON history (started_at DESC);
 ";
+
+/// De dónde salió lo que se ejecutó.
+///
+/// El historial dejó de ser «lo que escribí en el editor» para ser **lo que la aplicación ejecutó
+/// contra el servidor**. Un `ALTER TABLE` salido de un diálogo no quedaba en ningún lado que se
+/// pudiera consultar después, que es justo la pregunta del día siguiente: qué cambió y cuándo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Source {
+    /// Lo escribió el usuario en una pestaña de consulta.
+    Editor,
+    /// Lo generó un diálogo de la aplicación y se aplicó desde ahí.
+    Dialog,
+}
+
+impl Source {
+    fn as_str(self) -> &'static str {
+        match self {
+            Source::Editor => "editor",
+            Source::Dialog => "dialog",
+        }
+    }
+
+    fn from_str(text: &str) -> Self {
+        match text {
+            "dialog" => Source::Dialog,
+            _ => Source::Editor,
+        }
+    }
+}
 
 /// Lo que se registra al terminar una ejecución.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NewEntry {
+    /// Por omisión, el editor: es de donde venía todo lo que se registraba antes de que los
+    /// diálogos empezaran a anotar lo suyo.
+    #[serde(default = "editor_source")]
+    pub source: Source,
     pub profile_id: String,
     pub database: String,
     pub sql: String,
@@ -50,6 +85,8 @@ pub struct NewEntry {
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
     pub id: i64,
+    /// De dónde salió: el editor o un diálogo de la aplicación.
+    pub source: Source,
     pub profile_id: String,
     pub database: String,
     pub sql: String,
@@ -60,12 +97,16 @@ pub struct Entry {
     pub error: Option<String>,
 }
 
+fn editor_source() -> Source {
+    Source::Editor
+}
+
 pub struct HistoryStore {
     connection: Connection,
 }
 
 const SELECT: &str = "SELECT id, profile_id, database, sql, started_at, seconds, row_count,
-                             succeeded, error
+                             succeeded, error, source
                         FROM history";
 
 impl HistoryStore {
@@ -89,6 +130,15 @@ impl HistoryStore {
 
         if version < SCHEMA_VERSION {
             self.connection.execute_batch(SCHEMA)?;
+            // `SCHEMA` crea la tabla completa, pero no toca una que ya existe: el archivo de quien
+            // venía usando la aplicación se migra con el `ALTER`. Se pregunta antes en vez de
+            // ignorar el error, para no tapar uno de verdad.
+            if !self.has_column("history", "source")? {
+                self.connection.execute(
+                    "ALTER TABLE history ADD COLUMN source TEXT NOT NULL DEFAULT 'editor'",
+                    [],
+                )?;
+            }
             self.connection
                 .pragma_update(None, "user_version", SCHEMA_VERSION)?;
         }
@@ -96,11 +146,26 @@ impl HistoryStore {
         Ok(())
     }
 
+    fn has_column(&self, table: &str, column: &str) -> Result<bool> {
+        let mut statement = self
+            .connection
+            .prepare(&format!("PRAGMA table_info({table})"))?;
+        let mut rows = statement.query([])?;
+        while let Some(row) = rows.next()? {
+            let name: String = row.get(1)?;
+            if name == column {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     pub fn record(&self, entry: &NewEntry) -> Result<i64> {
         self.connection.execute(
             "INSERT INTO history
-                 (profile_id, database, sql, started_at, seconds, row_count, succeeded, error)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                 (profile_id, database, sql, started_at, seconds, row_count, succeeded, error,
+                  source)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 entry.profile_id,
                 entry.database,
@@ -110,6 +175,7 @@ impl HistoryStore {
                 entry.row_count,
                 entry.error.is_none(),
                 entry.error,
+                entry.source.as_str(),
             ],
         )?;
 
@@ -117,14 +183,20 @@ impl HistoryStore {
     }
 
     /// Lo último ejecutado, de un servidor o de todos.
+    ///
+    /// El desempate por `id` no es cosmético: `started_at` está en segundos y dos ejecuciones del
+    /// mismo segundo son lo más normal del mundo, así que sin él el orden entre esas dos queda
+    /// librado a lo que devuelva SQLite.
     pub fn recent(&self, profile_id: Option<&str>, limit: i64) -> Result<Vec<Entry>> {
         match profile_id {
             Some(profile_id) => self.query(
-                &format!("{SELECT} WHERE profile_id = ?1 ORDER BY started_at DESC LIMIT ?2"),
+                &format!(
+                    "{SELECT} WHERE profile_id = ?1 ORDER BY started_at DESC, id DESC LIMIT ?2"
+                ),
                 params![profile_id, limit],
             ),
             None => self.query(
-                &format!("{SELECT} ORDER BY started_at DESC LIMIT ?1"),
+                &format!("{SELECT} ORDER BY started_at DESC, id DESC LIMIT ?1"),
                 params![limit],
             ),
         }
@@ -164,6 +236,7 @@ impl HistoryStore {
                 row_count: row.get(6)?,
                 succeeded: row.get(7)?,
                 error: row.get(8)?,
+                source: Source::from_str(&row.get::<_, String>(9)?),
             })
         })?;
 
@@ -183,6 +256,7 @@ mod tests {
 
     fn entry(sql: &str) -> NewEntry {
         NewEntry {
+            source: Source::Editor,
             profile_id: "servidor-1".into(),
             database: "app".into(),
             sql: sql.into(),
@@ -214,6 +288,61 @@ mod tests {
         assert_eq!(recientes[0].sql, "SELECT 2");
         assert!(recientes[0].succeeded);
         assert_eq!(recientes[0].row_count, Some(3));
+    }
+
+    #[test]
+    fn un_archivo_viejo_se_migra_sin_perder_lo_que_tenia() {
+        // El historial de quien ya venía usando la aplicación no tiene la columna del origen. Que
+        // abrir la versión nueva le borre lo guardado sería peor que no tener la columna.
+        let path =
+            std::env::temp_dir().join(format!("pgforge_history_v1_{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+
+        {
+            let viejo = Connection::open(&path).unwrap();
+            viejo
+                .execute_batch(
+                    "CREATE TABLE history (
+                         id         INTEGER PRIMARY KEY,
+                         profile_id TEXT    NOT NULL,
+                         database   TEXT    NOT NULL,
+                         sql        TEXT    NOT NULL,
+                         started_at INTEGER NOT NULL,
+                         seconds    REAL,
+                         row_count  INTEGER,
+                         succeeded  INTEGER NOT NULL,
+                         error      TEXT
+                     );
+                     -- Con los mismos valores que escribía la versión anterior: `record` nunca
+                     -- dejó `seconds` en NULL.
+                     INSERT INTO history
+                            (profile_id, database, sql, started_at, seconds, row_count, succeeded)
+                     VALUES ('servidor-1', 'app', 'SELECT 1', 1700000000, 0.2, 1, 1);",
+                )
+                .unwrap();
+            viejo.pragma_update(None, "user_version", 1).unwrap();
+        }
+
+        let store = HistoryStore::open(&path).unwrap();
+        let recientes = store.recent(None, 10).unwrap();
+
+        assert_eq!(recientes.len(), 1, "no se pierde lo que ya estaba");
+        assert_eq!(
+            recientes[0].source,
+            Source::Editor,
+            "lo viejo es del editor"
+        );
+
+        store
+            .record(&NewEntry {
+                source: Source::Dialog,
+                ..entry("ALTER TABLE t ADD COLUMN c int")
+            })
+            .unwrap();
+        assert_eq!(store.recent(None, 1).unwrap()[0].source, Source::Dialog);
+
+        drop(store);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

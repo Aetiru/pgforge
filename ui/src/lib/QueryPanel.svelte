@@ -6,6 +6,8 @@
   import { envLook, READ_ONLY_LOOK } from "./badges";
   import HistoryPanel from "./HistoryPanel.svelte";
   import Icon from "./Icon.svelte";
+  import IndexDialog from "./IndexDialog.svelte";
+  import PlanAdvice from "./PlanAdvice.svelte";
   import PlanTree from "./PlanTree.svelte";
   import ResultGrid from "./ResultGrid.svelte";
   import SaveQueryDialog from "./SaveQueryDialog.svelte";
@@ -15,16 +17,56 @@
   import { editorSplit } from "./editor.svelte";
   import { PAGE_SIZES, paging } from "./paging.svelte";
   import { count, decimal } from "./format";
+  import { planText } from "./plan-text";
   import { saveQueryTab, type QueryTab } from "./query.svelte";
   import {
+    dataShapeNamed,
     describeError,
     explainWarning,
     statementAtCursor,
     treeChildren,
     type ExplainOptions,
+    type IndexTarget,
+    type TableColumn,
   } from "./ipc";
 
   let { tab }: { tab: QueryTab } = $props();
+
+  /** Qué se acaba de copiar del plan, para el «Copiado» del botón. */
+  let planCopied = $state<"text" | "json" | null>(null);
+
+  /**
+   * El texto se arma acá con lo que ya está en pantalla y el JSON es el que mandó el servidor.
+   * Volver a pedirle el plan en formato texto significaría, con ANALYZE, ejecutar la consulta otra
+   * vez; y reconstruir el JSON desde el árbol sería inventar los campos que no se muestran.
+   */
+  async function copyPlan(what: "text" | "json") {
+    if (!tab.plan) return;
+    const text = what === "text" ? planText(tab.plan) : tab.plan.json;
+    await navigator.clipboard.writeText(text).catch(() => {});
+    planCopied = what;
+    setTimeout(() => (planCopied = planCopied === what ? null : planCopied), 1500);
+  }
+
+  /**
+   * El índice que se está por crear desde una sugerencia del plan.
+   *
+   * Las columnas de la tabla se piden al abrir: la sugerencia sabe cuáles indexar, pero el diálogo
+   * muestra todas para poder agregar una más antes de crearlo.
+   */
+  let newIndex = $state<{
+    target: IndexTarget;
+    columns: TableColumn[];
+  } | null>(null);
+
+  async function openIndexDialog(target: IndexTarget) {
+    try {
+      const shape = await dataShapeNamed(tab.profileId, target.schema, target.table, tab.database);
+      newIndex = { target, columns: shape.columns };
+    } catch (error) {
+      tab.log("error", describeError(error));
+    }
+  }
 
   let exportOpen = $state(false);
   let saveOpen = $state(false);
@@ -115,8 +157,12 @@
     window.addEventListener("mouseup", up);
   }
 
-  const analyze: ExplainOptions = { analyze: true, buffers: true, verbose: false };
-  const estimate: ExplainOptions = { analyze: false, buffers: false, verbose: false };
+  // `verbose` va siempre y no es una preferencia: es lo único que hace que el plan traiga el esquema
+  // de cada relación, y sin eso el `CREATE INDEX` que se sugiere queda sin calificar —y copiado a
+  // otra sesión podría caer sobre otra tabla que se llame igual—. Lo que agrega de más (la lista de
+  // columnas de salida) no se dibuja; sí viaja en el JSON, que es donde suma.
+  const analyze: ExplainOptions = { analyze: true, buffers: true, verbose: true };
+  const estimate: ExplainOptions = { analyze: false, buffers: false, verbose: true };
 
   // Las bases del servidor, para poder apuntar la pestaña a otra sin abrir una nueva. Se piden una
   // sola vez por pestaña: crear o borrar bases mientras se escribe una consulta no es lo normal.
@@ -512,6 +558,39 @@
       {:else if tab.view === "plan"}
         {#if tab.plan}
           <div class="h-full overflow-auto p-2">
+            <div class="mb-2 flex items-center gap-1.5">
+              <span class="text-xs font-medium">
+                {tab.plan.advice.length > 0
+                  ? `${tab.plan.advice.length} ${tab.plan.advice.length === 1 ? "sugerencia" : "sugerencias"}`
+                  : "Plan"}
+              </span>
+              <span class="ml-auto"></span>
+              <button
+                class="btn btn-sm"
+                title="Copia el plan como texto, con la forma de psql"
+                onclick={() => copyPlan("text")}
+              >
+                <Icon name={planCopied === "text" ? "check" : "copy"} size={11} />
+                {planCopied === "text" ? "Copiado" : "Copiar texto"}
+              </button>
+              <button
+                class="btn btn-sm"
+                title="Copia el JSON tal como lo devolvió el servidor, para pegarlo en un visor de planes"
+                onclick={() => copyPlan("json")}
+              >
+                <Icon name={planCopied === "json" ? "check" : "copy"} size={11} />
+                {planCopied === "json" ? "Copiado" : "Copiar JSON"}
+              </button>
+            </div>
+
+            <div class="mb-3">
+              <PlanAdvice
+                advice={tab.plan.advice}
+                analyzed={tab.plan.analyzed}
+                oncreateIndex={openIndexDialog}
+              />
+            </div>
+
             <PlanTree node={tab.plan.root} {worst} />
             <p class="mt-3 flex flex-wrap gap-x-3 px-2 text-xs muted">
               {#if tab.plan.planningMs !== null}
@@ -599,6 +678,19 @@
       if (database) tab.switchDatabase(database);
     }}
     onclose={() => (switching = null)}
+  />
+{/if}
+
+{#if newIndex}
+  <IndexDialog
+    profileId={tab.profileId}
+    database={tab.database}
+    schema={newIndex.target.schema}
+    table={newIndex.target.table}
+    columns={newIndex.columns}
+    initialColumns={newIndex.target.columns}
+    onclose={() => (newIndex = null)}
+    oncreated={() => tab.log("info", "El índice quedó creado.")}
   />
 {/if}
 

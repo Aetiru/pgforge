@@ -2,15 +2,11 @@
   import { save } from "@tauri-apps/plugin-dialog";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
-  import { bytes, duration } from "./format";
+  import { tasks } from "./tasks.svelte";
   import {
-    Channel,
-    dataCopyCancel,
     dataExportPreview,
-    dataExportRun,
     describeError,
     type CopyFormat,
-    type ExportEvent,
     type ExportSource,
     type ExportSpec,
   } from "./ipc";
@@ -69,12 +65,6 @@
   let command = $state<string | null>(null);
   let previewError = $state<string | null>(null);
 
-  let taskId = $state<string | null>(null);
-  let progress = $state<number | null>(null);
-  let outcome = $state<string | null>(null);
-  let failed = $state(false);
-
-  const running = $derived(taskId !== null);
   const isCsv = $derived(format === "csv");
   const isBinary = $derived(format === "binary");
 
@@ -121,52 +111,14 @@
     if (typeof chosen === "string") path = chosen;
   }
 
-  async function run() {
-    progress = null;
-    outcome = null;
-    failed = false;
-
-    const channel = new Channel<ExportEvent>();
-    channel.onmessage = (event) => {
-      switch (event.type) {
-        case "started":
-          progress = 0;
-          break;
-        case "progress":
-          progress = event.bytes;
-          break;
-        case "finished":
-          outcome = `Listo: ${event.path} (${bytes(event.bytes)}) en ${duration(event.seconds)}.`;
-          taskId = null;
-          break;
-        case "failed":
-          outcome = describeError(event.error);
-          failed = true;
-          taskId = null;
-          break;
-      }
-    };
-
-    try {
-      taskId = await dataExportRun(profileId, spec, path, channel, database);
-    } catch (error) {
-      outcome = describeError(error);
-      failed = true;
-      taskId = null;
-    }
-  }
-
-  async function cancel() {
-    if (!taskId) return;
-    try {
-      await dataCopyCancel(taskId);
-    } catch (error) {
-      outcome = describeError(error);
-    }
+  /** La larga y cierra: exportar una tabla grande no puede tener la ventana esperando. */
+  function run() {
+    tasks.export({ profileId, database, target: label, spec, path });
+    onclose();
   }
 </script>
 
-<Modal title="Exportar" subtitle={label} size="lg" busy={running} {onclose}>
+<Modal title="Exportar" subtitle={label} size="lg" {onclose}>
   <div class="seg" role="tablist">
     {#each FORMATS as item (item.value)}
       <button
@@ -174,7 +126,6 @@
         role="tab"
         aria-selected={format === item.value}
         title={item.hint}
-        disabled={running}
         onclick={() => (format = item.value)}
       >
         {item.label}
@@ -186,15 +137,15 @@
   <div class="mt-3 flex items-end gap-2">
     <label class="flex min-w-0 flex-1 flex-col gap-1">
       <span class="label">Archivo</span>
-      <input class="field font-mono text-xs" bind:value={path} disabled={running} />
+      <input class="field font-mono text-xs" bind:value={path} />
     </label>
-    <button class="btn" onclick={choose} disabled={running}>Elegir…</button>
+    <button class="btn" onclick={choose}>Elegir…</button>
   </div>
 
   {#if !isBinary}
     {#if isCsv}
       <label class="check mt-3">
-        <input type="checkbox" bind:checked={header} disabled={running} />
+        <input type="checkbox" bind:checked={header} />
         Primera línea con los nombres de columna
       </label>
     {/if}
@@ -206,7 +157,6 @@
           class="field w-20 font-mono"
           maxlength="1"
           bind:value={delimiter}
-          disabled={running}
           placeholder={isCsv ? "," : "tab"}
         />
       </label>
@@ -217,7 +167,6 @@
             class="field w-20 font-mono"
             maxlength="1"
             bind:value={quote}
-            disabled={running}
             placeholder={'"'}
           />
         </label>
@@ -227,7 +176,6 @@
         <input
           class="field w-28 font-mono"
           bind:value={nullText}
-          disabled={running}
           placeholder={isCsv ? "(vacío)" : "\\N"}
         />
       </label>
@@ -243,31 +191,14 @@
              dark:bg-zinc-800/50">{command}</pre>
   {/if}
 
-  {#if outcome}
-    <div
-      class="mt-3 rounded-md border border-zinc-200 px-3 py-2 font-mono text-xs select-text
-             dark:border-zinc-800 {failed
-        ? 'text-rose-600 dark:text-rose-400'
-        : 'text-emerald-600 dark:text-emerald-400'}"
-    >
-      {outcome}
-    </div>
-  {/if}
+  <p class="mt-2 text-xs muted">
+    Corre en segundo plano: se sigue y se cancela desde la vista de procesos.
+  </p>
 
   {#snippet footer()}
-    {#if running}
-      <span class="flex items-center gap-2 text-xs muted">
-        <span class="spinner"></span>
-        {progress === null ? "en curso…" : `${bytes(progress)} exportados`}
-      </span>
-    {/if}
-    <button class="btn ml-auto" onclick={onclose} disabled={running}>Cerrar</button>
-    {#if running}
-      <button class="btn btn-danger" onclick={cancel}>Cancelar</button>
-    {:else}
-      <button class="btn btn-primary" onclick={run} disabled={!path || command === null}>
-        Exportar
-      </button>
-    {/if}
+    <button class="btn ml-auto" onclick={onclose}>Cerrar</button>
+    <button class="btn btn-primary" onclick={run} disabled={!path || command === null}>
+      Exportar
+    </button>
   {/snippet}
 </Modal>

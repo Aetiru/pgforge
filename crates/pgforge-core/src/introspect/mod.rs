@@ -60,6 +60,28 @@ pub async fn children(
     }
 }
 
+/// Los nombres de los esquemas de una base, sin los del sistema.
+///
+/// El árbol ya los trae, pero como nodos y solo del servidor que se haya desplegado. Esto es para
+/// cuando hace falta la lista pelada —elegir contra qué esquema comparar, por ejemplo— de un
+/// servidor que puede estar recién conectado y sin ninguna rama abierta.
+pub async fn schema_names(handle: &ServerHandle, database: &str) -> Result<Vec<String>> {
+    let client = handle.client(database).await?;
+    let rows = client
+        .query(
+            "SELECT n.nspname::text
+               FROM pg_catalog.pg_namespace n
+              WHERE NOT (n.nspname IN ('pg_catalog', 'information_schema')
+                         OR n.nspname LIKE 'pg\\_toast%'
+                         OR n.nspname LIKE 'pg\\_temp%')
+              ORDER BY n.nspname",
+            &[],
+        )
+        .await?;
+
+    Ok(rows.iter().map(|row| row.get(0)).collect())
+}
+
 /// El dueño de un objeto, salvo que sea el usuario conectado.
 ///
 /// Casi todo pertenece a quien está mirando: repetir su nombre en cada fila gasta el ancho del

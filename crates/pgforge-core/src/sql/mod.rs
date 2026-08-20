@@ -7,6 +7,7 @@
 //! dos consultas no se estorben, y de que un `BEGIN` o una tabla temporal sobrevivan de una
 //! ejecución a la siguiente.
 
+pub mod advice;
 pub mod completion;
 pub mod exec;
 pub mod explain;
@@ -14,6 +15,7 @@ pub mod history;
 pub mod saved;
 pub mod split;
 
+pub use advice::{Advice, AdviceKind, Severity};
 pub use completion::{Relation, SchemaSnapshot};
 pub use exec::{ColumnType, Limits, Outcome, QuerySession, TxStatus, DEFAULT_MAX_ROWS};
 pub use explain::{ExplainOptions, Plan, PlanNode};

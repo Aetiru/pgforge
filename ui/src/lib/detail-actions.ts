@@ -55,6 +55,7 @@ export type DetailActionKind =
   | "openData"
   | "openQuery"
   | "openErd"
+  | "openCompare"
   | "export"
   | "import"
   | "backup"
@@ -229,6 +230,12 @@ export function headerActions(context: ActionContext): DetailAction[] {
       icon: "diagram",
       label: "Diagrama",
       title: `Dibuja las tablas de ${node.label} y sus claves foráneas`,
+    });
+    actions.push({
+      kind: "openCompare",
+      icon: "compare",
+      label: "Comparar",
+      title: `Compara ${node.label} contra el esquema de otro servidor conectado`,
     });
   }
 

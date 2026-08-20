@@ -15,7 +15,9 @@
     describeError,
     hasBloatStats,
     hasStatementStats,
+    indexDrop,
     indexStats,
+    redundantIndexes,
     statementStats,
     tableBloat,
     tableStats,
@@ -24,12 +26,16 @@
     type Backend,
     type IndexStat,
     type Lock,
+    type Redundancy,
     type StatementStat,
     type TableBloat,
     type TableStat,
     type Target,
   } from "./ipc";
   import { monitor } from "./monitor.svelte";
+  import { confirmMutation } from "./access.svelte";
+  import { openQuery } from "./query.svelte";
+  import { view } from "./view.svelte";
   import { explorer } from "./explorer.svelte";
   import { untrack } from "svelte";
 
@@ -65,7 +71,14 @@
   const oneDecimal = (value: number) => value.toFixed(1);
   const asPercent = (value: number) => `${value.toFixed(1)} %`;
 
-  type Tab = "sesiones" | "bloqueos" | "tablas" | "indices" | "bloat" | "consultas";
+  type Tab =
+    | "sesiones"
+    | "bloqueos"
+    | "tablas"
+    | "indices"
+    | "duplicados"
+    | "bloat"
+    | "consultas";
 
   let tab = $state<Tab>("sesiones");
   let selectedPid = $state<number | null>(null);
@@ -77,6 +90,7 @@
   let tables = $state<TableStat[]>([]);
   let indexes = $state<IndexStat[]>([]);
   let statements = $state<StatementStat[]>([]);
+  let selectedStatement = $state<StatementStat | null>(null);
   let statementsAvailable = $state<boolean | null>(null);
   let statementsError = $state<string | null>(null);
   let bloat = $state<TableBloat[]>([]);
@@ -84,6 +98,12 @@
   let bloatError = $state<string | null>(null);
   let selectedTable = $state<TableStat | null>(null);
   let selectedIndex = $state<IndexStat | null>(null);
+
+  /** Índices que otro ya cubre, y cuál está elegido para borrar. */
+  let redundant = $state<Redundancy[]>([]);
+  let redundantError = $state<string | null>(null);
+  let selectedRedundant = $state<Redundancy | null>(null);
+  let droppingIndex = $state<Redundancy | null>(null);
   let selectedBloat = $state<TableBloat | null>(null);
   let maintenanceTarget = $state<Target | null>(null);
 
@@ -221,6 +241,11 @@
       indexStats(profileId)
         .then((result) => (indexes = result))
         .catch((error) => (actionMessage = describeError(error)));
+    } else if (current === "duplicados") {
+      redundantError = null;
+      redundantIndexes(profileId)
+        .then((result) => (redundant = result))
+        .catch((error) => (redundantError = describeError(error)));
     } else if (current === "bloat") {
       bloatError = null;
       hasBloatStats(profileId)
@@ -394,6 +419,48 @@
     },
   ];
 
+  const redundantColumns: Column<Redundancy>[] = [
+    { key: "schema", header: "Esquema", width: 120, value: (r) => r.schema },
+    { key: "table", header: "Tabla", width: 180, value: (r) => r.table },
+    { key: "index", header: "Índice que sobra", width: 240, value: (r) => r.index },
+    { key: "coveredBy", header: "Ya lo cubre", width: 240, value: (r) => r.coveredBy },
+    {
+      key: "kind",
+      header: "Por qué",
+      width: 150,
+      value: (r) => (r.kind === "duplicate" ? "mismas columnas" : "es el principio del otro"),
+    },
+    {
+      key: "scans",
+      header: "Usos",
+      width: 90,
+      align: "right",
+      value: (r) => count(r.scans),
+      sort: (r) => r.scans,
+    },
+    {
+      key: "size",
+      header: "Tamaño",
+      width: 100,
+      align: "right",
+      value: (r) => bytes(r.bytes),
+      sort: (r) => r.bytes,
+    },
+  ];
+
+  /** Borra el índice elegido. Va con CONCURRENTLY: no bloquea las escrituras de la tabla. */
+  async function dropRedundant(target: Redundancy) {
+    droppingIndex = null;
+    if (!(await confirmMutation(profileId, "Se va a borrar un índice del servidor."))) return;
+    try {
+      await indexDrop(profileId, target.schema, target.index, false, true, database ?? undefined);
+      redundant = redundant.filter((item) => item.index !== target.index);
+      if (selectedRedundant?.index === target.index) selectedRedundant = null;
+    } catch (error) {
+      redundantError = describeError(error);
+    }
+  }
+
   const indexColumns: Column<IndexStat>[] = [
     { key: "schema", header: "Esquema", width: 130, value: (i) => i.schema },
     { key: "table", header: "Tabla", width: 200, value: (i) => i.table },
@@ -438,6 +505,24 @@
             : undefined,
     },
   ];
+
+  /**
+   * Abre una pestaña de consulta con este texto y lleva a ella.
+   *
+   * Es el puente que faltaba entre mirar y hacer: hasta ahora, para explicar la consulta más cara
+   * había que seleccionarla, copiarla a mano y abrir una pestaña. No se ejecuta ni se explica sola
+   * —el texto de `pg_stat_statements` viene normalizado, con `$1` en lugar de los valores, y eso el
+   * servidor no lo planifica sin `PREPARE`—: queda escrito para completarlo y correrlo.
+   */
+  async function openInQuery(sql: string, target?: string | null) {
+    try {
+      const tab = await openQuery(profileId, target ?? database ?? "", "Consulta");
+      tab.sql = sql;
+      view.show("explorer");
+    } catch (error) {
+      actionMessage = describeError(error);
+    }
+  }
 
   const statementColumns: Column<StatementStat>[] = [
     { key: "database", header: "Base", width: 120, value: (s) => s.database ?? "—" },
@@ -488,6 +573,7 @@
     { value: "bloqueos", label: "Bloqueos" },
     { value: "tablas", label: "Tablas" },
     { value: "indices", label: "Índices" },
+    { value: "duplicados", label: "Índices de más" },
     { value: "bloat", label: "Bloat" },
     { value: "consultas", label: "Consultas lentas" },
   ];
@@ -684,6 +770,13 @@
           <span class="tag tag-info ml-auto">es la sesión del propio monitor</span>
         {:else}
           <span class="ml-auto flex gap-1.5">
+            <!-- Mirar qué está corriendo y poder explicarlo son el mismo movimiento; hasta ahora
+                 había que copiar el texto a mano de la celda. -->
+            {#if selected.query}
+              <button class="btn btn-sm" onclick={() => openInQuery(selected.query ?? "", selected.database)}>
+                Abrir en una consulta
+              </button>
+            {/if}
             <button
               class="btn btn-sm"
               onclick={() => (confirming = { pid: selected.pid, kind: "cancel" })}
@@ -809,6 +902,40 @@
         empty="No hay estadísticas de índices en esta base."
       />
     </div>
+  {:else if tab === "duplicados"}
+    <div class="divider-t divider-b flex items-center gap-2 px-3 py-2">
+      <span class="text-xs muted">
+        Un índice que otro ya cubre ocupa disco y hace más lenta cada escritura sin acelerar ninguna
+        lectura. Lo que sostiene una restricción nunca aparece acá.
+      </span>
+      <button
+        class="btn btn-danger ml-auto"
+        disabled={!selectedRedundant}
+        title={selectedRedundant
+          ? `DROP INDEX sobre ${selectedRedundant.schema}.${selectedRedundant.index}`
+          : "Elegí un índice de la lista"}
+        onclick={() => (droppingIndex = selectedRedundant)}
+      >
+        Borrar el índice…
+      </button>
+    </div>
+    <div class="min-h-0 flex-1">
+      {#if redundantError}
+        <Alert tone="bad">{redundantError}</Alert>
+      {:else}
+        <DataGrid
+          columns={redundantColumns}
+          rows={redundant}
+          rowKey={(item) => `${item.schema}.${item.index}`}
+          selectedKey={selectedRedundant
+            ? `${selectedRedundant.schema}.${selectedRedundant.index}`
+            : null}
+          onselect={(item) => (selectedRedundant = item)}
+          sortable
+          empty="Ningún índice de esta base está cubierto por otro."
+        />
+      {/if}
+    </div>
   {:else if tab === "bloat"}
     <div class="divider-t divider-b flex items-center gap-2 px-3 py-2">
       <span class="text-xs muted">
@@ -854,6 +981,24 @@
       {/if}
     </div>
   {:else}
+    <div class="divider-t divider-b flex items-center gap-2 px-3 py-2">
+      <span class="text-xs muted">
+        El texto viene normalizado: los valores aparecen como $1, $2. Al abrirlo en una consulta hay
+        que completarlos antes de explicar.
+      </span>
+      <button
+        class="btn ml-auto"
+        disabled={!selectedStatement?.query}
+        title={selectedStatement?.query
+          ? "Abre una pestaña de consulta con este texto"
+          : "Elegí una consulta de la lista"}
+        onclick={() =>
+          selectedStatement?.query &&
+          openInQuery(selectedStatement.query, selectedStatement.database)}
+      >
+        Abrir en una consulta
+      </button>
+    </div>
     <div class="min-h-0 flex-1">
       {#if statementsError}
         <Alert tone="bad">{statementsError}</Alert>
@@ -869,6 +1014,10 @@
           rows={statements}
           rowKey={(statement) =>
             `${statement.database}/${statement.user}/${statement.queryId ?? statement.query}`}
+          selectedKey={selectedStatement
+            ? `${selectedStatement.database}/${selectedStatement.user}/${selectedStatement.queryId ?? selectedStatement.query}`
+            : null}
+          onselect={(statement) => (selectedStatement = statement)}
           sortable
           empty="Todavía no hay consultas registradas."
         />
@@ -886,6 +1035,17 @@
     confirmLabel={confirming.kind === "cancel" ? "Cancelar la consulta" : "Terminar la sesión"}
     onconfirm={() => confirming && act(confirming.pid, confirming.kind)}
     onclose={() => (confirming = null)}
+  />
+{/if}
+
+{#if droppingIndex}
+  <Confirm
+    title="Borrar «{droppingIndex.index}»"
+    message="{droppingIndex.coveredBy} cubre lo mismo, así que las consultas que hoy usan este índice pueden seguir usando aquel. Se ejecuta: {droppingIndex.dropSql}"
+    confirmLabel="Borrar el índice"
+    danger
+    onconfirm={() => droppingIndex && dropRedundant(droppingIndex)}
+    onclose={() => (droppingIndex = null)}
   />
 {/if}
 

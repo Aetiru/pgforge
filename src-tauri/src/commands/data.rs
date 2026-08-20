@@ -18,6 +18,7 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use tokio::sync::{mpsc, oneshot};
 
+use crate::commands::{record_applied, sql_of};
 use crate::state::{AppState, ExternalTask};
 
 /// Columnas y clave de una tabla. Es lo que decide si la grilla se abre editable.
@@ -32,6 +33,24 @@ pub async fn data_open(
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
     data::shape(&handle, &database, oid).await
+}
+
+/// La misma forma, pero buscada por nombre.
+///
+/// Existe porque hay un camino que no empieza en el árbol: la sugerencia de un plan de ejecución
+/// dice «esquema.tabla», nunca un oid, y con eso hay que poder abrir el diálogo de índices.
+#[tauri::command]
+pub async fn data_shape_named(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    schema: String,
+    name: String,
+) -> Result<TableShape> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    data::shape_by_name(&handle, &database, &schema, &name).await
 }
 
 /// Una página de filas. Con `cursor` en `null` devuelve la primera.
@@ -80,7 +99,15 @@ pub async fn data_apply(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
-    data::apply(&handle, &database, &shape, &changes).await
+    let sql = sql_of(&data::statements(&shape, &changes)?);
+    record_applied(
+        &state,
+        id,
+        &database,
+        sql,
+        data::apply(&handle, &database, &shape, &changes),
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------

@@ -8,6 +8,7 @@
   import { basicSetup } from "codemirror";
   import { untrack } from "svelte";
   import { sqlHighlight } from "./sql-highlight";
+  import { sqlNesting } from "./sql-nested";
   import { columnCompletion } from "./sql-complete";
   import { sqlFont } from "./editor.svelte";
   import type { SchemaRelation } from "./ipc";
@@ -214,6 +215,7 @@
           language.of(sqlExtension(untrack(() => schema))),
           marks.of(EditorView.decorations.of(Decoration.none)),
           syntaxHighlighting(sqlHighlight),
+          sqlNesting,
           theme,
           EditorView.lineWrapping,
           EditorState.readOnly.of(untrack(() => readonly)),

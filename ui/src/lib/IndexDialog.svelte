@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
@@ -10,7 +11,8 @@
     toggleColumn,
     validateIndex,
   } from "./index-form";
-  import { describeError, indexCreate, indexPreview, type TableColumn } from "./ipc";
+  import { tasks } from "./tasks.svelte";
+  import { describeError, indexPreview, type TableColumn } from "./ipc";
 
   let {
     profileId,
@@ -18,6 +20,7 @@
     schema,
     table,
     columns,
+    initialColumns = [],
     onclose,
     oncreated,
   }: {
@@ -26,14 +29,16 @@
     schema: string;
     table: string;
     columns: TableColumn[];
+    /** Columnas ya elegidas al abrir: es lo que trae la sugerencia de un plan de ejecución. */
+    initialColumns?: string[];
     onclose: () => void;
     oncreated: () => void;
   } = $props();
 
-  let form = $state(indexForm());
+  // Se toma una sola vez, como el resto de los formularios: a partir de acá el dueño es el usuario.
+  let form = $state(untrack(() => indexForm(initialColumns)));
 
   let error = $state<string | null>(null);
-  let saving = $state(false);
   let preview = $state<string | null>(null);
 
   const toggle = (column: string) => (form.columns = toggleColumn(form.columns, column));
@@ -64,19 +69,21 @@
 
     if (!(await confirmMutation(profileId, "Se va a crear un índice."))) return;
 
-    saving = true;
-    try {
-      await indexCreate(profileId, def(), database);
-      oncreated();
-    } catch (e) {
-      error = describeError(e);
-    } finally {
-      saving = false;
-    }
+    // Se larga y se cierra: `CONCURRENTLY` sobre una tabla grande tarda lo suyo, y esperarlo con el
+    // diálogo abierto dejaba la aplicación tomada. La lista de índices se relee cuando el índice
+    // existe de verdad, no ahora.
+    tasks.index({
+      profileId,
+      database,
+      target: `${schema}.${table}`,
+      def: def(),
+      onDone: oncreated,
+    });
+    onclose();
   }
 </script>
 
-<Modal title="Nuevo índice" subtitle="{schema}.{table}" busy={saving} {onclose}>
+<Modal title="Nuevo índice" subtitle="{schema}.{table}" {onclose}>
   <div class="grid grid-cols-2 gap-3">
     <label class="flex flex-col gap-1">
       <span class="label">Nombre (opcional)</span>
@@ -138,12 +145,13 @@
     <SqlPreview sql={preview} />
   {/if}
 
+  <p class="mt-3 text-xs muted">
+    Se crea en segundo plano: se sigue y se cancela desde la vista de procesos.
+  </p>
+
   {#snippet footer()}
-    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
-    <button class="btn btn-primary" onclick={submit} disabled={saving}>
-      {#if saving}<span class="spinner"></span>{/if}
-      Crear índice
-    </button>
+    <button class="btn btn-ghost btn-sm" onclick={showPreview}>Ver SQL</button>
+    <button class="btn ml-auto" onclick={onclose}>Cancelar</button>
+    <button class="btn btn-primary" onclick={submit}>Crear índice</button>
   {/snippet}
 </Modal>

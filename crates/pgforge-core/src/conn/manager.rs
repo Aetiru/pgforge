@@ -188,6 +188,17 @@ impl Session {
     pub fn take_notices(&mut self) -> Option<mpsc::UnboundedReceiver<Notice>> {
         self.notices.take()
     }
+
+    /// Corre una sentencia larga —un `VACUUM`, un `CREATE INDEX CONCURRENTLY`— sobre esta sesión.
+    ///
+    /// Va por el protocolo simple y sin transacción envolvente: es lo que permite `CONCURRENTLY`,
+    /// que PostgreSQL rechaza adentro de un bloque transaccional. Que sea la sesión y no una
+    /// conexión del pool es lo que hace que se la pueda cancelar y que diez minutos de `VACUUM` no
+    /// le saquen una conexión al explorador.
+    pub async fn execute_batch(&self, sql: &str) -> Result<()> {
+        self.client.batch_execute(sql).await?;
+        Ok(())
+    }
 }
 
 /// Pone a correr la mitad "conexión" del par que devuelve tokio-postgres y deriva sus mensajes

@@ -2,8 +2,11 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import Alert from "./lib/Alert.svelte";
   import Confirm from "./lib/Confirm.svelte";
+  import CompareDialog from "./lib/CompareDialog.svelte";
+  import ComparePanel from "./lib/ComparePanel.svelte";
   import ConnectionDialog from "./lib/ConnectionDialog.svelte";
   import GroupDialog from "./lib/GroupDialog.svelte";
+  import ImportServersDialog from "./lib/ImportServersDialog.svelte";
   import NewGroupDialog from "./lib/NewGroupDialog.svelte";
   import Dashboard from "./lib/Dashboard.svelte";
   import ServerConfig from "./lib/ServerConfig.svelte";
@@ -13,9 +16,12 @@
   import Empty from "./lib/Empty.svelte";
   import Icon, { type IconName } from "./lib/Icon.svelte";
   import Modal from "./lib/Modal.svelte";
+  import Palette from "./lib/Palette.svelte";
+  import ProcessPanel from "./lib/ProcessPanel.svelte";
   import QueryPanel from "./lib/QueryPanel.svelte";
   import TreePanel from "./lib/TreePanel.svelte";
   import UpdateDialog from "./lib/UpdateDialog.svelte";
+  import { openCompare, CompareTab } from "./lib/compare.svelte";
   import { openData, DataTab } from "./lib/data.svelte";
   import { openErd, ErdTab } from "./lib/erd.svelte";
   import { environmentOf, guard } from "./lib/access.svelte";
@@ -24,6 +30,8 @@
   import { queryTargetOf } from "./lib/tree-actions";
   import { parseQuery, PREFIX_HELP } from "./lib/tree-query";
   import { tabs, type Tab, type TabKind } from "./lib/tabs.svelte";
+  import { tasks } from "./lib/tasks.svelte";
+  import { view } from "./lib/view.svelte";
   import { theme } from "./lib/theme.svelte";
   import { updates } from "./lib/update.svelte";
   import {
@@ -33,6 +41,7 @@
     formatVersion,
     sshHostKey,
     type AppInfo,
+    type CompareSide,
     type ConnectionProfile,
     type Environment,
   } from "./lib/ipc";
@@ -43,6 +52,8 @@
     null,
   );
   let confirmDelete = $state<ConnectionProfile | null>(null);
+  /** Esquema desde el que se pidió comparar; el otro lado lo elige el diálogo. */
+  let compareSource = $state<CompareSide | null>(null);
   /**
    * Pestaña que se quiere cerrar con una transacción abierta. La pregunta va acá y no en
    * `QueryTab.dispose()`, que corre cuando la pestaña ya se cerró y no puede preguntar nada.
@@ -72,12 +83,15 @@
   let groupDialog = $state<string | null>(null);
   /** Abierto mientras se crea una carpeta nueva. */
   let newGroupDialog = $state(false);
+  /** Abierto mientras se buscan servidores ya configurados en otras herramientas. */
+  let importDialog = $state(false);
+  /** La paleta de comandos (Ctrl+K). */
+  let paletteOpen = $state(false);
   /** El menú con lo que no se usa todos los días del árbol. */
   let treeMenu = $state(false);
   let banner = $state<string | null>(null);
   let sidebarWidth = $state(300);
   let sidebarOpen = $state(true);
-  let view = $state<"explorer" | "monitor" | "config">("explorer");
   /** Servidor elegido a mano en la vista de monitoreo; si es `null` se usa el del árbol. */
   let monitorChoice = $state<string | null>(null);
   /** Servidor elegido a mano en la vista de configuración. */
@@ -89,6 +103,7 @@
     query: "sql",
     data: "table",
     erd: "diagram",
+    compare: "compare",
   };
 
   /** Los mismos colores que las pastillas de entorno, aplicados al ícono de la pestaña. */
@@ -125,6 +140,15 @@
 
   function profileOf(profileId: string) {
     return explorer.profiles.find((profile) => profile.id === profileId) ?? null;
+  }
+
+  /**
+   * Con qué servidor se rotula una pestaña. Sale del perfil y no de un campo de `Tab`: el nombre se
+   * puede cambiar desde el diálogo de conexión, y una copia guardada al abrir la pestaña quedaría
+   * mostrando el nombre viejo hasta cerrarla.
+   */
+  function serverName(profileId: string): string {
+    return profileOf(profileId)?.name ?? "";
   }
 
   async function connect(profile: ConnectionProfile, password?: string, trustHostKey?: boolean) {
@@ -300,6 +324,11 @@
         event.preventDefault();
         sidebarOpen = !sidebarOpen;
         break;
+      case "k":
+        // La misma tecla abre y cierra: es lo que uno intenta cuando se abrió sin querer.
+        event.preventDefault();
+        paletteOpen = !paletteOpen;
+        break;
       case "q":
         event.preventDefault();
         newQuery();
@@ -329,6 +358,9 @@
     { value: "explorer", label: "Explorador", icon: "schema" },
     { value: "monitor", label: "Monitoreo", icon: "chart" },
     { value: "config", label: "Configuración", icon: "sliders" },
+    // Cuarta vista y no un panel adentro del explorador: lo que corre en segundo plano no es de un
+    // servidor ni de una base, y se mira justo cuando uno está haciendo otra cosa.
+    { value: "processes", label: "Procesos", icon: "clock" },
   ] as const;
 
   /** Lo que dice la barra de estado: dónde está parado el usuario ahora mismo. */
@@ -370,16 +402,23 @@
         <button
           class="seg-item"
           role="tab"
-          aria-selected={view === item.value}
-          onclick={() => (view = item.value)}
+          aria-selected={view.current === item.value}
+          onclick={() => view.show(item.value)}
         >
           <Icon name={item.icon} size={12} />
           {item.label}
+          <!-- Cuántos corren, y un punto si algo terminó sin que nadie lo mirara: la vista de
+               procesos está pensada para no tener que estar mirándola. -->
+          {#if item.value === "processes" && tasks.running.length > 0}
+            <span class="tag tag-info">{tasks.running.length}</span>
+          {:else if item.value === "processes" && tasks.unseen > 0}
+            <span class="dot dot-on"></span>
+          {/if}
         </button>
       {/each}
     </div>
 
-    {#if view === "monitor" && connectedServers.length > 0}
+    {#if view.current === "monitor" && connectedServers.length > 0}
       <label class="check gap-1.5">
         Servidor
         <select
@@ -395,7 +434,7 @@
       </label>
     {/if}
 
-    {#if view === "config" && connectedServers.length > 0}
+    {#if view.current === "config" && connectedServers.length > 0}
       <label class="check gap-1.5">
         Servidor
         <select
@@ -461,7 +500,7 @@
     <Alert tone="bad" onclose={() => (banner = null)}>{banner}</Alert>
   {/if}
 
-  {#if view === "monitor"}
+  {#if view.current === "monitor"}
     {#if monitorServer}
       <div class="min-h-0 flex-1">
         {#key monitorServer}
@@ -474,12 +513,16 @@
         title="No hay ningún servidor conectado"
         hint="El monitoreo lee las estadísticas en vivo de una conexión abierta."
       >
-        <button class="btn btn-primary" onclick={() => (view = "explorer")}>
+        <button class="btn btn-primary" onclick={() => view.show("explorer")}>
           Ir al explorador
         </button>
       </Empty>
     {/if}
-  {:else if view === "config"}
+  {:else if view.current === "processes"}
+    <div class="min-h-0 flex-1">
+      <ProcessPanel />
+    </div>
+  {:else if view.current === "config"}
     {#if configServer}
       <div class="min-h-0 flex-1">
         {#key configServer}
@@ -492,7 +535,7 @@
         title="No hay ningún servidor conectado"
         hint="La configuración se lee de una conexión abierta."
       >
-        <button class="btn btn-primary" onclick={() => (view = "explorer")}>
+        <button class="btn btn-primary" onclick={() => view.show("explorer")}>
           Ir al explorador
         </button>
       </Empty>
@@ -594,6 +637,17 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
                     class="row-menu"
                     onclick={() => {
                       treeMenu = false;
+                      importDialog = true;
+                    }}
+                  >
+                    <span class="flex items-center gap-2">
+                      <Icon name="download" size={13} /> Importar servidores…
+                    </span>
+                  </button>
+                  <button
+                    class="row-menu"
+                    onclick={() => {
+                      treeMenu = false;
                       explorer.collapseAll();
                     }}
                   >
@@ -637,6 +691,7 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
               onquery={openQuery}
               ondata={openData}
               onerd={openErd}
+              oncompare={(source) => (compareSource = source)}
             />
           </div>
 
@@ -699,7 +754,7 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
                 class="tab pr-1"
                 role="tab"
                 aria-selected={tabs.active === tab.key}
-                title={`${tab.title} · ${tab.database}`}
+                title={`${tab.title} · ${serverName(tab.profileId)} / ${tab.database}`}
                 onclick={() => (tabs.active = tab.key)}
                 onauxclick={(event) => {
                   // Botón del medio: cerrar, como en cualquier navegador.
@@ -716,6 +771,19 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
                     size={12}
                     class={TAB_TONE[environmentOf(tab.profileId) ?? "none"]}
                   />
+                {/if}
+                <!--
+                  El servidor va en la pestaña y no solo en el `title`: con cuatro consultas
+                  abiertas, «Consulta 1» contra desarrollo y «Consulta 1» contra producción eran la
+                  misma pestaña a la vista, y averiguar cuál era cuál pedía pasar el mouse por
+                  encima de cada una. Se recorta antes que el nombre de la pestaña porque es el
+                  contexto, no lo que se está mirando.
+                -->
+                {#if serverName(tab.profileId)}
+                  <span class="max-w-24 shrink truncate text-[11px] muted">
+                    {serverName(tab.profileId)}
+                  </span>
+                  <span class="shrink-0 text-[11px] muted">/</span>
                 {/if}
                 <span class="truncate">{tab.title}</span>
               </button>
@@ -772,6 +840,10 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
             {#key tabs.current.key}
               <ErdPanel tab={tabs.current} />
             {/key}
+          {:else if tabs.current instanceof CompareTab}
+            {#key tabs.current.key}
+              <ComparePanel tab={tabs.current} />
+            {/key}
           {:else}
             <DetailPanel
               onconnect={connectById}
@@ -781,6 +853,7 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
               onquery={openQuery}
               ondata={openData}
               onerd={openErd}
+              oncompare={(source) => (compareSource = source)}
             />
           {/if}
         </div>
@@ -811,6 +884,16 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
   {/if}
 </div>
 
+{#if paletteOpen}
+  <Palette
+    onnewquery={newQuery}
+    onopensql={openSqlDialog}
+    onnewserver={() => (dialog = { profile: null })}
+    onconnect={connectById}
+    onclose={() => (paletteOpen = false)}
+  />
+{/if}
+
 {#if dialog}
   <ConnectionDialog
     profile={dialog.profile}
@@ -829,8 +912,23 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
   <GroupDialog name={groupDialog} onclose={() => (groupDialog = null)} />
 {/if}
 
+{#if compareSource}
+  <CompareDialog
+    source={compareSource}
+    onclose={() => (compareSource = null)}
+    oncompare={(source, target) => void openCompare(source, target)}
+  />
+{/if}
+
 {#if updates.showing && info}
   <UpdateDialog current={info.version} onclose={() => (updates.showing = false)} />
+{/if}
+
+{#if importDialog}
+  <ImportServersDialog
+    onclose={() => (importDialog = false)}
+    onimported={() => (importDialog = false)}
+  />
 {/if}
 
 {#if newGroupDialog}

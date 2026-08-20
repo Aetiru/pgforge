@@ -12,6 +12,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::conn::ServerHandle;
+use crate::ddl::quote_ident;
 use crate::error::{Error, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -120,6 +121,40 @@ const RELATION_SQL: &str = "
       JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
      WHERE c.oid = $1
 ";
+
+/// El oid de una relación nombrada, o un error claro si no existe.
+///
+/// Se resuelve con `to_regclass` y no armando el nombre a mano: es el propio servidor el que aplica
+/// las reglas de citado y de mayúsculas, que es justo donde falla cualquier reconstrucción casera.
+pub async fn oid_of(
+    handle: &ServerHandle,
+    database: &str,
+    schema: &str,
+    name: &str,
+) -> Result<u32> {
+    let client = handle.client(database).await?;
+    let qualified = format!("{}.{}", quote_ident(schema), quote_ident(name));
+
+    let row = client
+        .query_one("SELECT to_regclass($1)::oid", &[&qualified])
+        .await?;
+    let oid: Option<u32> = row.get(0);
+
+    oid.filter(|value| *value != 0)
+        .ok_or_else(|| Error::Config(format!("no existe la relación {qualified}")))
+}
+
+/// Igual que [`shape`], pero partiendo del nombre. Lo usa la interfaz cuando lo que tiene es lo que
+/// dijo un plan de ejecución —esquema y tabla— y no un oid.
+pub async fn shape_by_name(
+    handle: &ServerHandle,
+    database: &str,
+    schema: &str,
+    name: &str,
+) -> Result<TableShape> {
+    let oid = oid_of(handle, database, schema, name).await?;
+    shape(handle, database, oid).await
+}
 
 /// Lee del catálogo todo lo que hace falta para mostrar y editar una tabla.
 pub async fn shape(handle: &ServerHandle, database: &str, oid: u32) -> Result<TableShape> {

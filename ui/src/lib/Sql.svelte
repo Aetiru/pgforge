@@ -5,15 +5,16 @@
   import { EditorView } from "@codemirror/view";
   import { untrack } from "svelte";
   import { sqlHighlight } from "./sql-highlight";
+  import { sqlNesting } from "./sql-nested";
   import { sqlFont } from "./editor.svelte";
 
   /**
    * SQL de solo lectura, coloreado.
    *
-   * Reusa el mismo resaltado que el editor ([`sqlHighlight`]) en vez de repintar a mano, así el DDL
-   * que la aplicación muestra tiene exactamente los colores del editor —incluidas las cadenas
-   * delimitadas con `$$` de los cuerpos de función, que un tokenizador propio erraría—. Sin la
-   * decoración del editor (números de línea, línea activa, búsqueda): es un `<pre>` con color.
+   * Reusa el mismo resaltado que el editor ([`sqlHighlight`] y [`sqlNesting`]) en vez de repintar a
+   * mano, así el DDL que la aplicación muestra tiene exactamente los colores del editor —incluido el
+   * cuerpo de una función, que es SQL adentro de una cadena `$$`—. Sin la decoración del editor
+   * (números de línea, línea activa, búsqueda): es un `<pre>` con color.
    */
   let { code }: { code: string } = $props();
 
@@ -40,6 +41,7 @@
         extensions: [
           sql({ dialect: PostgreSQL }),
           syntaxHighlighting(sqlHighlight),
+          sqlNesting,
           theme,
           EditorView.lineWrapping,
           // No editable: sin cursor ni foco, pero el texto se sigue pudiendo seleccionar y copiar.

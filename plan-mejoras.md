@@ -225,10 +225,14 @@ Tauri a los tests puros de `src-tauri`.
 
 - **Snippets/favoritos de consultas** sobre `sql::history` (ya persiste el historial): guardar,
   nombrar y reabrir consultas.
-- **Exportar el plan de `EXPLAIN`** a JSON y visualización tipo flamegraph sobre `PlanTree.svelte`.
+- ~~**Exportar el plan de `EXPLAIN`** a JSON~~ — hecho: el `Plan` conserva el JSON del servidor y la
+  pestaña lo copia junto con el texto con forma de `psql` (`plan-text.ts`). Queda pendiente la
+  visualización tipo flamegraph sobre `PlanTree.svelte`.
 - **Replicación lógica de solo lectura**: estado de `pg_stat_replication` y slots. Explícitamente
   fuera del alcance inicial; candidata natural a una fase posterior.
-- **Comparar esquemas / generar diff DDL** entre dos servidores o dos momentos.
+- ~~**Comparar esquemas / generar diff DDL** entre dos servidores~~ — hecho en `pgforge-core::compare`
+  (etapa 16). Queda pendiente la variante «contra un momento anterior»: exigiría guardar la
+  instantánea en un archivo con su formato y su versionado, y hoy los dos lados se leen en vivo.
 
 ---
 

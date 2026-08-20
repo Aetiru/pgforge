@@ -54,12 +54,13 @@ impl Drop for MonitorEntry {
     }
 }
 
-/// Una tarea de mantenimiento en curso, con la vía para abortarla.
+/// Una sentencia larga en curso del lado del servidor, con la vía para abortarla.
 ///
-/// No se guarda el `JoinHandle`: cancelar una tarea de mantenimiento se hace pidiéndoselo al
-/// servidor, no matando la tarea local. Abortarla del lado de la aplicación dejaría al servidor
-/// terminando el `VACUUM` igual, pero sin nadie escuchando su resultado.
-pub struct MaintenanceEntry {
+/// Son las que corren solas mientras se sigue usando la aplicación: el mantenimiento y la creación
+/// de un índice. No se guarda el `JoinHandle`, porque cancelarlas se hace pidiéndoselo al servidor y
+/// no matando la tarea local: abortarla del lado de la aplicación dejaría al servidor terminando el
+/// `VACUUM` igual, pero sin nadie escuchando su resultado.
+pub struct TaskEntry {
     /// Servidor sobre el que corre, necesario para abrir la conexión de cancelación con el mismo
     /// cifrado que el resto.
     pub profile: ProfileId,
@@ -68,7 +69,7 @@ pub struct MaintenanceEntry {
 
 /// Un proceso externo en curso: un backup o un restore.
 ///
-/// A diferencia de [`MaintenanceEntry`], acá el trabajo lo hace un proceso hijo de la aplicación y
+/// A diferencia de [`TaskEntry`], acá el trabajo lo hace un proceso hijo de la aplicación y
 /// no el servidor: lo que se guarda es el extremo por el que se le avisa que lo mate. Qué limpiar
 /// tras cancelarlo lo resuelve el núcleo —el backup borra su archivo a medio escribir, el restore
 /// no tiene nada que borrar del disco—.
@@ -108,7 +109,8 @@ pub struct AppState {
     pub manager: ConnectionManager,
     pub store: Mutex<ProfileStore>,
     pub monitors: Mutex<HashMap<ProfileId, MonitorEntry>>,
-    pub maintenance: Mutex<HashMap<String, MaintenanceEntry>>,
+    /// Sentencias largas en curso —mantenimiento, creación de índices—, por identificador.
+    pub tasks: Mutex<HashMap<String, TaskEntry>>,
     pub backups: Mutex<HashMap<String, ExternalTask>>,
     pub restores: Mutex<HashMap<String, ExternalTask>>,
     /// Exportaciones e importaciones de datos en curso. Comparten el mismo mapa: cada una tiene su
@@ -132,7 +134,7 @@ impl AppState {
             history: Mutex::new(HistoryStore::open(config_dir.join("history.db"))?),
             saved: Mutex::new(SavedStore::open(config_dir.join("saved.db"))?),
             monitors: Mutex::new(HashMap::new()),
-            maintenance: Mutex::new(HashMap::new()),
+            tasks: Mutex::new(HashMap::new()),
             backups: Mutex::new(HashMap::new()),
             restores: Mutex::new(HashMap::new()),
             copies: Mutex::new(HashMap::new()),

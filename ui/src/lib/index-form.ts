@@ -29,8 +29,22 @@ export interface IndexForm {
   concurrently: boolean;
 }
 
-export function indexForm(): IndexForm {
-  return { name: "", unique: false, method: "", columns: [], whereClause: "", concurrently: false };
+/**
+ * La copia editable inicial.
+ *
+ * Puede arrancar con columnas: es el caso de la sugerencia de un plan, que ya sabe cuáles y en qué
+ * orden. `concurrently` sigue apagado incluso ahí —lo que no bloquea la tabla tarda mucho más, y esa
+ * es una decisión de quien conoce el tráfico del servidor, no de la sugerencia—.
+ */
+export function indexForm(columns: string[] = []): IndexForm {
+  return {
+    name: "",
+    unique: false,
+    method: "",
+    columns: [...columns],
+    whereClause: "",
+    concurrently: false,
+  };
 }
 
 export function validateIndex(form: IndexForm): string | null {
