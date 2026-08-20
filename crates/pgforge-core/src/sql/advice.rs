@@ -24,6 +24,13 @@ const ROWS_REMOVED_MIN: f64 = 1_000.0;
 /// mitad de la tabla no se usa: el planificador prefiere el `Seq Scan`, y con razón.
 const DISCARDED_MIN: f64 = 0.9;
 
+/// Un recorrido completo más caro que esto ya se nota, aunque nadie lo haya medido. Es el mismo
+/// orden de magnitud con el que el planificador deja de considerar un `Seq Scan` gratis.
+const ESTIMATED_COST_MIN: f64 = 1_000.0;
+
+/// Y tiene que quedarse con pocas filas: eso es lo que hace pensar que el filtro es selectivo.
+const ESTIMATED_ROWS_MAX: f64 = 1_000.0;
+
 /// Tope de columnas de un índice propuesto. Más que esto deja de ser una sugerencia y pasa a ser
 /// una transcripción del `WHERE`.
 const MAX_COLUMNS: usize = 3;
@@ -97,6 +104,9 @@ pub fn advise(plan: &Plan) -> Vec<Advice> {
 
 fn walk(node: &PlanNode, out: &mut Vec<Advice>) {
     if let Some(advice) = scan_advice(node) {
+        push_unique(out, advice);
+    }
+    if let Some(advice) = estimated_scan_advice(node) {
         push_unique(out, advice);
     }
     if let Some(advice) = index_filter_advice(node) {
@@ -206,6 +216,36 @@ fn index_filter_advice(node: &PlanNode) -> Option<Advice> {
         title: format!("{index} no alcanzó: se descartaron {} filas después de usarlo", miles(removed)),
         detail: format!(
             "«{filter}» quedó fuera del índice y se resolvió leyendo cada fila. Lo que corresponde              es agregarle esas columnas al índice que ya existe, en vez de sumar uno nuevo al lado.",
+        ),
+        sql: index_sql(&relation, &columns),
+        index: index_target(node, &columns),
+    })
+}
+
+/// Lo mismo que [`scan_advice`], pero sobre un plan que no se ejecutó.
+///
+/// Sin `ANALYZE` no se sabe cuántas filas descarta el filtro, que es el número que decide. Lo que sí
+/// se sabe es lo que el planificador estimó: si recorrer la tabla cuesta caro y aun así espera
+/// quedarse con unas pocas filas, hay algo para mirar. Va como `Info` y lo dice: en producción, donde
+/// `EXPLAIN ANALYZE` ejecuta de verdad, es lo único que se puede ofrecer.
+fn estimated_scan_advice(node: &PlanNode) -> Option<Advice> {
+    if node.node_type != "Seq Scan" || node.actual_rows.is_some() {
+        return None;
+    }
+    let relation = qualified(node)?;
+    let condition = node.filter.as_deref()?;
+    if node.total_cost < ESTIMATED_COST_MIN || node.plan_rows > ESTIMATED_ROWS_MAX {
+        return None;
+    }
+
+    let columns = filter_columns(condition);
+    Some(Advice {
+        kind: AdviceKind::MissingIndex,
+        severity: Severity::Info,
+        title: format!("Se recorrería {relation} entera para estimar {} filas", miles(node.plan_rows)),
+        detail: format!(
+            "Es una estimación: el plan no se ejecutó. El filtro «{condition}» parece selectivo y              recorrer la tabla cuesta {}, así que puede faltar un índice. «Explicar y medir» lo              confirma con filas de verdad, pero ejecuta la consulta.",
+            miles(node.total_cost)
         ),
         sql: index_sql(&relation, &columns),
         index: index_target(node, &columns),
@@ -525,19 +565,67 @@ mod tests {
     }
 
     #[test]
-    fn un_plan_estimado_sin_medir_no_sugiere_indices() {
-        // Sin ANALYZE no hay filas descartadas que mirar, y estimarlas sería inventar.
+    fn sobre_un_plan_estimado_avisa_pero_no_afirma() {
+        // Sin ANALYZE no hay filas descartadas que mirar; lo que hay es lo que el planificador
+        // esperaba, y con eso alcanza para señalar, no para afirmar.
         let advice = advise(&plan(
             r#"[{"Plan": {
                 "Node Type": "Seq Scan",
                 "Relation Name": "trabajos",
+                "Schema": "public",
                 "Filter": "(estado = 'activo'::text)",
                 "Plan Rows": 120,
                 "Total Cost": 4521.0
             }}]"#,
         ));
 
-        assert!(advice.is_empty());
+        assert_eq!(advice.len(), 1);
+        assert_eq!(advice[0].severity, Severity::Info);
+        assert_eq!(
+            advice[0].sql.as_deref(),
+            Some("CREATE INDEX ON public.trabajos (estado);")
+        );
+    }
+
+    #[test]
+    fn un_recorrido_estimado_barato_no_dice_nada() {
+        let advice = advise(&plan(
+            r#"[{"Plan": {
+                "Node Type": "Seq Scan",
+                "Relation Name": "estados",
+                "Filter": "(activo = true)",
+                "Plan Rows": 3,
+                "Total Cost": 12.5
+            }}]"#,
+        ));
+
+        assert!(advice.is_empty(), "una tabla chica se recorre y ya está");
+    }
+
+    #[test]
+    fn el_indice_propuesto_viaja_desarmado_para_el_dialogo() {
+        let advice = advise(&plan(
+            r#"[{"Plan": {
+                "Node Type": "Seq Scan",
+                "Relation Name": "trabajos",
+                "Schema": "public",
+                "Filter": "(estado = 'activo'::text)",
+                "Rows Removed by Filter": 214882,
+                "Actual Rows": 118,
+                "Actual Total Time": 38.4,
+                "Actual Loops": 1,
+                "Plan Rows": 120,
+                "Total Cost": 4521.0
+            }}]"#,
+        ));
+
+        let target = advice[0]
+            .index
+            .as_ref()
+            .expect("con esquema tiene que venir");
+        assert_eq!(target.schema, "public");
+        assert_eq!(target.table, "trabajos");
+        assert_eq!(target.columns, ["estado"]);
     }
 
     #[test]

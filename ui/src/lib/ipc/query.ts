@@ -168,6 +168,8 @@ export interface SqlStatement {
 
 export interface HistoryEntry {
   id: number;
+  /** De dónde salió: escrito en el editor, o generado y aplicado por un diálogo. */
+  source: "editor" | "dialog";
   profileId: string;
   database: string;
   sql: string;

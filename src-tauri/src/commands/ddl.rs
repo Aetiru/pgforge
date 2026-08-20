@@ -27,6 +27,7 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
 
 use crate::commands::tasks::{self, TaskEvent};
+use crate::commands::{record_applied, sql_of};
 use crate::state::AppState;
 
 /// El SQL que se ejecutaría, sin ejecutar nada. No toca la red ni el estado: la vista previa
@@ -47,7 +48,15 @@ pub async fn ddl_apply(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
-    table::apply(&handle, &database, &changes).await
+    let sql = sql_of(&table::statements(&changes)?);
+    record_applied(
+        &state,
+        id,
+        &database,
+        sql,
+        table::apply(&handle, &database, &changes),
+    )
+    .await
 }
 
 /// Las constraints que ya tiene una tabla.
@@ -139,7 +148,15 @@ pub async fn view_apply(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
-    view::apply(&handle, &database, &changes).await
+    let sql = sql_of(&view::statements(&changes)?);
+    record_applied(
+        &state,
+        id,
+        &database,
+        sql,
+        view::apply(&handle, &database, &changes),
+    )
+    .await
 }
 
 /// El cuerpo del `SELECT` de una vista, para precargar el editor al abrir "Editar".
@@ -226,7 +243,15 @@ pub async fn trigger_apply(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
-    trigger::apply(&handle, &database, &changes).await
+    let sql = sql_of(&trigger::statements(&changes)?);
+    record_applied(
+        &state,
+        id,
+        &database,
+        sql,
+        trigger::apply(&handle, &database, &changes),
+    )
+    .await
 }
 
 /// Los triggers que ya tiene una tabla.
@@ -260,7 +285,15 @@ pub async fn role_apply(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
-    role::apply(&handle, &database, &changes).await
+    let sql = sql_of(&role::statements(&changes)?);
+    record_applied(
+        &state,
+        id,
+        &database,
+        sql,
+        role::apply(&handle, &database, &changes),
+    )
+    .await
 }
 
 /// El rol tal como ya existe, para precargar el diálogo de edición.
@@ -321,7 +354,15 @@ pub async fn privilege_apply(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
-    privilege::apply(&handle, &database, &changes).await
+    let sql = sql_of(&privilege::statements(&changes)?);
+    record_applied(
+        &state,
+        id,
+        &database,
+        sql,
+        privilege::apply(&handle, &database, &changes),
+    )
+    .await
 }
 
 /// Los privilegios de una tabla, una vista, una vista materializada o una secuencia.
@@ -424,7 +465,15 @@ pub async fn policy_apply(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
-    policy::apply(&handle, &database, &changes).await
+    let sql = sql_of(&policy::statements(&changes)?);
+    record_applied(
+        &state,
+        id,
+        &database,
+        sql,
+        policy::apply(&handle, &database, &changes),
+    )
+    .await
 }
 
 /// El SQL que se ejecutaría, sin ejecutar nada.
@@ -444,7 +493,15 @@ pub async fn extension_apply(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
-    extension::apply(&handle, &database, &changes).await
+    let sql = sql_of(&extension::statements(&changes)?);
+    record_applied(
+        &state,
+        id,
+        &database,
+        sql,
+        extension::apply(&handle, &database, &changes),
+    )
+    .await
 }
 
 /// La extensión instalada tal como está, para precargar el diálogo de edición.
@@ -491,7 +548,15 @@ pub async fn fdw_apply(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
     let statements = fdw::fdw_statements(&changes)?;
-    fdw::apply(&handle, &database, &statements).await
+    let sql = sql_of(&statements);
+    record_applied(
+        &state,
+        id,
+        &database,
+        sql,
+        fdw::apply(&handle, &database, &statements),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -533,7 +598,15 @@ pub async fn foreign_server_apply(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
     let statements = fdw::server_statements(&changes)?;
-    fdw::apply(&handle, &database, &statements).await
+    let sql = sql_of(&statements);
+    record_applied(
+        &state,
+        id,
+        &database,
+        sql,
+        fdw::apply(&handle, &database, &statements),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -563,7 +636,15 @@ pub async fn user_mapping_apply(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
     let statements = fdw::user_mapping_statements(&changes)?;
-    fdw::apply(&handle, &database, &statements).await
+    let sql = sql_of(&statements);
+    record_applied(
+        &state,
+        id,
+        &database,
+        sql,
+        fdw::apply(&handle, &database, &statements),
+    )
+    .await
 }
 
 /// Los mapeos de usuario de un servidor foráneo, para la sección de su panel de detalle.
@@ -610,7 +691,15 @@ pub async fn sequence_apply(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
-    sequence::apply(&handle, &database, &changes).await
+    let sql = sql_of(&sequence::statements(&changes)?);
+    record_applied(
+        &state,
+        id,
+        &database,
+        sql,
+        sequence::apply(&handle, &database, &changes),
+    )
+    .await
 }
 
 /// La definición de una secuencia, para precargar el formulario y mostrar su valor actual.
@@ -644,7 +733,15 @@ pub async fn type_apply(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
-    types::apply(&handle, &database, &changes).await
+    let sql = sql_of(&types::statements(&changes)?);
+    record_applied(
+        &state,
+        id,
+        &database,
+        sql,
+        types::apply(&handle, &database, &changes),
+    )
+    .await
 }
 
 /// La definición de un tipo: sus valores si es una enumeración, sus campos si es compuesto.
@@ -678,7 +775,15 @@ pub async fn domain_apply(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
-    domain::apply(&handle, &database, &changes).await
+    let sql = sql_of(&domain::statements(&changes)?);
+    record_applied(
+        &state,
+        id,
+        &database,
+        sql,
+        domain::apply(&handle, &database, &changes),
+    )
+    .await
 }
 
 /// La definición de un dominio: tipo base, `DEFAULT`, `NOT NULL` y restricciones.
@@ -712,7 +817,15 @@ pub async fn schema_apply(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
-    schema::apply(&handle, &database, &changes).await
+    let sql = sql_of(&schema::statements(&changes)?);
+    record_applied(
+        &state,
+        id,
+        &database,
+        sql,
+        schema::apply(&handle, &database, &changes),
+    )
+    .await
 }
 
 /// El SQL que se ejecutaría sobre una base, sin ejecutar nada.
@@ -809,5 +922,13 @@ pub async fn comment_apply(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
-    comment::apply(&handle, &database, &changes).await
+    let sql = sql_of(&comment::statements(&changes)?);
+    record_applied(
+        &state,
+        id,
+        &database,
+        sql,
+        comment::apply(&handle, &database, &changes),
+    )
+    .await
 }

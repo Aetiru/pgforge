@@ -5,6 +5,7 @@ use pgforge_core::settings::{self, Setting, SettingChange};
 use pgforge_core::{ProfileId, Result};
 use tauri::State;
 
+use crate::commands::{record_applied, sql_of};
 use crate::state::AppState;
 
 #[tauri::command]
@@ -27,5 +28,17 @@ pub async fn settings_apply(
     changes: Vec<SettingChange>,
 ) -> Result<bool> {
     let handle = state.manager.require(id).await?;
-    settings::apply(&handle, &changes).await
+    // Un `ALTER SYSTEM` es del servidor y no de una base: se anota contra la de mantenimiento, que
+    // es por donde entró.
+    let database = handle.default_database().to_owned();
+
+    let sql = sql_of(&settings::statements(&changes));
+    record_applied(
+        &state,
+        id,
+        &database,
+        sql,
+        settings::apply(&handle, &changes),
+    )
+    .await
 }

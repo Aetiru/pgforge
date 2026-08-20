@@ -18,6 +18,7 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use tokio::sync::{mpsc, oneshot};
 
+use crate::commands::{record_applied, sql_of};
 use crate::state::{AppState, ExternalTask};
 
 /// Columnas y clave de una tabla. Es lo que decide si la grilla se abre editable.
@@ -98,7 +99,15 @@ pub async fn data_apply(
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
-    data::apply(&handle, &database, &shape, &changes).await
+    let sql = sql_of(&data::statements(&shape, &changes)?);
+    record_applied(
+        &state,
+        id,
+        &database,
+        sql,
+        data::apply(&handle, &database, &shape, &changes),
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------
