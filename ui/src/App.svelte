@@ -29,6 +29,7 @@
   import { parseQuery, PREFIX_HELP } from "./lib/tree-query";
   import { tabs, type Tab, type TabKind } from "./lib/tabs.svelte";
   import { tasks } from "./lib/tasks.svelte";
+  import { view } from "./lib/view.svelte";
   import { theme } from "./lib/theme.svelte";
   import { updates } from "./lib/update.svelte";
   import {
@@ -85,7 +86,6 @@
   let banner = $state<string | null>(null);
   let sidebarWidth = $state(300);
   let sidebarOpen = $state(true);
-  let view = $state<"explorer" | "monitor" | "config" | "processes">("explorer");
   /** Servidor elegido a mano en la vista de monitoreo; si es `null` se usa el del árbol. */
   let monitorChoice = $state<string | null>(null);
   /** Servidor elegido a mano en la vista de configuración. */
@@ -391,8 +391,8 @@
         <button
           class="seg-item"
           role="tab"
-          aria-selected={view === item.value}
-          onclick={() => (view = item.value)}
+          aria-selected={view.current === item.value}
+          onclick={() => view.show(item.value)}
         >
           <Icon name={item.icon} size={12} />
           {item.label}
@@ -407,7 +407,7 @@
       {/each}
     </div>
 
-    {#if view === "monitor" && connectedServers.length > 0}
+    {#if view.current === "monitor" && connectedServers.length > 0}
       <label class="check gap-1.5">
         Servidor
         <select
@@ -423,7 +423,7 @@
       </label>
     {/if}
 
-    {#if view === "config" && connectedServers.length > 0}
+    {#if view.current === "config" && connectedServers.length > 0}
       <label class="check gap-1.5">
         Servidor
         <select
@@ -489,7 +489,7 @@
     <Alert tone="bad" onclose={() => (banner = null)}>{banner}</Alert>
   {/if}
 
-  {#if view === "monitor"}
+  {#if view.current === "monitor"}
     {#if monitorServer}
       <div class="min-h-0 flex-1">
         {#key monitorServer}
@@ -502,16 +502,16 @@
         title="No hay ningún servidor conectado"
         hint="El monitoreo lee las estadísticas en vivo de una conexión abierta."
       >
-        <button class="btn btn-primary" onclick={() => (view = "explorer")}>
+        <button class="btn btn-primary" onclick={() => view.show("explorer")}>
           Ir al explorador
         </button>
       </Empty>
     {/if}
-  {:else if view === "processes"}
+  {:else if view.current === "processes"}
     <div class="min-h-0 flex-1">
       <ProcessPanel />
     </div>
-  {:else if view === "config"}
+  {:else if view.current === "config"}
     {#if configServer}
       <div class="min-h-0 flex-1">
         {#key configServer}
@@ -524,7 +524,7 @@
         title="No hay ningún servidor conectado"
         hint="La configuración se lee de una conexión abierta."
       >
-        <button class="btn btn-primary" onclick={() => (view = "explorer")}>
+        <button class="btn btn-primary" onclick={() => view.show("explorer")}>
           Ir al explorador
         </button>
       </Empty>

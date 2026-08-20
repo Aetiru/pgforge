@@ -34,6 +34,8 @@
   } from "./ipc";
   import { monitor } from "./monitor.svelte";
   import { confirmMutation } from "./access.svelte";
+  import { openQuery } from "./query.svelte";
+  import { view } from "./view.svelte";
   import { explorer } from "./explorer.svelte";
   import { untrack } from "svelte";
 
@@ -88,6 +90,7 @@
   let tables = $state<TableStat[]>([]);
   let indexes = $state<IndexStat[]>([]);
   let statements = $state<StatementStat[]>([]);
+  let selectedStatement = $state<StatementStat | null>(null);
   let statementsAvailable = $state<boolean | null>(null);
   let statementsError = $state<string | null>(null);
   let bloat = $state<TableBloat[]>([]);
@@ -503,6 +506,24 @@
     },
   ];
 
+  /**
+   * Abre una pestaña de consulta con este texto y lleva a ella.
+   *
+   * Es el puente que faltaba entre mirar y hacer: hasta ahora, para explicar la consulta más cara
+   * había que seleccionarla, copiarla a mano y abrir una pestaña. No se ejecuta ni se explica sola
+   * —el texto de `pg_stat_statements` viene normalizado, con `$1` en lugar de los valores, y eso el
+   * servidor no lo planifica sin `PREPARE`—: queda escrito para completarlo y correrlo.
+   */
+  async function openInQuery(sql: string, target?: string | null) {
+    try {
+      const tab = await openQuery(profileId, target ?? database ?? "", "Consulta");
+      tab.sql = sql;
+      view.show("explorer");
+    } catch (error) {
+      actionMessage = describeError(error);
+    }
+  }
+
   const statementColumns: Column<StatementStat>[] = [
     { key: "database", header: "Base", width: 120, value: (s) => s.database ?? "—" },
     { key: "user", header: "Usuario", width: 110, value: (s) => s.user ?? "—" },
@@ -749,6 +770,13 @@
           <span class="tag tag-info ml-auto">es la sesión del propio monitor</span>
         {:else}
           <span class="ml-auto flex gap-1.5">
+            <!-- Mirar qué está corriendo y poder explicarlo son el mismo movimiento; hasta ahora
+                 había que copiar el texto a mano de la celda. -->
+            {#if selected.query}
+              <button class="btn btn-sm" onclick={() => openInQuery(selected.query ?? "", selected.database)}>
+                Abrir en una consulta
+              </button>
+            {/if}
             <button
               class="btn btn-sm"
               onclick={() => (confirming = { pid: selected.pid, kind: "cancel" })}
@@ -953,6 +981,24 @@
       {/if}
     </div>
   {:else}
+    <div class="divider-t divider-b flex items-center gap-2 px-3 py-2">
+      <span class="text-xs muted">
+        El texto viene normalizado: los valores aparecen como $1, $2. Al abrirlo en una consulta hay
+        que completarlos antes de explicar.
+      </span>
+      <button
+        class="btn ml-auto"
+        disabled={!selectedStatement?.query}
+        title={selectedStatement?.query
+          ? "Abre una pestaña de consulta con este texto"
+          : "Elegí una consulta de la lista"}
+        onclick={() =>
+          selectedStatement?.query &&
+          openInQuery(selectedStatement.query, selectedStatement.database)}
+      >
+        Abrir en una consulta
+      </button>
+    </div>
     <div class="min-h-0 flex-1">
       {#if statementsError}
         <Alert tone="bad">{statementsError}</Alert>
@@ -968,6 +1014,10 @@
           rows={statements}
           rowKey={(statement) =>
             `${statement.database}/${statement.user}/${statement.queryId ?? statement.query}`}
+          selectedKey={selectedStatement
+            ? `${selectedStatement.database}/${selectedStatement.user}/${selectedStatement.queryId ?? selectedStatement.query}`
+            : null}
+          onselect={(statement) => (selectedStatement = statement)}
           sortable
           empty="Todavía no hay consultas registradas."
         />
