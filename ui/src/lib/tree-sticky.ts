@@ -23,11 +23,17 @@ export interface StickyRow {
  * Se sube por la cadena de ancestros —cada vez que aparece un nivel menor— y se devuelve el primer
  * rótulo. Las carpetas de conexiones se reconocen aparte porque no sangran a sus servidores: por
  * nivel nunca serían ancestros de nadie.
+ *
+ * `cut` dice si esa primera fila está **cortada** por el borde de arriba. Importa cuando ella misma
+ * es el rótulo: anclarla estando entera en su lugar dibuja una copia exactamente encima del
+ * original, y como el ancla va por delante se come sus clics —la carpeta de arriba de todo no se
+ * podía abrir ni renombrar, y sacarla dejaba muerta a la que quedaba primera—. Con la fila entera a
+ * la vista no hay nada que anclar: ya se está viendo.
  */
-export function stickyIndex(rows: StickyRow[], from: number): number | null {
+export function stickyIndex(rows: StickyRow[], from: number, cut: boolean): number | null {
   if (from < 0 || from >= rows.length) return null;
-  // La propia fila es el rótulo: se está yendo por arriba, así que lo que se ancla es él mismo.
-  if (rows[from].isSection) return from;
+  // La propia fila es el rótulo: se ancla solo mientras se está yendo por arriba.
+  if (rows[from].isSection) return cut ? from : null;
 
   let level = rows[from].level;
   for (let index = from - 1; index >= 0; index--) {
