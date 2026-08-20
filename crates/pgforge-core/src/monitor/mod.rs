@@ -14,7 +14,9 @@ pub mod stats;
 
 pub use activity::{ActivityFilter, Backend, BlockNode, Lock};
 pub use maintenance::{Operation, Target};
-pub use stats::{IndexStat, StatementStat, TableBloat, TableStat};
+pub use stats::{
+    IndexShape, IndexStat, Redundancy, RedundancyKind, StatementStat, TableBloat, TableStat,
+};
 
 use std::time::Instant;
 
@@ -187,6 +189,14 @@ impl Monitor {
     pub async fn indexes(&self, limit: i64) -> Result<Vec<IndexStat>> {
         self.require_stats()?;
         stats::indexes(self.session.client(), limit).await
+    }
+
+    /// Los índices que otro ya cubre. Se leen todos y la comparación es local: son unos cientos de
+    /// filas y la regla vive en una función pura que se puede probar sin servidor.
+    pub async fn redundant_indexes(&self) -> Result<Vec<Redundancy>> {
+        self.require_stats()?;
+        let shapes = stats::index_shapes(self.session.client()).await?;
+        Ok(stats::redundancies(&shapes))
     }
 
     pub async fn has_statement_stats(&self) -> Result<bool> {

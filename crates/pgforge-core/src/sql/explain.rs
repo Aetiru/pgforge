@@ -11,6 +11,7 @@ use serde_json::Value;
 
 use crate::error::{Error, Result};
 
+use super::advice::{advise, Advice};
 use super::exec::{Limits, Outcome, QuerySession};
 
 /// A partir de acá la estimación está lo bastante lejos de la realidad como para que valga la pena
@@ -35,6 +36,14 @@ pub struct Plan {
     pub execution_ms: Option<f64>,
     /// `true` si el plan trae medidas reales y no solo estimaciones.
     pub analyzed: bool,
+    /// Lo que conviene mirar, ya leído (ver [`super::advice`]).
+    pub advice: Vec<Advice>,
+    /// La respuesta del servidor tal cual vino.
+    ///
+    /// Se conserva porque el árbol de acá es una lectura y no el dato: para pegar el plan en
+    /// explain.dalibo.com o en pev2 hace falta el JSON entero, con los campos que esta aplicación
+    /// no muestra. Reconstruirlo desde el árbol sería inventar la mitad.
+    pub json: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -42,9 +51,16 @@ pub struct Plan {
 pub struct PlanNode {
     pub node_type: String,
     pub relation: Option<String>,
+    /// El esquema de esa relación. Solo llega con `VERBOSE`, y por eso el plan se pide siempre así:
+    /// sin él, un `CREATE INDEX ON trabajos` sugerido podría caer en otra tabla que se llame igual
+    /// en otro esquema del `search_path`.
+    pub schema: Option<String>,
     pub index: Option<String>,
     /// La condición que más explica al nodo: la del índice, la del join o el filtro.
     pub condition: Option<String>,
+    /// El `Filter` suelto, que en un `Index Scan` es lo que el índice **no** resolvió y se terminó
+    /// mirando fila por fila. Va aparte de `condition` porque ahí gana la del índice.
+    pub filter: Option<String>,
 
     pub startup_cost: f64,
     pub total_cost: f64,
@@ -61,6 +77,12 @@ pub struct PlanNode {
 
     /// `true` cuando lo estimado y lo real se apartan más de [`MISESTIMATION_RATIO`] veces.
     pub misestimated: bool,
+
+    /// Cómo ordenó (`quicksort`, `external merge`, …) y cuánto espacio le llevó, en kB.
+    pub sort_method: Option<String>,
+    pub sort_space_kb: Option<f64>,
+    /// `true` cuando ese espacio no entró en `work_mem` y terminó escribiéndose en disco.
+    pub sort_on_disk: bool,
 
     pub shared_hit_blocks: Option<f64>,
     pub shared_read_blocks: Option<f64>,
@@ -172,11 +194,18 @@ pub fn parse(json: &str) -> Result<Plan> {
         .get("Plan")
         .ok_or_else(|| Error::Config("el plan no trae el nodo raíz".to_owned()))?;
 
-    Ok(Plan {
+    let plan = Plan {
         root: node(root),
         planning_ms: number(first, "Planning Time"),
         execution_ms: number(first, "Execution Time"),
         analyzed: root.get("Actual Total Time").is_some(),
+        advice: Vec::new(),
+        json: json.to_owned(),
+    };
+
+    Ok(Plan {
+        advice: advise(&plan),
+        ..plan
     })
 }
 
@@ -206,6 +235,7 @@ fn node(value: &Value) -> PlanNode {
     PlanNode {
         node_type: text(value, "Node Type").unwrap_or_else(|| "?".to_owned()),
         relation: text(value, "Relation Name"),
+        schema: text(value, "Schema"),
         index: text(value, "Index Name"),
         condition: [
             "Index Cond",
@@ -216,6 +246,7 @@ fn node(value: &Value) -> PlanNode {
         ]
         .into_iter()
         .find_map(|key| text(value, key)),
+        filter: text(value, "Filter"),
 
         startup_cost: number(value, "Startup Cost").unwrap_or(0.0),
         total_cost: number(value, "Total Cost").unwrap_or(0.0),
@@ -230,6 +261,11 @@ fn node(value: &Value) -> PlanNode {
             .find_map(|key| number(value, key)),
 
         misestimated: misestimated(plan_rows, actual_rows),
+
+        sort_method: text(value, "Sort Method"),
+        sort_space_kb: number(value, "Sort Space Used"),
+        // El propio servidor lo dice: `Sort Space Type` es "Memory" o "Disk".
+        sort_on_disk: text(value, "Sort Space Type").as_deref() == Some("Disk"),
 
         shared_hit_blocks: number(value, "Shared Hit Blocks"),
         shared_read_blocks: number(value, "Shared Read Blocks"),

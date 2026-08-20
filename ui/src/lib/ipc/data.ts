@@ -76,6 +76,10 @@ export interface Applied {
 export const dataOpen = (id: string, oid: number, database?: string) =>
   invoke<TableShape>("data_open", { id, oid, database: database ?? null });
 
+/** La misma forma, buscada por nombre: es lo que trae la sugerencia de un plan, que no tiene oid. */
+export const dataShapeNamed = (id: string, schema: string, name: string, database?: string) =>
+  invoke<TableShape>("data_shape_named", { id, schema, name, database: database ?? null });
+
 export const dataPage = (
   id: string,
   shape: TableShape,

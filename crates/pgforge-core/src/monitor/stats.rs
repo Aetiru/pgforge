@@ -130,6 +130,199 @@ pub async fn indexes(client: &Client, limit: i64) -> Result<Vec<IndexStat>> {
         .collect())
 }
 
+/// La forma de un índice, que es lo que hace falta para saber si sobra.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexShape {
+    pub schema: String,
+    pub table: String,
+    pub name: String,
+    /// Las columnas o expresiones de la clave, en orden. Sin las de un `INCLUDE`: esas acompañan al
+    /// índice pero no se puede buscar por ellas, así que no cuentan para decidir si uno cubre a otro.
+    pub columns: Vec<String>,
+    pub method: String,
+    pub unique: bool,
+    pub primary: bool,
+    /// `true` si además arrastra columnas de un `INCLUDE`.
+    pub covering: bool,
+    /// El predicado, si es parcial. Dos índices con predicados distintos no se cubren entre sí.
+    pub predicate: Option<String>,
+    pub bytes: i64,
+    pub scans: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RedundancyKind {
+    /// Las mismas columnas, en el mismo orden: uno de los dos es una copia del otro.
+    Duplicate,
+    /// Sus columnas son el principio de las del otro, así que el otro sirve para lo mismo.
+    Prefix,
+}
+
+/// Un índice que otro ya cubre.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Redundancy {
+    pub schema: String,
+    pub table: String,
+    /// El que sobra.
+    pub index: String,
+    /// El que ya hace su trabajo.
+    pub covered_by: String,
+    pub kind: RedundancyKind,
+    pub bytes: i64,
+    pub scans: i64,
+    /// La sentencia exacta que lo borraría, para que se vea antes de decidir.
+    pub drop_sql: String,
+}
+
+/// Todos los índices válidos de las tablas del usuario, con su forma.
+pub async fn index_shapes(client: &Client) -> Result<Vec<IndexShape>> {
+    let rows = client
+        .query(
+            "SELECT n.nspname::text,
+                    t.relname::text,
+                    c.relname::text,
+                    am.amname::text,
+                    i.indisunique,
+                    i.indisprimary,
+                    i.indnatts > i.indnkeyatts,
+                    pg_catalog.pg_get_expr(i.indpred, i.indrelid),
+                    pg_catalog.pg_relation_size(i.indexrelid),
+                    COALESCE(s.idx_scan, 0),
+                    (SELECT array_agg(pg_catalog.pg_get_indexdef(i.indexrelid, k.ord::int, true)
+                                      ORDER BY k.ord)
+                       FROM generate_series(1, i.indnkeyatts) AS k(ord))
+               FROM pg_catalog.pg_index i
+               JOIN pg_catalog.pg_class c ON c.oid = i.indexrelid
+               JOIN pg_catalog.pg_class t ON t.oid = i.indrelid
+               JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace
+               JOIN pg_catalog.pg_am am ON am.oid = c.relam
+               LEFT JOIN pg_catalog.pg_stat_user_indexes s ON s.indexrelid = i.indexrelid
+              WHERE i.indisvalid
+                AND t.relkind IN ('r', 'm', 'p')
+                AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+              ORDER BY n.nspname, t.relname, c.relname",
+            &[],
+        )
+        .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| IndexShape {
+            schema: row.get(0),
+            table: row.get(1),
+            name: row.get(2),
+            method: row.get(3),
+            unique: row.get(4),
+            primary: row.get(5),
+            covering: row.get(6),
+            predicate: row.get(7),
+            bytes: row.get(8),
+            scans: row.get::<_, Option<i64>>(9).unwrap_or(0),
+            // `pg_get_indexdef` por columna devuelve la expresión ya escrita: sirve igual para una
+            // columna suelta que para un índice por expresión.
+            columns: row.get::<_, Option<Vec<String>>>(10).unwrap_or_default(),
+        })
+        .collect())
+}
+
+/// Los índices que otro ya cubre, del más grande al más chico.
+///
+/// Es una función pura sobre lo que se leyó del catálogo: la regla es la parte que se puede
+/// equivocar —y equivocarse acá significa proponer borrar un índice que hace falta—, así que se
+/// prueba sin servidor.
+///
+/// Lo que **nunca** se propone borrar: un índice único o de clave primaria porque otro más largo lo
+/// empiece (sostiene una restricción, no una consulta), uno con `INCLUDE` a favor de otro que no lo
+/// tiene (se perdería el recorrido solo por índice) y cualquier par con distinto método o distinto
+/// predicado, que no sirven para lo mismo.
+pub fn redundancies(indexes: &[IndexShape]) -> Vec<Redundancy> {
+    let mut out: Vec<Redundancy> = Vec::new();
+
+    for (i, candidate) in indexes.iter().enumerate() {
+        for (j, other) in indexes.iter().enumerate() {
+            if i == j || !comparable(candidate, other) {
+                continue;
+            }
+
+            let duplicate = candidate.columns == other.columns;
+            let prefix = !duplicate
+                && candidate.method == "btree"
+                && other.columns.starts_with(&candidate.columns);
+            if !duplicate && !prefix {
+                continue;
+            }
+
+            // Con las mismas columnas hay que elegir cuál se queda, y decidirlo dos veces —una por
+            // cada orden del par— marcaría los dos. Gana el que sostiene una restricción, después el
+            // que cubre, después el más usado, y al final el nombre, que siempre desempata.
+            if duplicate && keeps(candidate, other) {
+                continue;
+            }
+            if (candidate.unique || candidate.primary) && !duplicate {
+                continue;
+            }
+            if candidate.covering && !other.covering {
+                continue;
+            }
+
+            out.push(Redundancy {
+                schema: candidate.schema.clone(),
+                table: candidate.table.clone(),
+                index: candidate.name.clone(),
+                covered_by: other.name.clone(),
+                kind: if duplicate {
+                    RedundancyKind::Duplicate
+                } else {
+                    RedundancyKind::Prefix
+                },
+                bytes: candidate.bytes,
+                scans: candidate.scans,
+                drop_sql: crate::ddl::index::drop_sql(
+                    &candidate.schema,
+                    &candidate.name,
+                    false,
+                    true,
+                )
+                .map(|statement| statement.sql)
+                .unwrap_or_default(),
+            });
+            break;
+        }
+    }
+
+    // Del que más ocupa al que menos: es el orden en que uno decide qué borrar primero.
+    out.sort_by_key(|item| std::cmp::Reverse(item.bytes));
+    out
+}
+
+/// Dos índices se pueden comparar solo si son de la misma tabla, del mismo tipo y con el mismo
+/// predicado: uno parcial y uno completo responden preguntas distintas.
+fn comparable(a: &IndexShape, b: &IndexShape) -> bool {
+    a.schema == b.schema
+        && a.table == b.table
+        && a.method == b.method
+        && a.predicate == b.predicate
+        && !a.columns.is_empty()
+        && !b.columns.is_empty()
+}
+
+/// Con columnas idénticas, cuál de los dos se conserva.
+fn keeps(candidate: &IndexShape, other: &IndexShape) -> bool {
+    let rank = |index: &IndexShape| {
+        (
+            index.primary,
+            index.unique,
+            index.covering,
+            index.scans,
+            std::cmp::Reverse(index.name.clone()),
+        )
+    };
+    rank(candidate) > rank(other)
+}
+
 /// Bloat estimado de una tabla: espacio que ocupa de más por tuplas muertas y huecos que el vacuum
 /// no devolvió al disco.
 #[derive(Debug, Clone, Serialize)]
@@ -333,6 +526,109 @@ mod tests {
         // Estos sostienen una restricción: que nadie los consulte no los hace prescindibles.
         assert!(!index(0, true, false).is_unused());
         assert!(!index(0, false, true).is_unused());
+    }
+
+    fn shape(name: &str, columns: &[&str]) -> IndexShape {
+        IndexShape {
+            schema: "public".into(),
+            table: "trabajos".into(),
+            name: name.into(),
+            columns: columns.iter().map(|c| (*c).to_string()).collect(),
+            method: "btree".into(),
+            unique: false,
+            primary: false,
+            covering: false,
+            predicate: None,
+            bytes: 1024,
+            scans: 0,
+        }
+    }
+
+    #[test]
+    fn dos_indices_con_las_mismas_columnas_dejan_uno_solo() {
+        let indexes = vec![shape("idx_a", &["estado"]), shape("idx_b", &["estado"])];
+        let sobran = redundancies(&indexes);
+
+        assert_eq!(sobran.len(), 1, "solo uno de los dos sobra: {sobran:?}");
+        assert_eq!(sobran[0].kind, RedundancyKind::Duplicate);
+        assert!(sobran[0].drop_sql.contains("DROP INDEX"));
+    }
+
+    #[test]
+    fn el_que_sostiene_una_restriccion_es_el_que_se_queda() {
+        let mut unico = shape("trabajos_estado_key", &["estado"]);
+        unico.unique = true;
+        let indexes = vec![shape("idx_estado", &["estado"]), unico];
+
+        let sobran = redundancies(&indexes);
+        assert_eq!(sobran.len(), 1);
+        assert_eq!(sobran[0].index, "idx_estado");
+        assert_eq!(sobran[0].covered_by, "trabajos_estado_key");
+    }
+
+    #[test]
+    fn un_indice_es_prescindible_si_otro_lo_empieza() {
+        let indexes = vec![
+            shape("idx_estado", &["estado"]),
+            shape("idx_estado_fecha", &["estado", "fecha"]),
+        ];
+
+        let sobran = redundancies(&indexes);
+        assert_eq!(sobran.len(), 1);
+        assert_eq!(sobran[0].index, "idx_estado");
+        assert_eq!(sobran[0].kind, RedundancyKind::Prefix);
+    }
+
+    #[test]
+    fn el_orden_de_las_columnas_importa() {
+        // `(fecha, estado)` no sirve para buscar solo por `estado`: no es un prefijo.
+        let indexes = vec![
+            shape("idx_estado", &["estado"]),
+            shape("idx_fecha_estado", &["fecha", "estado"]),
+        ];
+
+        assert!(redundancies(&indexes).is_empty());
+    }
+
+    #[test]
+    fn un_indice_unico_no_se_borra_porque_otro_lo_empiece() {
+        let mut unico = shape("trabajos_codigo_key", &["codigo"]);
+        unico.unique = true;
+        let indexes = vec![unico, shape("idx_codigo_fecha", &["codigo", "fecha"])];
+
+        assert!(
+            redundancies(&indexes).is_empty(),
+            "borrarlo sacaría la restricción de unicidad"
+        );
+    }
+
+    #[test]
+    fn no_se_comparan_indices_de_distinto_tipo_ni_con_distinto_predicado() {
+        let mut gin = shape("idx_gin", &["datos"]);
+        gin.method = "gin".into();
+        assert!(redundancies(&[shape("idx_btree", &["datos"]), gin]).is_empty());
+
+        let mut parcial = shape("idx_parcial", &["estado"]);
+        parcial.predicate = Some("(activo)".into());
+        assert!(redundancies(&[shape("idx_todo", &["estado"]), parcial]).is_empty());
+    }
+
+    #[test]
+    fn el_que_cubre_con_include_no_se_cambia_por_uno_que_no_cubre() {
+        let mut cubre = shape("idx_cubre", &["estado"]);
+        cubre.covering = true;
+        let sobran = redundancies(&[cubre, shape("idx_pelado", &["estado"])]);
+
+        assert_eq!(sobran.len(), 1);
+        assert_eq!(sobran[0].index, "idx_pelado");
+    }
+
+    #[test]
+    fn los_indices_de_tablas_distintas_no_se_estorban() {
+        let mut otra = shape("idx_estado", &["estado"]);
+        otra.table = "clientes".into();
+
+        assert!(redundancies(&[shape("idx_estado", &["estado"]), otra]).is_empty());
     }
 
     #[test]

@@ -50,8 +50,12 @@ export interface ExplainOptions {
 export interface PlanNode {
   nodeType: string;
   relation: string | null;
+  /** El esquema de la relación; llega porque el plan se pide con VERBOSE. */
+  schema: string | null;
   index: string | null;
   condition: string | null;
+  /** El `Filter` suelto: en un `Index Scan`, lo que el índice no resolvió. */
+  filter: string | null;
   startupCost: number;
   totalCost: number;
   planRows: number;
@@ -64,7 +68,30 @@ export interface PlanNode {
   misestimated: boolean;
   sharedHitBlocks: number | null;
   sharedReadBlocks: number | null;
+  sortMethod: string | null;
+  sortSpaceKb: number | null;
+  /** El orden no entró en `work_mem` y terminó escribiéndose en disco. */
+  sortOnDisk: boolean;
   children: PlanNode[];
+}
+
+export type AdviceKind = "missingIndex" | "indexFilter" | "staleStats" | "workMem";
+
+/** Lo que conviene mirar del plan. Nunca se aplica solo: la sentencia se copia (ver `sql::advice`). */
+/** Sobre qué tabla y por qué columnas se propone el índice, ya desarmado para el diálogo. */
+export interface IndexTarget {
+  schema: string;
+  table: string;
+  columns: string[];
+}
+
+export interface Advice {
+  kind: AdviceKind;
+  severity: "warn" | "info";
+  title: string;
+  detail: string;
+  sql: string | null;
+  index: IndexTarget | null;
 }
 
 export interface Plan {
@@ -72,6 +99,9 @@ export interface Plan {
   planningMs: number | null;
   executionMs: number | null;
   analyzed: boolean;
+  advice: Advice[];
+  /** La respuesta del servidor tal cual, para pegarla en un visor de planes. */
+  json: string;
 }
 
 export const queryOpen = (id: string, database?: string) =>

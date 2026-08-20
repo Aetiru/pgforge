@@ -16,4 +16,4 @@ pub use io::{
     ExportSource, ExportSpec, ImportSpec, Outcome as CopyOutcome, TextOptions,
 };
 pub use page::{page, select, Cursor, Page, PageOrder, PageView, DEFAULT_PAGE_SIZE};
-pub use shape::{shape, Column, Key, KeyKind, TableShape};
+pub use shape::{shape, shape_by_name, Column, Key, KeyKind, TableShape};

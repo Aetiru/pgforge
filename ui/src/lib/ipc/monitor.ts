@@ -169,6 +169,22 @@ export const tableStats = (id: string, limit?: number) =>
 export const indexStats = (id: string, limit?: number) =>
   invoke<IndexStat[]>("index_stats", { id, limit: limit ?? null });
 
+/** Un índice que otro ya cubre: o es una copia, o sus columnas son el principio de las del otro. */
+export interface Redundancy {
+  schema: string;
+  table: string;
+  index: string;
+  coveredBy: string;
+  kind: "duplicate" | "prefix";
+  bytes: number;
+  scans: number;
+  /** La sentencia exacta que lo borraría. */
+  dropSql: string;
+}
+
+export const redundantIndexes = (id: string) =>
+  invoke<Redundancy[]>("redundant_indexes", { id });
+
 export const hasStatementStats = (id: string) => invoke<boolean>("has_statement_stats", { id });
 
 export const statementStats = (id: string, limit?: number) =>

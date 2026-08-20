@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use pgforge_core::error::ErrorPayload;
 use pgforge_core::monitor::{
-    maintenance, ActivityFilter, IndexStat, Lock, Monitor, Operation, Snapshot, StatementStat,
-    TableBloat, TableStat, Target,
+    maintenance, ActivityFilter, IndexStat, Lock, Monitor, Operation, Redundancy, Snapshot,
+    StatementStat, TableBloat, TableStat, Target,
 };
 use pgforge_core::{Error, ProfileId, Result};
 use serde::{Deserialize, Serialize};
@@ -225,6 +225,17 @@ pub async fn index_stats(
     let monitor = monitor_of(&state, id).await?;
     let stats = monitor.lock().await.indexes(limit.unwrap_or(200)).await?;
     Ok(stats)
+}
+
+/// Los índices que sobran porque otro los cubre. Solo lee: borrarlos es una decisión aparte.
+#[tauri::command]
+pub async fn redundant_indexes(
+    state: State<'_, AppState>,
+    id: ProfileId,
+) -> Result<Vec<Redundancy>> {
+    let monitor = monitor_of(&state, id).await?;
+    let sobran = monitor.lock().await.redundant_indexes().await?;
+    Ok(sobran)
 }
 
 #[tauri::command]

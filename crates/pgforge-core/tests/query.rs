@@ -9,6 +9,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use pgforge_core::conn::{ConnectionManager, ConnectionProfile, ServerHandle};
+use pgforge_core::sql::advice::AdviceKind;
+use pgforge_core::sql::explain::{self, ExplainOptions};
 use pgforge_core::sql::{self, Limits, Outcome, QuerySession};
 use pgforge_core::Error;
 
@@ -75,6 +77,7 @@ async fn ejecuta_consultas_contra_servidores_reales() {
                 recorta_los_resultados_grandes(&handle).await;
                 cancela_una_consulta_larga(&handle).await;
                 mantiene_el_estado_entre_ejecuciones(&handle).await;
+                sugiere_el_indice_que_falta(&handle, &schema).await;
             })
             .await
         };
@@ -86,6 +89,96 @@ async fn ejecuta_consultas_contra_servidores_reales() {
         }
         eprintln!("ok contra PostgreSQL {version} ({url})");
     }
+}
+
+/// El plan de una consulta que recorre una tabla entera para quedarse con unas pocas filas tiene
+/// que terminar en un `CREATE INDEX` propuesto.
+///
+/// Se prueba contra un servidor de verdad y no solo con un JSON de ejemplo porque lo que se está
+/// verificando es la cadena completa: que el `EXPLAIN ANALYZE` traiga las filas descartadas, que el
+/// filtro venga escrito como PostgreSQL lo reconstruye —con sus `cast` y sus paréntesis— y que de
+/// ahí salga el nombre de la columna. Cada versión escribe ese texto un poco distinto.
+async fn sugiere_el_indice_que_falta(handle: &ServerHandle, schema: &str) {
+    let session = session(handle).await;
+    session
+        .run(
+            &format!(
+                "CREATE SCHEMA IF NOT EXISTS {schema};
+                 CREATE TABLE {schema}.trabajos (id serial PRIMARY KEY, estado text);
+                 INSERT INTO {schema}.trabajos (estado)
+                 SELECT CASE WHEN n <= 20 THEN 'activo' ELSE 'archivado' END
+                   FROM generate_series(1, 40000) AS n;
+                 ANALYZE {schema}.trabajos;"
+            ),
+            Limits { max_rows: 1 },
+        )
+        .await
+        .expect("no se pudo preparar la tabla del plan");
+
+    let plan = explain::explain(
+        &session,
+        &format!("SELECT * FROM {schema}.trabajos WHERE estado = 'activo'"),
+        ExplainOptions {
+            analyze: true,
+            buffers: false,
+            // Como en la interfaz: es lo que hace que el plan traiga el esquema y la sugerencia
+            // salga calificada.
+            verbose: true,
+        },
+    )
+    .await
+    .expect("no se pudo pedir el plan");
+
+    assert!(plan.analyzed, "el plan tenía que traer medidas reales");
+    assert!(
+        plan.json.contains("Node Type"),
+        "el plan tiene que conservar el JSON del servidor para poder copiarlo"
+    );
+
+    let indice = plan
+        .advice
+        .iter()
+        .find(|advice| advice.kind == AdviceKind::MissingIndex)
+        .unwrap_or_else(|| panic!("no se sugirió ningún índice: {:?}", plan.advice));
+
+    assert_eq!(
+        indice.sql.as_deref(),
+        Some(format!("CREATE INDEX ON {schema}.trabajos (estado);").as_str()),
+        "la columna del filtro tiene que salir del texto que escribe el servidor"
+    );
+
+    // Con el índice creado, el mismo plan deja de recorrer la tabla y la sugerencia desaparece: es
+    // lo que confirma que el umbral mira lo que pasó y no la forma de la consulta.
+    session
+        .run(
+            &format!("CREATE INDEX ON {schema}.trabajos (estado)"),
+            Limits { max_rows: 1 },
+        )
+        .await
+        .expect("no se pudo crear el índice");
+
+    let plan = explain::explain(
+        &session,
+        &format!("SELECT * FROM {schema}.trabajos WHERE estado = 'activo'"),
+        ExplainOptions {
+            analyze: true,
+            buffers: false,
+            // Como en la interfaz: es lo que hace que el plan traiga el esquema y la sugerencia
+            // salga calificada.
+            verbose: true,
+        },
+    )
+    .await
+    .expect("no se pudo pedir el plan con el índice");
+
+    assert!(
+        !plan
+            .advice
+            .iter()
+            .any(|advice| advice.kind == AdviceKind::MissingIndex),
+        "con el índice creado ya no falta ninguno: {:?}",
+        plan.advice
+    );
 }
 
 async fn limpiar(handle: &ServerHandle, schema: &str) {

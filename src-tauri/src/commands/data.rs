@@ -34,6 +34,24 @@ pub async fn data_open(
     data::shape(&handle, &database, oid).await
 }
 
+/// La misma forma, pero buscada por nombre.
+///
+/// Existe porque hay un camino que no empieza en el árbol: la sugerencia de un plan de ejecución
+/// dice «esquema.tabla», nunca un oid, y con eso hay que poder abrir el diálogo de índices.
+#[tauri::command]
+pub async fn data_shape_named(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    schema: String,
+    name: String,
+) -> Result<TableShape> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    data::shape_by_name(&handle, &database, &schema, &name).await
+}
+
 /// Una página de filas. Con `cursor` en `null` devuelve la primera.
 #[tauri::command]
 pub async fn data_page(

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
@@ -19,6 +20,7 @@
     schema,
     table,
     columns,
+    initialColumns = [],
     onclose,
     oncreated,
   }: {
@@ -27,11 +29,14 @@
     schema: string;
     table: string;
     columns: TableColumn[];
+    /** Columnas ya elegidas al abrir: es lo que trae la sugerencia de un plan de ejecución. */
+    initialColumns?: string[];
     onclose: () => void;
     oncreated: () => void;
   } = $props();
 
-  let form = $state(indexForm());
+  // Se toma una sola vez, como el resto de los formularios: a partir de acá el dueño es el usuario.
+  let form = $state(untrack(() => indexForm(initialColumns)));
 
   let error = $state<string | null>(null);
   let preview = $state<string | null>(null);

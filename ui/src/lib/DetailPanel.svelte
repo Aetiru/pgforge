@@ -1280,6 +1280,9 @@
 {/if}
 
 {#if newIndex && selected && shape}
+  <!-- El oid se congela acá: el índice se crea en segundo plano y el aviso puede llegar minutos
+       después, cuando el panel ya está mostrando otra tabla. -->
+  {@const target = shape.oid}
   <IndexDialog
     profileId={selected.profileId}
     database={node?.database ?? ""}
@@ -1289,7 +1292,7 @@
     onclose={() => (newIndex = false)}
     oncreated={() => {
       newIndex = false;
-      loadIndexes();
+      if (node?.oid === target) loadIndexes();
     }}
   />
 {/if}
