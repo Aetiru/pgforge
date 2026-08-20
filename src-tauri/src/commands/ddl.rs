@@ -23,11 +23,11 @@ use pgforge_core::ddl::trigger::{self, TriggerChange, TriggerInfo};
 use pgforge_core::ddl::types::{self, TypeChange, TypeInfo};
 use pgforge_core::ddl::view::{self, ViewChange};
 use pgforge_core::{ProfileId, Result};
-use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
 
-use crate::commands::tasks::{self, TaskEvent};
+use crate::commands::tasks;
 use crate::commands::{record_applied, sql_of};
+use crate::process::ProcessKind;
 use crate::state::AppState;
 
 /// El SQL que se ejecutaría, sin ejecutar nada. No toca la red ni el estado: la vista previa
@@ -91,13 +91,22 @@ pub async fn index_create(
     id: ProfileId,
     database: Option<String>,
     def: IndexDef,
-    channel: Channel<TaskEvent>,
 ) -> Result<String> {
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
     let statement = index::create_sql(&def)?;
+    let target = format!("{}.{}", def.schema, def.table);
 
-    tasks::spawn_statement(app, &state, id, database, statement.sql, channel).await
+    tasks::spawn_statement(
+        app,
+        &state,
+        ProcessKind::Index,
+        id,
+        database,
+        target,
+        statement.sql,
+    )
+    .await
 }
 
 /// Borra un índice.

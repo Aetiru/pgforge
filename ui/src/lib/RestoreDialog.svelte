@@ -121,7 +121,12 @@
       return;
     }
 
-    tasks.restore({ profileId, options });
+    try {
+      await tasks.restore({ profileId, options });
+    } catch (error) {
+      planError = describeError(error);
+      return;
+    }
     onclose();
   }
 </script>

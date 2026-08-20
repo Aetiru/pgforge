@@ -3,62 +3,63 @@
  *
  * Antes cada uno vivía adentro del diálogo que lo había lanzado: el `VACUUM`, el backup y el
  * `CREATE INDEX CONCURRENTLY` se seguían desde una ventana modal que no se podía cerrar sin
- * cancelarlos, así que la aplicación entera quedaba tomada por algo que tarda media hora. Acá el
- * diálogo lanza y se cierra, y lo que corre queda en esta lista, que es lo que dibuja la vista de
- * procesos.
+ * cancelarlos, así que la aplicación entera quedaba tomada por algo que tarda media hora. Después
+ * el diálogo pasó a lanzar y cerrarse, y lo que corre quedó en esta lista, que es lo que dibuja la
+ * vista de procesos.
  *
- * El dueño del canal es este registro y no el componente: un `Channel` de Tauri sigue recibiendo
- * eventos aunque nadie lo mire, pero si lo tuviera un diálogo desmontado no habría dónde anotarlos.
- * Lo que corre del lado del servidor no se toca al cerrar la ventana —cancelar es explícito—.
+ * Lo que cambió ahora es **quién es el dueño**. Antes lo era esta lista: el canal de cada proceso
+ * lo tenía la interfaz y el avance, el resultado y el registro de lo que fue informando vivían solo
+ * acá. Eso hacía que recargar la ventana los borrara a todos aunque siguieran corriendo del otro
+ * lado, y que un backup que terminaba justo durante la recarga no dejara rastro de si había salido
+ * bien. Ahora el dueño es Rust —el récord de cada proceso vive en `process.rs`— y esto es un
+ * espejo: se engancha con un solo canal, el primer mensaje trae todo lo que hay y después llegan
+ * las novedades.
+ *
+ * Lo que corre del lado del servidor no se toca al cerrar la ventana ni al recargarla: cancelar es
+ * explícito.
  */
 
 import { explorer } from "./explorer.svelte";
+import { notify } from "./notify.svelte";
 import { outcomeText, progressText, type TaskKind } from "./task-format";
 import {
   Channel,
-  backupCancel,
   backupRun,
-  dataCopyCancel,
   dataExportRun,
   dataImportRun,
   describeError,
   indexCreate,
   maintenanceRun,
-  restoreCancel,
+  processCancel,
+  processClear,
+  processRemove,
+  processWatch,
   restoreRun,
-  taskCancel,
-  type BackupEvent,
   type BackupOptions,
-  type ExportEvent,
   type ExportSpec,
-  type ImportEvent,
   type ImportSpec,
   type IndexDef,
   type Operation,
-  type RestoreEvent,
+  type ProcessEvent,
+  type ProcessRecord,
+  type ProcessStatus,
   type RestoreOptions,
   type Target,
-  type TaskEvent,
 } from "./ipc";
 
-export type TaskStatus = "running" | "done" | "failed";
+export type TaskStatus = ProcessStatus;
 
-let sequence = 0;
-
-/** Un proceso lanzado, con lo que se sabe de él hasta ahora. */
+/** Un proceso, tal como lo cuenta Rust. La interfaz solo le agrega lo que se dibuja. */
 export class TaskRun {
-  /** Identificador local. Existe desde antes que el del servidor, que llega recién al arrancar. */
-  readonly key = `run-${++sequence}`;
+  readonly taskId: string;
   readonly kind: TaskKind;
   readonly profileId: string;
-  /** Nombre del servidor, copiado al lanzar: es el rótulo, no la identidad. */
-  readonly server: string;
   readonly database: string;
   /** Sobre qué corre: `public.pedidos`, `base app`, el archivo de un backup. */
   readonly target: string;
-  readonly startedAt = Date.now();
+  readonly startedAt: number;
 
-  /** El SQL o la línea de comando que se está ejecutando. Llega con el primer evento. */
+  /** El SQL o la línea de comando que se está ejecutando. */
   command = $state("");
   status = $state<TaskStatus>("running");
   /** Lo que el servidor o la herramienta fueron contando: `NOTICE`, salida de `pg_dump`. */
@@ -68,58 +69,44 @@ export class TaskRun {
   finishedAt = $state<number | null>(null);
   canceling = $state(false);
 
-  /** El identificador del lado de Rust, con el que se cancela. */
-  taskId = $state<string | null>(null);
-  private readonly cancelWith: (taskId: string) => Promise<void>;
-  /**
-   * Qué hacer cuando termina bien. Lo usa quien lanzó el proceso para releer lo que cambió —la
-   * lista de índices de una tabla, la grilla de datos—: ahora el objeto aparece cuando existe de
-   * verdad y no cuando se apretó el botón.
-   */
-  private readonly onDone?: () => void;
+  constructor(record: ProcessRecord) {
+    this.taskId = record.taskId;
+    this.kind = record.kind;
+    this.profileId = record.profile;
+    this.database = record.database;
+    this.target = record.target;
+    this.startedAt = record.startedMs;
+    this.apply(record);
+  }
 
-  constructor(init: {
-    kind: TaskKind;
-    profileId: string;
-    database: string;
-    target: string;
-    cancelWith: (taskId: string) => Promise<void>;
-    onDone?: () => void;
-  }) {
-    this.kind = init.kind;
-    this.profileId = init.profileId;
-    this.database = init.database;
-    this.target = init.target;
-    this.cancelWith = init.cancelWith;
-    this.onDone = init.onDone;
-    this.server =
-      explorer.profiles.find((profile) => profile.id === init.profileId)?.name ?? init.profileId;
+  /**
+   * El nombre del servidor sale del perfil y no de un campo propio: se puede cambiar sin cerrar
+   * nada, y es rótulo y no identidad.
+   */
+  get server(): string {
+    return explorer.profiles.find((profile) => profile.id === this.profileId)?.name ?? this.profileId;
+  }
+
+  /** Copia lo que dice el récord. Se usa al crear la fila y al reengancharse tras una recarga. */
+  apply(record: ProcessRecord) {
+    this.command = record.command;
+    this.status = record.status;
+    this.log = record.log;
+    this.progress = record.progress === null ? null : progressText(record.progress);
+    this.finishedAt = record.finishedMs;
+    if (record.outcome) this.outcome = outcomeText({ kind: this.kind, ...record.outcome });
+    else if (record.error) this.outcome = describeError(record.error);
   }
 
   note(line: string) {
     this.log = [...this.log, line];
   }
 
-  finish(text: string) {
-    this.status = "done";
-    this.outcome = text;
-    this.finishedAt = Date.now();
-    this.taskId = null;
-    this.onDone?.();
-  }
-
-  fail(error: unknown) {
-    this.status = "failed";
-    this.outcome = typeof error === "string" ? error : describeError(error);
-    this.finishedAt = Date.now();
-    this.taskId = null;
-  }
-
   async cancel() {
-    if (!this.taskId) return;
+    if (this.status !== "running") return;
     this.canceling = true;
     try {
-      await this.cancelWith(this.taskId);
+      await processCancel(this.taskId);
     } catch (error) {
       this.note(describeError(error));
     } finally {
@@ -136,6 +123,18 @@ class Tasks {
    * sobrevivir hasta que la mire.
    */
   unseen = $state(0);
+
+  /**
+   * Qué hacer cuando termina bien cada proceso, por identificador. Lo pone quien lo lanzó para
+   * releer lo que cambió —la lista de índices de una tabla, la grilla de datos—: así el objeto
+   * aparece cuando existe de verdad y no cuando se apretó el botón.
+   *
+   * No vive en el `TaskRun` porque el récord lo arma Rust y una recarga lo vuelve a traer: una
+   * función no cruza el canal, y releer una grilla que ya no está abierta no tendría sentido.
+   */
+  private readonly pending = new Map<string, () => void>();
+  /** Los que terminaron antes de que su `onDone` llegara a anotarse (ver `follow`). */
+  private readonly doneEarly = new Set<string>();
 
   get running(): TaskRun[] {
     return this.all.filter((run) => run.status === "running");
@@ -154,281 +153,182 @@ class Tasks {
     this.unseen = 0;
   }
 
-  remove(run: TaskRun) {
-    this.all = this.all.filter((item) => item.key !== run.key);
+  async remove(run: TaskRun) {
+    this.all = this.all.filter((item) => item.taskId !== run.taskId);
+    await processRemove(run.taskId);
   }
 
-  clearFinished() {
+  async clearFinished() {
     this.all = this.all.filter((run) => run.status === "running");
+    await processClear();
   }
 
-  /** Cierra el proceso y descuenta el aviso si estaba sin ver. */
-  private done(run: TaskRun, text: string) {
-    run.finish(text);
+  /**
+   * Se engancha al registro de procesos. Se llama una vez, al arrancar la interfaz.
+   *
+   * El primer mensaje trae todo lo que hay, así que después de recargar la ventana la lista vuelve
+   * con lo que siguió corriendo mientras tanto —y con lo que terminó sin nadie mirando—.
+   */
+  async watch() {
+    const channel = new Channel<ProcessEvent>();
+    channel.onmessage = (event) => this.receive(event);
+    await processWatch(channel);
+  }
+
+  private find(taskId: string): TaskRun | undefined {
+    return this.all.find((run) => run.taskId === taskId);
+  }
+
+  private receive(event: ProcessEvent) {
+    switch (event.type) {
+      case "snapshot":
+        this.all = event.records.map((record) => new TaskRun(record));
+        break;
+
+      case "started":
+        this.all.push(new TaskRun(event.record));
+        break;
+
+      case "log":
+        this.find(event.taskId)?.note(event.message);
+        break;
+
+      case "progress": {
+        const run = this.find(event.taskId);
+        if (run) run.progress = progressText(event.bytes);
+        break;
+      }
+
+      case "finished": {
+        const run = this.find(event.taskId);
+        if (run) {
+          run.status = "done";
+          run.outcome = outcomeText({ kind: run.kind, ...event.outcome });
+          run.finishedAt = Date.now();
+          this.announce(run);
+        }
+        this.settle(event.taskId);
+        break;
+      }
+
+      case "failed": {
+        const run = this.find(event.taskId);
+        if (run) {
+          run.status = "failed";
+          run.outcome = describeError(event.error);
+          run.finishedAt = Date.now();
+          this.announce(run);
+        }
+        // Lo que había que releer al terminar bien ya no corresponde, y dejarlo anotado sería
+        // guardarlo para siempre: el identificador no vuelve a aparecer.
+        this.pending.delete(event.taskId);
+        break;
+      }
+    }
+  }
+
+  /** Cuenta que terminó: el contador de la barra y, si está encendido, el aviso del sistema. */
+  private announce(run: TaskRun) {
     this.unseen += 1;
+    void notify.taskEnded(run);
   }
 
-  private failed(run: TaskRun, error: unknown) {
-    run.fail(error);
-    this.unseen += 1;
+  /** Dispara el `onDone` de un proceso que terminó bien, incluso si todavía no llegó a anotarse. */
+  private settle(taskId: string) {
+    const done = this.pending.get(taskId);
+    if (done) {
+      this.pending.delete(taskId);
+      done();
+    } else {
+      this.doneEarly.add(taskId);
+    }
   }
 
-  private add(run: TaskRun): TaskRun {
-    this.all.push(run);
-    return run;
+  /**
+   * Anota qué releer cuando el proceso termine bien.
+   *
+   * El identificador llega recién cuando el comando responde, y una tarea corta puede terminar
+   * antes: por eso se mira primero si ya terminó, en vez de anotar algo que nunca se va a disparar.
+   */
+  private follow(taskId: string, onDone?: () => void) {
+    if (!onDone) return;
+    if (this.doneEarly.delete(taskId)) onDone();
+    else this.pending.set(taskId, onDone);
+  }
+
+  /**
+   * Lo que hacen todos: lanzar y anotar qué releer al terminar.
+   *
+   * Si el lanzamiento falla no hay proceso que mostrar —falló antes de existir del lado de Rust, por
+   * una opción inválida o un servidor caído—, así que el error sube al diálogo, que es el que sigue
+   * abierto y puede explicarlo.
+   */
+  private async launch(start: () => Promise<string>, onDone?: () => void) {
+    this.follow(await start(), onDone);
   }
 
   /** VACUUM, ANALYZE o REINDEX sobre una tabla, un índice o una base. */
-  maintenance(init: {
+  async maintenance(init: {
     profileId: string;
     database: string;
     target: string;
     operation: Operation;
     on: Target;
-  }): TaskRun {
-    const run = this.add(
-      new TaskRun({
-        kind: "maintenance",
-        profileId: init.profileId,
-        database: init.database,
-        target: init.target,
-        cancelWith: taskCancel,
-      }),
-    );
-
-    const channel = new Channel<TaskEvent>();
-    channel.onmessage = (event) => this.onStatement(run, event);
-
+  }) {
     // Vacío es «la base por omisión del servidor», que es lo que decide el lado de Rust: mandar
     // una cadena vacía haría que la tarea corriera contra una base que no existe.
-    maintenanceRun(init.profileId, init.operation, init.on, channel, init.database || undefined)
-      .then((taskId) => (run.taskId = taskId))
-      .catch((error) => this.failed(run, error));
-
-    return run;
+    await this.launch(() =>
+      maintenanceRun(
+        init.profileId,
+        init.operation,
+        init.on,
+        init.target,
+        init.database || undefined,
+      ),
+    );
   }
 
   /** La creación de un índice, que con `CONCURRENTLY` es de lo más largo que hay. */
-  index(init: {
+  async index(init: {
     profileId: string;
     database: string;
-    target: string;
     def: IndexDef;
     onDone?: () => void;
-  }): TaskRun {
-    const run = this.add(
-      new TaskRun({
-        kind: "index",
-        profileId: init.profileId,
-        database: init.database,
-        target: init.target,
-        cancelWith: taskCancel,
-        onDone: init.onDone,
-      }),
-    );
-
-    const channel = new Channel<TaskEvent>();
-    channel.onmessage = (event) => this.onStatement(run, event);
-
-    indexCreate(init.profileId, init.def, channel, init.database)
-      .then((taskId) => (run.taskId = taskId))
-      .catch((error) => this.failed(run, error));
-
-    return run;
+  }) {
+    await this.launch(() => indexCreate(init.profileId, init.def, init.database), init.onDone);
   }
 
-  backup(init: { profileId: string; options: BackupOptions }): TaskRun {
-    const run = this.add(
-      new TaskRun({
-        kind: "backup",
-        profileId: init.profileId,
-        database: init.options.database,
-        target: init.options.path,
-        cancelWith: backupCancel,
-      }),
-    );
-
-    const channel = new Channel<BackupEvent>();
-    channel.onmessage = (event) => {
-      switch (event.type) {
-        case "started":
-          run.command = event.command.join(" ");
-          break;
-        case "progress":
-          run.note(event.message);
-          break;
-        case "finished":
-          this.done(run, outcomeText({ kind: "backup", seconds: event.seconds, bytes: event.bytes }));
-          break;
-        case "failed":
-          this.failed(run, event.error);
-          break;
-      }
-    };
-
-    backupRun(init.profileId, init.options, channel)
-      .then((taskId) => (run.taskId = taskId))
-      .catch((error) => this.failed(run, error));
-
-    return run;
+  async backup(init: { profileId: string; options: BackupOptions }) {
+    await this.launch(() => backupRun(init.profileId, init.options));
   }
 
-  restore(init: { profileId: string; options: RestoreOptions }): TaskRun {
-    const run = this.add(
-      new TaskRun({
-        kind: "restore",
-        profileId: init.profileId,
-        database: init.options.database,
-        target: init.options.source,
-        cancelWith: restoreCancel,
-      }),
-    );
-
-    const channel = new Channel<RestoreEvent>();
-    channel.onmessage = (event) => {
-      switch (event.type) {
-        case "started":
-          run.command = event.command.join(" ");
-          break;
-        case "progress":
-          run.note(event.message);
-          break;
-        case "finished":
-          this.done(
-            run,
-            outcomeText({
-              kind: "restore",
-              seconds: event.seconds,
-              ignoredErrors: event.ignoredErrors,
-            }),
-          );
-          break;
-        case "failed":
-          this.failed(run, event.error);
-          break;
-      }
-    };
-
-    restoreRun(init.profileId, init.options, channel)
-      .then((taskId) => (run.taskId = taskId))
-      .catch((error) => this.failed(run, error));
-
-    return run;
+  async restore(init: { profileId: string; options: RestoreOptions }) {
+    await this.launch(() => restoreRun(init.profileId, init.options));
   }
 
-  export(init: {
+  async export(init: {
     profileId: string;
     database: string;
     target: string;
     spec: ExportSpec;
     path: string;
-  }): TaskRun {
-    const run = this.add(
-      new TaskRun({
-        kind: "export",
-        profileId: init.profileId,
-        database: init.database,
-        target: init.target,
-        cancelWith: dataCopyCancel,
-      }),
+  }) {
+    await this.launch(() =>
+      dataExportRun(init.profileId, init.spec, init.path, init.target, init.database),
     );
-
-    const channel = new Channel<ExportEvent>();
-    channel.onmessage = (event) => {
-      switch (event.type) {
-        case "started":
-          run.command = event.command;
-          break;
-        case "progress":
-          run.progress = progressText(event.bytes);
-          break;
-        case "finished":
-          this.done(
-            run,
-            outcomeText({ kind: "export", seconds: event.seconds, bytes: event.bytes }),
-          );
-          break;
-        case "failed":
-          this.failed(run, event.error);
-          break;
-      }
-    };
-
-    dataExportRun(init.profileId, init.spec, init.path, channel, init.database)
-      .then((taskId) => (run.taskId = taskId))
-      .catch((error) => this.failed(run, error));
-
-    return run;
   }
 
-  import(init: {
+  async import(init: {
     profileId: string;
     database: string;
-    target: string;
     spec: ImportSpec;
     path: string;
     onDone?: () => void;
-  }): TaskRun {
-    const run = this.add(
-      new TaskRun({
-        kind: "import",
-        profileId: init.profileId,
-        database: init.database,
-        target: init.target,
-        cancelWith: dataCopyCancel,
-        onDone: init.onDone,
-      }),
+  }) {
+    await this.launch(
+      () => dataImportRun(init.profileId, init.spec, init.path, init.database),
+      init.onDone,
     );
-
-    const channel = new Channel<ImportEvent>();
-    channel.onmessage = (event) => {
-      switch (event.type) {
-        case "started":
-          run.command = event.command;
-          break;
-        case "progress":
-          run.progress = progressText(event.bytes);
-          break;
-        case "finished":
-          this.done(
-            run,
-            outcomeText({
-              kind: "import",
-              seconds: event.seconds,
-              bytes: event.bytes,
-              rows: event.rows,
-            }),
-          );
-          break;
-        case "failed":
-          this.failed(run, event.error);
-          break;
-      }
-    };
-
-    dataImportRun(init.profileId, init.spec, init.path, channel, init.database)
-      .then((taskId) => (run.taskId = taskId))
-      .catch((error) => this.failed(run, error));
-
-    return run;
-  }
-
-  /** El mantenimiento y el índice mandan los mismos eventos: los dos son una sentencia larga. */
-  private onStatement(run: TaskRun, event: TaskEvent) {
-    switch (event.type) {
-      case "started":
-        run.command = event.sql;
-        break;
-      case "notice":
-        run.note(event.message);
-        break;
-      case "finished":
-        this.done(run, outcomeText({ kind: run.kind, seconds: event.seconds }));
-        break;
-      case "failed":
-        this.failed(run, event.error);
-        break;
-    }
   }
 }
 

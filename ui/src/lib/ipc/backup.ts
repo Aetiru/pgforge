@@ -1,6 +1,4 @@
-import { Channel } from "@tauri-apps/api/core";
-
-import { invoke, type CoreError } from "./core";
+import { invoke } from "./core";
 
 // ---------------------------------------------------------------------------
 // Backups
@@ -33,19 +31,12 @@ export interface BackupPlan {
   warning: string | null;
 }
 
-export type BackupEvent =
-  | { type: "started"; command: string[] }
-  | { type: "progress"; message: string }
-  | { type: "finished"; path: string; bytes: number; seconds: number }
-  | { type: "failed"; error: CoreError };
-
 export const backupPlan = (id: string, options: BackupOptions) =>
   invoke<BackupPlan>("backup_plan", { id, options });
 
-export const backupRun = (id: string, options: BackupOptions, channel: Channel<BackupEvent>) =>
-  invoke<string>("backup_run", { id, options, channel });
-
-export const backupCancel = (taskId: string) => invoke<void>("backup_cancel", { taskId });
+/** Lanza el backup y devuelve el identificador de su proceso. Se sigue y se corta desde `tasks`. */
+export const backupRun = (id: string, options: BackupOptions) =>
+  invoke<string>("backup_run", { id, options });
 
 // ---------------------------------------------------------------------------
 // Restore
@@ -84,16 +75,8 @@ export interface RestorePlan {
   warning: string | null;
 }
 
-export type RestoreEvent =
-  | { type: "started"; command: string[] }
-  | { type: "progress"; message: string }
-  | { type: "finished"; database: string; seconds: number; ignoredErrors: number }
-  | { type: "failed"; error: CoreError };
-
 export const restorePlan = (id: string, options: RestoreOptions) =>
   invoke<RestorePlan>("restore_plan", { id, options });
 
-export const restoreRun = (id: string, options: RestoreOptions, channel: Channel<RestoreEvent>) =>
-  invoke<string>("restore_run", { id, options, channel });
-
-export const restoreCancel = (taskId: string) => invoke<void>("restore_cancel", { taskId });
+export const restoreRun = (id: string, options: RestoreOptions) =>
+  invoke<string>("restore_run", { id, options });

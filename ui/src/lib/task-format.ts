@@ -7,8 +7,10 @@
  */
 
 import { bytes, count, duration } from "./format";
+import type { ProcessKind } from "./ipc/tasks";
 
-export type TaskKind = "maintenance" | "index" | "backup" | "restore" | "export" | "import";
+/** El mismo vocabulario que usa Rust para anotar cada proceso: uno solo, y no dos que se parecen. */
+export type TaskKind = ProcessKind;
 
 const KIND_LABEL: Record<TaskKind, string> = {
   maintenance: "Mantenimiento",
@@ -31,6 +33,8 @@ export interface TaskEnd {
   bytes?: number | null;
   rows?: number | null;
   path?: string | null;
+  /** La base que quedó cargada, en un restore. */
+  database?: string | null;
   /** Errores que `pg_restore` decidió ignorar en vez de cortar. */
   ignoredErrors?: number | null;
 }

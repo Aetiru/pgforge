@@ -86,7 +86,12 @@
   async function run() {
     if (!(await confirmMutation(profileId, "Se van a insertar filas en la tabla."))) return;
 
-    tasks.import({ profileId, database, target: `${schema}.${table}`, spec, path });
+    try {
+      await tasks.import({ profileId, database, spec, path });
+    } catch (error) {
+      previewError = describeError(error);
+      return;
+    }
     onclose();
   }
 </script>

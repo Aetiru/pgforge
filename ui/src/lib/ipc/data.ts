@@ -1,6 +1,4 @@
-import { Channel } from "@tauri-apps/api/core";
-
-import { invoke, type CoreError } from "./core";
+import { invoke } from "./core";
 
 // ---------------------------------------------------------------------------
 // Datos de una tabla
@@ -145,28 +143,22 @@ export interface CopyCommand {
   sql: string;
 }
 
-export type ExportEvent =
-  | { type: "started"; command: string }
-  | { type: "progress"; bytes: number }
-  | { type: "finished"; path: string; bytes: number; seconds: number }
-  | { type: "failed"; error: CoreError };
-
-export type ImportEvent =
-  | { type: "started"; command: string }
-  | { type: "progress"; bytes: number }
-  | { type: "finished"; bytes: number; rows: number; seconds: number }
-  | { type: "failed"; error: CoreError };
-
 export const dataExportPreview = (spec: ExportSpec) =>
   invoke<CopyCommand>("data_export_preview", { spec });
 
+/**
+ * Lanza la exportación y devuelve el identificador de su proceso.
+ *
+ * `target` es el rótulo con el que se la muestra —la tabla, o de qué pestaña salió la consulta—:
+ * lo arma la interfaz porque es texto que se lee, no un dato del que dependa la exportación.
+ */
 export const dataExportRun = (
   id: string,
   spec: ExportSpec,
   path: string,
-  channel: Channel<ExportEvent>,
+  target: string,
   database?: string,
-) => invoke<string>("data_export_run", { id, spec, path, channel, database: database ?? null });
+) => invoke<string>("data_export_run", { id, spec, path, target, database: database ?? null });
 
 export const dataImportPreview = (spec: ImportSpec) =>
   invoke<CopyCommand>("data_import_preview", { spec });
@@ -175,9 +167,5 @@ export const dataImportRun = (
   id: string,
   spec: ImportSpec,
   path: string,
-  channel: Channel<ImportEvent>,
   database?: string,
-) => invoke<string>("data_import_run", { id, spec, path, channel, database: database ?? null });
-
-/** Corta una exportación o importación en curso. */
-export const dataCopyCancel = (taskId: string) => invoke<void>("data_copy_cancel", { taskId });
+) => invoke<string>("data_import_run", { id, spec, path, database: database ?? null });

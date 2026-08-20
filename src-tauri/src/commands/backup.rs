@@ -1,23 +1,23 @@
 //! Backups y restores.
 //!
-//! Mismo molde que el mantenimiento: un comando arma lo que se va a ejecutar sin ejecutarlo, otro
-//! lo lanza y transmite el avance por un canal, y un tercero lo corta. La diferencia está en qué se
-//! guarda para poder cortarlo — un `VACUUM` se cancela pidiéndoselo al servidor, pero acá la tarea
-//! es un proceso hijo de la aplicación y lo que hace falta es el extremo del canal que le avisa.
+//! Mismo molde que el mantenimiento: un comando arma lo que se va a ejecutar sin ejecutarlo y otro
+//! lo lanza y va anotando su avance en el registro de procesos. La diferencia está en cómo se corta
+//! — un `VACUUM` se cancela pidiéndoselo al servidor, pero acá la tarea es un proceso hijo de la
+//! aplicación y lo que hace falta es el extremo del canal que le avisa, que es lo que guarda
+//! `Cancel::Child`.
 //!
-//! Backup y restore son la misma estructura con distinta carga, así que comparten [`ExternalTask`] y
-//! se distinguen solo por el mapa donde se registran.
+//! Backup y restore son la misma estructura con distinta carga, y se distinguen solo por el
+//! `ProcessKind` con el que se anotan.
 
 use pgforge_core::backup::restore::{self, RestoreOptions, RestorePlan};
 use pgforge_core::backup::{self, BackupOptions, BackupPlan};
 use pgforge_core::error::ErrorPayload;
-use pgforge_core::{Error, ProfileId, Result};
-use serde::Serialize;
-use tauri::ipc::Channel;
+use pgforge_core::{ProfileId, Result};
 use tauri::{AppHandle, Manager, State};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::state::{AppState, ExternalTask};
+use crate::process::{Cancel, Outcome, ProcessKind};
+use crate::state::AppState;
 
 /// La línea de comando que se ejecutaría, sin ejecutar nada.
 #[tauri::command]
@@ -30,30 +30,6 @@ pub async fn backup_plan(
     backup::plan(&handle, &options).await
 }
 
-#[derive(Clone, Serialize)]
-#[serde(
-    tag = "type",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
-pub enum BackupEvent {
-    Started {
-        command: Vec<String>,
-    },
-    Progress {
-        message: String,
-    },
-    #[serde(rename_all = "camelCase")]
-    Finished {
-        path: String,
-        bytes: u64,
-        seconds: f64,
-    },
-    Failed {
-        error: ErrorPayload,
-    },
-}
-
 /// Lanza el backup y devuelve su identificador, con el que se lo puede cancelar.
 #[tauri::command]
 pub async fn backup_run(
@@ -61,7 +37,6 @@ pub async fn backup_run(
     state: State<'_, AppState>,
     id: ProfileId,
     options: BackupOptions,
-    channel: Channel<BackupEvent>,
 ) -> Result<String> {
     let handle = state.manager.require(id).await?;
 
@@ -72,68 +47,64 @@ pub async fn backup_run(
 
     let (cancel, cancelled) = oneshot::channel();
     let (progress, mut lines) = mpsc::channel::<String>(64);
-    let task_id = uuid::Uuid::new_v4().to_string();
+
+    let task_id = state
+        .processes
+        .start(
+            ProcessKind::Backup,
+            id,
+            options.database.clone(),
+            options.path.display().to_string(),
+            plan.command.join(" "),
+            Cancel::Child(cancel),
+        )
+        .await;
 
     {
         let task_id = task_id.clone();
         tokio::spawn(async move {
-            let _ = channel.send(BackupEvent::Started {
-                command: plan.command,
-            });
-
-            // El avance se reenvía a medida que llega: leerlo al final sería una barra de progreso
+            // El avance se anota a medida que llega: leerlo al final sería una barra de progreso
             // falsa durante todo el backup.
             {
-                let channel = channel.clone();
+                let app = app.clone();
+                let task_id = task_id.clone();
                 tokio::spawn(async move {
+                    let state = app.state::<AppState>();
                     while let Some(message) = lines.recv().await {
-                        let _ = channel.send(BackupEvent::Progress { message });
+                        state.processes.log(&task_id, message).await;
                     }
                 });
             }
 
-            let event = match backup::run(&handle, &options, progress, cancelled).await {
-                Ok(outcome) => BackupEvent::Finished {
-                    path: outcome.path.display().to_string(),
-                    bytes: outcome.bytes,
-                    seconds: outcome.seconds,
-                },
-                Err(error) => BackupEvent::Failed {
-                    error: ErrorPayload::from(&error),
-                },
-            };
-            let _ = channel.send(event);
+            let result = backup::run(&handle, &options, progress, cancelled).await;
 
-            app.state::<AppState>()
-                .backups
-                .lock()
-                .await
-                .remove(&task_id);
+            let state = app.state::<AppState>();
+            match result {
+                Ok(outcome) => {
+                    state
+                        .processes
+                        .finish(
+                            &task_id,
+                            Outcome {
+                                seconds: outcome.seconds,
+                                bytes: Some(outcome.bytes),
+                                path: Some(outcome.path.display().to_string()),
+                                ..Outcome::default()
+                            },
+                        )
+                        .await
+                }
+                Err(error) => {
+                    state
+                        .processes
+                        .fail(&task_id, ErrorPayload::from(&error))
+                        .await
+                }
+            }
         })
     };
 
-    state
-        .backups
-        .lock()
-        .await
-        .insert(task_id.clone(), ExternalTask { cancel });
-
     Ok(task_id)
-}
-
-/// Corta un backup en curso. El archivo a medio escribir lo borra el núcleo.
-#[tauri::command]
-pub async fn backup_cancel(state: State<'_, AppState>, task_id: String) -> Result<()> {
-    let entry = state
-        .backups
-        .lock()
-        .await
-        .remove(&task_id)
-        .ok_or_else(|| Error::Config("el backup ya no está en curso".to_owned()))?;
-
-    // Si el otro extremo ya no está, la tarea terminó sola entre medio: no es un error.
-    let _ = entry.cancel.send(());
-    Ok(())
 }
 
 /// La línea de comando del restore que se ejecutaría, sin ejecutar nada.
@@ -147,30 +118,6 @@ pub async fn restore_plan(
     restore::plan(&handle, &options).await
 }
 
-#[derive(Clone, Serialize)]
-#[serde(
-    tag = "type",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
-pub enum RestoreEvent {
-    Started {
-        command: Vec<String>,
-    },
-    Progress {
-        message: String,
-    },
-    #[serde(rename_all = "camelCase")]
-    Finished {
-        database: String,
-        seconds: f64,
-        ignored_errors: u64,
-    },
-    Failed {
-        error: ErrorPayload,
-    },
-}
-
 /// Lanza el restore y devuelve su identificador, con el que se lo puede cancelar.
 #[tauri::command]
 pub async fn restore_run(
@@ -178,7 +125,6 @@ pub async fn restore_run(
     state: State<'_, AppState>,
     id: ProfileId,
     options: RestoreOptions,
-    channel: Channel<RestoreEvent>,
 ) -> Result<String> {
     let handle = state.manager.require(id).await?;
 
@@ -189,64 +135,60 @@ pub async fn restore_run(
 
     let (cancel, cancelled) = oneshot::channel();
     let (progress, mut lines) = mpsc::channel::<String>(64);
-    let task_id = uuid::Uuid::new_v4().to_string();
+
+    let task_id = state
+        .processes
+        .start(
+            ProcessKind::Restore,
+            id,
+            options.database.clone(),
+            options.source.display().to_string(),
+            plan.command.join(" "),
+            Cancel::Child(cancel),
+        )
+        .await;
 
     {
         let task_id = task_id.clone();
         tokio::spawn(async move {
-            let _ = channel.send(RestoreEvent::Started {
-                command: plan.command,
-            });
-
             {
-                let channel = channel.clone();
+                let app = app.clone();
+                let task_id = task_id.clone();
                 tokio::spawn(async move {
+                    let state = app.state::<AppState>();
                     while let Some(message) = lines.recv().await {
-                        let _ = channel.send(RestoreEvent::Progress { message });
+                        state.processes.log(&task_id, message).await;
                     }
                 });
             }
 
-            let event = match restore::run(&handle, &options, progress, cancelled).await {
-                Ok(outcome) => RestoreEvent::Finished {
-                    database: outcome.database,
-                    seconds: outcome.seconds,
-                    ignored_errors: outcome.ignored_errors,
-                },
-                Err(error) => RestoreEvent::Failed {
-                    error: ErrorPayload::from(&error),
-                },
-            };
-            let _ = channel.send(event);
+            let result = restore::run(&handle, &options, progress, cancelled).await;
 
-            app.state::<AppState>()
-                .restores
-                .lock()
-                .await
-                .remove(&task_id);
+            let state = app.state::<AppState>();
+            match result {
+                Ok(outcome) => {
+                    state
+                        .processes
+                        .finish(
+                            &task_id,
+                            Outcome {
+                                seconds: outcome.seconds,
+                                ignored_errors: Some(outcome.ignored_errors),
+                                database: Some(outcome.database),
+                                ..Outcome::default()
+                            },
+                        )
+                        .await
+                }
+                Err(error) => {
+                    state
+                        .processes
+                        .fail(&task_id, ErrorPayload::from(&error))
+                        .await
+                }
+            }
         })
     };
 
-    state
-        .restores
-        .lock()
-        .await
-        .insert(task_id.clone(), ExternalTask { cancel });
-
     Ok(task_id)
-}
-
-/// Corta un restore en curso.
-#[tauri::command]
-pub async fn restore_cancel(state: State<'_, AppState>, task_id: String) -> Result<()> {
-    let entry = state
-        .restores
-        .lock()
-        .await
-        .remove(&task_id)
-        .ok_or_else(|| Error::Config("el restore ya no está en curso".to_owned()))?;
-
-    // Si el otro extremo ya no está, la tarea terminó sola entre medio: no es un error.
-    let _ = entry.cancel.send(());
-    Ok(())
 }

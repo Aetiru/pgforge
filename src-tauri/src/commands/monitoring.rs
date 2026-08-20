@@ -18,7 +18,8 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
 use tokio::sync::Mutex;
 
-use crate::commands::tasks::{self, TaskEvent};
+use crate::commands::tasks;
+use crate::process::ProcessKind;
 use crate::state::{AppState, MonitorEntry, PollConfig, MIN_POLL_MS};
 
 #[derive(Clone, Serialize)]
@@ -309,11 +310,20 @@ pub async fn maintenance_run(
     database: Option<String>,
     operation: Operation,
     target: Target,
-    channel: Channel<TaskEvent>,
+    label: String,
 ) -> Result<String> {
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
     let sql = maintenance::statement(operation, &target, &handle.caps)?;
 
-    tasks::spawn_statement(app, &state, id, database, sql, channel).await
+    tasks::spawn_statement(
+        app,
+        &state,
+        ProcessKind::Maintenance,
+        id,
+        database,
+        label,
+        sql,
+    )
+    .await
 }

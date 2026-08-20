@@ -4,6 +4,7 @@
 // tocan la red— con la carga que manda la interfaz. Es la única forma de probar la traducción de
 // argumentos sin levantar la ventana.
 pub mod commands;
+pub mod process;
 pub mod state;
 
 use tauri::Manager;
@@ -36,6 +37,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         // Para abrir la página de una release en el navegador del sistema. Un `<a href>` adentro de
         // la ventana navegaría la propia aplicación a GitHub, que es lo último que se quiere.
         .plugin(tauri_plugin_opener::init())
@@ -81,7 +83,10 @@ pub fn run() {
             commands::monitoring::table_bloat,
             commands::monitoring::maintenance_plan,
             commands::monitoring::maintenance_run,
-            commands::tasks::task_cancel,
+            commands::tasks::process_watch,
+            commands::tasks::process_cancel,
+            commands::tasks::process_remove,
+            commands::tasks::process_clear,
             commands::query::query_open,
             commands::query::query_close,
             commands::query::query_run,
@@ -111,7 +116,6 @@ pub fn run() {
             commands::data::data_export_run,
             commands::data::data_import_preview,
             commands::data::data_import_run,
-            commands::data::data_copy_cancel,
             commands::ddl::ddl_preview,
             commands::ddl::ddl_apply,
             commands::ddl::table_constraints,
@@ -183,10 +187,8 @@ pub fn run() {
             commands::query::explain_warning,
             commands::backup::backup_plan,
             commands::backup::backup_run,
-            commands::backup::backup_cancel,
             commands::backup::restore_plan,
             commands::backup::restore_run,
-            commands::backup::restore_cancel,
             commands::update::update_check,
             commands::update::update_open,
         ])

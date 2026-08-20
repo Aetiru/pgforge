@@ -1,7 +1,6 @@
 import { Channel } from "@tauri-apps/api/core";
 
 import { invoke, type CoreError } from "./core";
-import type { TaskEvent } from "./tasks";
 
 // ---------------------------------------------------------------------------
 // Monitoreo
@@ -198,17 +197,23 @@ export const tableBloat = (id: string, limit?: number) =>
 export const maintenancePlan = (id: string, operation: Operation, target: Target) =>
   invoke<MaintenancePlan>("maintenance_plan", { id, operation, target });
 
+/**
+ * Lanza el mantenimiento y devuelve el identificador de su proceso.
+ *
+ * `label` es el rótulo con el que se lo muestra —`public.pedidos`, `base app`—: lo arma la interfaz
+ * porque es texto que se lee, no un dato del que dependa la operación.
+ */
 export const maintenanceRun = (
   id: string,
   operation: Operation,
   target: Target,
-  channel: Channel<TaskEvent>,
+  label: string,
   database?: string,
 ) =>
   invoke<string>("maintenance_run", {
     id,
     operation,
     target,
-    channel,
+    label,
     database: database ?? null,
   });

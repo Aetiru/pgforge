@@ -3,8 +3,7 @@
  * esquemas, bases y particiones. Cada uno con su `*_preview` y su `*_apply`.
  */
 
-import { invoke, type Channel } from "./core";
-import type { TaskEvent } from "./tasks";
+import { invoke } from "./core";
 
 // ---------------------------------------------------------------------------
 // Estructura de tablas
@@ -118,12 +117,8 @@ export const indexPreview = (def: IndexDef) => invoke<DdlStatement>("index_previ
  * Con `CONCURRENTLY` sobre una tabla grande, esperar sería tener la ventana tomada durante horas
  * (ver `tasks.svelte.ts`).
  */
-export const indexCreate = (
-  id: string,
-  def: IndexDef,
-  channel: Channel<TaskEvent>,
-  database?: string,
-) => invoke<string>("index_create", { id, def, channel, database: database ?? null });
+export const indexCreate = (id: string, def: IndexDef, database?: string) =>
+  invoke<string>("index_create", { id, def, database: database ?? null });
 
 export const indexDrop = (
   id: string,

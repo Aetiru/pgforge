@@ -95,13 +95,18 @@
   async function run() {
     if (!(await confirmMutation(profileId, "Se va a correr una tarea de mantenimiento."))) return;
 
-    tasks.maintenance({
-      profileId,
-      database: database ?? "",
-      target: targetLabel,
-      operation,
-      on: target,
-    });
+    try {
+      await tasks.maintenance({
+        profileId,
+        database: database ?? "",
+        target: targetLabel,
+        operation,
+        on: target,
+      });
+    } catch (error) {
+      planError = describeError(error);
+      return;
+    }
     onclose();
   }
 </script>
