@@ -1,6 +1,7 @@
 import { Channel } from "@tauri-apps/api/core";
 
 import { invoke, type CoreError } from "./core";
+import type { TaskEvent } from "./tasks";
 
 // ---------------------------------------------------------------------------
 // Monitoreo
@@ -138,12 +139,6 @@ export interface MaintenancePlan {
   warning: string | null;
 }
 
-export type MaintenanceEvent =
-  | { type: "started"; sql: string }
-  | { type: "notice"; severity: string; message: string }
-  | { type: "finished"; seconds: number }
-  | { type: "failed"; error: CoreError };
-
 export const monitorStart = (
   id: string,
   channel: Channel<MonitorEvent>,
@@ -191,7 +186,7 @@ export const maintenanceRun = (
   id: string,
   operation: Operation,
   target: Target,
-  channel: Channel<MaintenanceEvent>,
+  channel: Channel<TaskEvent>,
   database?: string,
 ) =>
   invoke<string>("maintenance_run", {
@@ -201,6 +196,3 @@ export const maintenanceRun = (
     channel,
     database: database ?? null,
   });
-
-export const maintenanceCancel = (taskId: string) =>
-  invoke<void>("maintenance_cancel", { taskId });

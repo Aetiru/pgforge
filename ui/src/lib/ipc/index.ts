@@ -17,6 +17,7 @@ export * from "./servers";
 export * from "./schema";
 export * from "./compare";
 export * from "./monitor";
+export * from "./tasks";
 export * from "./backup";
 export * from "./query";
 export * from "./data";

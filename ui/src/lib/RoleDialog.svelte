@@ -5,7 +5,14 @@
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
   import SqlPreview from "./SqlPreview.svelte";
-  import { describeError, roleApply, roleMemberships, rolePreview, type RoleInfo } from "./ipc";
+  import {
+    describeError,
+    roleApply,
+    roleMemberships,
+    roleNames,
+    rolePreview,
+    type RoleInfo,
+  } from "./ipc";
   import { roleChanges, roleForm, validateRole } from "./role-form";
 
   let {
@@ -29,6 +36,9 @@
 
   let originalMemberOf = $state<string[]>([]);
   let loadingMemberships = $state(untrack(() => existing !== null));
+  /** Los roles del servidor entre los que se elige. Vacío mientras se leen. */
+  let allRoles = $state<string[]>([]);
+  let memberFilter = $state("");
 
   let error = $state<string | null>(null);
   let saving = $state(false);
@@ -40,11 +50,42 @@
     roleMemberships(profileId, existing.name, database)
       .then((result) => {
         originalMemberOf = result;
-        form.memberOf = result.join(", ");
+        form.memberOf = [...result];
       })
       .catch((e) => (error = describeError(e)))
       .finally(() => (loadingMemberships = false));
   });
+
+  // La lista de roles se lee siempre, también al dar de alta: elegir de una lista es justamente lo
+  // que evita el `GRANT` que falla por un nombre mal escrito.
+  $effect(() => {
+    roleNames(profileId, database)
+      .then((result) => (allRoles = result))
+      .catch((e) => (error = describeError(e)));
+  });
+
+  /**
+   * Qué roles se ofrecen. Las membresías que ya tiene van sí o sí, aunque `role_names` no las
+   * devuelva —un rol predefinido de Postgres queda afuera de esa lista—: si no aparecieran, guardar
+   * sin tocar nada las revocaría en silencio.
+   */
+  const options = $derived.by(() => {
+    const self = form.name.trim();
+    const names = new Set([...allRoles, ...originalMemberOf, ...form.memberOf]);
+    names.delete(self);
+    return [...names].sort((a, b) => a.localeCompare(b));
+  });
+
+  const visibleOptions = $derived.by(() => {
+    const needle = memberFilter.trim().toLowerCase();
+    return needle ? options.filter((role) => role.toLowerCase().includes(needle)) : options;
+  });
+
+  function toggleMember(role: string, checked: boolean) {
+    form.memberOf = checked
+      ? [...form.memberOf, role]
+      : form.memberOf.filter((name) => name !== role);
+  }
 
   function changes() {
     return roleChanges(form, existing, originalMemberOf);
@@ -145,14 +186,14 @@
     </span>
     <div class="relative">
       <input
-        class="field pr-9"
+        class="field w-full pr-8"
         type={showPassword ? "text" : "password"}
         bind:value={form.password}
         autocomplete="off"
       />
       <button
         type="button"
-        class="btn-icon absolute top-1/2 right-1 -translate-y-1/2"
+        class="btn btn-ghost btn-icon absolute top-1/2 right-0.5 size-6 -translate-y-1/2"
         title={showPassword ? "Ocultar la contraseña" : "Mostrar la contraseña"}
         aria-label={showPassword ? "Ocultar la contraseña" : "Mostrar la contraseña"}
         onclick={() => (showPassword = !showPassword)}
@@ -162,8 +203,13 @@
     </div>
   </label>
 
-  <label class="mt-3 flex flex-col gap-1">
-    <span class="label">Miembro de (separados por coma)</span>
+  <div class="mt-3 flex flex-col gap-1">
+    <span class="label">
+      Miembro de
+      {#if form.memberOf.length > 0}
+        <span class="font-normal muted">({form.memberOf.length} elegidos)</span>
+      {/if}
+    </span>
     {#if loadingMemberships}
       <p
         class="flex items-center gap-2 rounded-md border border-zinc-200 px-2 py-2 text-xs muted
@@ -173,9 +219,38 @@
         Leyendo las membresías…
       </p>
     {:else}
-      <input class="field" bind:value={form.memberOf} placeholder="lectores, escritores" />
+      <!--
+        Una lista con casillas y no un `<select multiple>`: elegir varios ahí pide `Ctrl`+clic, y un
+        clic común deselecciona todo lo demás sin avisar. Acá cada rol se tilda por su cuenta.
+      -->
+      <div class="rounded-md border border-zinc-200 dark:border-zinc-800">
+        {#if options.length > 8}
+          <input
+            class="field w-full rounded-b-none border-0 border-b border-zinc-200 py-1 text-xs
+                   dark:border-zinc-800"
+            placeholder="Filtrar los roles"
+            bind:value={memberFilter}
+          />
+        {/if}
+        <div class="max-h-40 overflow-auto px-2 py-1.5">
+          {#each visibleOptions as role (role)}
+            <label class="check py-0.5">
+              <input
+                type="checkbox"
+                checked={form.memberOf.includes(role)}
+                onchange={(event) => toggleMember(role, event.currentTarget.checked)}
+              />
+              {role}
+            </label>
+          {:else}
+            <p class="py-1 text-xs muted">
+              {options.length === 0 ? "No hay otros roles en el servidor." : "Ningún rol coincide."}
+            </p>
+          {/each}
+        </div>
+      </div>
     {/if}
-  </label>
+  </div>
 
   {#if existing}
     <label class="check mt-2">

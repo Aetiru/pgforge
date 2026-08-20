@@ -23,8 +23,10 @@ use pgforge_core::ddl::trigger::{self, TriggerChange, TriggerInfo};
 use pgforge_core::ddl::types::{self, TypeChange, TypeInfo};
 use pgforge_core::ddl::view::{self, ViewChange};
 use pgforge_core::{ProfileId, Result};
-use tauri::State;
+use tauri::ipc::Channel;
+use tauri::{AppHandle, State};
 
+use crate::commands::tasks::{self, TaskEvent};
 use crate::state::AppState;
 
 /// El SQL que se ejecutaría, sin ejecutar nada. No toca la red ni el estado: la vista previa
@@ -68,18 +70,25 @@ pub fn index_preview(def: IndexDef) -> Result<Statement> {
     index::create_sql(&def)
 }
 
-/// Crea un índice. Nunca en transacción: es lo que permite `CONCURRENTLY` (ver `ddl::index`).
+/// Crea un índice y devuelve el identificador de la tarea, con el que se la puede cancelar.
+///
+/// Corre en segundo plano por la misma razón que el mantenimiento: un `CREATE INDEX CONCURRENTLY`
+/// sobre una tabla grande tarda lo que tarda, y hasta que terminara la aplicación entera quedaba
+/// esperando. Nunca en transacción, que es justamente lo que permite `CONCURRENTLY`.
 #[tauri::command]
 pub async fn index_create(
+    app: AppHandle,
     state: State<'_, AppState>,
     id: ProfileId,
     database: Option<String>,
     def: IndexDef,
-) -> Result<()> {
+    channel: Channel<TaskEvent>,
+) -> Result<String> {
     let handle = state.manager.require(id).await?;
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+    let statement = index::create_sql(&def)?;
 
-    index::create(&handle, &database, &def).await
+    tasks::spawn_statement(app, &state, id, database, statement.sql, channel).await
 }
 
 /// Borra un índice.
@@ -280,6 +289,19 @@ pub async fn role_memberships(
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
     role::role_memberships(&handle, &database, &name).await
+}
+
+/// Los roles que existen en el servidor, para el selector de "miembro de".
+#[tauri::command]
+pub async fn role_names(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+) -> Result<Vec<String>> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    role::role_names(&handle, &database).await
 }
 
 /// El SQL que se ejecutaría, sin ejecutar nada.

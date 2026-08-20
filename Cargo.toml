@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/pgforge-core", "crates/pgforge-cli", "src-tauri"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -14,6 +14,13 @@ repository = "https://github.com/Aetiru/pgforge"
 
 [workspace.dependencies]
 pgforge-core = { path = "crates/pgforge-core" }
+
+# La información de depuración completa de un workspace con Tauri adentro son decenas de gigabytes de
+# `.pdb` en `target/debug`, y se pagan enteros para leer un backtrace. Con las tablas de líneas alcanza
+# para saber archivo y línea de cada cuadro; lo que se pierde es inspeccionar variables paso a paso en
+# un depurador, que acá se usa mucho menos seguido que quedarse sin disco.
+[profile.dev]
+debug = "line-tables-only"
 
 [profile.release]
 codegen-units = 1

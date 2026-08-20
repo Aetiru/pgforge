@@ -15,6 +15,7 @@
   import Empty from "./lib/Empty.svelte";
   import Icon, { type IconName } from "./lib/Icon.svelte";
   import Modal from "./lib/Modal.svelte";
+  import ProcessPanel from "./lib/ProcessPanel.svelte";
   import QueryPanel from "./lib/QueryPanel.svelte";
   import TreePanel from "./lib/TreePanel.svelte";
   import UpdateDialog from "./lib/UpdateDialog.svelte";
@@ -27,6 +28,7 @@
   import { queryTargetOf } from "./lib/tree-actions";
   import { parseQuery, PREFIX_HELP } from "./lib/tree-query";
   import { tabs, type Tab, type TabKind } from "./lib/tabs.svelte";
+  import { tasks } from "./lib/tasks.svelte";
   import { theme } from "./lib/theme.svelte";
   import { updates } from "./lib/update.svelte";
   import {
@@ -83,7 +85,7 @@
   let banner = $state<string | null>(null);
   let sidebarWidth = $state(300);
   let sidebarOpen = $state(true);
-  let view = $state<"explorer" | "monitor" | "config">("explorer");
+  let view = $state<"explorer" | "monitor" | "config" | "processes">("explorer");
   /** Servidor elegido a mano en la vista de monitoreo; si es `null` se usa el del árbol. */
   let monitorChoice = $state<string | null>(null);
   /** Servidor elegido a mano en la vista de configuración. */
@@ -132,6 +134,15 @@
 
   function profileOf(profileId: string) {
     return explorer.profiles.find((profile) => profile.id === profileId) ?? null;
+  }
+
+  /**
+   * Con qué servidor se rotula una pestaña. Sale del perfil y no de un campo de `Tab`: el nombre se
+   * puede cambiar desde el diálogo de conexión, y una copia guardada al abrir la pestaña quedaría
+   * mostrando el nombre viejo hasta cerrarla.
+   */
+  function serverName(profileId: string): string {
+    return profileOf(profileId)?.name ?? "";
   }
 
   async function connect(profile: ConnectionProfile, password?: string, trustHostKey?: boolean) {
@@ -336,6 +347,9 @@
     { value: "explorer", label: "Explorador", icon: "schema" },
     { value: "monitor", label: "Monitoreo", icon: "chart" },
     { value: "config", label: "Configuración", icon: "sliders" },
+    // Cuarta vista y no un panel adentro del explorador: lo que corre en segundo plano no es de un
+    // servidor ni de una base, y se mira justo cuando uno está haciendo otra cosa.
+    { value: "processes", label: "Procesos", icon: "clock" },
   ] as const;
 
   /** Lo que dice la barra de estado: dónde está parado el usuario ahora mismo. */
@@ -382,6 +396,13 @@
         >
           <Icon name={item.icon} size={12} />
           {item.label}
+          <!-- Cuántos corren, y un punto si algo terminó sin que nadie lo mirara: la vista de
+               procesos está pensada para no tener que estar mirándola. -->
+          {#if item.value === "processes" && tasks.running.length > 0}
+            <span class="tag tag-info">{tasks.running.length}</span>
+          {:else if item.value === "processes" && tasks.unseen > 0}
+            <span class="dot dot-on"></span>
+          {/if}
         </button>
       {/each}
     </div>
@@ -486,6 +507,10 @@
         </button>
       </Empty>
     {/if}
+  {:else if view === "processes"}
+    <div class="min-h-0 flex-1">
+      <ProcessPanel />
+    </div>
   {:else if view === "config"}
     {#if configServer}
       <div class="min-h-0 flex-1">
@@ -707,7 +732,7 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
                 class="tab pr-1"
                 role="tab"
                 aria-selected={tabs.active === tab.key}
-                title={`${tab.title} · ${tab.database}`}
+                title={`${tab.title} · ${serverName(tab.profileId)} / ${tab.database}`}
                 onclick={() => (tabs.active = tab.key)}
                 onauxclick={(event) => {
                   // Botón del medio: cerrar, como en cualquier navegador.
@@ -724,6 +749,19 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
                     size={12}
                     class={TAB_TONE[environmentOf(tab.profileId) ?? "none"]}
                   />
+                {/if}
+                <!--
+                  El servidor va en la pestaña y no solo en el `title`: con cuatro consultas
+                  abiertas, «Consulta 1» contra desarrollo y «Consulta 1» contra producción eran la
+                  misma pestaña a la vista, y averiguar cuál era cuál pedía pasar el mouse por
+                  encima de cada una. Se recorta antes que el nombre de la pestaña porque es el
+                  contexto, no lo que se está mirando.
+                -->
+                {#if serverName(tab.profileId)}
+                  <span class="max-w-24 shrink truncate text-[11px] muted">
+                    {serverName(tab.profileId)}
+                  </span>
+                  <span class="shrink-0 text-[11px] muted">/</span>
                 {/if}
                 <span class="truncate">{tab.title}</span>
               </button>

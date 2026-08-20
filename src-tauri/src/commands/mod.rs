@@ -13,6 +13,7 @@ pub mod query;
 pub mod schema;
 pub mod servers;
 pub mod settings;
+pub mod tasks;
 pub mod update;
 
 use pgforge_core::caps::MIN_SUPPORTED_VERSION_NUM;

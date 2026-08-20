@@ -174,6 +174,9 @@ export const roleInfo = (id: string, oid: number, database?: string) =>
 export const roleMemberships = (id: string, name: string, database?: string) =>
   invoke<string[]>("role_memberships", { id, name, database: database ?? null });
 
+export const roleNames = (id: string, database?: string) =>
+  invoke<string[]>("role_names", { id, database: database ?? null });
+
 // ---------------------------------------------------------------------------
 // Extensiones
 // ---------------------------------------------------------------------------

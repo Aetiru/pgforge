@@ -7,9 +7,14 @@
    * El diálogo de toda la aplicación.
    *
    * Antes cada diálogo repetía su propio fondo y su propia caja, y ninguno cerraba con Escape:
-   * eran quince ventanas parecidas con quince comportamientos distintos. Acá viven las tres cosas
-   * que uno espera de cualquier ventana modal —Escape, clic afuera y el foco que no se escapa— para
-   * que ningún diálogo nuevo tenga que acordarse de implementarlas.
+   * eran quince ventanas parecidas con quince comportamientos distintos. Acá viven las cosas que uno
+   * espera de cualquier ventana modal —Escape, la trampa de foco y la devolución del foco al
+   * cerrar— para que ningún diálogo nuevo tenga que acordarse de implementarlas.
+   *
+   * Lo que **no** hace es cerrarse al hacer clic en el fondo: estos diálogos son formularios de
+   * varios campos con vista previa del SQL, y un clic al costado tirando media hora de trabajo es
+   * mucho peor que un clic de más en «Cancelar». Se cierra con sus botones o con Escape, que es
+   * intención explícita y no se aprieta sin querer.
    */
   let {
     title,
@@ -95,14 +100,10 @@
 
 <svelte:window onkeydown={onWindowKeydown} />
 
-<!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="fixed inset-0 z-30 grid place-items-center bg-zinc-950/50 p-4 backdrop-blur-[2px]"
   transition:fade={{ duration: 120 }}
-  onclick={(event) => {
-    if (event.target === event.currentTarget && !busy) onclose();
-  }}
   onkeydown={onKeydown}
 >
   <div

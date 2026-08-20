@@ -148,8 +148,7 @@ pub fn warning(operation: Operation) -> Option<&'static str> {
 /// Se usa `batch_execute` y no `query` porque `VACUUM` no admite el protocolo extendido: enviarlo
 /// como sentencia preparada lo hace fallar.
 pub async fn run(session: &Session, sql: &str) -> Result<()> {
-    session.client().batch_execute(sql).await?;
-    Ok(())
+    session.execute_batch(sql).await
 }
 
 #[cfg(test)]

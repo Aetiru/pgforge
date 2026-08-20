@@ -293,6 +293,25 @@ pub async fn role_memberships(
     Ok(rows.into_iter().map(|row| row.get(0)).collect())
 }
 
+/// Todos los roles del servidor, para elegir de cuáles ser miembro sin escribir el nombre a mano.
+///
+/// Se saltean los `pg_*`, que son los roles predefinidos del propio Postgres: dar membresía a uno de
+/// esos es una decisión de administración deliberada y no algo que se elija de una lista al editar
+/// un usuario. Sale de `pg_roles`, legible por cualquier rol, y no de `pg_authid`.
+pub async fn role_names(handle: &ServerHandle, database: &str) -> Result<Vec<String>> {
+    let client = handle.client(database).await?;
+    let rows = client
+        .query(
+            "SELECT rolname::text
+               FROM pg_catalog.pg_roles
+              WHERE left(rolname, 3) <> 'pg_'
+              ORDER BY rolname",
+            &[],
+        )
+        .await?;
+    Ok(rows.into_iter().map(|row| row.get(0)).collect())
+}
+
 /// Reconstruye el `CREATE ROLE` para mostrarlo en el panel de DDL. Sin `PASSWORD`: Postgres nunca
 /// la expone, así que no hay forma honesta de incluirla.
 pub fn describe(info: &RoleInfo) -> String {
