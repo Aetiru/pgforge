@@ -50,6 +50,8 @@ pub fn run() {
             commands::servers::list_groups,
             commands::servers::rename_group,
             commands::servers::save_profile,
+            commands::servers::import_scan,
+            commands::servers::import_apply,
             commands::servers::delete_profile,
             commands::servers::connect,
             commands::servers::ssh_test,

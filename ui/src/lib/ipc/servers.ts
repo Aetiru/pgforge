@@ -70,6 +70,27 @@ export const saveProfile = (profile: ConnectionProfile, password?: string, sshPa
     sshPassword: sshPassword || null,
   });
 
+/** Un servidor encontrado en otra herramienta. Sin contraseña: eso se pide al conectar. */
+export interface ImportCandidate {
+  origin: "pgpass" | "service" | "dbeaver";
+  /** El archivo del que salió. */
+  source: string;
+  name: string;
+  host: string;
+  port: number;
+  database: string;
+  /** Puede venir vacío: DBeaver guarda el usuario junto con la contraseña, cifrado aparte. */
+  user: string;
+  /** La carpeta que tenía en la otra herramienta. */
+  group?: string;
+  environment?: Environment;
+}
+
+export const importScan = () => invoke<ImportCandidate[]>("import_scan");
+
+export const importApply = (candidates: ImportCandidate[], group?: string) =>
+  invoke<ConnectionProfile[]>("import_apply", { candidates, group: group ?? null });
+
 export const deleteProfile = (id: string) => invoke<void>("delete_profile", { id });
 
 /** Las carpetas en las que están repartidos los servidores guardados. */

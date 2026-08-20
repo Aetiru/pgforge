@@ -1,9 +1,10 @@
 //! Perfiles de conexión y estado de los servidores.
 
+use pgforge_core::conn::import::{self, Candidate};
 use pgforge_core::conn::{store, tunnel, HostKeyPolicy};
 use pgforge_core::{ConnectionProfile, Error, Password, ProfileId, Result, ServerCaps};
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use crate::state::AppState;
 
@@ -63,6 +64,48 @@ pub async fn save_profile(
 
     state.store.lock().await.upsert(profile.clone())?;
     Ok(profile)
+}
+
+/// Busca servidores ya configurados en otras herramientas: los archivos de `libpq` y DBeaver.
+///
+/// Solo lee y devuelve candidatos; guardar cuáles es una decisión del usuario, que los ve antes. Sin
+/// contraseñas: `.pgpass` las tiene en texto plano y traerlas sería hacer una copia que nadie pidió
+/// (ver `conn::import`).
+#[tauri::command]
+pub async fn import_scan(app: AppHandle) -> Result<Vec<Candidate>> {
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| Error::Config(format!("no se pudo ubicar la carpeta del usuario: {e}")))?;
+    let data = app.path().data_dir().ok();
+
+    let paths = import::sources(&home, data.as_deref());
+    import::scan(&paths)
+}
+
+/// Guarda los candidatos elegidos como servidores nuevos y devuelve los perfiles creados.
+#[tauri::command]
+pub async fn import_apply(
+    state: State<'_, AppState>,
+    candidates: Vec<Candidate>,
+    group: Option<String>,
+) -> Result<Vec<ConnectionProfile>> {
+    let mut out = Vec::new();
+    let mut store = state.store.lock().await;
+
+    for candidate in &candidates {
+        let mut profile = candidate.profile();
+        // La carpeta elegida manda; si no se eligió ninguna, se respeta la que el servidor tenía en
+        // la otra herramienta. Veinte servidores sueltos en la raíz del árbol es peor que no
+        // haberlos importado.
+        if let Some(group) = group.as_ref().filter(|name| !name.trim().is_empty()) {
+            profile.group = Some(group.clone());
+        }
+        store.upsert(profile.clone())?;
+        out.push(profile);
+    }
+
+    Ok(out)
 }
 
 #[tauri::command]

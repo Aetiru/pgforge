@@ -6,6 +6,7 @@
   import ComparePanel from "./lib/ComparePanel.svelte";
   import ConnectionDialog from "./lib/ConnectionDialog.svelte";
   import GroupDialog from "./lib/GroupDialog.svelte";
+  import ImportServersDialog from "./lib/ImportServersDialog.svelte";
   import NewGroupDialog from "./lib/NewGroupDialog.svelte";
   import Dashboard from "./lib/Dashboard.svelte";
   import ServerConfig from "./lib/ServerConfig.svelte";
@@ -82,6 +83,8 @@
   let groupDialog = $state<string | null>(null);
   /** Abierto mientras se crea una carpeta nueva. */
   let newGroupDialog = $state(false);
+  /** Abierto mientras se buscan servidores ya configurados en otras herramientas. */
+  let importDialog = $state(false);
   /** La paleta de comandos (Ctrl+K). */
   let paletteOpen = $state(false);
   /** El menú con lo que no se usa todos los días del árbol. */
@@ -634,6 +637,17 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
                     class="row-menu"
                     onclick={() => {
                       treeMenu = false;
+                      importDialog = true;
+                    }}
+                  >
+                    <span class="flex items-center gap-2">
+                      <Icon name="download" size={13} /> Importar servidores…
+                    </span>
+                  </button>
+                  <button
+                    class="row-menu"
+                    onclick={() => {
+                      treeMenu = false;
                       explorer.collapseAll();
                     }}
                   >
@@ -908,6 +922,13 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
 
 {#if updates.showing && info}
   <UpdateDialog current={info.version} onclose={() => (updates.showing = false)} />
+{/if}
+
+{#if importDialog}
+  <ImportServersDialog
+    onclose={() => (importDialog = false)}
+    onimported={() => (importDialog = false)}
+  />
 {/if}
 
 {#if newGroupDialog}
