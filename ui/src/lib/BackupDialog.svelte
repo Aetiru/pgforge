@@ -110,8 +110,15 @@
   }
 
   /** Lo larga y cierra: el backup sigue corriendo y se mira desde la vista de procesos. */
-  function run() {
-    tasks.backup({ profileId, options });
+  async function run() {
+    try {
+      await tasks.backup({ profileId, options });
+    } catch (error) {
+      // Falló antes de arrancar —una opción que `pg_dump` rechaza, el servidor caído—, así que no
+      // hay proceso que mirar y el diálogo se queda abierto para explicarlo.
+      planError = describeError(error);
+      return;
+    }
     onclose();
   }
 </script>

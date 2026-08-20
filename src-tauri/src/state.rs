@@ -8,11 +8,12 @@ use pgforge_core::monitor::{ActivityFilter, Monitor};
 use pgforge_core::sql::{HistoryStore, QuerySession, SavedStore};
 use pgforge_core::{ConnectionManager, ProfileId, ProfileStore};
 use tauri::ipc::Channel;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio_postgres::CancelToken;
 
 use crate::commands::query::QueryEvent;
+use crate::process::Processes;
 
 /// Refresco por omisión del dashboard.
 pub const DEFAULT_POLL_MS: u64 = 2_000;
@@ -54,29 +55,6 @@ impl Drop for MonitorEntry {
     }
 }
 
-/// Una sentencia larga en curso del lado del servidor, con la vía para abortarla.
-///
-/// Son las que corren solas mientras se sigue usando la aplicación: el mantenimiento y la creación
-/// de un índice. No se guarda el `JoinHandle`, porque cancelarlas se hace pidiéndoselo al servidor y
-/// no matando la tarea local: abortarla del lado de la aplicación dejaría al servidor terminando el
-/// `VACUUM` igual, pero sin nadie escuchando su resultado.
-pub struct TaskEntry {
-    /// Servidor sobre el que corre, necesario para abrir la conexión de cancelación con el mismo
-    /// cifrado que el resto.
-    pub profile: ProfileId,
-    pub cancel: CancelToken,
-}
-
-/// Un proceso externo en curso: un backup o un restore.
-///
-/// A diferencia de [`TaskEntry`], acá el trabajo lo hace un proceso hijo de la aplicación y
-/// no el servidor: lo que se guarda es el extremo por el que se le avisa que lo mate. Qué limpiar
-/// tras cancelarlo lo resuelve el núcleo —el backup borra su archivo a medio escribir, el restore
-/// no tiene nada que borrar del disco—.
-pub struct ExternalTask {
-    pub cancel: oneshot::Sender<()>,
-}
-
 /// Una pestaña de consulta abierta, con su conexión propia.
 ///
 /// La sesión vive acá y no dentro de la llamada que ejecuta: es lo que hace que un `BEGIN`, un
@@ -109,13 +87,10 @@ pub struct AppState {
     pub manager: ConnectionManager,
     pub store: Mutex<ProfileStore>,
     pub monitors: Mutex<HashMap<ProfileId, MonitorEntry>>,
-    /// Sentencias largas en curso —mantenimiento, creación de índices—, por identificador.
-    pub tasks: Mutex<HashMap<String, TaskEntry>>,
-    pub backups: Mutex<HashMap<String, ExternalTask>>,
-    pub restores: Mutex<HashMap<String, ExternalTask>>,
-    /// Exportaciones e importaciones de datos en curso. Comparten el mismo mapa: cada una tiene su
-    /// identificador único y ambas se cancelan igual, avisándole a la tarea que corte.
-    pub copies: Mutex<HashMap<String, ExternalTask>>,
+    /// Todo lo que corre en segundo plano: mantenimiento, índices, backups, restores y copias de
+    /// datos. Vive acá y no en la ventana porque el proceso de Rust le sobrevive a una recarga (ver
+    /// [`crate::process`]).
+    pub processes: Processes,
     pub queries: Mutex<HashMap<String, QueryEntry>>,
     /// Lecturas del árbol y del DDL en curso, por identificador de pedido.
     pub reads: Mutex<HashMap<String, ReadEntry>>,
@@ -134,10 +109,7 @@ impl AppState {
             history: Mutex::new(HistoryStore::open(config_dir.join("history.db"))?),
             saved: Mutex::new(SavedStore::open(config_dir.join("saved.db"))?),
             monitors: Mutex::new(HashMap::new()),
-            tasks: Mutex::new(HashMap::new()),
-            backups: Mutex::new(HashMap::new()),
-            restores: Mutex::new(HashMap::new()),
-            copies: Mutex::new(HashMap::new()),
+            processes: Processes::default(),
             queries: Mutex::new(HashMap::new()),
             reads: Mutex::new(HashMap::new()),
         })

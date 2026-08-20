@@ -28,6 +28,8 @@
     | "sliders"
     | "plus"
     | "play"
+    | "play-all"
+    | "plan"
     | "sql"
     | "search"
     | "refresh"
@@ -92,6 +94,12 @@
     role: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     play: '<path d="M7 4.8l12 7.2-12 7.2z"/>',
+    // Dos triangulos: ejecutar el script entero y no la sentencia del cursor. Antes era el icono
+    // `sql`, que en una barra de consultas no distingue nada: todo ahi es SQL.
+    "play-all": '<path d="M4 5l7.5 7L4 19z"/><path d="M13 5l7.5 7L13 19z"/>',
+    // El arbol del plan, con su raiz y sus dos nodos. Antes «explicar» usaba `compass`, que en el
+    // arbol significa preguntarle al servidor: el mismo dibujo para dos cosas distintas.
+    plan: '<rect x="9" y="3" width="6" height="4" rx="1"/><rect x="2.5" y="17" width="6" height="4" rx="1"/><rect x="15.5" y="17" width="6" height="4" rx="1"/><path d="M12 7v3.5"/><path d="M5.5 17v-3.5h13V17"/>',
     // Disquete: nadie usa uno hace veinte años y sigue siendo lo que todos leen como «guardar».
     save: '<path d="M4 5a1 1 0 0 1 1-1h11l4 4v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M8 4v5h7V4"/><rect x="8" y="13" width="8" height="7"/>',
     // Estrella: guardar la consulta con nombre. Va aparte del disquete, que es guardar en un

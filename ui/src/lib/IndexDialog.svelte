@@ -72,13 +72,12 @@
     // Se larga y se cierra: `CONCURRENTLY` sobre una tabla grande tarda lo suyo, y esperarlo con el
     // diálogo abierto dejaba la aplicación tomada. La lista de índices se relee cuando el índice
     // existe de verdad, no ahora.
-    tasks.index({
-      profileId,
-      database,
-      target: `${schema}.${table}`,
-      def: def(),
-      onDone: oncreated,
-    });
+    try {
+      await tasks.index({ profileId, database, def: def(), onDone: oncreated });
+    } catch (e) {
+      error = describeError(e);
+      return;
+    }
     onclose();
   }
 </script>

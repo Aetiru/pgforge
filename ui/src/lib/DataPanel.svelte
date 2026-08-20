@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { readOnlyReason } from "./access.svelte";
+  import { environmentOf, readOnlyReason } from "./access.svelte";
+  import { envBar, envLook } from "./badges";
   import Alert from "./Alert.svelte";
   import DataGrid, { type Column } from "./DataGrid.svelte";
   import { explorer } from "./explorer.svelte";
@@ -126,13 +127,18 @@
     tab.pending > 0 ? "Hay cambios sin guardar: guardalos o descartalos antes de volver a leer" : null,
   );
 
+  /** Contra qué entorno se está editando. Pinta la barra igual que en la pestaña de consulta:
+      guardar una fila cambia datos, y saber dónde no puede depender de recordar de qué servidor se
+      abrió la grilla. */
+  const environment = $derived(environmentOf(tab.profileId));
+
   /** La fila sobre la que actúan los botones de la barra. */
   let selected = $state<number | null>(null);
   const selectedRow = $derived(tab.rows.find((row) => row.index === selected) ?? null);
 </script>
 
 <div class="flex h-full flex-col">
-  <header class="toolbar">
+  <header class="toolbar {envBar(environment)}">
     <button class="btn" disabled={tab.loading || tab.saving} onclick={() => tab.load()}>
       <Icon name="refresh" size={12} />
       Refrescar
@@ -198,6 +204,13 @@
     <span class="ml-auto flex items-center gap-2 text-xs muted">
       {#if tab.loading}
         <span class="spinner"></span>
+      {/if}
+
+      <!-- La franja de la barra pinta el entorno, pero producción lleva además su pastilla: al color
+           solo no se le puede confiar la única distinción que importa de verdad. -->
+      {#if environment}
+        {@const badge = envLook(environment)}
+        <span class="tag {badge.tone}" title={badge.title}>{badge.label}</span>
       {/if}
 
       <!-- Cuántas filas trae cada tanda. La tabla no se lee entera nunca: el scroll pide la

@@ -27,6 +27,10 @@ tauri-plugin-dialog = "2.4.1"
 # Registro a archivo. Un error que se muestra y se cierra no deja rastro: sin esto, «me falló al
 # conectar» no se puede diagnosticar después.
 tauri-plugin-log = "2.8.1"
+# Avisar cuando termina algo largo. La ventana puede estar detrás de otra o minimizada: el proceso
+# se sacó del diálogo justo para poder irse a hacer otra cosa, y enterarse de que terminó no puede
+# depender de volver a mirar.
+tauri-plugin-notification = "2.3.1"
 # Abrir la página de descarga cuando hay una versión nueva. Se llama desde Rust y no desde la
 # interfaz: así el comando puede comprobar antes que la dirección sea del repositorio.
 tauri-plugin-opener = "2"

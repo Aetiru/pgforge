@@ -117,6 +117,10 @@
   $effect(() => {
     appInfo().then((value) => (info = value));
     explorer.refreshProfiles().catch((error) => (banner = describeError(error)));
+    // Engancharse al registro de procesos es lo primero que hace la ventana, y también lo primero
+    // que hace después de recargarse: el primer mensaje trae lo que quedó corriendo del otro lado
+    // (ver `tasks.svelte.ts`).
+    tasks.watch().catch((error) => (banner = describeError(error)));
     // Sin `await` y sin `catch`: la comprobación de versión no bloquea el arranque y su falla no se
     // le muestra a nadie (ver `update.svelte.ts`).
     updates.check();

@@ -134,13 +134,17 @@
    */
   const sticky = $derived.by(() => {
     if (rows.length === 0) return null;
+    const first = indexAt(scrollTop);
     const at = stickyIndex(
       rows.map((row) => ({
         level: row.level,
         isSection: isSection(row),
         isGroup: row.kind === "group",
       })),
-      indexAt(scrollTop),
+      first,
+      // Cortada por arriba: si empieza justo en el borde todavía está entera, y entonces no hay
+      // nada que anclar (ver `tree-sticky`).
+      offsets[first] < scrollTop,
     );
     return at === null ? null : rows[at];
   });

@@ -2,6 +2,7 @@ import type { SQLNamespace } from "@codemirror/lang-sql";
 import { save } from "@tauri-apps/plugin-dialog";
 import { changesCatalog } from "./ddl-tags";
 import { explorer } from "./explorer.svelte";
+import { notify } from "./notify.svelte";
 import { paging } from "./paging.svelte";
 import { Tab, tabs } from "./tabs.svelte";
 import {
@@ -276,6 +277,11 @@ export class QueryTab extends Tab {
     const channel = new Channel<QueryEvent>();
     channel.onmessage = (event) => this.apply(event, lines, base);
 
+    // Se cuenta acá y no con el `seconds` del evento `completed` para que incluya la ida y vuelta
+    // entera: es lo que esperó quien la lanzó, que es de lo que se trata el aviso.
+    const startedAt = Date.now();
+    let failed = false;
+
     try {
       // El techo de filas es el mismo que elige la grilla de datos: es la misma pregunta —cuántas
       // filas se traen de una— y una consulta sin `WHERE` sobre una tabla grande, con el techo del
@@ -283,10 +289,19 @@ export class QueryTab extends Tab {
       await queryRun(this.tabId, sql, channel, { maxRows: paging.size });
       if (this.showTypes) await this.loadColumnTypes();
     } catch (error) {
+      failed = true;
       this.log("error", describeError(error));
       this.view = "messages";
     } finally {
       this.running = false;
+      // Una consulta pesada se lanza y uno se va a otra pantalla, igual que con un `VACUUM`. Lo que
+      // tardó poco no avisa: el umbral y el interruptor viven en `notify.svelte.ts`.
+      void notify.queryEnded({
+        server: explorer.profiles.find((profile) => profile.id === this.profileId)?.name ?? "",
+        database: this.database,
+        seconds: (Date.now() - startedAt) / 1000,
+        failed: failed || this.messages.some((message) => message.tone === "error"),
+      });
     }
   }
 

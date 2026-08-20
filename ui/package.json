@@ -1,7 +1,7 @@
 {
   "name": "pgforge-ui",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -22,6 +22,7 @@
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.2",
     "@tauri-apps/plugin-log": "^2.9.0",
+    "@tauri-apps/plugin-notification": "^2.3.3",
     "codemirror": "^6.0.2",
     "uplot": "^1.6.32"
   },

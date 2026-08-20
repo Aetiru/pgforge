@@ -112,8 +112,13 @@
   }
 
   /** La larga y cierra: exportar una tabla grande no puede tener la ventana esperando. */
-  function run() {
-    tasks.export({ profileId, database, target: label, spec, path });
+  async function run() {
+    try {
+      await tasks.export({ profileId, database, target: label, spec, path });
+    } catch (error) {
+      previewError = describeError(error);
+      return;
+    }
     onclose();
   }
 </script>

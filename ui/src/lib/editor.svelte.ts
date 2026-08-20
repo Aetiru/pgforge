@@ -88,8 +88,22 @@ function storedHeight(): number {
   return Number.isFinite(value) && value > 0 ? clampHeight(value) : DEFAULT_EDITOR_HEIGHT;
 }
 
+/**
+ * Si el panel de resultados está plegado.
+ *
+ * Escribir una consulta larga contra una pantalla de portátil dejaba el editor en un tercio del
+ * alto, con el resto ocupado por una grilla vacía o por el resultado de la corrida anterior. Se
+ * pliega y el editor se queda con todo; la barra de resultados sigue a la vista, porque un panel que
+ * se esconde sin dejar de dónde agarrarlo no se vuelve a abrir.
+ *
+ * Va con el alto y no por pestaña: es la misma decisión —cuánto espacio quiero para escribir— y
+ * tenerla que repetir en cada consulta nueva es justo lo que la haría inservible.
+ */
+const HIDDEN_KEY = "pgforge.sql.resultsHidden";
+
 class EditorSplit {
   height = $state(storedHeight());
+  hidden = $state(localStorage.getItem(HIDDEN_KEY) === "on");
 
   set(height: number) {
     this.height = clampHeight(height);
@@ -98,6 +112,11 @@ class EditorSplit {
 
   reset() {
     this.set(DEFAULT_EDITOR_HEIGHT);
+  }
+
+  toggle() {
+    this.hidden = !this.hidden;
+    localStorage.setItem(HIDDEN_KEY, this.hidden ? "on" : "off");
   }
 }
 

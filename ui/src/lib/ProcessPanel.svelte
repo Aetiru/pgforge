@@ -2,6 +2,7 @@
   import Empty from "./Empty.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
   import Sql from "./Sql.svelte";
+  import { notify, MIN_SECONDS_CHOICES } from "./notify.svelte";
   import { tasks, type TaskRun } from "./tasks.svelte";
   import { elapsedText, taskKindLabel, type TaskKind } from "./task-format";
 
@@ -10,8 +11,11 @@
    *
    * Es la contracara de haber sacado los procesos largos de sus diálogos: si el `VACUUM` ya no vive
    * en una ventana modal, tiene que haber un lugar donde se lo vea. Acá no hay estado propio —todo
-   * sale de `tasks`— salvo el reloj: el proceso no manda un evento por segundo solo para mover el
-   * número de al lado.
+   * sale de `tasks`, que a su vez es espejo de lo que anota Rust— salvo el reloj: el proceso no
+   * manda un evento por segundo solo para mover el número de al lado.
+   *
+   * El aviso al terminar se configura acá y no en una pantalla de preferencias aparte: es donde uno
+   * está justo cuando se pregunta por qué no le avisaron, o por qué le avisan tanto.
    */
 
   const KIND_ICON: Record<TaskKind, IconName> = {
@@ -27,6 +31,10 @@
   /** Cuál está desplegado. Uno solo: la salida de `pg_restore` son cientos de líneas. */
   let open = $state<string | null>(null);
 
+  function secondsLabel(seconds: number): string {
+    return seconds === 0 ? "de todo" : `de más de ${seconds} s`;
+  }
+
   $effect(() => {
     const timer = setInterval(() => (now = Date.now()), 1000);
     return () => clearInterval(timer);
@@ -40,7 +48,7 @@
   });
 
   function toggle(run: TaskRun) {
-    open = open === run.key ? null : run.key;
+    open = open === run.taskId ? null : run.taskId;
   }
 </script>
 
@@ -50,8 +58,30 @@
       {tasks.running.length}
       {tasks.running.length === 1 ? "proceso en curso" : "procesos en curso"}
     </span>
+    <label class="check ml-auto" title="Un aviso del sistema cuando termina algo que tardó">
+      <input
+        type="checkbox"
+        checked={notify.enabled}
+        onchange={(event) => notify.setEnabled(event.currentTarget.checked)}
+      />
+      Avisar al terminar
+    </label>
+
+    <select
+      class="field py-0.5 text-xs"
+      disabled={!notify.enabled}
+      aria-label="A partir de cuánto avisar"
+      title="Por debajo de esto no se avisa: el resultado aparece mientras todavía se está mirando"
+      value={notify.minSeconds}
+      onchange={(event) => notify.setMinSeconds(Number(event.currentTarget.value))}
+    >
+      {#each MIN_SECONDS_CHOICES as seconds (seconds)}
+        <option value={seconds}>{secondsLabel(seconds)}</option>
+      {/each}
+    </select>
+
     <button
-      class="btn btn-sm ml-auto"
+      class="btn btn-sm"
       disabled={tasks.finished.length === 0}
       onclick={() => tasks.clearFinished()}
     >
@@ -68,7 +98,7 @@
   {:else}
     <div class="min-h-0 flex-1 overflow-auto p-3">
       <div class="flex flex-col gap-2">
-        {#each tasks.list as run (run.key)}
+        {#each tasks.list as run (run.taskId)}
           <div class="card p-0">
             <div class="flex items-center gap-3 px-3 py-2">
               {#if run.status === "running"}
@@ -103,10 +133,8 @@
               {#if run.status === "running"}
                 <button
                   class="btn btn-danger btn-sm shrink-0"
-                  disabled={run.taskId === null || run.canceling}
-                  title={run.taskId === null
-                    ? "Todavía no arrancó del lado del servidor"
-                    : "Cancelar el proceso"}
+                  disabled={run.canceling}
+                  title="Cancelar el proceso"
                   onclick={() => run.cancel()}
                 >
                   {run.canceling ? "Cancelando…" : "Cancelar"}
@@ -125,14 +153,14 @@
               <button
                 class="btn btn-ghost btn-icon shrink-0"
                 aria-label="Ver el detalle"
-                aria-expanded={open === run.key}
+                aria-expanded={open === run.taskId}
                 title="Ver el SQL y lo que fue informando"
                 onclick={() => toggle(run)}
               >
                 <Icon
                   name="chevron"
                   size={12}
-                  class="transition-transform {open === run.key ? 'rotate-180' : ''}"
+                  class="transition-transform {open === run.taskId ? 'rotate-180' : ''}"
                 />
               </button>
             </div>
@@ -147,7 +175,7 @@
               </p>
             {/if}
 
-            {#if open === run.key}
+            {#if open === run.taskId}
               <div class="divider-t px-3 py-2">
                 {#if run.command}
                   <!-- El mantenimiento y el índice mandan SQL; el backup, una línea de comando. Los
