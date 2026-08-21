@@ -102,6 +102,10 @@
   /** Índices que otro ya cubre, y cuál está elegido para borrar. */
   let redundant = $state<Redundancy[]>([]);
   let redundantError = $state<string | null>(null);
+  let dropError = $state<string | null>(null);
+
+  /** Un índice se identifica por esquema y nombre: el nombre solo se repite entre esquemas. */
+  const keyOf = (item: Redundancy) => `${item.schema}.${item.index}`;
   let selectedRedundant = $state<Redundancy | null>(null);
   let droppingIndex = $state<Redundancy | null>(null);
   let selectedBloat = $state<TableBloat | null>(null);
@@ -243,6 +247,7 @@
         .catch((error) => (actionMessage = describeError(error)));
     } else if (current === "duplicados") {
       redundantError = null;
+      dropError = null;
       redundantIndexes(profileId)
         .then((result) => (redundant = result))
         .catch((error) => (redundantError = describeError(error)));
@@ -448,16 +453,32 @@
     },
   ];
 
-  /** Borra el índice elegido. Va con CONCURRENTLY: no bloquea las escrituras de la tabla. */
+  /**
+   * Borra el índice elegido. Va con CONCURRENTLY salvo que sea un índice particionado, que el
+   * servidor rechaza así: lo dice `dropSql`, que es la sentencia que se mostró en la confirmación.
+   */
   async function dropRedundant(target: Redundancy) {
     droppingIndex = null;
     if (!(await confirmMutation(profileId, "Se va a borrar un índice del servidor."))) return;
     try {
-      await indexDrop(profileId, target.schema, target.index, false, true, database ?? undefined);
-      redundant = redundant.filter((item) => item.index !== target.index);
-      if (selectedRedundant?.index === target.index) selectedRedundant = null;
+      const concurrently = target.dropSql.includes("CONCURRENTLY");
+      await indexDrop(
+        profileId,
+        target.schema,
+        target.index,
+        false,
+        concurrently,
+        database ?? undefined,
+      );
+      // Por esquema, no por nombre suelto: el de un índice es único adentro de su esquema, así que
+      // dos esquemas con el mismo idx_estado se borrarían los dos de la lista.
+      redundant = redundant.filter((item) => keyOf(item) !== keyOf(target));
+      if (selectedRedundant && keyOf(selectedRedundant) === keyOf(target)) selectedRedundant = null;
+      dropError = null;
     } catch (error) {
-      redundantError = describeError(error);
+      // Aparte del error de lectura: ese reemplaza la grilla entera, y un borrado rechazado —lo que
+      // pasa con un índice que sostiene algo— dejaba la lista invisible hasta cambiar de pestaña.
+      dropError = describeError(error);
     }
   }
 
@@ -492,15 +513,11 @@
       header: "Observación",
       width: 200,
       value: (i) =>
-        !i.isValid
-          ? "INVÁLIDO: hay que reconstruirlo"
-          : i.scans === 0 && !i.isUnique && !i.isPrimary
-            ? "nunca se usó"
-            : "",
+        !i.isValid ? "INVÁLIDO: hay que reconstruirlo" : i.unused ? "nunca se usó" : "",
       tone: (i) =>
         !i.isValid
           ? "text-rose-600 dark:text-rose-400"
-          : i.scans === 0 && !i.isUnique && !i.isPrimary
+          : i.unused
             ? "text-amber-600 dark:text-amber-400"
             : undefined,
     },
@@ -906,7 +923,8 @@
     <div class="divider-t divider-b flex items-center gap-2 px-3 py-2">
       <span class="text-xs muted">
         Un índice que otro ya cubre ocupa disco y hace más lenta cada escritura sin acelerar ninguna
-        lectura. Lo que sostiene una restricción nunca aparece acá.
+        lectura. Lo que sostiene algo —una restricción, una clave foránea, la identidad de réplica,
+        el orden de un CLUSTER— nunca aparece acá.
       </span>
       <button
         class="btn btn-danger ml-auto"
@@ -919,6 +937,9 @@
         Borrar el índice…
       </button>
     </div>
+    {#if dropError}
+      <Alert tone="bad">{dropError}</Alert>
+    {/if}
     <div class="min-h-0 flex-1">
       {#if redundantError}
         <Alert tone="bad">{redundantError}</Alert>
@@ -926,10 +947,8 @@
         <DataGrid
           columns={redundantColumns}
           rows={redundant}
-          rowKey={(item) => `${item.schema}.${item.index}`}
-          selectedKey={selectedRedundant
-            ? `${selectedRedundant.schema}.${selectedRedundant.index}`
-            : null}
+          rowKey={keyOf}
+          selectedKey={selectedRedundant ? keyOf(selectedRedundant) : null}
           onselect={(item) => (selectedRedundant = item)}
           sortable
           empty="Ningún índice de esta base está cubierto por otro."

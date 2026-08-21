@@ -97,6 +97,11 @@ export interface IndexStat {
   isUnique: boolean;
   isPrimary: boolean;
   isValid: boolean;
+  /**
+   * Nunca se usó y no sostiene nada. Lo decide el núcleo: acá faltaban las guardas —la restricción
+   * de un EXCLUDE, la identidad de réplica, el CLUSTER— y un índice intocable salía marcado.
+   */
+  unused: boolean;
 }
 
 export interface TableBloat {

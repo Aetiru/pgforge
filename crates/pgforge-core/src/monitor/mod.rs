@@ -15,7 +15,7 @@ pub mod stats;
 pub use activity::{ActivityFilter, Backend, BlockNode, Lock};
 pub use maintenance::{Operation, Target};
 pub use stats::{
-    IndexShape, IndexStat, Redundancy, RedundancyKind, StatementStat, TableBloat, TableStat,
+    Guards, IndexShape, IndexStat, Redundancy, RedundancyKind, StatementStat, TableBloat, TableStat,
 };
 
 use std::time::Instant;
