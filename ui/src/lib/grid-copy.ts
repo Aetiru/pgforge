@@ -32,6 +32,61 @@ export function delimited(
   return lines.join("\n");
 }
 
+/**
+ * El inverso de `delimited`: separa filas y celdas, deshaciendo el `quoted` de cada una. Sostiene lo
+ * que copia cualquier planilla —comillas cuando el valor trae el separador, una comilla o un salto
+ * de línea adentro— para que un bloque pegado entre igual que salió.
+ */
+export function parseDelimited(text: string, separator: "\t" | ","): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let quoting = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    if (quoting) {
+      if (char === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i += 1;
+        } else {
+          quoting = false;
+        }
+      } else {
+        field += char;
+      }
+      continue;
+    }
+
+    if (char === '"' && field === "") {
+      quoting = true;
+    } else if (char === separator) {
+      row.push(field);
+      field = "";
+    } else if (char === "\r") {
+      // El `\n` que lo sigue ya cierra la fila; solo/suelto no significa nada.
+    } else if (char === "\n") {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+    } else {
+      field += char;
+    }
+  }
+  row.push(field);
+  rows.push(row);
+
+  // Una fila final de una sola celda vacía es el salto de línea con el que termina el portapapeles,
+  // no una fila pegada.
+  const last = rows[rows.length - 1];
+  if (rows.length > 1 && last.length === 1 && last[0] === "") rows.pop();
+
+  return rows;
+}
+
 /** La selección como objetos, con el nombre de la columna por clave y el NULL conservado. */
 export function asJson(headers: string[], rows: (string | null)[][]): string {
   const out = rows.map((row) => {

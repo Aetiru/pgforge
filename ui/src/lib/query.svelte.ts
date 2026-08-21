@@ -2,6 +2,7 @@ import type { SQLNamespace } from "@codemirror/lang-sql";
 import { save } from "@tauri-apps/plugin-dialog";
 import { changesCatalog } from "./ddl-tags";
 import { explorer } from "./explorer.svelte";
+import { oneLine } from "./format";
 import { notify } from "./notify.svelte";
 import { paging } from "./paging.svelte";
 import { Tab, tabs } from "./tabs.svelte";
@@ -42,6 +43,9 @@ export interface Message {
 export interface ResultSet {
   index: number;
   line: number;
+  /** Dónde empieza la sentencia dentro del script, en caracteres. Con esto, exportar el resultado
+   *  elegido recupera su texto exacto aunque no sea el primero. */
+  offset: number;
   outcome: Outcome;
 }
 
@@ -53,6 +57,18 @@ export interface ErrorMark {
 }
 
 export type ResultView = "rows" | "plan" | "messages" | "history" | "saved";
+
+/** Un resultado anclado: sobrevive a que se corra otra cosa en la pestaña. */
+export interface PinnedResult {
+  id: string;
+  /** El SQL que lo generó, recortado para el encabezado del panel. */
+  label: string;
+  /** El SQL entero, para el `title` del panel. */
+  sql: string;
+  outcome: Outcome;
+  /** Los tipos de columna, si se habían pedido al anclar. */
+  columnTypes: string[] | null;
+}
 
 /**
  * Lo que el editor necesita del catálogo: el árbol que espera `@codemirror/lang-sql` para completar
@@ -125,6 +141,12 @@ export class QueryTab extends Tab {
    */
   results = $state.raw<ResultSet[]>([]);
   plan = $state.raw<Plan | null>(null);
+  /**
+   * Resultados anclados: a diferencia de `results`, no se tocan en `run()` — es justamente lo que
+   * tiene que sobrevivir a la ejecución siguiente. Se pierden al cerrar la pestaña, como el resto
+   * de su estado.
+   */
+  pinned = $state.raw<PinnedResult[]>([]);
 
   messages = $state<Message[]>([]);
   errorMark = $state<ErrorMark | null>(null);
@@ -143,6 +165,12 @@ export class QueryTab extends Tab {
   columnTypes = $state.raw<string[] | null>(null);
   /** Cuál de los resultados se está mirando, cuando el script devolvió más de uno. */
   shown = $state(0);
+  /**
+   * Si se está mirando un anclado en vez de uno en vivo: el `id` de cuál. Un resultado anclado
+   * funciona como una pestaña más de la tira —se elige igual que `shown` elige uno en vivo—, así que
+   * los dos son mutuamente excluyentes y no dos cosas que conviven en pantalla.
+   */
+  pinnedShown = $state<string | null>(null);
 
   /** Dónde se guardó el texto, para que el siguiente Ctrl+S no vuelva a preguntar. */
   filePath = $state<string | null>(null);
@@ -175,6 +203,31 @@ export class QueryTab extends Tab {
 
   get result(): ResultSet | null {
     return this.results[this.shown] ?? null;
+  }
+
+  /** Ancla el resultado en vivo como una pestaña más de la tira, que no se pisa con el próximo run. */
+  pin(sql: string, outcome: Outcome, columnTypes: string[] | null) {
+    this.pinned = [
+      ...this.pinned,
+      { id: crypto.randomUUID(), sql, label: oneLine(sql, 60), outcome, columnTypes },
+    ];
+  }
+
+  /** Saca un ancla. Si era la que se estaba mirando, vuelve a la pestaña en vivo. */
+  unpin(id: string) {
+    this.pinned = this.pinned.filter((item) => item.id !== id);
+    if (this.pinnedShown === id) this.pinnedShown = null;
+  }
+
+  /** Elige una pestaña en vivo (una de `results`). */
+  showLive(index: number) {
+    this.shown = index;
+    this.pinnedShown = null;
+  }
+
+  /** Elige una pestaña anclada. */
+  showPinned(id: string) {
+    this.pinnedShown = id;
   }
 
   /**
@@ -211,6 +264,10 @@ export class QueryTab extends Tab {
     this.errorMark = null;
     this.ranSql = "";
     this.shown = 0;
+    // Lo anclado quedó de la base anterior: seguir mostrándolo confundiría, sin nada que avise que
+    // ya no es de acá.
+    this.pinned = [];
+    this.pinnedShown = null;
 
     try {
       if (previous) await queryClose(previous);
@@ -271,11 +328,13 @@ export class QueryTab extends Tab {
     this.errorMark = null;
     this.plan = null;
     this.shown = 0;
+    // Ejecutar algo nuevo siempre lleva a mirarlo: lo anclado sigue en la tira, para volver después.
+    this.pinnedShown = null;
     this.view = "rows";
 
-    const lines = new Map<number, number>();
+    const starts = new Map<number, { line: number; offset: number }>();
     const channel = new Channel<QueryEvent>();
-    channel.onmessage = (event) => this.apply(event, lines, base);
+    channel.onmessage = (event) => this.apply(event, starts, base);
 
     // Se cuenta acá y no con el `seconds` del evento `completed` para que incluya la ida y vuelta
     // entera: es lo que esperó quien la lanzó, que es de lo que se trata el aviso.
@@ -327,19 +386,25 @@ export class QueryTab extends Tab {
     }
   }
 
-  private apply(event: QueryEvent, lines: Map<number, number>, base: number) {
+  private apply(
+    event: QueryEvent,
+    starts: Map<number, { line: number; offset: number }>,
+    base: number,
+  ) {
     switch (event.type) {
       case "started":
-        lines.set(event.index, event.line);
+        starts.set(event.index, { line: event.line, offset: event.offset });
         break;
 
-      case "finished":
+      case "finished": {
+        const start = starts.get(event.index);
         // Reasignar y no `push`: con `$state.raw` el cambio se notifica al reemplazar el arreglo.
         this.results = [
           ...this.results,
           {
             index: event.index,
-            line: lines.get(event.index) ?? 1,
+            line: start?.line ?? 1,
+            offset: start?.offset ?? 0,
             outcome: event.outcome,
           },
         ];
@@ -360,6 +425,7 @@ export class QueryTab extends Tab {
           0,
         );
         break;
+      }
 
       case "notice":
         this.log("notice", `${event.severity}: ${event.message}`);

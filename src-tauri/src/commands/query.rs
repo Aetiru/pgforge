@@ -36,6 +36,10 @@ pub enum QueryEvent {
         index: usize,
         total: usize,
         line: usize,
+        /// Dónde empieza la sentencia dentro del script, en caracteres. Sin esto, exportar el
+        /// resultado de una sentencia que no es la primera del script no tenía cómo recuperar su
+        /// texto exacto.
+        offset: usize,
     },
     /// La sentencia devolvió filas. Va en `Box` porque es mucho más grande que el resto y no tiene
     /// sentido que cada evento pague ese tamaño.
@@ -202,6 +206,7 @@ pub async fn query_run(
             index,
             total: statements.len(),
             line: statement.line,
+            offset: statement.offset,
         });
 
         match session.run(&statement.text, limits).await {

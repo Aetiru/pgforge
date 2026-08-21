@@ -34,7 +34,7 @@ export type Outcome =
   | { kind: "command"; tag: string; affected: number; seconds: number };
 
 export type QueryEvent =
-  | { type: "started"; index: number; total: number; line: number }
+  | { type: "started"; index: number; total: number; line: number; offset: number }
   | { type: "finished"; index: number; outcome: Outcome }
   | { type: "notice"; severity: string; message: string }
   | { type: "failed"; index: number; error: CoreError; offset: number }

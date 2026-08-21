@@ -1,5 +1,6 @@
 <script lang="ts">
   import DataGrid, { type Column } from "./DataGrid.svelte";
+  import { DEFAULT_GRID_FONT, gridZoom } from "./grid.svelte";
 
   let {
     columns,
@@ -35,6 +36,10 @@
   // un `indexOf` por celda visible recorrería la tabla entera en cada cuadro.
   const numbered = $derived(rows.map((cells, index) => ({ index, cells })));
 
+  // La letra de la grilla es una preferencia (`gridZoom`): con la letra más grande, la misma cantidad
+  // de caracteres ocupa más ancho, o las columnas quedarían del tamaño calculado para la letra chica.
+  const scale = $derived(gridZoom.size / DEFAULT_GRID_FONT);
+
   const definitions = $derived.by<Column<Numbered>[]>(() => {
     const sample = rows.slice(0, SAMPLE);
 
@@ -47,7 +52,10 @@
       return {
         key: `${index}-${name}`,
         header: types?.[index] ? `${name}  ${types[index]}` : name,
-        width: Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(longest * CHAR_WIDTH) + 20)),
+        width: Math.min(
+          MAX_WIDTH * scale,
+          Math.max(MIN_WIDTH * scale, Math.round(longest * CHAR_WIDTH * scale) + 20),
+        ),
         align: numeric(sample, index) ? "right" : "left",
         value: (row) => oneLine(row.cells[index]),
         // Lo que se copia y lo que muestra el visor es el valor como vino, no el de una línea.
@@ -62,7 +70,7 @@
       {
         key: "#",
         header: "#",
-        width: 56,
+        width: 56 * scale,
         align: "right",
         value: (row) => String(row.index + 1),
         // Ordenar por esta columna devuelve el resultado al orden en que lo mandó el servidor.

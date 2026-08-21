@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { asJson, delimited, pretty, quoted } from "./grid-copy";
+import { asJson, delimited, parseDelimited, pretty, quoted } from "./grid-copy";
 
 /**
  * Lo que se copia de la grilla termina pegado en otra herramienta, así que un valor mal encerrado no
@@ -46,6 +46,45 @@ describe("delimited", () => {
 
   it("el NULL se copia como celda vacía y no como el texto de la pantalla", () => {
     expect(delimited(null, [[null]], ",")).toBe("");
+  });
+});
+
+describe("parseDelimited", () => {
+  it("separa filas y celdas sin comillas", () => {
+    expect(parseDelimited("1\tAna\n2\tLuis", "\t")).toEqual([
+      ["1", "Ana"],
+      ["2", "Luis"],
+    ]);
+  });
+
+  it("deshace las comillas del separador adentro de un valor", () => {
+    expect(parseDelimited('id,nombre\n1,"Rosario, Santa Fe"', ",")).toEqual([
+      ["id", "nombre"],
+      ["1", "Rosario, Santa Fe"],
+    ]);
+  });
+
+  it("deshace la comilla escapada", () => {
+    expect(parseDelimited('"dijo ""hola"""', ",")).toEqual([['dijo "hola"']]);
+  });
+
+  it("un salto de línea adentro de comillas no corta la fila", () => {
+    expect(parseDelimited('"primera\nsegunda"\tx', "\t")).toEqual([["primera\nsegunda", "x"]]);
+  });
+
+  it("el salto de línea final del portapapeles no cuenta como fila vacía pegada", () => {
+    expect(parseDelimited("1\tAna\n2\tLuis\n", "\t")).toEqual([
+      ["1", "Ana"],
+      ["2", "Luis"],
+    ]);
+  });
+
+  it("da la vuelta completa con `delimited` para los casos que rompen", () => {
+    const cells = [
+      ["1", "Ana", "dijo \"hola\""],
+      ["2", "Luis, hijo", "primera\nsegunda"],
+    ];
+    expect(parseDelimited(delimited(null, cells, ","), ",")).toEqual(cells);
   });
 });
 

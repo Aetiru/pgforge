@@ -5,6 +5,7 @@
   import Alert from "./Alert.svelte";
   import DataGrid, { type Column } from "./DataGrid.svelte";
   import { explorer } from "./explorer.svelte";
+  import { DEFAULT_GRID_FONT, gridZoom } from "./grid.svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
   import { PAGE_SIZES, paging } from "./paging.svelte";
@@ -40,6 +41,10 @@
   const shape = $derived(tab.shape);
   const readOnlyProfile = $derived(readOnlyReason(tab.profileId));
 
+  // La letra de la grilla es una preferencia (`gridZoom`, compartida con el resultado de consultas y
+  // el dashboard): con la letra más grande, la misma cantidad de caracteres ocupa más ancho.
+  const scale = $derived(gridZoom.size / DEFAULT_GRID_FONT);
+
   const definitions = $derived.by<Column<Row>[]>(() => {
     if (!shape) return [];
 
@@ -55,7 +60,10 @@
         key: `${index}-${column.name}`,
         // El tipo va en el encabezado: al editar es lo que dice qué se puede escribir en la celda.
         header: `${column.name}  ${column.typeName}`,
-        width: Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(longest * CHAR_WIDTH) + 24)),
+        width: Math.min(
+          MAX_WIDTH * scale,
+          Math.max(MIN_WIDTH * scale, Math.round(longest * CHAR_WIDTH * scale) + 24),
+        ),
         // Acá el tipo lo dice el catálogo, así que la alineación no hay que adivinarla del valor.
         align: NUMERIC.has(column.typeName.toLowerCase()) ? "right" : "left",
         // Con este nombre la ordena el servidor; el encabezado tiene el tipo pegado y no serviría.
@@ -74,7 +82,7 @@
       {
         key: "#",
         header: "",
-        width: 44,
+        width: 44 * scale,
         align: "right",
         value: (row) => marca(row),
         tone: (row) => {

@@ -29,6 +29,7 @@
   import { openQuery, openSqlFiles, saveQueryTab, QueryTab } from "./lib/query.svelte";
   import { queryTargetOf } from "./lib/tree-actions";
   import { parseQuery, PREFIX_HELP } from "./lib/tree-query";
+  import { splitView } from "./lib/split-view.svelte";
   import { tabs, type Tab, type TabKind } from "./lib/tabs.svelte";
   import { tasks } from "./lib/tasks.svelte";
   import { view } from "./lib/view.svelte";
@@ -275,6 +276,29 @@
     window.addEventListener("mouseup", up);
   }
 
+  /**
+   * El divisor del panel dividido, mismo patrón que `startResize` de arriba pero calculando una
+   * proporción contra el contenedor y no un ancho absoluto: `splitView.ratio` es un porcentaje.
+   */
+  function startSplitResize(event: MouseEvent) {
+    event.preventDefault();
+    const container = (event.currentTarget as HTMLElement).parentElement;
+    if (!container) return;
+
+    const move = (moved: MouseEvent) => {
+      const rect = container.getBoundingClientRect();
+      splitView.set((moved.clientX - rect.left) / rect.width);
+    };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      document.body.classList.remove("cursor-col-resize");
+    };
+    document.body.classList.add("cursor-col-resize");
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  }
+
   /** Atajos que valen en toda la ventana. Los del editor los maneja CodeMirror, que tiene el foco. */
   /**
    * Contra qué base abriría una consulta lo que está seleccionado en el árbol.
@@ -298,6 +322,9 @@
    * se está mirando —abrir un script mientras se trabaja sobre una base es contra esa base— y si
    * no hay ninguna, lo elegido en el árbol.
    */
+  /** La pestaña del panel de al lado, si hay una partida. */
+  const splitTab = $derived(tabs.all.find((item) => item.key === tabs.split) ?? null);
+
   const sqlTarget = $derived.by(() => {
     const current = tabs.current;
     if (current instanceof QueryTab) {
@@ -749,7 +776,7 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
               role="tab"
               aria-selected={tabs.active === null}
               title="El objeto seleccionado en el árbol"
-              onclick={() => (tabs.active = null)}
+              onclick={() => tabs.activate(null)}
             >
               <Icon name="compass" size={12} class="muted" />
               Detalle
@@ -763,7 +790,7 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
                 role="tab"
                 aria-selected={tabs.active === tab.key}
                 title={`${tab.title} · ${serverName(tab.profileId)} / ${tab.database}`}
-                onclick={() => (tabs.active = tab.key)}
+                onclick={() => tabs.activate(tab.key)}
                 onauxclick={(event) => {
                   // Botón del medio: cerrar, como en cualquier navegador.
                   if (event.button === 1) closeTab(tab);
@@ -794,6 +821,22 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
                   <span class="shrink-0 text-[11px] muted">/</span>
                 {/if}
                 <span class="truncate">{tab.title}</span>
+              </button>
+              <!-- Manda esta pestaña al panel de al lado, o la saca si ya estaba ahí. Deshabilitado
+                   sobre la pestaña principal: partirla contra sí misma no significa nada. -->
+              <button
+                class="tab-close {tabs.split === tab.key ? 'text-blue-600 dark:text-blue-400' : ''}"
+                aria-label={tabs.split === tab.key ? "Sacar del panel dividido" : "Abrir al lado"}
+                aria-pressed={tabs.split === tab.key}
+                disabled={tab.key === tabs.active}
+                title={tab.key === tabs.active
+                  ? "Ya es la pestaña principal"
+                  : tabs.split === tab.key
+                    ? "Vuelve a mostrar una sola pestaña"
+                    : "Abre esta pestaña en un panel al lado, sin dejar de ver la actual"}
+                onclick={() => tabs.toggleSplit(tab.key)}
+              >
+                <Icon name="columns" size={10} />
               </button>
               <button
                 class="tab-close"
@@ -835,34 +878,60 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
           </button>
         </div>
 
-        <div class="min-h-0 flex-1">
-          {#if tabs.current instanceof QueryTab}
-            {#key tabs.current.key}
-              <QueryPanel tab={tabs.current} />
-            {/key}
-          {:else if tabs.current instanceof DataTab}
-            {#key tabs.current.key}
-              <DataPanel tab={tabs.current} />
-            {/key}
-          {:else if tabs.current instanceof ErdTab}
-            {#key tabs.current.key}
-              <ErdPanel tab={tabs.current} />
-            {/key}
-          {:else if tabs.current instanceof CompareTab}
-            {#key tabs.current.key}
-              <ComparePanel tab={tabs.current} />
-            {/key}
-          {:else}
-            <DetailPanel
-              onconnect={connectById}
-              onedit={editProfile}
-              ondelete={(profileId) => (confirmDelete = profileOf(profileId))}
-              ongroup={(name) => (groupDialog = name)}
-              onquery={openQuery}
-              ondata={openData}
-              onerd={openErd}
-              oncompare={(source) => (compareSource = source)}
-            />
+        {#snippet tabBody(tab: Tab)}
+          {#if tab instanceof QueryTab}
+            <QueryPanel {tab} />
+          {:else if tab instanceof DataTab}
+            <DataPanel {tab} />
+          {:else if tab instanceof ErdTab}
+            <ErdPanel {tab} />
+          {:else if tab instanceof CompareTab}
+            <ComparePanel {tab} />
+          {/if}
+        {/snippet}
+
+        <div class="flex min-h-0 flex-1 flex-row">
+          <div
+            class="flex min-h-0 min-w-0 flex-col {tabs.split ? '' : 'flex-1'}"
+            style={tabs.split ? `flex: 0 0 ${splitView.ratio * 100}%` : ""}
+          >
+            {#if tabs.current}
+              {#key tabs.current.key}
+                {@render tabBody(tabs.current)}
+              {/key}
+            {:else}
+              <DetailPanel
+                onconnect={connectById}
+                onedit={editProfile}
+                ondelete={(profileId) => (confirmDelete = profileOf(profileId))}
+                ongroup={(name) => (groupDialog = name)}
+                onquery={openQuery}
+                ondata={openData}
+                onerd={openErd}
+                oncompare={(source) => (compareSource = source)}
+              />
+            {/if}
+          </div>
+
+          {#if tabs.split && splitTab}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="group relative h-full w-px shrink-0 bg-zinc-200 dark:bg-zinc-800"
+              onmousedown={startSplitResize}
+              ondblclick={() => splitView.reset()}
+              title="Arrastrá para repartir el espacio; doble clic para repartirlo por la mitad"
+            >
+              <div
+                class="absolute inset-y-0 -left-[3px] w-[7px] cursor-col-resize
+                       transition-colors group-hover:bg-blue-500/40"
+              ></div>
+            </div>
+
+            <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+              {#key splitTab.key}
+                {@render tabBody(splitTab)}
+              {/key}
+            </div>
           {/if}
         </div>
       </main>

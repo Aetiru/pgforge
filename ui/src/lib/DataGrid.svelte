@@ -36,8 +36,9 @@
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
-  import { asJson, delimited, pretty } from "./grid-copy";
+  import { asJson, delimited, parseDelimited, pretty } from "./grid-copy";
   import { columnRange } from "./grid-window";
+  import { gridZoom } from "./grid.svelte";
   import { count } from "./format";
 
   let {
@@ -92,7 +93,9 @@
    * cuadro, así que lo que lo hace posible es no dibujar las columnas que están fuera de pantalla:
    * una consulta de cuarenta columnas dibujaba dos mil celdas por cuadro para mostrar seis.
    */
-  const ROW_HEIGHT = 24;
+  // El alto de fila es la misma preferencia en toda la aplicación (ver `grid.svelte.ts`): agrandar
+  // la letra de una grilla agranda las tres.
+  const rowHeight = $derived(gridZoom.rowHeight);
   const OVERSCAN = 24;
   const COLUMN_OVERSCAN = 2;
   /** Cuántas filas antes del final disparan la carga de la página siguiente. */
@@ -125,6 +128,11 @@
    */
   let hidden = $state<Record<string, boolean>>({});
   let frozen = $state(0);
+  /** Orden a mano de las columnas visibles. Vacío = el de `columns`, tal como llegó. */
+  let order = $state<string[]>([]);
+  /** La columna que se está arrastrando y la que está debajo del puntero, para el encabezado. */
+  let dragKey = $state<string | null>(null);
+  let dragOverKey = $state<string | null>(null);
 
   /** Filtro rápido sobre lo ya cargado, con su caja escondida hasta que se la pide. */
   let filter = $state("");
@@ -157,7 +165,23 @@
    * el rango, la ventana horizontal—, así que esconder una columna corre los índices en vez de
    * dejar un hueco al que se pueda llegar con las flechas.
    */
-  const active = $derived(columns.filter((column) => !hidden[column.key]));
+  const active = $derived.by(() => {
+    const visible = columns.filter((column) => !hidden[column.key]);
+    if (order.length === 0) return visible;
+
+    // Lo que no está en `order` es una columna nueva o una que se acaba de destapar: va al final.
+    const byKey = new Map(visible.map((column) => [column.key, column]));
+    const result: Column<T>[] = [];
+    for (const key of order) {
+      const column = byKey.get(key);
+      if (column) {
+        result.push(column);
+        byKey.delete(key);
+      }
+    }
+    result.push(...byKey.values());
+    return result;
+  });
 
   /** Cuántas quedan fijas. Fijarlas todas dejaría la grilla sin nada que desplazar. */
   const pinned = $derived(Math.min(frozen, Math.max(0, active.length - 1)));
@@ -194,9 +218,9 @@
     });
   });
 
-  const start = $derived(Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN));
+  const start = $derived(Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN));
   const visible = $derived(
-    ordered.slice(start, start + Math.ceil(viewportHeight / ROW_HEIGHT) + OVERSCAN * 2),
+    ordered.slice(start, start + Math.ceil(viewportHeight / rowHeight) + OVERSCAN * 2),
   );
   const totalWidth = $derived(active.reduce((sum, column) => sum + widthOf(column), 0));
 
@@ -319,6 +343,21 @@
     headerMenu = null;
   }
 
+  /** Mueve una columna a la posición de otra, arrastrando el encabezado. */
+  function moveColumn(from: string | null, to: string) {
+    if (!from || from === to) return;
+    const keys = active.map((column) => column.key);
+    const fromIndex = keys.indexOf(from);
+    const toIndex = keys.indexOf(to);
+    if (fromIndex === -1 || toIndex === -1) return;
+
+    keys.splice(toIndex, 0, keys.splice(fromIndex, 1)[0]);
+    order = keys;
+    // El rango elegido era un rectángulo sobre el orden anterior: ya no señala esas columnas.
+    cursor = null;
+    anchor = null;
+  }
+
   function onHeaderMenu(event: MouseEvent, index: number) {
     event.preventDefault();
     menu = null;
@@ -354,7 +393,7 @@
       // Un menú abierto se queda donde estaba la celda: se cierra en vez de quedar flotando.
       menu = null;
 
-      const lastVisible = Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT);
+      const lastVisible = Math.ceil((scrollTop + viewportHeight) / rowHeight);
       if (onnearend && ordered.length - lastVisible < NEAR_END) {
         onnearend();
       }
@@ -430,10 +469,10 @@
   /** Deja la fila `index` a la vista; la usa la navegación con flechas. */
   function reveal(index: number) {
     if (!viewport) return;
-    const top = index * ROW_HEIGHT;
+    const top = index * rowHeight;
     if (top < scrollTop) viewport.scrollTop = top;
-    else if (top + ROW_HEIGHT > scrollTop + viewportHeight) {
-      viewport.scrollTop = top + ROW_HEIGHT - viewportHeight;
+    else if (top + rowHeight > scrollTop + viewportHeight) {
+      viewport.scrollTop = top + rowHeight - viewportHeight;
     }
   }
 
@@ -504,11 +543,11 @@
         return;
       case "PageDown":
         event.preventDefault();
-        moveCursor(Math.floor(viewportHeight / ROW_HEIGHT), 0, extend);
+        moveCursor(Math.floor(viewportHeight / rowHeight), 0, extend);
         return;
       case "PageUp":
         event.preventDefault();
-        moveCursor(-Math.floor(viewportHeight / ROW_HEIGHT), 0, extend);
+        moveCursor(-Math.floor(viewportHeight / rowHeight), 0, extend);
         return;
       case "Home":
         event.preventDefault();
@@ -561,6 +600,11 @@
         event.preventDefault();
         copySelection(event.shiftKey ? "csv" : "tsv");
         return;
+      case "v":
+        if (!event.ctrlKey && !event.metaKey) return;
+        event.preventDefault();
+        void pasteSelection();
+        return;
     }
   }
 
@@ -611,6 +655,50 @@
   function copyJson() {
     const { headers, cells } = selection();
     return toClipboard(asJson(headers, cells), "Copiado como JSON");
+  }
+
+  /**
+   * Pega un bloque del portapapeles a partir de la celda con foco, como cualquier planilla. Una
+   * celda vacía escribe NULL y no cadena vacía: mismo criterio que ya usa `grid-copy.ts` al copiar,
+   * para que copiar y pegar adentro de la aplicación redondeen sin inventar un valor.
+   */
+  async function pasteSelection() {
+    menu = null;
+    if (!onedit || !cursor) return;
+
+    let text: string;
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      notify("No se pudo leer el portapapeles");
+      return;
+    }
+    if (!text) return;
+
+    const grid = parseDelimited(text, "\t");
+    const top = cursor.row;
+    const left = cursor.column;
+    let rowsApplied = 0;
+
+    for (let r = 0; r < grid.length; r++) {
+      const row = ordered[top + r];
+      if (!row) break;
+      rowsApplied++;
+      for (let c = 0; c < grid[r].length; c++) {
+        const column = active[left + c];
+        if (!column || !editable?.(row, column)) continue;
+        const value = grid[r][c];
+        onedit(row, column, value === "" ? null : value);
+      }
+    }
+    if (rowsApplied === 0) return;
+
+    // Deja ver exactamente qué rango se pegó, igual que hace cualquier planilla.
+    const cols = Math.min(Math.max(...grid.map((item) => item.length)), active.length - left);
+    cursor = { row: top, column: left };
+    anchor =
+      rowsApplied > 1 || cols > 1 ? { row: top + rowsApplied - 1, column: left + cols - 1 } : null;
+    notify(`Pegado: ${rowsApplied} ${rowsApplied === 1 ? "fila" : "filas"}`);
   }
 
   function notify(message: string) {
@@ -687,11 +775,33 @@
       class="w-full truncate px-2 py-1 text-left {column.align === 'right'
         ? 'text-right'
         : ''} {canSort(column) ? 'hover:text-zinc-900 dark:hover:text-zinc-100' : 'cursor-default'}
-        {sorted ? 'text-zinc-900 dark:text-zinc-100' : ''}"
+        {sorted ? 'text-zinc-900 dark:text-zinc-100' : ''}
+        {dragKey === column.key ? 'opacity-50' : ''}
+        {dragOverKey === column.key ? 'bg-blue-100 dark:bg-blue-900/40' : ''}"
       title="{column.header}{canSort(column) ? ' — clic para ordenar' : ''} — clic derecho para
-        fijar u ocultar"
+        fijar u ocultar{sticky ? '' : ' — arrastrá para reordenar'}"
       tabindex="-1"
+      draggable={!sticky}
       onclick={() => toggleSort(column)}
+      ondragstart={() => (dragKey = column.key)}
+      ondragover={(event) => {
+        if (!dragKey || dragKey === column.key) return;
+        event.preventDefault();
+        dragOverKey = column.key;
+      }}
+      ondragleave={() => {
+        if (dragOverKey === column.key) dragOverKey = null;
+      }}
+      ondrop={(event) => {
+        event.preventDefault();
+        moveColumn(dragKey, column.key);
+        dragKey = null;
+        dragOverKey = null;
+      }}
+      ondragend={() => {
+        dragKey = null;
+        dragOverKey = null;
+      }}
     >
       {#if sticky}
         <Icon name="lock" size={9} class="mr-0.5 inline-block opacity-60" />
@@ -738,12 +848,13 @@
     <div
       class="flex shrink-0 items-center gap-1 bg-white px-1 ring-2 ring-blue-500 dark:bg-zinc-900
              {sticky ? 'sticky z-10' : ''}"
-      style="width: {widthOf(column)}px; height: {ROW_HEIGHT}px;
+      style="width: {widthOf(column)}px; height: {rowHeight}px;
              left: {sticky ? columnOffsets[columnIndex] : 0}px"
     >
       <input
-        class="w-full min-w-0 bg-transparent text-sm outline-none
+        class="w-full min-w-0 bg-transparent outline-none
                {draftNull ? 'italic text-zinc-400' : ''}"
+        style="font-size: var(--grid-font-size, 0.875rem)"
         value={draftNull ? "[null]" : draft}
         autofocus
         oninput={(event) => {
@@ -833,13 +944,24 @@
     class="relative min-h-0 flex-1 overflow-auto outline-none"
     onscroll={onScroll}
     onkeydown={onGridKey}
+    onwheel={(event) => {
+      // Ctrl + rueda es el gesto que todos prueban antes de buscar el botón (mismo atajo que el
+      // tamaño de letra del SQL en `SqlEditor.svelte`).
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      if (event.deltaY < 0) gridZoom.bigger();
+      else gridZoom.smaller();
+    }}
     bind:clientHeight={viewportHeight}
     bind:clientWidth={viewportWidth}
     role="grid"
     tabindex="0"
   >
     <div style="width: {totalWidth}px">
-      <div class="panel divider-b sticky top-0 z-10 flex text-xs font-medium muted">
+      <div
+        class="panel divider-b sticky top-0 z-10 flex font-medium muted"
+        style="font-size: var(--grid-header-font-size, 0.75rem)"
+      >
         {#each frozenColumns as { column, index } (column.key)}
           {@render headerCell(column, index, true)}
         {/each}
@@ -853,7 +975,7 @@
       </div>
 
       {#if ordered.length > 0}
-        <div class="relative" style="height: {ordered.length * ROW_HEIGHT}px">
+        <div class="relative" style="height: {ordered.length * rowHeight}px">
           <!--
             Las filas dibujadas van en un bloque que se corre entero con `transform`, en vez de
             llevar cada una su `top`: mover una capa ya compuesta no cuesta nada, y posicionar
@@ -867,7 +989,7 @@
           -->
           <div
             class="absolute inset-x-0 top-0 will-change-transform"
-            style="transform: translateY({start * ROW_HEIGHT}px)"
+            style="transform: translateY({start * rowHeight}px)"
           >
             {#each visible as row, index (start + index)}
               {@const at = start + index}
@@ -879,14 +1001,15 @@
                 largo al desplazar.
               -->
               <div
-                class="flex text-sm
+                class="flex
                    {selected
                   ? 'bg-blue-100 text-blue-950 dark:bg-blue-950 dark:text-blue-100'
                   : at % 2 === 1
                     ? 'bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-900 dark:hover:bg-zinc-800'
                     : 'bg-white hover:bg-zinc-100 dark:bg-zinc-950 dark:hover:bg-zinc-800'}
                    {rowClass?.(row) ?? ''}"
-                style="height: {ROW_HEIGHT}px; width: {totalWidth}px"
+                style="height: {rowHeight}px; width: {totalWidth}px;
+                       font-size: var(--grid-font-size, 0.875rem)"
                 role="row"
                 tabindex="-1"
               >
@@ -973,6 +1096,9 @@
       Copiar con encabezados <span class="muted">Ctrl+Shift+C</span>
     </button>
     <button class="row-menu" onclick={copyJson}>Copiar como JSON</button>
+    <button class="row-menu" disabled={!onedit} onclick={pasteSelection}>
+      Pegar <span class="muted">Ctrl+V</span>
+    </button>
     <button class="row-menu" onclick={openViewer}>
       Ver el valor <span class="muted">Espacio</span>
     </button>

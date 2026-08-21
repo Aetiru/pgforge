@@ -89,21 +89,34 @@ function storedHeight(): number {
 }
 
 /**
- * Si el panel de resultados está plegado.
+ * Si el editor y los resultados se reparten el alto, o uno de los dos se queda con todo.
  *
  * Escribir una consulta larga contra una pantalla de portátil dejaba el editor en un tercio del
- * alto, con el resto ocupado por una grilla vacía o por el resultado de la corrida anterior. Se
- * pliega y el editor se queda con todo; la barra de resultados sigue a la vista, porque un panel que
- * se esconde sin dejar de dónde agarrarlo no se vuelve a abrir.
+ * alto, con el resto ocupado por una grilla vacía o por el resultado de la corrida anterior — de ahí
+ * `"sql"`. Mirar un resultado ancho de muchas columnas pedía lo mismo al revés — de ahí `"rows"`. Son
+ * tres estados y no dos booleanos porque son excluyentes: el editor y la grilla no pueden estar los
+ * dos plegados a la vez, y dos interruptores independientes permitirían justamente ese estado que no
+ * significa nada.
  *
- * Va con el alto y no por pestaña: es la misma decisión —cuánto espacio quiero para escribir— y
- * tenerla que repetir en cada consulta nueva es justo lo que la haría inservible.
+ * Va con el alto y no por pestaña: es la misma decisión —cuánto espacio quiero para escribir o para
+ * mirar— y tenerla que repetir en cada consulta nueva es justo lo que la haría inservible.
  */
-const HIDDEN_KEY = "pgforge.sql.resultsHidden";
+export type SplitMode = "split" | "sql" | "rows";
+
+const SPLIT_MODE_KEY = "pgforge.sql.split";
+/** Clave vieja, de cuando plegar los resultados era el único modo que existía. */
+const LEGACY_HIDDEN_KEY = "pgforge.sql.resultsHidden";
+
+function storedMode(): SplitMode {
+  const value = localStorage.getItem(SPLIT_MODE_KEY);
+  if (value === "split" || value === "sql" || value === "rows") return value;
+  // Sin la clave nueva, se respeta la preferencia vieja en vez de perderla al actualizar.
+  return localStorage.getItem(LEGACY_HIDDEN_KEY) === "on" ? "sql" : "split";
+}
 
 class EditorSplit {
   height = $state(storedHeight());
-  hidden = $state(localStorage.getItem(HIDDEN_KEY) === "on");
+  mode = $state(storedMode());
 
   set(height: number) {
     this.height = clampHeight(height);
@@ -114,9 +127,27 @@ class EditorSplit {
     this.set(DEFAULT_EDITOR_HEIGHT);
   }
 
-  toggle() {
-    this.hidden = !this.hidden;
-    localStorage.setItem(HIDDEN_KEY, this.hidden ? "on" : "off");
+  private setMode(mode: SplitMode) {
+    this.mode = mode;
+    localStorage.setItem(SPLIT_MODE_KEY, mode);
+  }
+
+  get resultsHidden() {
+    return this.mode === "sql";
+  }
+
+  get editorHidden() {
+    return this.mode === "rows";
+  }
+
+  /** Pliega los resultados y le deja todo el alto al editor; repetirlo vuelve al reparto normal. */
+  toggleResults() {
+    this.setMode(this.mode === "sql" ? "split" : "sql");
+  }
+
+  /** Pliega el editor y le deja todo el alto a la grilla; repetirlo vuelve al reparto normal. */
+  toggleEditor() {
+    this.setMode(this.mode === "rows" ? "split" : "rows");
   }
 }
 

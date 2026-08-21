@@ -13,12 +13,14 @@
   import SaveQueryDialog from "./SaveQueryDialog.svelte";
   import SavedPanel from "./SavedPanel.svelte";
   import FontSize from "./FontSize.svelte";
+  import GridSize from "./GridSize.svelte";
   import SnippetDialog from "./SnippetDialog.svelte";
   import SqlEditor from "./SqlEditor.svelte";
   import { editorSplit } from "./editor.svelte";
   import { PAGE_SIZES, paging } from "./paging.svelte";
   import { count, decimal } from "./format";
   import { planText } from "./plan-text";
+  import { resultLabel } from "./result-tabs";
   import { saveQueryTab, type QueryTab } from "./query.svelte";
   import {
     dataShapeNamed,
@@ -28,6 +30,7 @@
     treeChildren,
     type ExplainOptions,
     type IndexTarget,
+    type Outcome,
     type TableColumn,
   } from "./ipc";
 
@@ -70,6 +73,41 @@
   }
 
   let exportOpen = $state(false);
+  /** El texto exacto de la sentencia que se exporta, resuelto al apretar el botón. */
+  let exportSql = $state("");
+
+  /**
+   * Con un solo resultado, exportar el texto entero de `tab.ranSql` es lo de siempre. Con varios,
+   * cada pestaña de resultado tiene su propio recorte del script —viven en `ResultSet.offset`—, y
+   * hay que pedirle al núcleo dónde termina esa sentencia para no mandar el script completo a un
+   * `COPY` que solo envuelve una consulta.
+   */
+  async function openExport() {
+    const chosen = tab.result;
+    if (tab.results.length <= 1 || !chosen) {
+      exportSql = tab.ranSql;
+    } else {
+      const statement = await statementAtCursor(tab.ranSql, chosen.offset);
+      exportSql = statement?.text ?? tab.ranSql;
+    }
+    exportOpen = true;
+  }
+
+  /**
+   * Ancla el resultado que se está mirando. Mismo patrón que `openExport()` para resolver el SQL
+   * exacto de la sentencia elegida cuando el script devolvió más de un resultado.
+   */
+  async function pinCurrent() {
+    const item = tab.result;
+    if (!item) return;
+    let sql = tab.ranSql;
+    if (tab.results.length > 1) {
+      const statement = await statementAtCursor(tab.ranSql, item.offset);
+      sql = statement?.text ?? tab.ranSql;
+    }
+    tab.pin(sql, item.outcome, tab.showTypes ? tab.columnTypes : null);
+  }
+
   let saveOpen = $state(false);
   let snippetsOpen = $state(false);
   /** Se incrementa al guardar, para que el panel de guardadas relea sin volver a montarse. */
@@ -87,6 +125,9 @@
   const environment = $derived(environmentOf(tab.profileId));
   const result = $derived(tab.result);
   const withRows = $derived(result?.outcome.kind === "rows" ? result.outcome : null);
+  const pinnedResult = $derived(
+    tab.pinnedShown === null ? null : (tab.pinned.find((item) => item.id === tab.pinnedShown) ?? null),
+  );
   const errors = $derived(tab.messages.filter((message) => message.tone === "error").length);
 
   /** El nodo más caro del plan, para que la barra de cada uno signifique algo. */
@@ -191,14 +232,46 @@
     await tab.switchDatabase(database);
   }
 
-  const VIEWS = [
+  // Dos grupos y no una sola tira: Resultados/Plan/Mensajes son el resultado de la corrida;
+  // Historial/Guardadas son de dónde sacar el SQL para la siguiente. Mezclados en una sola `.seg` se
+  // leían como si fueran la misma pregunta.
+  const RESULT_VIEWS = [
     { value: "rows", label: "Resultados" },
     { value: "plan", label: "Plan" },
     { value: "messages", label: "Mensajes" },
+  ] as const;
+
+  const SOURCE_VIEWS = [
     { value: "history", label: "Historial" },
     { value: "saved", label: "Guardadas" },
   ] as const;
+
+  /**
+   * Alt+1…Alt+9 salta al resultado N; Alt+←/→ al anterior o siguiente. Solo mientras se está mirando
+   * «Resultados» y hay más de uno: en cualquier otra solapa esas teclas no tendrían con qué trabajar.
+   * Va en un listener de la ventana porque el foco suele estar en el editor de CodeMirror y no en la
+   * tira de pestañas.
+   */
+  function onResultKey(event: KeyboardEvent) {
+    if (!event.altKey || tab.view !== "rows" || tab.results.length < 2) return;
+
+    if (event.key >= "1" && event.key <= "9") {
+      const index = Number(event.key) - 1;
+      if (index < tab.results.length) {
+        event.preventDefault();
+        tab.shown = index;
+      }
+    } else if (event.key === "ArrowLeft" && tab.shown > 0) {
+      event.preventDefault();
+      tab.shown -= 1;
+    } else if (event.key === "ArrowRight" && tab.shown < tab.results.length - 1) {
+      event.preventDefault();
+      tab.shown += 1;
+    }
+  }
 </script>
+
+<svelte:window onkeydown={onResultKey} />
 
 <div class="flex h-full flex-col">
   <!--
@@ -402,8 +475,12 @@
 
   <!-- Plegado, el editor se queda con todo el alto: por eso crece en vez de llevar altura fija. -->
   <div
-    class="min-h-0 overflow-hidden {editorSplit.hidden ? 'flex-1' : 'shrink-0'}"
-    style={editorSplit.hidden ? "" : `height: ${editorSplit.height}px`}
+    class="min-h-0 overflow-hidden {editorSplit.resultsHidden
+      ? 'flex-1'
+      : editorSplit.editorHidden
+        ? 'hidden'
+        : 'shrink-0'}"
+    style={editorSplit.resultsHidden ? "" : `height: ${editorSplit.height}px`}
   >
     <SqlEditor
       bind:this={editor}
@@ -420,7 +497,7 @@
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="group relative h-px shrink-0 bg-zinc-200 dark:bg-zinc-800 {editorSplit.hidden
+    class="group relative h-px shrink-0 bg-zinc-200 dark:bg-zinc-800 {editorSplit.mode !== 'split'
       ? 'hidden'
       : ''}"
     onmousedown={startResize}
@@ -434,24 +511,38 @@
     ></div>
   </div>
 
-  <div class="flex min-h-0 flex-col {editorSplit.hidden ? 'shrink-0' : 'flex-1'}">
-    <div class="divider-b flex items-center gap-2 px-2 py-1">
+  <div class="flex min-h-0 flex-col {editorSplit.resultsHidden ? 'shrink-0' : 'flex-1'}">
+    <div class="divider-b flex flex-wrap items-center gap-2 px-2 py-1">
       <!-- El botón queda del lado del panel que esconde, y sigue a la vista plegado: un panel que
            se esconde sin dejar de dónde agarrarlo no se vuelve a abrir. -->
       <button
         class="btn btn-ghost btn-icon"
-        aria-label={editorSplit.hidden ? "Mostrar los resultados" : "Ocultar los resultados"}
-        aria-expanded={!editorSplit.hidden}
-        title={editorSplit.hidden
+        aria-label={editorSplit.resultsHidden ? "Mostrar los resultados" : "Ocultar los resultados"}
+        aria-expanded={!editorSplit.resultsHidden}
+        title={editorSplit.resultsHidden
           ? "Muestra de nuevo los resultados"
           : "Pliega los resultados y le deja todo el alto al editor"}
-        onclick={() => editorSplit.toggle()}
+        onclick={() => editorSplit.toggleResults()}
       >
-        <Icon name={editorSplit.hidden ? "eye" : "eye-off"} size={13} />
+        <Icon name={editorSplit.resultsHidden ? "eye" : "eye-off"} size={13} />
+      </button>
+
+      <!-- El inverso: le da todo el alto a la grilla. Va al lado del anterior porque son la misma
+           pregunta —qué se queda con el espacio— hecha desde el otro lado. -->
+      <button
+        class="btn btn-ghost btn-icon"
+        aria-label={editorSplit.editorHidden ? "Restablecer el reparto" : "Maximizar los resultados"}
+        aria-expanded={editorSplit.editorHidden}
+        title={editorSplit.editorHidden
+          ? "Vuelve a mostrar el editor"
+          : "Pliega el editor y le deja todo el alto a la grilla"}
+        onclick={() => editorSplit.toggleEditor()}
+      >
+        <Icon name={editorSplit.editorHidden ? "collapse" : "expand"} size={13} />
       </button>
 
       <div class="seg" role="tablist">
-        {#each VIEWS as item (item.value)}
+        {#each RESULT_VIEWS as item (item.value)}
           <button
             class="seg-item"
             role="tab"
@@ -466,91 +557,188 @@
         {/each}
       </div>
 
-      {#if tab.results.length > 1}
-        <select
-          class="field ml-1 w-44 py-0.5 text-xs"
-          title="El script devolvió más de un resultado"
-          value={tab.shown}
-          onchange={(event) => (tab.shown = Number(event.currentTarget.value))}
-        >
-          {#each tab.results as item, index (index)}
-            <option value={index}>Sentencia {item.index + 1} (línea {item.line})</option>
-          {/each}
-        </select>
-      {/if}
+      <span class="toolbar-sep"></span>
 
-      <!-- Cuántas filas se traen de una. Es la misma preferencia que usa la grilla de datos para su
-           tanda: acá no hay scroll que pida la siguiente, así que sube el techo y se vuelve a
-           ejecutar. -->
-      <!-- Los tipos no vienen con las filas: pedirlos cuesta preparar la sentencia de nuevo en el
-           servidor, así que es un interruptor y no algo que pase siempre. -->
-      <label
-        class="ml-auto check"
-        title="Muestra el tipo de cada columna; se le pregunta al servidor sin ejecutar de nuevo"
-      >
-        <input
-          type="checkbox"
-          checked={tab.showTypes}
-          disabled={tab.running}
-          onchange={(event) => tab.setShowTypes(event.currentTarget.checked)}
-        />
-        Tipos
-      </label>
-
-      <label
-        class="flex items-center gap-1 text-xs muted"
-        title="Máximo de filas que se traen; para ver más, subilo y volvé a ejecutar"
-      >
-        <span>Máx.</span>
-        <select
-          class="field py-0.5 text-xs"
-          value={paging.size}
-          onchange={(event) => paging.set(Number(event.currentTarget.value))}
-        >
-          {#each PAGE_SIZES as size (size)}
-            <option value={size}>{size}</option>
-          {/each}
-        </select>
-      </label>
+      <div class="seg" role="tablist">
+        {#each SOURCE_VIEWS as item (item.value)}
+          <button
+            class="seg-item"
+            role="tab"
+            aria-selected={tab.view === item.value}
+            onclick={() => (tab.view = item.value)}
+          >
+            {item.label}
+          </button>
+        {/each}
+      </div>
 
       <!--
-        Exportar no manda las filas que están en pantalla: vuelve a correr la consulta con un
-        `COPY … TO STDOUT`, así el archivo tiene todas las filas y no las que entraron en el techo.
-        Por eso solo se ofrece cuando se ejecutó una sola sentencia: un script entero no es una
-        consulta que `COPY` pueda envolver.
+        Los controles que solo tienen sentido mirando un resultado: en «Mensajes» o «Historial»,
+        «Tipos» y «Exportar» no actúan sobre nada.
       -->
-      {#if withRows}
-        <button
-          class="btn btn-sm"
-          disabled={tab.results.length !== 1 || tab.ranSql.trim() === ""}
-          title={tab.results.length !== 1
-            ? "El script devolvió varios resultados: ejecutá sola la consulta que querés exportar"
-            : "Exporta todas las filas de la consulta, no solo las que se muestran"}
-          onclick={() => (exportOpen = true)}
-        >
-          <Icon name="download" size={11} />
-          Exportar
-        </button>
+      {#if tab.view === "rows"}
+        <span class="ml-auto flex flex-wrap items-center gap-2">
+          <GridSize />
 
-        <span class="flex items-center gap-2 text-xs muted">
-          {#if withRows.truncated}
-            <span
-              class="tag tag-warn"
-              title="La consulta devolvió más filas de las que entran en el máximo elegido"
+          <!--
+            Estos actúan sobre el resultado en vivo —el techo de filas, sus tipos, exportarlo—, así
+            que mirando una pestaña anclada no pintan nada: es una foto ya tomada, no algo que se
+            vuelva a ejecutar.
+          -->
+          {#if tab.pinnedShown === null}
+            <!-- Cuántas filas se traen de una. Es la misma preferencia que usa la grilla de datos
+                 para su tanda: acá no hay scroll que pida la siguiente, así que sube el techo y se
+                 vuelve a ejecutar. -->
+            <!-- Los tipos no vienen con las filas: pedirlos cuesta preparar la sentencia de nuevo en
+                 el servidor, así que es un interruptor y no algo que pase siempre. -->
+            <label
+              class="check"
+              title="Muestra el tipo de cada columna; se le pregunta al servidor sin ejecutar de nuevo"
             >
-              se muestran {count(withRows.rows.length)}
-            </span>
+              <input
+                type="checkbox"
+                checked={tab.showTypes}
+                disabled={tab.running}
+                onchange={(event) => tab.setShowTypes(event.currentTarget.checked)}
+              />
+              Tipos
+            </label>
+
+            <label
+              class="flex items-center gap-1 text-xs muted"
+              title="Máximo de filas que se traen; para ver más, subilo y volvé a ejecutar"
+            >
+              <span>Máx.</span>
+              <select
+                class="field py-0.5 text-xs"
+                value={paging.size}
+                onchange={(event) => paging.set(Number(event.currentTarget.value))}
+              >
+                {#each PAGE_SIZES as size (size)}
+                  <option value={size}>{size}</option>
+                {/each}
+              </select>
+            </label>
+
+            <!--
+              A diferencia de Exportar, tiene sentido también con un resultado sin filas —un
+              `UPDATE`, anclado como constancia de qué se corrió—, así que va afuera del
+              `{#if withRows}`.
+            -->
+            <button
+              class="btn btn-sm"
+              disabled={!tab.result}
+              title="Ancla este resultado como una pestaña más, que no se pisa con la próxima ejecución"
+              onclick={pinCurrent}
+            >
+              <Icon name="pin" size={11} />
+              Anclar
+            </button>
+
+            <!--
+              Exportar no manda las filas que están en pantalla: vuelve a correr la consulta que
+              corresponde al resultado elegido con un `COPY … TO STDOUT`, así el archivo tiene todas
+              las filas y no las que entraron en el techo. Con más de un resultado, el texto exacto
+              de esa sentencia se lo pregunta al núcleo (`ResultSet.offset`, ver «Pestañas de varios
+              resultados» arriba): no alcanza con el script entero, que no es una consulta que
+              `COPY` pueda envolver.
+            -->
+            {#if withRows}
+              <button
+                class="btn btn-sm"
+                disabled={tab.ranSql.trim() === ""}
+                title="Exporta todas las filas del resultado elegido, no solo las que se muestran"
+                onclick={openExport}
+              >
+                <Icon name="download" size={11} />
+                Exportar
+              </button>
+
+              <span class="flex items-center gap-2 text-xs muted">
+                {#if withRows.truncated}
+                  <span
+                    class="tag tag-warn"
+                    title="La consulta devolvió más filas de las que entran en el máximo elegido"
+                  >
+                    se muestran {count(withRows.rows.length)}
+                  </span>
+                {/if}
+                <span class="tabular-nums">
+                  {count(withRows.rowCount)}
+                  {withRows.rowCount === 1 ? "fila" : "filas"}
+                </span>
+                <span class="tabular-nums">{decimal(withRows.seconds * 1000, 0)} ms</span>
+              </span>
+            {/if}
           {/if}
-          <span class="tabular-nums">
-            {count(withRows.rowCount)}
-            {withRows.rowCount === 1 ? "fila" : "filas"}
-          </span>
-          <span class="tabular-nums">{decimal(withRows.seconds * 1000, 0)} ms</span>
         </span>
       {/if}
     </div>
 
-    <div class="relative min-h-0 flex-1 {editorSplit.hidden ? 'hidden' : ''}">
+    <!--
+      La tira de resultados: una pestaña por cada sentencia en vivo del último script (cuando
+      devolvió más de una) más una por cada resultado anclado. Un ancla funciona igual que las demás
+      —se elige con un clic, tiene su cruz para sacarla— y no como un panel aparte al costado: dos
+      grillas a la vez solo tiene sentido con el panel dividido de la ventana, que es otra cosa.
+    -->
+    {#if tab.view === "rows" && (tab.results.length > 1 || tab.pinned.length > 0)}
+      <div class="divider-b flex items-stretch gap-px overflow-x-auto px-1 py-1" role="tablist">
+        {#each tab.results as item, index (index)}
+          {@const label = resultLabel(item)}
+          <div class="tab-wrap">
+            <button
+              class="tab"
+              role="tab"
+              aria-selected={tab.pinnedShown === null && tab.shown === index}
+              title={label.hint}
+              onclick={() => tab.showLive(index)}
+            >
+              {label.title}
+              <span class="seg-count">{label.detail}</span>
+            </button>
+          </div>
+        {/each}
+
+        {#each tab.pinned as item (item.id)}
+          <div class="tab-wrap">
+            <button
+              class="tab pr-1"
+              role="tab"
+              aria-selected={tab.pinnedShown === item.id}
+              title={item.sql}
+              onclick={() => tab.showPinned(item.id)}
+            >
+              <Icon name="pin" size={10} class="text-blue-600 dark:text-blue-400" />
+              {item.label}
+            </button>
+            <button
+              class="tab-close"
+              aria-label="Sacar el ancla"
+              title="Sacar el ancla"
+              onclick={() => tab.unpin(item.id)}
+            >
+              <Icon name="close" size={10} />
+            </button>
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    {#snippet resultBody(outcome: Outcome, columnTypes: string[] | null)}
+      {#if outcome.kind === "rows"}
+        <ResultGrid columns={outcome.columns} rows={outcome.rows} types={columnTypes} />
+      {:else}
+        <Empty
+          icon="check"
+          title="{outcome.tag} · {count(outcome.affected)} {outcome.affected === 1
+            ? 'fila'
+            : 'filas'}"
+          hint="La sentencia no devuelve filas; el servidor informó cuántas tocó."
+        />
+      {/if}
+    {/snippet}
+
+    <div class="relative min-h-0 flex-1 {editorSplit.resultsHidden ? 'hidden' : ''}">
       <!--
         Mientras corre, el estado vacío decía «todavía no ejecutaste nada», que es exactamente lo
         contrario de lo que está pasando. Va por encima y no en lugar de la grilla: al volver a
@@ -571,7 +759,13 @@
       {/if}
 
       {#if tab.view === "rows"}
-        {#if withRows}
+        {#if pinnedResult}
+          <!-- Una pestaña anclada se mira igual que una en vivo: una sola grilla a la vez, elegida
+               en la tira de arriba. -->
+          {#key pinnedResult.id}
+            {@render resultBody(pinnedResult.outcome, pinnedResult.columnTypes)}
+          {/key}
+        {:else if withRows}
           {#key result}
             <ResultGrid
               columns={withRows.columns}
@@ -693,7 +887,7 @@
   <ExportDialog
     profileId={tab.profileId}
     database={tab.database}
-    source={{ kind: "query", sql: tab.ranSql }}
+    source={{ kind: "query", sql: exportSql }}
     onclose={() => (exportOpen = false)}
   />
 {/if}

@@ -39,6 +39,12 @@ class Tabs {
   all = $state<Tab[]>([]);
   /** `null` significa que se está mirando el detalle del objeto, no una pestaña. */
   active = $state<string | null>(null);
+  /**
+   * La otra pestaña, cuando hay dos abiertas a la vez en el panel dividido. `null` = una sola
+   * pestaña a la vista. No se persiste, igual que `active` y que `all`: la ventana ya abre siempre
+   * sin pestañas, así que una pareja dividida tampoco tiene por qué sobrevivir a un reinicio.
+   */
+  split = $state<string | null>(null);
 
   get current(): Tab | null {
     return this.all.find((tab) => tab.key === this.active) ?? null;
@@ -47,8 +53,24 @@ class Tabs {
   /** Agrega la pestaña y la deja seleccionada. */
   add<T extends Tab>(tab: T): T {
     this.all.push(tab);
-    this.active = tab.key;
+    this.activate(tab.key);
     return tab;
+  }
+
+  /**
+   * Activa una pestaña (o el panel de Detalle, con `null`). Las dos mitades del panel dividido no
+   * pueden mostrar la misma pestaña, así que activar la que está al lado la trae de vuelta a
+   * pantalla completa en vez de dejar la otra mitad sin nada que mostrar.
+   */
+  activate(key: string | null) {
+    this.active = key;
+    if (key !== null && key === this.split) this.split = null;
+  }
+
+  /** Manda una pestaña al panel de al lado, o la saca si ya estaba ahí. */
+  toggleSplit(key: string) {
+    if (key === this.active) return;
+    this.split = this.split === key ? null : key;
   }
 
   async close(key: string) {
@@ -56,9 +78,12 @@ class Tabs {
     if (!tab) return;
 
     this.all = this.all.filter((item) => item.key !== key);
+    if (this.split === key) this.split = null;
     if (this.active === key) {
       this.active = this.all.at(-1)?.key ?? null;
     }
+    // Cerraron las dos pestañas que había, o la única que quedaba pasa a ocupar las dos mitades.
+    if (this.active !== null && this.active === this.split) this.split = null;
 
     // Que falle soltar el recurso no puede impedir cerrar: la pestaña ya no está en pantalla.
     await tab.dispose().catch(() => {});

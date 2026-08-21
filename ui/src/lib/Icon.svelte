@@ -50,6 +50,8 @@
     | "lock"
     | "sort"
     | "collapse"
+    | "expand"
+    | "columns"
     | "chart"
     | "compass"
     | "download"
@@ -57,6 +59,7 @@
     | "eye"
     | "eye-off"
     | "save"
+    | "pin"
     | "star"
     | "undo"
     | "gauge"
@@ -102,6 +105,8 @@
     plan: '<rect x="9" y="3" width="6" height="4" rx="1"/><rect x="2.5" y="17" width="6" height="4" rx="1"/><rect x="15.5" y="17" width="6" height="4" rx="1"/><path d="M12 7v3.5"/><path d="M5.5 17v-3.5h13V17"/>',
     // Disquete: nadie usa uno hace veinte años y sigue siendo lo que todos leen como «guardar».
     save: '<path d="M4 5a1 1 0 0 1 1-1h11l4 4v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M8 4v5h7V4"/><rect x="8" y="13" width="8" height="7"/>',
+    // Alfiler: anclar un resultado como panel fijo, para que no lo tape la próxima ejecución.
+    pin: '<circle cx="12" cy="7" r="4"/><path d="M9 10.5L12 20l3-9.5"/>',
     // Estrella: guardar la consulta con nombre. Va aparte del disquete, que es guardar en un
     // archivo del disco; son dos cosas distintas y el mismo ícono para las dos las confundía.
     star: '<path d="M12 3.6l2.6 5.3 5.9.9-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.8l5.9-.9z"/>',
@@ -133,6 +138,11 @@
     sort: '<path d="M8 4v16M8 4L4.5 7.5M8 4l3.5 3.5"/><path d="M16 20V4M16 20l-3.5-3.5M16 20l3.5-3.5"/>',
     // Dos flechas que se juntan sobre una línea: todo lo abierto vuelve al mismo lugar.
     collapse: '<path d="M4 12h16"/><path d="M8.5 4L12 7.5 15.5 4"/><path d="M8.5 20L12 16.5l3.5 3.5"/>',
+    // El espejo de `collapse`: las mismas dos flechas, apuntando hacia afuera de la línea en vez de
+    // hacia adentro.
+    expand: '<path d="M4 12h16"/><path d="M8.5 7.5L12 4l3.5 3.5"/><path d="M8.5 16.5L12 20l3.5-3.5"/>',
+    // Dos rectángulos separados: panel dividido. Rotado 90° representa apilado en vez de lado a lado.
+    columns: '<rect x="3" y="4" width="8" height="16" rx="1.5"/><rect x="13" y="4" width="8" height="16" rx="1.5"/>',
     chart: '<path d="M4 20V4"/><path d="M4 20h16"/><path d="M8 16.5v-4M12.5 16.5v-8M17 16.5v-5.5"/>',
     compass: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
     download: '<path d="M12 3v12"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M4 20h16"/>',
