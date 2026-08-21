@@ -13,6 +13,7 @@
   import SaveQueryDialog from "./SaveQueryDialog.svelte";
   import SavedPanel from "./SavedPanel.svelte";
   import FontSize from "./FontSize.svelte";
+  import SnippetDialog from "./SnippetDialog.svelte";
   import SqlEditor from "./SqlEditor.svelte";
   import { editorSplit } from "./editor.svelte";
   import { PAGE_SIZES, paging } from "./paging.svelte";
@@ -70,6 +71,7 @@
 
   let exportOpen = $state(false);
   let saveOpen = $state(false);
+  let snippetsOpen = $state(false);
   /** Se incrementa al guardar, para que el panel de guardadas relea sin volver a montarse. */
   let savedStamp = $state(0);
   let editor = $state<ReturnType<typeof SqlEditor> | null>(null);
@@ -326,6 +328,19 @@
       onclick={() => (saveOpen = true)}
     >
       <Icon name="star" size={14} />
+    </button>
+
+    <span class="toolbar-sep"></span>
+
+    <!-- Se configuran acá y no en una pantalla de preferencias aparte: uno se acuerda de que quiere
+         una abreviatura mientras escribe la consulta que la pediría. -->
+    <button
+      class="btn btn-icon"
+      aria-label="Abreviaturas del editor"
+      title="Abreviaturas: escribí una y apretá Tab para expandirla"
+      onclick={() => (snippetsOpen = true)}
+    >
+      <Icon name="sql" size={14} />
     </button>
 
     <span class="toolbar-sep"></span>
@@ -681,6 +696,10 @@
     source={{ kind: "query", sql: tab.ranSql }}
     onclose={() => (exportOpen = false)}
   />
+{/if}
+
+{#if snippetsOpen}
+  <SnippetDialog onclose={() => (snippetsOpen = false)} />
 {/if}
 
 {#if saveOpen}

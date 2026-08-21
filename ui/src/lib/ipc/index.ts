@@ -20,6 +20,7 @@ export * from "./monitor";
 export * from "./tasks";
 export * from "./backup";
 export * from "./query";
+export * from "./snippets";
 export * from "./data";
 export * from "./ddl";
 export * from "./objects";

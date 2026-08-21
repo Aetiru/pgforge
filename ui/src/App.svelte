@@ -34,6 +34,7 @@
   import { view } from "./lib/view.svelte";
   import { theme } from "./lib/theme.svelte";
   import { updates } from "./lib/update.svelte";
+  import { snippets } from "./lib/snippets.svelte";
   import {
     appInfo,
     deleteProfile,
@@ -124,6 +125,9 @@
     // Sin `await` y sin `catch`: la comprobación de versión no bloquea el arranque y su falla no se
     // le muestra a nadie (ver `update.svelte.ts`).
     updates.check();
+    // Igual que la comprobación de versión: sin `await` y sin cartel. Que falten las abreviaturas es
+    // peor que tenerlas, pero mucho mejor que un error rojo al abrir la ventana.
+    snippets.load();
   });
 
   const connectedServers = $derived(explorer.servers.filter((row) => row.connected));

@@ -13,6 +13,7 @@ pub mod exec;
 pub mod explain;
 pub mod history;
 pub mod saved;
+pub mod snippet;
 pub mod split;
 
 pub use advice::{Advice, AdviceKind, Severity};
@@ -21,4 +22,5 @@ pub use exec::{ColumnType, Limits, Outcome, QuerySession, TxStatus, DEFAULT_MAX_
 pub use explain::{ExplainOptions, Plan, PlanNode};
 pub use history::{HistoryStore, NewEntry};
 pub use saved::{NewQuery, SavedQuery, SavedStore};
+pub use snippet::{Snippet, SnippetId, SnippetStore};
 pub use split::{at_cursor, split, Statement};

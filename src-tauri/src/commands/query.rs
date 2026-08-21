@@ -13,7 +13,7 @@ use pgforge_core::error::ErrorPayload;
 use pgforge_core::sql::{
     self, completion, explain, history::Entry as HistoryEntry, history::Source as HistorySource,
     ColumnType, ExplainOptions, Limits, NewEntry, NewQuery, Outcome, Plan, QuerySession,
-    SavedQuery, SchemaSnapshot, TxStatus,
+    SavedQuery, SchemaSnapshot, Snippet, SnippetId, TxStatus,
 };
 use pgforge_core::{Error, ProfileId, Result};
 use serde::Serialize;
@@ -321,6 +321,39 @@ pub async fn saved_save(state: State<'_, AppState>, query: NewQuery) -> Result<S
 #[tauri::command]
 pub async fn saved_delete(state: State<'_, AppState>, saved_id: i64) -> Result<bool> {
     state.saved.lock().await.delete(saved_id)
+}
+
+/// Las abreviaturas del editor, como están guardadas.
+#[tauri::command]
+pub async fn snippets_list(state: State<'_, AppState>) -> Result<Vec<Snippet>> {
+    Ok(state.snippets.lock().await.snippets().to_vec())
+}
+
+/// Agrega una abreviatura o reescribe la que tenga ese identificador. Devuelve la lista entera: es
+/// corta, y así la interfaz no tiene que recomponerla ni volver a pedirla.
+#[tauri::command]
+pub async fn snippet_save(state: State<'_, AppState>, snippet: Snippet) -> Result<Vec<Snippet>> {
+    let mut store = state.snippets.lock().await;
+    store.upsert(snippet)?;
+    Ok(store.snippets().to_vec())
+}
+
+#[tauri::command]
+pub async fn snippet_delete(
+    state: State<'_, AppState>,
+    snippet_id: SnippetId,
+) -> Result<Vec<Snippet>> {
+    let mut store = state.snippets.lock().await;
+    store.remove(snippet_id)?;
+    Ok(store.snippets().to_vec())
+}
+
+/// Vuelve a las de fábrica, descartando lo que haya.
+#[tauri::command]
+pub async fn snippets_reset(state: State<'_, AppState>) -> Result<Vec<Snippet>> {
+    let mut store = state.snippets.lock().await;
+    store.reset()?;
+    Ok(store.snippets().to_vec())
 }
 
 /// Pide al servidor que aborte lo que la pestaña esté ejecutando.

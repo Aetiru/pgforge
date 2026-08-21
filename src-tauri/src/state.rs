@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use pgforge_core::conn::CancelSink;
 use pgforge_core::monitor::{ActivityFilter, Monitor};
-use pgforge_core::sql::{HistoryStore, QuerySession, SavedStore};
+use pgforge_core::sql::{HistoryStore, QuerySession, SavedStore, SnippetStore};
 use pgforge_core::{ConnectionManager, ProfileId, ProfileStore};
 use tauri::ipc::Channel;
 use tokio::sync::Mutex;
@@ -98,6 +98,9 @@ pub struct AppState {
     /// Las consultas que el usuario decidió conservar. Archivo aparte del historial: son cosas
     /// distintas y el `user_version` del esquema es del archivo (ver `sql::saved`).
     pub saved: Mutex<SavedStore>,
+    /// Las abreviaturas del editor. Archivo JSON y no SQLite como las guardadas: es una lista corta
+    /// que se edita entera a mano, y poder abrirla con un editor de texto es parte de la gracia.
+    pub snippets: Mutex<SnippetStore>,
 }
 
 impl AppState {
@@ -108,6 +111,7 @@ impl AppState {
             store: Mutex::new(ProfileStore::load(config_dir.join("connections.json"))?),
             history: Mutex::new(HistoryStore::open(config_dir.join("history.db"))?),
             saved: Mutex::new(SavedStore::open(config_dir.join("saved.db"))?),
+            snippets: Mutex::new(SnippetStore::load(config_dir.join("snippets.json"))?),
             monitors: Mutex::new(HashMap::new()),
             processes: Processes::default(),
             queries: Mutex::new(HashMap::new()),
