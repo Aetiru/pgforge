@@ -4,11 +4,14 @@
   import { searchPanelOpen } from "@codemirror/search";
   import { PostgreSQL, sql, type SQLNamespace } from "@codemirror/lang-sql";
   import { Compartment, EditorState, Prec } from "@codemirror/state";
-  import { Decoration, EditorView, keymap, type DecorationSet } from "@codemirror/view";
+  import { EditorView, keymap } from "@codemirror/view";
   import { basicSetup } from "codemirror";
   import { untrack } from "svelte";
   import { sqlHighlight } from "./sql-highlight";
   import { sqlNesting } from "./sql-nested";
+  import { errorMarkField, markOf, setErrorMark } from "./sql-error-mark";
+  import { expandBinding, snippetCompletions } from "./sql-snippet";
+  import { snippets } from "./snippets.svelte";
   import { columnCompletion } from "./sql-complete";
   import { sqlFont } from "./editor.svelte";
   import type { SchemaRelation } from "./ipc";
@@ -44,7 +47,6 @@
   let view: EditorView | null = null;
 
   const language = new Compartment();
-  const marks = new Compartment();
 
   const theme = EditorView.theme({
     // El tamaño sale de la variable que maneja `sqlFont`: lo cambia el usuario y vale para todo el
@@ -92,32 +94,15 @@
    * Coinciden salvo que haya algo fuera del plano básico —un emoji dentro de una cadena— y ahí la
    * marca del error caería corrida.
    */
-  function toEditorIndex(text: string, chars: number): number {
-    return [...text].slice(0, chars).join("").length;
-  }
-
   function toCharOffset(text: string, index: number): number {
     return [...text.slice(0, index)].length;
   }
 
-  /** Subraya el error abarcando la palabra entera, que es más fácil de ver que un solo carácter. */
-  function markOf(text: string, mark: ErrorMark | null): DecorationSet {
-    const from = mark ? toEditorIndex(text, mark.at) : 0;
-    if (!mark || from >= text.length) return Decoration.none;
-
-    let to = from + 1;
-    while (to < text.length && /[\w$."]/.test(text[to])) to += 1;
-
-    return Decoration.set([
-      Decoration.mark({ class: "cm-error-mark", attributes: { title: mark.message } }).range(
-        from,
-        to,
-      ),
-    ]);
-  }
-
   const shortcuts = Prec.highest(
     keymap.of([
+      // Primero de la lista, pero devuelve `false` cuando no le toca (ver `sql-snippet`): así el
+      // tabulador sigue saltando entre los huecos de una expansión ya abierta.
+      expandBinding(() => snippets.items),
       {
         key: "Mod-Enter",
         preventDefault: true,
@@ -213,7 +198,7 @@
           shortcuts,
           basicSetup,
           language.of(sqlExtension(untrack(() => schema))),
-          marks.of(EditorView.decorations.of(Decoration.none)),
+          errorMarkField,
           syntaxHighlighting(sqlHighlight),
           sqlNesting,
           theme,
@@ -245,6 +230,8 @@
       // clave, y esta agrega lo único que le falta, las columnas del `FROM` sin calificar.
       // Las relaciones se leen por función para que el cambio de base no exija reconfigurar.
       PostgreSQL.language.data.of({ autocomplete: columnCompletion(() => relations) }),
+      // Y las abreviaturas, que si no habría que recordar de memoria.
+      PostgreSQL.language.data.of({ autocomplete: snippetCompletions(() => snippets.items) }),
     ];
   }
 
@@ -254,11 +241,12 @@
     view?.dispatch({ effects: language.reconfigure(sqlExtension(schema)) });
   });
 
+  // Se manda como efecto y no como reconfiguración de un compartimento: el campo lo mapea con cada
+  // cambio del documento, así que la marca sigue a su palabra en vez de quedar clavada en un
+  // desplazamiento que el próximo borrado deja afuera del texto (ver `sql-error-mark`).
   $effect(() => {
     const text = view?.state.doc.toString() ?? "";
-    view?.dispatch({
-      effects: marks.reconfigure(EditorView.decorations.of(markOf(text, errorMark))),
-    });
+    view?.dispatch({ effects: setErrorMark.of(markOf(text, errorMark)) });
   });
 
   // El texto puede cambiar desde afuera (al restaurar del historial); pisar el documento en cada
