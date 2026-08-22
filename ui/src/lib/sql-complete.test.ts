@@ -1,11 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { columnOptions, tablesInScope } from "./sql-complete";
-import type { SchemaRelation } from "./ipc";
+import { columnOptions, hoverInfo, qualifiedNameAt, relationAt, tablesInScope } from "./sql-complete";
+import type { RelationColumn, SchemaRelation } from "./ipc";
+
+/** Nombre pelado, sin tipo ni comentario: acá no hacen falta para probar el autocompletado. */
+function cols(...names: string[]): RelationColumn[] {
+  return names.map((name) => ({ name, typeName: "text" }));
+}
+
+let oid = 0;
+function relation(schema: string, name: string, columns: string[]): SchemaRelation {
+  oid += 1;
+  return { oid, schema, name, columns: cols(...columns) };
+}
 
 const RELATIONS: SchemaRelation[] = [
-  { schema: "public", name: "clientes", columns: ["id", "nombre", "creado"] },
-  { schema: "public", name: "pedidos", columns: ["id", "cliente_id", "total"] },
-  { schema: "ventas", name: "clientes", columns: ["id", "razon_social"] },
+  relation("public", "clientes", ["id", "nombre", "creado"]),
+  relation("public", "pedidos", ["id", "cliente_id", "total"]),
+  relation("ventas", "clientes", ["id", "razon_social"]),
 ];
 
 /** Dónde está el cursor se marca con `|` para no contar caracteres a mano en cada caso. */
@@ -119,5 +130,109 @@ describe("columnOptions", () => {
   it("no ofrece nada de una tabla que el catálogo no conoce", () => {
     const refs = [{ schema: null, name: "inventada", alias: null }];
     expect(columnOptions(RELATIONS, refs)).toEqual([]);
+  });
+});
+
+describe("qualifiedNameAt", () => {
+  it("encuentra el identificador aunque el clic caiga en el medio", () => {
+    const { sql, cursor } = at("SELECT * FROM cli|entes");
+    expect(qualifiedNameAt(sql, cursor)).toEqual({ schema: null, name: "clientes", from: 14, to: 22 });
+  });
+
+  it("junta el esquema cuando el punto está pegado a la izquierda", () => {
+    const { sql, cursor } = at("SELECT * FROM ventas.cli|entes");
+    expect(qualifiedNameAt(sql, cursor)).toEqual({
+      schema: "ventas",
+      name: "clientes",
+      from: 21,
+      to: 29,
+    });
+  });
+
+  it("un punto sin nada antes no arma un esquema", () => {
+    const { sql, cursor } = at(".cli|entes");
+    expect(qualifiedNameAt(sql, cursor)).toEqual({ schema: null, name: "clientes", from: 1, to: 9 });
+  });
+
+  it("nada bajo el cursor da null", () => {
+    const { sql, cursor } = at("SELECT * FROM | clientes");
+    expect(qualifiedNameAt(sql, cursor)).toBeNull();
+  });
+});
+
+describe("relationAt", () => {
+  const refs = [{ schema: null, name: "clientes", alias: "c" }];
+
+  it("con esquema, busca directo por esquema y nombre", () => {
+    const found = relationAt(RELATIONS, [], { schema: "ventas", name: "clientes" });
+    expect(found?.schema).toBe("ventas");
+  });
+
+  it("sin esquema, resuelve por el alias del FROM", () => {
+    const found = relationAt(RELATIONS, refs, { schema: null, name: "c" });
+    expect(found?.schema).toBe("public");
+    expect(found?.name).toBe("clientes");
+  });
+
+  it("sin esquema y sin alias, resuelve por el nombre de la tabla en el FROM", () => {
+    const found = relationAt(RELATIONS, refs, { schema: null, name: "clientes" });
+    expect(found?.schema).toBe("public");
+  });
+
+  it("un nombre repetido en dos esquemas y sin nada en el FROM no elige ninguno", () => {
+    expect(relationAt(RELATIONS, [], { schema: null, name: "clientes" })).toBeNull();
+  });
+
+  it("un nombre que no está en ningún lado da null", () => {
+    expect(relationAt(RELATIONS, [], { schema: null, name: "inventada" })).toBeNull();
+  });
+});
+
+describe("hoverInfo", () => {
+  const comentadas: SchemaRelation[] = [
+    {
+      oid: 1,
+      schema: "public",
+      name: "clientes",
+      comment: "Uno por persona o empresa.",
+      columns: [
+        { name: "id", typeName: "integer" },
+        { name: "creado", typeName: "timestamp with time zone", comment: "En UTC, no local." },
+      ],
+    },
+    { oid: 2, schema: "public", name: "sin_comentario", columns: cols("id") },
+  ];
+
+  it("con alias, resuelve la columna de esa tabla", () => {
+    const refs = [{ schema: null, name: "clientes", alias: "c" }];
+    expect(hoverInfo(comentadas, refs, { schema: "c", name: "creado" })).toEqual({
+      kind: "column",
+      table: "c",
+      column: { name: "creado", typeName: "timestamp with time zone", comment: "En UTC, no local." },
+    });
+  });
+
+  it("sin alias, dentro del FROM, resuelve la columna igual", () => {
+    const refs = [{ schema: null, name: "clientes", alias: null }];
+    expect(hoverInfo(comentadas, refs, { schema: null, name: "id" })).toEqual({
+      kind: "column",
+      table: "clientes",
+      column: { name: "id", typeName: "integer" },
+    });
+  });
+
+  it("esquema.tabla sin alias que lo tape muestra el comentario de la tabla", () => {
+    expect(hoverInfo(comentadas, [], { schema: "public", name: "clientes" })).toEqual({
+      kind: "table",
+      relation: comentadas[0],
+    });
+  });
+
+  it("una tabla sin COMMENT ON no tiene nada que mostrar", () => {
+    expect(hoverInfo(comentadas, [], { schema: "public", name: "sin_comentario" })).toBeNull();
+  });
+
+  it("nada que resuelva da null", () => {
+    expect(hoverInfo(comentadas, [], { schema: null, name: "inventada" })).toBeNull();
   });
 });

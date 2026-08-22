@@ -427,6 +427,9 @@ input[type="password"]::-ms-clear {
   --cm-caret: var(--color-blue-600);
   --cm-selection: color-mix(in srgb, var(--color-blue-500) 22%, transparent);
   --cm-active-line: color-mix(in srgb, var(--color-zinc-500) 7%, transparent);
+  /* La sentencia que Ctrl+Enter va a correr: más marcado que la línea activa, pero mucho menos que
+     una selección de verdad, que es la que se ve cuando el usuario eligió el texto a mano. */
+  --cm-active-statement: color-mix(in srgb, var(--color-blue-500) 8%, transparent);
   --cm-error: var(--color-rose-500);
   --cm-tooltip-bg: var(--color-white);
   --cm-tooltip-border: var(--color-zinc-200);
@@ -460,6 +463,7 @@ input[type="password"]::-ms-clear {
   --cm-caret: var(--color-blue-400);
   --cm-selection: color-mix(in srgb, var(--color-blue-400) 28%, transparent);
   --cm-active-line: color-mix(in srgb, var(--color-zinc-400) 8%, transparent);
+  --cm-active-statement: color-mix(in srgb, var(--color-blue-400) 10%, transparent);
   --cm-error: var(--color-rose-400);
   --cm-tooltip-bg: var(--color-zinc-900);
   --cm-tooltip-border: var(--color-zinc-700);

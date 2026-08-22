@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import Confirm from "./Confirm.svelte";
   import Empty from "./Empty.svelte";
   import ExportDialog from "./ExportDialog.svelte";
   import { environmentOf, isReadOnly } from "./access.svelte";
   import { envBar, envLook, READ_ONLY_LOOK } from "./badges";
+  import { explorer } from "./explorer.svelte";
   import HistoryPanel from "./HistoryPanel.svelte";
   import Icon from "./Icon.svelte";
   import IndexDialog from "./IndexDialog.svelte";
@@ -16,7 +18,9 @@
   import GridSize from "./GridSize.svelte";
   import SnippetDialog from "./SnippetDialog.svelte";
   import SqlEditor from "./SqlEditor.svelte";
-  import { editorSplit } from "./editor.svelte";
+  import type { ActiveRange } from "./sql-active-mark";
+  import { autoFormat, editorSplit } from "./editor.svelte";
+  import { offsetOfStatement } from "./format-cursor";
   import { PAGE_SIZES, paging } from "./paging.svelte";
   import { count, decimal } from "./format";
   import { planText } from "./plan-text";
@@ -26,6 +30,7 @@
     dataShapeNamed,
     describeError,
     explainWarning,
+    sqlFormat,
     statementAtCursor,
     treeChildren,
     type ExplainOptions,
@@ -163,6 +168,105 @@
     const target = await resolve(selection, cursor);
     if (target) await tab.run(target.sql, target.base);
   }
+
+  /** La sentencia que `Ctrl+Enter` va a correr ahora mismo, para pintarle el fondo en el editor. */
+  let activeRange = $state<ActiveRange | null>(null);
+  let cursorTimer: ReturnType<typeof setTimeout> | undefined;
+  let cursorToken = 0;
+
+  /**
+   * Con selección hecha no hay nada que marcar —ya se ve resaltada, y es eso lo que se va a
+   * ejecutar—; sin selección, se le pregunta al núcleo cuál es la sentencia del cursor, la misma
+   * pregunta que hace `resolve()` al ejecutar.
+   *
+   * Con rebote: preguntarle al núcleo en cada tecla es un viaje de más por cada letra escrita. Y
+   * con guarda de token: si dos pedidos quedan en vuelo, el que contesta primero no puede pisar al
+   * que se pidió después, o la marca terminaría mostrando la sentencia de un cursor que ya se movió.
+   */
+  function onCursorMove(selection: string, cursor: number) {
+    clearTimeout(cursorTimer);
+
+    if (selection.trim() !== "") {
+      activeRange = null;
+      return;
+    }
+
+    const token = ++cursorToken;
+    cursorTimer = setTimeout(async () => {
+      const statement = await statementAtCursor(tab.sql, cursor);
+      if (token !== cursorToken) return;
+      activeRange = statement
+        ? { at: statement.offset, length: [...statement.text].length }
+        : null;
+    }, 120);
+  }
+
+  /**
+   * Cuántas sentencias preceden, en el script sin formatear, a la que contiene el cursor.
+   *
+   * No hay un `sql::split` expuesto aparte —solo `statementAtCursor`—, así que se cuenta llamándolo
+   * de a una en vez de reimplementar el partidor acá: es la misma regla que ya se sigue en
+   * `resolve()`, y evita que aparezca un segundo partidor que se desincronice del núcleo.
+   */
+  async function statementIndex(sql: string, cursor: number): Promise<number> {
+    const target = await statementAtCursor(sql, cursor);
+    if (!target) return 0;
+
+    let index = 0;
+    let at = 0;
+    for (;;) {
+      const statement = await statementAtCursor(sql, at);
+      if (!statement || statement.offset >= target.offset) return index;
+      index += 1;
+      at = statement.offset + statement.text.length + 1;
+    }
+  }
+
+  /**
+   * Formatea la selección si hay una, o el documento entero si no. Es la llamada al núcleo que
+   * `SqlEditor` no puede hacer por su cuenta: el atajo, el botón y el comando de la paleta terminan
+   * los tres acá, cada uno con la selección y el cursor de donde le tocaba pedirlos.
+   */
+  async function doFormat(selection: string, cursor: number) {
+    if (!editor) return;
+
+    try {
+      if (selection.trim() !== "") {
+        const formatted = await sqlFormat(selection);
+        editor.applyFormat(formatted, formatted.length);
+        return;
+      }
+
+      const original = tab.sql;
+      const formatted = await sqlFormat(original);
+      // La guarda de equivalencia del núcleo no encontró nada para ordenar: no hay por qué mover
+      // el cursor de donde estaba.
+      if (formatted === original) return;
+
+      const index = await statementIndex(original, cursor);
+      editor.applyFormat(formatted, offsetOfStatement(formatted, index));
+    } catch (error) {
+      tab.log("error", describeError(error));
+    }
+  }
+
+  /** «Ejecutar el script entero»: con el interruptor prendido, ordena el SQL antes de correrlo. */
+  async function runWholeScript() {
+    if (autoFormat.enabled) tab.sql = await sqlFormat(tab.sql);
+    await tab.run(tab.sql);
+  }
+
+  // La paleta de comandos no tiene el editor de CodeMirror a mano: pide formatear incrementando
+  // `tab.formatRequest`, y acá se lo escucha para disparar el mismo camino que el botón. El valor
+  // inicial se lee con `untrack`: es solo el punto de partida de la comparación, no algo a lo que
+  // este efecto tenga que reaccionar.
+  let lastFormatRequest = untrack(() => tab.formatRequest);
+  $effect(() => {
+    if (tab.formatRequest === lastFormatRequest) return;
+    lastFormatRequest = tab.formatRequest;
+    const { text, cursor } = here();
+    doFormat(text, cursor);
+  });
 
   async function explain(selection: string, cursor: number, options: ExplainOptions) {
     const target = await resolve(selection, cursor);
@@ -307,7 +411,7 @@
         disabled={tab.tabId === null}
         aria-label="Ejecutar el script entero"
         title="Ejecuta todas las sentencias del editor (Ctrl+Mayús+Enter)"
-        onclick={() => tab.run(tab.sql)}
+        onclick={runWholeScript}
       >
         <Icon name="play-all" size={14} />
       </button>
@@ -403,6 +507,19 @@
       <Icon name="star" size={14} />
     </button>
 
+    <!-- Con selección, formatea solo eso; sin selección, el documento entero. -->
+    <button
+      class="btn btn-icon"
+      aria-label="Formatear el SQL"
+      title="Ordena el SQL: la selección si hay una, si no el documento entero (Ctrl+Mayús+F)"
+      onclick={() => {
+        const { text, cursor } = here();
+        doFormat(text, cursor);
+      }}
+    >
+      <Icon name="format" size={14} />
+    </button>
+
     <span class="toolbar-sep"></span>
 
     <!-- Se configuran acá y no en una pantalla de preferencias aparte: uno se acuerda de que quiere
@@ -419,6 +536,16 @@
     <span class="toolbar-sep"></span>
 
     <FontSize />
+
+    <!-- Al lado de la letra: es la barra donde uno está cuando se pregunta por este interruptor. -->
+    <label class="check" title="Formatea el SQL solo, antes de guardar y antes de ejecutar el script entero">
+      <input
+        type="checkbox"
+        checked={autoFormat.enabled}
+        onchange={(event) => autoFormat.set(event.currentTarget.checked)}
+      />
+      Autoformatear
+    </label>
 
     <span class="ml-auto flex items-center gap-2 text-xs muted">
       {#if tab.running}
@@ -488,10 +615,15 @@
       schema={tab.schema}
       relations={tab.relations}
       errorMark={tab.errorMark}
+      {activeRange}
       onrun={(selection, cursor) => run(selection, cursor)}
-      onrunScript={() => tab.run(tab.sql)}
+      onrunScript={runWholeScript}
       oncancel={() => tab.cancel()}
       onsave={(askPath) => saveQueryTab(tab, askPath)}
+      onformat={(selection, cursor) => doFormat(selection, cursor)}
+      oncursor={onCursorMove}
+      onreveal={(relation) =>
+        relation && explorer.revealRelation(tab.profileId, tab.database, relation.schema, relation.oid)}
     />
   </div>
 

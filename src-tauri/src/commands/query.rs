@@ -500,6 +500,13 @@ pub fn statement_at_cursor(sql: String, cursor: usize) -> Option<sql::Statement>
     sql::at_cursor(&sql, cursor)
 }
 
+/// Formatea un script SQL. Puro, sin servidor: la guarda de equivalencia de `sql::format` es lo
+/// que hace que el peor caso sea «no formateó», nunca «formateó mal».
+#[tauri::command]
+pub fn sql_format(sql: String) -> String {
+    sql::format(&sql)
+}
+
 /// Guarda el texto de una pestaña de consulta en la ruta elegida.
 ///
 /// Misma excepción anotada que `erd_export_svg`: lo que se escribe lo tiene la interfaz y no el

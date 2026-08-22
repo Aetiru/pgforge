@@ -98,6 +98,7 @@ pub fn run() {
             commands::query::query_column_types,
             commands::query::query_explain,
             commands::query::statement_at_cursor,
+            commands::query::sql_format,
             commands::query::sql_write_file,
             commands::query::sql_read_file,
             commands::query::schema_snapshot,

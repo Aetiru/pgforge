@@ -1,6 +1,7 @@
 import type { SQLNamespace } from "@codemirror/lang-sql";
 import { save } from "@tauri-apps/plugin-dialog";
 import { changesCatalog } from "./ddl-tags";
+import { autoFormat } from "./editor.svelte";
 import { explorer } from "./explorer.svelte";
 import { oneLine } from "./format";
 import { notify } from "./notify.svelte";
@@ -21,6 +22,7 @@ import {
   queryRun,
   queryTxStatus,
   schemaSnapshot,
+  sqlFormat,
   sqlReadFile,
   sqlWriteFile,
   type CoreError,
@@ -97,7 +99,9 @@ async function schemaFor(profileId: string, database: string): Promise<EditorSch
     const namespace: Record<string, Record<string, string[]>> = {};
     for (const schema of snapshot.schemas) namespace[schema] = {};
     for (const relation of snapshot.relations) {
-      (namespace[relation.schema] ??= {})[relation.name] = relation.columns;
+      // `lang-sql` solo necesita el nombre pelado detrás de `tabla.`; el tipo y el comentario son
+      // para el hover, no para esta lista.
+      (namespace[relation.schema] ??= {})[relation.name] = relation.columns.map((c) => c.name);
     }
     return { namespace: namespace as SQLNamespace, relations: snapshot.relations };
   });
@@ -185,6 +189,17 @@ export class QueryTab extends Tab {
   savedId = $state<number | null>(null);
   /** El nombre con el que se guardó, para proponerlo la próxima vez. */
   savedName = $state<string | null>(null);
+
+  /**
+   * Se incrementa para pedirle a la pestaña que formatee, desde un lugar que no tiene el editor de
+   * CodeMirror a mano —la paleta de comandos—. `QueryPanel` lo mira y dispara el mismo camino que
+   * el botón y el atajo.
+   */
+  formatRequest = $state(0);
+
+  requestFormat() {
+    this.formatRequest += 1;
+  }
 
   /** Trae al editor una consulta guardada. */
   applySaved(saved: { id: number; name: string; sql: string }) {
@@ -583,6 +598,10 @@ export function forgetSaved(savedId: number) {
  */
 export async function saveQueryTab(tab: QueryTab, askPath: boolean) {
   try {
+    // `sql::format` es pura y nunca falla: en el peor caso, la guarda de equivalencia del núcleo
+    // devuelve el texto tal cual estaba, así que no hace falta un try/catch aparte para esto.
+    if (autoFormat.enabled) tab.sql = await sqlFormat(tab.sql);
+
     let path = askPath ? null : tab.filePath;
     if (!path) {
       path = await save({

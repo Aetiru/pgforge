@@ -2,6 +2,7 @@
   import Icon from "./Icon.svelte";
   import { explorer, type Row } from "./explorer.svelte";
   import { rank, type Command, type CommandGroup } from "./palette";
+  import { QueryTab } from "./query.svelte";
   import { tabs } from "./tabs.svelte";
   import { theme } from "./theme.svelte";
   import { view, type MainView } from "./view.svelte";
@@ -77,6 +78,19 @@
         run: () => theme.cycle(),
       },
     ];
+
+    // Solo tiene sentido con una pestaña de consulta activa: sin editor de CodeMirror a mano, la
+    // paleta le pide a la pestaña que formatee y `QueryPanel` es quien la escucha.
+    const current = tabs.current;
+    if (current instanceof QueryTab) {
+      out.push({
+        id: "format",
+        label: "Formatear el SQL",
+        hint: "Ctrl+Mayús+F",
+        group: "acción",
+        run: () => current.requestFormat(),
+      });
+    }
 
     for (const item of VIEWS) {
       out.push({

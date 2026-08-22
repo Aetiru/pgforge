@@ -14,7 +14,7 @@
  */
 
 import type { CompletionContext, CompletionResult } from "@codemirror/autocomplete";
-import type { SchemaRelation } from "./ipc";
+import type { RelationColumn, SchemaRelation } from "./ipc";
 
 /** Una tabla nombrada en el `FROM`/`JOIN`, con el alias que le hayan puesto. */
 export interface TableRef {
@@ -189,8 +189,8 @@ export function columnOptions(relations: SchemaRelation[], refs: TableRef[]): Co
 
     const detail = ref.alias ?? relation.name;
     for (const column of relation.columns) {
-      if (!options.some((option) => option.label === column && option.detail === detail)) {
-        options.push({ label: column, detail });
+      if (!options.some((option) => option.label === column.name && option.detail === detail)) {
+        options.push({ label: column.name, detail });
       }
     }
   }
@@ -225,4 +225,127 @@ export function columnCompletion(relations: () => SchemaRelation[]) {
       validFor: /^\w*$/,
     };
   };
+}
+
+/** Lo que puede formar un identificador de SQL sin comillas. */
+const IDENT = /[\p{L}\p{N}_]/u;
+
+/** Un nombre simple, o `esquema.nombre` si el punto queda pegado a la izquierda. */
+export interface QualifiedName {
+  schema: string | null;
+  name: string;
+}
+
+/** Lo mismo, con dónde empieza y termina `name` en el texto: lo que necesita el `hover` para saber
+ *  hasta dónde vale el globo. `relationAt` y `hoverInfo` no lo piden porque no les hace falta. */
+export interface WordAt extends QualifiedName {
+  from: number;
+  to: number;
+}
+
+/**
+ * El identificador que toca `pos`, para el `Ctrl`+clic que revela una tabla en el árbol y para el
+ * `hover` que muestra su tipo y su comentario.
+ *
+ * Se expande en las dos direcciones —no solo hacia atrás, como `wordBefore`— porque un clic o un
+ * `hover` caen en cualquier punto de la palabra, no en su final.
+ */
+export function qualifiedNameAt(text: string, pos: number): WordAt | null {
+  let from = pos;
+  while (from > 0 && IDENT.test(text[from - 1])) from -= 1;
+  let to = pos;
+  while (to < text.length && IDENT.test(text[to])) to += 1;
+  if (from === to) return null;
+
+  const name = text.slice(from, to);
+  if (text[from - 1] !== ".") return { schema: null, name, from, to };
+
+  let schemaFrom = from - 1;
+  while (schemaFrom > 0 && IDENT.test(text[schemaFrom - 1])) schemaFrom -= 1;
+  if (schemaFrom === from - 1) return { schema: null, name, from, to };
+
+  return { schema: text.slice(schemaFrom, from - 1), name, from, to };
+}
+
+/**
+ * A qué relación apunta un nombre escrito en el editor.
+ *
+ * Prioriza lo que está a la vista en el `FROM`/`JOIN` de la sentencia —un alias o un nombre sin
+ * calificar casi siempre se refieren a eso— antes de buscar por nombre suelto en todo lo que trajo
+ * el catálogo, donde el mismo nombre puede repetirse en dos esquemas. Sin coincidencia clara,
+ * `null`: un `Ctrl`+clic que abre la tabla equivocada es peor que uno que no hace nada.
+ */
+export function relationAt(
+  relations: SchemaRelation[],
+  refs: TableRef[],
+  qualified: QualifiedName,
+): SchemaRelation | null {
+  if (qualified.schema !== null) {
+    return (
+      relations.find(
+        (relation) => relation.schema === qualified.schema && relation.name === qualified.name,
+      ) ?? null
+    );
+  }
+
+  const ref =
+    refs.find((candidate) => candidate.alias === qualified.name) ??
+    refs.find((candidate) => candidate.name === qualified.name);
+  if (ref) {
+    return (
+      relations.find(
+        (relation) => relation.name === ref.name && (ref.schema === null || relation.schema === ref.schema),
+      ) ?? null
+    );
+  }
+
+  const matches = relations.filter((relation) => relation.name === qualified.name);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function relationForRef(relations: SchemaRelation[], ref: TableRef): SchemaRelation | undefined {
+  return relations.find(
+    (relation) => relation.name === ref.name && (ref.schema === null || relation.schema === ref.schema),
+  );
+}
+
+export type HoverInfo =
+  | { kind: "column"; table: string; column: RelationColumn }
+  | { kind: "table"; relation: SchemaRelation };
+
+/**
+ * Qué mostrar en el `hover` de un identificador: tipo y comentario si es una columna, o el
+ * comentario de la tabla si no lo es. `null` cuando no hay nada que decir —una tabla sin
+ * `COMMENT ON` no aporta nada que el árbol no muestre ya, y mostrar un globo vacío es peor que no
+ * mostrar nada—.
+ */
+export function hoverInfo(
+  relations: SchemaRelation[],
+  refs: TableRef[],
+  qualified: QualifiedName,
+): HoverInfo | null {
+  if (qualified.schema !== null) {
+    // El prefijo puede ser un alias (`c.total`) o un esquema (`ventas.clientes`): se prueba como
+    // alias primero, porque un esquema nunca hace de alias de nada.
+    const owner = refs.find((ref) => ref.alias === qualified.schema);
+    if (owner) {
+      const relation = relationForRef(relations, owner);
+      const column = relation?.columns.find((candidate) => candidate.name === qualified.name);
+      if (relation && column) return { kind: "column", table: owner.alias ?? relation.name, column };
+    }
+
+    const table = relations.find(
+      (relation) => relation.schema === qualified.schema && relation.name === qualified.name,
+    );
+    return table?.comment ? { kind: "table", relation: table } : null;
+  }
+
+  for (const ref of refs) {
+    const relation = relationForRef(relations, ref);
+    const column = relation?.columns.find((candidate) => candidate.name === qualified.name);
+    if (relation && column) return { kind: "column", table: ref.alias ?? relation.name, column };
+  }
+
+  const relation = relationAt(relations, refs, qualified);
+  return relation && relation.comment ? { kind: "table", relation } : null;
 }

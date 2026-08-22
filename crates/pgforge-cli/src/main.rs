@@ -7,6 +7,7 @@
 // núcleo, que no debe imprimir: quien lo consume decide cómo presentar los resultados.
 #![allow(clippy::disallowed_macros)]
 
+use std::io::Read as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -293,6 +294,13 @@ enum Command {
         dry_run: bool,
     },
 
+    /// Formatea una consulta SQL. Sin servidor: es la demostración de que el núcleo sirve solo.
+    Format {
+        /// Archivo con el SQL a formatear. Sin esto, se lee de la entrada estándar.
+        #[arg(long)]
+        file: Option<PathBuf>,
+    },
+
     /// Abre un túnel SSH a un servidor y deja el puerto local escuchando, para probarlo a mano.
     ///
     /// El secreto SSH (contraseña del bastión o frase de la clave) se lee de la variable de entorno
@@ -530,6 +538,7 @@ async fn main() -> ExitCode {
             database,
             dry_run,
         } => run_import(&url, file, &table, format, header, database, dry_run).await,
+        Command::Format { file } => run_format(file),
         Command::Tunnel {
             ssh_host,
             ssh_port,
@@ -798,6 +807,28 @@ async fn run_import(
         outcome.rows.unwrap_or(0),
         bytes(outcome.bytes)
     );
+    Ok(())
+}
+
+/// Formatea un `SELECT` (o un script entero) sin conectar a ningún servidor: `sql::format` es
+/// pura, y esto es lo que demuestra que el núcleo la sirve sin ventana.
+fn run_format(file: Option<PathBuf>) -> Result<()> {
+    let sql = match file {
+        Some(path) => std::fs::read_to_string(&path).map_err(|error| {
+            Error::Config(format!("no se pudo leer {}: {error}", path.display()))
+        })?,
+        None => {
+            let mut buffer = String::new();
+            std::io::stdin()
+                .read_to_string(&mut buffer)
+                .map_err(|error| {
+                    Error::Config(format!("no se pudo leer la entrada estándar: {error}"))
+                })?;
+            buffer
+        }
+    };
+
+    println!("{}", sql::format(&sql));
     Ok(())
 }
 

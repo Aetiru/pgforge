@@ -2,13 +2,16 @@
 //!
 //! El editor manda texto libre: varias sentencias separadas por `;`, con comentarios y cuerpos de
 //! función adentro. Partir por `;` a secas rompe cualquier `CREATE FUNCTION`, porque el cuerpo va
-//! entre `$$ … $$` y tiene sus propios puntos y coma. Acá se recorre el texto con las mismas reglas
-//! léxicas que usa PostgreSQL para decidir cuándo un `;` separa de verdad.
+//! entre `$$ … $$` y tiene sus propios puntos y coma. Acá se recorre el flujo de tokens de
+//! `super::lex` —que ya resolvió comillas, comentarios y delimitadores— y partir se reduce a
+//! buscar los `;` que ese flujo dejó a nivel superior.
 //!
 //! Es una función pura a propósito: partir bien el script es la parte más fácil de arruinar y la
 //! única que se puede verificar entera sin un servidor.
 
 use serde::Serialize;
+
+use super::lex::{lex, TokenKind};
 
 /// Una sentencia dentro del script, ya recortada.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -26,23 +29,6 @@ pub struct Statement {
     pub line: usize,
 }
 
-/// Estado del recorrido. Todo lo que no es `Normal` es una región donde un `;` no separa nada.
-enum State {
-    Normal,
-    /// `-- hasta el fin de línea`
-    LineComment,
-    /// `/* … */`, que en PostgreSQL anida.
-    BlockComment(usize),
-    /// `'…'`. `escape` distingue las cadenas `E'…'`, donde `\` escapa al carácter siguiente.
-    Quoted {
-        escape: bool,
-    },
-    /// `"…"`, un identificador citado.
-    Ident,
-    /// `$tag$ … $tag$`, con el delimitador completo incluidos los `$`.
-    Dollar(Vec<char>),
-}
-
 /// Parte el script en sentencias ejecutables.
 ///
 /// Las que quedan vacías o solo con comentarios se descartan: mandarlas al servidor no haría nada
@@ -51,123 +37,28 @@ pub fn split(sql: &str) -> Vec<Statement> {
     let chars: Vec<char> = sql.chars().collect();
     let mut statements = Vec::new();
 
-    let mut state = State::Normal;
     let mut start = 0;
     let mut has_content = false;
-    let mut i = 0;
 
-    while i < chars.len() {
-        let c = chars[i];
-
-        match &state {
-            State::Normal => match c {
-                '-' if chars.get(i + 1) == Some(&'-') => {
-                    state = State::LineComment;
-                    i += 2;
-                }
-                '/' if chars.get(i + 1) == Some(&'*') => {
-                    state = State::BlockComment(1);
-                    i += 2;
-                }
-                '\'' => {
-                    state = State::Quoted {
-                        escape: is_escape_string(&chars, i),
-                    };
-                    has_content = true;
-                    i += 1;
-                }
-                '"' => {
-                    state = State::Ident;
-                    has_content = true;
-                    i += 1;
-                }
-                '$' => match dollar_tag(&chars, i) {
-                    Some(tag) => {
-                        i += tag.len();
-                        state = State::Dollar(tag);
-                        has_content = true;
-                    }
-                    None => {
-                        has_content = true;
-                        i += 1;
-                    }
-                },
-                ';' => {
-                    if has_content {
-                        statements.push(build(&chars, start, i));
-                    }
-                    i += 1;
-                    start = i;
-                    has_content = false;
-                }
-                _ => {
-                    if !c.is_whitespace() {
-                        has_content = true;
-                    }
-                    i += 1;
-                }
-            },
-
-            State::LineComment => {
-                if c == '\n' {
-                    state = State::Normal;
-                }
-                i += 1;
+    for token in lex(sql) {
+        // Un `;` que el lexer entregó como token suelto ya pasó el filtro de comillas, comentarios
+        // y `$$ … $$`: cualquiera de esos casos lo hubiera dejado adentro de un token más grande.
+        if token.kind == TokenKind::Punct && token.text == ";" {
+            if has_content {
+                statements.push(build(&chars, start, token.start));
             }
+            start = token.start + 1;
+            has_content = false;
+            continue;
+        }
 
-            State::BlockComment(depth) => {
-                if c == '/' && chars.get(i + 1) == Some(&'*') {
-                    state = State::BlockComment(depth + 1);
-                    i += 2;
-                } else if c == '*' && chars.get(i + 1) == Some(&'/') {
-                    state = match depth {
-                        1 => State::Normal,
-                        _ => State::BlockComment(depth - 1),
-                    };
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-
-            State::Quoted { escape } => {
-                if *escape && c == '\\' {
-                    // El carácter escapado se salta entero: `E'\''` no cierra la cadena.
-                    i += 2;
-                } else if c == '\'' {
-                    // Dos comillas seguidas son una comilla literal, no el cierre.
-                    if chars.get(i + 1) == Some(&'\'') {
-                        i += 2;
-                    } else {
-                        state = State::Normal;
-                        i += 1;
-                    }
-                } else {
-                    i += 1;
-                }
-            }
-
-            State::Ident => {
-                if c == '"' {
-                    if chars.get(i + 1) == Some(&'"') {
-                        i += 2;
-                    } else {
-                        state = State::Normal;
-                        i += 1;
-                    }
-                } else {
-                    i += 1;
-                }
-            }
-
-            State::Dollar(tag) => {
-                if chars[i..].starts_with(tag) {
-                    i += tag.len();
-                    state = State::Normal;
-                } else {
-                    i += 1;
-                }
-            }
+        // Ni un comentario ni el espacio en blanco cuentan como contenido: una sentencia hecha
+        // solo de eso no se manda al servidor.
+        if !matches!(
+            token.kind,
+            TokenKind::Whitespace | TokenKind::LineComment | TokenKind::BlockComment
+        ) {
+            has_content = true;
         }
     }
 
@@ -237,39 +128,6 @@ fn build(chars: &[char], start: usize, end: usize) -> Statement {
         offset: from,
         line: 1 + chars[..from].iter().filter(|c| **c == '\n').count(),
     }
-}
-
-fn is_ident_char(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
-}
-
-/// `true` si la comilla en `quote` abre una cadena `E'…'`, donde `\` escapa.
-///
-/// Se mira que la `E` no sea el final de un identificador: en `caste'x'` la `e` es parte del
-/// nombre, no un prefijo de cadena.
-fn is_escape_string(chars: &[char], quote: usize) -> bool {
-    if quote == 0 || !matches!(chars[quote - 1], 'e' | 'E') {
-        return false;
-    }
-    quote < 2 || !is_ident_char(chars[quote - 2])
-}
-
-/// Devuelve el delimitador completo (`$$`, `$cuerpo$`) si en `at` empieza uno.
-///
-/// `None` cuando el `$` es otra cosa: el parámetro `$1`, o el operador de un tipo definido por una
-/// extensión.
-fn dollar_tag(chars: &[char], at: usize) -> Option<Vec<char>> {
-    let mut end = at + 1;
-
-    while end < chars.len() && chars[end] != '$' {
-        // La etiqueta sigue las reglas de un identificador, así que `$1` no abre nada.
-        if !is_ident_char(chars[end]) || (end == at + 1 && chars[end].is_numeric()) {
-            return None;
-        }
-        end += 1;
-    }
-
-    (end < chars.len()).then(|| chars[at..=end].to_vec())
 }
 
 #[cfg(test)]

@@ -22,9 +22,10 @@ import type { ErrorMark } from "./query.svelte";
  * De un desplazamiento en caracteres al índice que usa el editor.
  *
  * El núcleo cuenta caracteres y CodeMirror cuenta unidades UTF-16, así que un emoji o un acento
- * compuesto en el SQL corren la marca si se pasa el número tal cual.
+ * compuesto en el SQL corren la marca si se pasa el número tal cual. Se exporta porque
+ * `sql-active-mark.ts` necesita exactamente la misma conversión para la sentencia activa.
  */
-function toEditorIndex(text: string, chars: number): number {
+export function toEditorIndex(text: string, chars: number): number {
   return [...text].slice(0, chars).join("").length;
 }
 

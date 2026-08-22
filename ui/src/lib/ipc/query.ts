@@ -144,10 +144,19 @@ export const queryTxStatus = (tabId: string) => invoke<TxStatus>("query_tx_statu
 export const queryExplain = (tabId: string, sql: string, options?: ExplainOptions) =>
   invoke<Plan>("query_explain", { tabId, sql, options: options ?? null });
 
+export interface RelationColumn {
+  name: string;
+  typeName: string;
+  comment?: string | null;
+}
+
 export interface SchemaRelation {
+  /** Para el `Ctrl`+clic que revela la tabla en el árbol. */
+  oid: number;
   schema: string;
   name: string;
-  columns: string[];
+  comment?: string | null;
+  columns: RelationColumn[];
 }
 
 export interface SchemaSnapshot {
@@ -230,6 +239,12 @@ export const savedDelete = (savedId: number) => invoke<boolean>("saved_delete", 
 
 export const statementAtCursor = (sql: string, cursor: number) =>
   invoke<SqlStatement | null>("statement_at_cursor", { sql, cursor });
+
+/**
+ * Formatea un script SQL. Nunca falla: `sql::format` es pura y, si no entiende algo, la guarda de
+ * equivalencia del núcleo devuelve el texto tal cual llegó en vez de arriesgarse a romperlo.
+ */
+export const sqlFormat = (sql: string) => invoke<string>("sql_format", { sql });
 
 export const explainWarning = (sql: string, options?: ExplainOptions) =>
   invoke<string | null>("explain_warning", { sql, options: options ?? null });

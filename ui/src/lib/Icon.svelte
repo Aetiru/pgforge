@@ -65,7 +65,8 @@
     | "gauge"
     | "unplug"
     | "diagram"
-    | "compare";
+    | "compare"
+    | "format";
 
   const PATHS: Record<IconName, string> = {
     server:
@@ -157,6 +158,8 @@
       '<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M6 8h12v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4z"/><path d="M3 3l18 18"/>',
     sliders:
       '<path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h6M14 18h6"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="12" cy="18" r="2"/>',
+    // Tres líneas con sangría creciente: ordenar el SQL en niveles es justo lo que hace el botón.
+    format: '<path d="M4 6h16M4 12h10M4 18h13"/>',
   };
 
   export function iconPath(name: IconName): string {

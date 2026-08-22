@@ -152,3 +152,29 @@ class EditorSplit {
 }
 
 export const editorSplit = new EditorSplit();
+
+/**
+ * Formatear el SQL solo, sin que lo pidan con `Ctrl+Mayús+F` o el botón: antes de guardar y antes
+ * de ejecutar el script entero (`saveQueryTab`, «ejecutar todo»).
+ *
+ * Apagado por omisión: formatear sin que lo pidan es la clase de cosa que enoja, y que se pueda
+ * apagar es la mitad de la función. No toca la ejecución de una sola sentencia (`Ctrl+Enter`) — ahí
+ * se está iterando sobre una consulta, y reescribir el documento entero en cada corrida es
+ * exactamente lo que hace que la gente lo apague.
+ */
+const AUTO_FORMAT_KEY = "pgforge.sql.autoFormat";
+
+function storedAutoFormat(): boolean {
+  return localStorage.getItem(AUTO_FORMAT_KEY) === "on";
+}
+
+class AutoFormat {
+  enabled = $state(storedAutoFormat());
+
+  set(enabled: boolean) {
+    this.enabled = enabled;
+    localStorage.setItem(AUTO_FORMAT_KEY, enabled ? "on" : "off");
+  }
+}
+
+export const autoFormat = new AutoFormat();
