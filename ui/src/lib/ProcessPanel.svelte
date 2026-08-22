@@ -185,7 +185,7 @@
                 {#if run.log.length > 0}
                   <div
                     class="mt-2 max-h-56 overflow-auto rounded-md border border-zinc-200 px-2 py-1.5
-                           font-mono text-xs select-text dark:border-zinc-800"
+                           font-mono text-xs select-text dark:border-zinc-700"
                   >
                     {#each run.log as line, index (index)}
                       <div class="whitespace-pre-wrap">{line}</div>

@@ -766,7 +766,7 @@
   {@const sorted = sort?.key === column.key}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="group relative shrink-0 border-r border-zinc-200/70 dark:border-zinc-800/70
+    class="group relative shrink-0 border-r border-zinc-200/70 dark:border-zinc-700/70
            {sticky ? 'panel sticky z-20' : ''} {column.align === 'right' ? 'text-right' : ''}"
     style="width: {widthOf(column)}px; left: {sticky ? columnOffsets[index] : 0}px"
     oncontextmenu={(event) => onHeaderMenu(event, index)}
@@ -846,7 +846,7 @@
   {#if editing && editing.row === key && editing.column === column.key}
     <!-- svelte-ignore a11y_autofocus -->
     <div
-      class="flex shrink-0 items-center gap-1 bg-white px-1 ring-2 ring-blue-500 dark:bg-zinc-900
+      class="flex shrink-0 items-center gap-1 bg-white px-1 ring-2 ring-blue-500 dark:bg-zinc-800
              {sticky ? 'sticky z-10' : ''}"
       style="width: {widthOf(column)}px; height: {rowHeight}px;
              left: {sticky ? columnOffsets[columnIndex] : 0}px"
@@ -870,7 +870,7 @@
       -->
       <button
         class="shrink-0 rounded px-1 text-[10px] text-zinc-400 hover:bg-zinc-200
-               hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
+               hover:text-zinc-700 dark:hover:bg-zinc-600 dark:hover:text-zinc-100"
         title="Poner NULL"
         tabindex="-1"
         onmousedown={(event) => {
@@ -889,7 +889,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       data-cell
-      class="shrink-0 truncate border-r border-zinc-200/70 px-2 py-0.5 dark:border-zinc-800/70
+      class="shrink-0 truncate border-r border-zinc-200/70 px-2 py-0.5 dark:border-zinc-700/70
         {column.align === 'right' ? 'text-right tabular-nums' : ''} {column.tone?.(row) ?? ''}
         {editable?.(row, column) ? 'cursor-text' : ''}
         {sticky ? 'sticky z-10 bg-inherit' : ''}
@@ -1005,8 +1005,8 @@
                    {selected
                   ? 'bg-blue-100 text-blue-950 dark:bg-blue-950 dark:text-blue-100'
                   : at % 2 === 1
-                    ? 'bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-900 dark:hover:bg-zinc-800'
-                    : 'bg-white hover:bg-zinc-100 dark:bg-zinc-950 dark:hover:bg-zinc-800'}
+                    ? 'bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-800 dark:hover:bg-zinc-700'
+                    : 'bg-white hover:bg-zinc-100 dark:bg-zinc-900 dark:hover:bg-zinc-700'}
                    {rowClass?.(row) ?? ''}"
                 style="height: {rowHeight}px; width: {totalWidth}px;
                        font-size: var(--grid-font-size, 0.875rem)"
@@ -1155,7 +1155,7 @@
     {:else}
       <pre
         class="max-h-[60vh] overflow-auto rounded bg-zinc-50 p-3 font-mono text-xs break-words
-               whitespace-pre-wrap select-text dark:bg-zinc-900/60">{viewerText}</pre>
+               whitespace-pre-wrap select-text dark:bg-zinc-800/60">{viewerText}</pre>
     {/if}
 
     {#snippet footer()}

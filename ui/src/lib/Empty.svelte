@@ -26,7 +26,7 @@
 <div class="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
   <div
     class="grid size-12 place-items-center rounded-full bg-zinc-100 text-zinc-400
-           dark:bg-zinc-900 dark:text-zinc-600"
+           dark:bg-zinc-800 dark:text-zinc-600"
   >
     <Icon name={icon} size={22} />
   </div>

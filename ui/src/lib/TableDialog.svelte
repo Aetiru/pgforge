@@ -105,7 +105,7 @@
     {#each columns as column (column.key)}
       <div
         class="grid grid-cols-[8rem_10rem_8rem_9rem_auto_1.75rem] items-center gap-1.5 rounded-md
-               border border-zinc-200 p-1.5 dark:border-zinc-800"
+               border border-zinc-200 p-1.5 dark:border-zinc-700"
       >
         <input class="field" placeholder="nombre" bind:value={column.name} />
         <input

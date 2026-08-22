@@ -52,7 +52,7 @@
     {#if release.notes.trim()}
       <pre
         class="max-h-72 overflow-auto rounded border border-zinc-200 bg-zinc-50 p-3 text-xs
-               whitespace-pre-wrap select-text dark:border-zinc-800 dark:bg-zinc-900">{release.notes.trim()}</pre>
+               whitespace-pre-wrap select-text dark:border-zinc-700 dark:bg-zinc-800">{release.notes.trim()}</pre>
     {:else}
       <p class="text-sm muted">Esta versión salió sin notas.</p>
     {/if}

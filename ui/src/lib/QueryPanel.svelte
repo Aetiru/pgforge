@@ -629,7 +629,7 @@
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="group relative h-px shrink-0 bg-zinc-200 dark:bg-zinc-800 {editorSplit.mode !== 'split'
+    class="group relative h-px shrink-0 bg-zinc-200 dark:bg-zinc-700 {editorSplit.mode !== 'split'
       ? 'hidden'
       : ''}"
     onmousedown={startResize}

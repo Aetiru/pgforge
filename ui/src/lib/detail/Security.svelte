@@ -47,7 +47,7 @@
   {/snippet}
 
   {#if security}
-    <div class="flex flex-col gap-2 border-b border-zinc-200 p-3 dark:border-zinc-800">
+    <div class="flex flex-col gap-2 border-b border-zinc-200 p-3 dark:border-zinc-700">
       <label class="check">
         <input
           type="checkbox"

@@ -126,7 +126,7 @@
       hint="Se miran ~/.pgpass, ~/.pg_service.conf y el data-sources.json de DBeaver."
     />
   {:else}
-    <div class="rounded-md border border-zinc-200 dark:border-zinc-800">
+    <div class="rounded-md border border-zinc-200 dark:border-zinc-700">
       <div class="max-h-72 overflow-auto px-2 py-1.5">
         {#each nuevos as candidate (key(candidate))}
           <label class="check py-1">

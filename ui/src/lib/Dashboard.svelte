@@ -768,7 +768,7 @@
     </div>
 
     {#if selected}
-      <div class="divider-t divider-b flex flex-wrap items-center gap-2 bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900/60">
+      <div class="divider-t divider-b flex flex-wrap items-center gap-2 bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-800/60">
         <span class="tag tag-neutral font-mono">PID {selected.pid}</span>
         <span class="truncate text-xs muted">
           {selected.user ?? "?"}@{selected.database ?? "?"}

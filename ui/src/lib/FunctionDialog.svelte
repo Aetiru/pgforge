@@ -57,7 +57,7 @@
   </p>
 
   <!-- El cuerpo de una función es código: va en el editor de SQL, no en un cuadro de texto. -->
-  <div class="h-[420px] overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800">
+  <div class="h-[420px] overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-700">
     <SqlEditor bind:value={text} />
   </div>
 

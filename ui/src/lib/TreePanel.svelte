@@ -657,7 +657,7 @@
         {@const look = lookOf(hit.kind)}
         <button
           class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 pl-3 text-left text-sm
-                 hover:bg-zinc-100 dark:hover:bg-zinc-800/70"
+                 hover:bg-zinc-100 dark:hover:bg-zinc-700/70"
           title="Revelar en el árbol"
           onclick={() => explorer.revealHit(hit)}
         >
@@ -723,7 +723,7 @@
       {#if sticky}
         <button
           class="absolute left-0 z-10 flex w-full items-center gap-1.5 bg-zinc-50 pr-2 text-left
-                 text-[11px] font-semibold tracking-wide uppercase muted dark:bg-zinc-900"
+                 text-[11px] font-semibold tracking-wide uppercase muted dark:bg-zinc-800"
           style="top: {scrollTop}px; height: {SECTION_HEIGHT}px; padding-left: {INDENT_BASE +
             sticky.level * INDENT + 22}px"
           title="Ir a {sticky.label}"
@@ -757,8 +757,8 @@
           class="group absolute left-0 flex w-full items-center gap-1.5 rounded-md pr-1 text-sm
                  {isSelected || isMarked
             ? 'bg-blue-50 text-blue-900 dark:bg-blue-950/60 dark:text-blue-100'
-            : 'hover:bg-zinc-100 dark:hover:bg-zinc-800/70'}
-                 {separated(at) ? 'border-t border-zinc-200/80 dark:border-zinc-800' : ''}
+            : 'hover:bg-zinc-100 dark:hover:bg-zinc-700/70'}
+                 {separated(at) ? 'border-t border-zinc-200/80 dark:border-zinc-700' : ''}
                  {isDropTarget && dropGroup !== null ? 'bg-blue-100/70 dark:bg-blue-900/40' : ''}
                  {dragging === row.profileId ? 'opacity-40' : ''}"
           style="top: {offsets[at]}px; height: {heightOf(row)}px; padding-left: {INDENT_BASE +
@@ -806,7 +806,7 @@
           {#each { length: row.level }, depth (depth)}
             {#if guideAt(guides, at, depth)}
               <span
-                class="pointer-events-none absolute inset-y-0 w-px bg-zinc-300 dark:bg-zinc-700"
+                class="pointer-events-none absolute inset-y-0 w-px bg-zinc-300 dark:bg-zinc-600"
                 style="left: {INDENT_BASE + depth * INDENT + 8}px"
               ></span>
             {/if}

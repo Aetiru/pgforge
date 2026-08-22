@@ -22,13 +22,13 @@
 <div class="relative" style="padding-left: {level > 0 ? 18 : 0}px">
   <!-- La línea que baja de la sesión de arriba: es la que hace ver la cadena como una cadena. -->
   {#if level > 0}
-    <span class="absolute inset-y-0 left-[8px] w-px bg-zinc-200 dark:bg-zinc-800"></span>
+    <span class="absolute inset-y-0 left-[8px] w-px bg-zinc-200 dark:bg-zinc-700"></span>
   {/if}
 
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
     class="flex items-baseline gap-2 rounded px-2 py-1 text-sm hover:bg-zinc-100
-           dark:hover:bg-zinc-800"
+           dark:hover:bg-zinc-700"
     role="button"
     tabindex="0"
     title="Ver esta sesión en la lista"

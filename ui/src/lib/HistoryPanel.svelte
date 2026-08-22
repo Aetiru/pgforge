@@ -110,7 +110,7 @@
         <li>
           <button
             class="group flex w-full items-baseline gap-2 px-3 py-1.5 text-left
-                   hover:bg-zinc-100 dark:hover:bg-zinc-800/70"
+                   hover:bg-zinc-100 dark:hover:bg-zinc-700/70"
             title="Traer esta consulta al editor"
             onclick={() => onpick(entry.sql)}
           >

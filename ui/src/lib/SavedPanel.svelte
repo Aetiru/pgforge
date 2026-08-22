@@ -109,7 +109,7 @@
       {#each shown as entry (entry.id)}
         <li
           class="group flex items-center gap-2 px-3 py-1.5 hover:bg-zinc-100
-                 dark:hover:bg-zinc-800/70"
+                 dark:hover:bg-zinc-700/70"
         >
           <button
             class="flex min-w-0 flex-1 items-baseline gap-2 text-left"

@@ -174,7 +174,7 @@
       <span class="label">{kind === "foreignKey" ? "Columnas locales" : "Columnas"}</span>
       <div
         class="mt-1 flex max-h-52 flex-col gap-1 overflow-auto rounded-md border border-zinc-200 p-2
-               dark:border-zinc-800"
+               dark:border-zinc-700"
       >
         {#each columns as column (column.name)}
           <label class="check text-xs">

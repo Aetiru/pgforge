@@ -233,8 +233,8 @@
   {:else if command.length > 0}
     <pre
       class="mt-3 max-h-32 overflow-auto rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2
-             font-mono text-xs whitespace-pre-wrap select-text dark:border-zinc-800
-             dark:bg-zinc-800/50">{command.join(" ")}</pre>
+             font-mono text-xs whitespace-pre-wrap select-text dark:border-zinc-700
+             dark:bg-zinc-700/50">{command.join(" ")}</pre>
   {/if}
 
   <p class="mt-2 text-xs muted">

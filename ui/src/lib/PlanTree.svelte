@@ -30,10 +30,10 @@
 
 <div class="relative" style="padding-left: {level > 0 ? 16 : 0}px">
   {#if level > 0}
-    <span class="absolute inset-y-0 left-[7px] w-px bg-zinc-200 dark:bg-zinc-800"></span>
+    <span class="absolute inset-y-0 left-[7px] w-px bg-zinc-200 dark:bg-zinc-700"></span>
   {/if}
 
-  <div class="relative rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800/70">
+  <div class="relative rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-700/70">
     <!-- La barra vive detrás del texto: ocupa lugar sin robarle ancho a lo que hay que leer. -->
     {#if share > 0}
       <div

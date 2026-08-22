@@ -156,7 +156,7 @@
           <div class="divider-b">
             <button
               class="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-zinc-100
-                     dark:hover:bg-zinc-800/60"
+                     dark:hover:bg-zinc-700/60"
               onclick={() => toggle(entry)}
             >
               <span class="tag {MARK[entry.status].tone} w-5 justify-center font-mono"

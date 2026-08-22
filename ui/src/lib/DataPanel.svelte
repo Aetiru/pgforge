@@ -366,12 +366,12 @@
     onclose={() => (tab.preview = null)}
   >
     {#each tab.preview as statement, index (index)}
-      <div class="mb-2 rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
+      <div class="mb-2 rounded-md border border-zinc-200 p-2 dark:border-zinc-700">
         <pre class="font-mono text-xs whitespace-pre-wrap select-text">{statement.sql}</pre>
         {#if statement.params.length > 0}
           <div class="mt-1 flex flex-wrap gap-1.5 text-[11px] muted">
             {#each statement.params as param, position (position)}
-              <span class="rounded bg-zinc-100 px-1.5 py-px font-mono dark:bg-zinc-800">
+              <span class="rounded bg-zinc-100 px-1.5 py-px font-mono dark:bg-zinc-700">
                 ${position + 1} = {param === null ? "NULL" : param}
               </span>
             {/each}

@@ -213,7 +213,7 @@
     {#if loadingMemberships}
       <p
         class="flex items-center gap-2 rounded-md border border-zinc-200 px-2 py-2 text-xs muted
-               dark:border-zinc-800"
+               dark:border-zinc-700"
       >
         <span class="spinner"></span>
         Leyendo las membresías…
@@ -223,11 +223,11 @@
         Una lista con casillas y no un `<select multiple>`: elegir varios ahí pide `Ctrl`+clic, y un
         clic común deselecciona todo lo demás sin avisar. Acá cada rol se tilda por su cuenta.
       -->
-      <div class="rounded-md border border-zinc-200 dark:border-zinc-800">
+      <div class="rounded-md border border-zinc-200 dark:border-zinc-700">
         {#if options.length > 8}
           <input
             class="field w-full rounded-b-none border-0 border-b border-zinc-200 py-1 text-xs
-                   dark:border-zinc-800"
+                   dark:border-zinc-700"
             placeholder="Filtrar los roles"
             bind:value={memberFilter}
           />

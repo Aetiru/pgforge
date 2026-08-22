@@ -154,14 +154,14 @@
     {#if loadingQuery}
       <p
         class="flex items-center justify-center gap-2 rounded-md border border-zinc-200 px-2 py-8
-               text-sm muted dark:border-zinc-800"
+               text-sm muted dark:border-zinc-700"
       >
         <span class="spinner"></span>
         Leyendo la definición…
       </p>
     {:else}
       <!-- El mismo editor que la pestaña de consultas: resaltado y numeración, no un textarea. -->
-      <div class="h-64 overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800">
+      <div class="h-64 overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-700">
         <SqlEditor bind:value={query} />
       </div>
     {/if}

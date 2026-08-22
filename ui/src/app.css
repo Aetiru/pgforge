@@ -31,7 +31,7 @@ html[data-theme="dark"] {
 }
 
 body {
-  @apply bg-white text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
+  @apply bg-white text-zinc-900 antialiased dark:bg-zinc-900 dark:text-zinc-200;
   /* La ventana es una aplicación, no una página: nada de rebote ni de selección accidental. */
   overscroll-behavior: none;
   user-select: none;
@@ -42,6 +42,10 @@ body {
   @apply bg-blue-500/25;
 }
 
+[data-theme="dark"] ::selection {
+  @apply bg-blue-400/20;
+}
+
 /* --------------------------------------------------------------------------
    Foco
 
@@ -50,7 +54,7 @@ body {
    -------------------------------------------------------------------------- */
 
 :focus-visible {
-  @apply outline-2 outline-offset-1 outline-blue-500;
+  @apply outline-2 outline-offset-1 outline-blue-500 dark:outline-blue-400;
 }
 
 /* --------------------------------------------------------------------------
@@ -65,7 +69,7 @@ body {
 }
 
 [data-theme="dark"] * {
-  scrollbar-color: var(--color-zinc-700) transparent;
+  scrollbar-color: var(--color-zinc-600) transparent;
 }
 
 ::-webkit-scrollbar {
@@ -78,12 +82,19 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply rounded-full border-[3px] border-solid border-transparent bg-zinc-300 bg-clip-content
-    dark:bg-zinc-700;
+  @apply rounded-full border-[3px] border-solid border-transparent bg-zinc-300 bg-clip-content;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  @apply bg-zinc-600;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-zinc-400 dark:bg-zinc-600;
+  @apply bg-zinc-400;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  @apply bg-zinc-500;
 }
 
 ::-webkit-scrollbar-corner {
@@ -95,28 +106,28 @@ body {
    -------------------------------------------------------------------------- */
 
 .panel {
-  @apply bg-zinc-50 dark:bg-zinc-900;
+  @apply bg-zinc-50 dark:bg-zinc-800;
 }
 
 .divider-r {
-  @apply border-r border-zinc-200 dark:border-zinc-800;
+  @apply border-r border-zinc-200 dark:border-zinc-700;
 }
 
 .divider-b {
-  @apply border-b border-zinc-200 dark:border-zinc-800;
+  @apply border-b border-zinc-200 dark:border-zinc-700;
 }
 
 .divider-t {
-  @apply border-t border-zinc-200 dark:border-zinc-800;
+  @apply border-t border-zinc-200 dark:border-zinc-700;
 }
 
 .card {
-  @apply rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900;
+  @apply rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800;
 }
 
 /* Encabezado de tarjeta: el título de una sección y sus acciones, siempre a la misma altura. */
 .card-head {
-  @apply flex h-9 items-center gap-2 border-b border-zinc-200 px-3 dark:border-zinc-800;
+  @apply flex h-9 items-center gap-2 border-b border-zinc-200 px-3 dark:border-zinc-700;
 }
 
 .card-title {
@@ -130,12 +141,12 @@ body {
 /* Barra de herramientas: el patrón que repiten el editor, la grilla y el monitor. */
 .toolbar {
   @apply flex flex-wrap items-center gap-1.5 border-b border-zinc-200 px-2 py-1.5
-    dark:border-zinc-800;
+    dark:border-zinc-700;
 }
 
 /* Separador vertical entre grupos de una barra. */
 .toolbar-sep {
-  @apply mx-1 h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-800;
+  @apply mx-1 h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700;
 }
 
 /* --------------------------------------------------------------------------
@@ -146,8 +157,8 @@ body {
   @apply inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1
     text-sm whitespace-nowrap text-zinc-700 transition-colors
     hover:bg-zinc-100 active:bg-zinc-200 disabled:pointer-events-none disabled:opacity-40
-    dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700
-    dark:active:bg-zinc-600;
+    dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-600
+    dark:active:bg-zinc-500;
 }
 
 .btn-primary {
@@ -175,7 +186,7 @@ body {
 .btn-ghost {
   @apply border-transparent bg-transparent text-zinc-500
     hover:bg-zinc-100 hover:text-zinc-900
-    dark:bg-transparent dark:hover:bg-zinc-800 dark:hover:text-zinc-100;
+    dark:bg-transparent dark:hover:bg-zinc-700 dark:hover:text-zinc-100;
 }
 
 .btn-icon {
@@ -191,7 +202,7 @@ body {
     outline-none transition-colors placeholder:text-zinc-400
     focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20
     disabled:opacity-50
-    dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500;
+    dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100 dark:placeholder:text-zinc-500;
 }
 
 /* Los campos de un formulario son texto que se escribe: ahí sí se puede seleccionar. */
@@ -216,7 +227,7 @@ input[type="password"]::-ms-clear {
 
 /* Control segmentado: la forma más compacta de mostrar unas pocas vistas excluyentes. */
 .seg {
-  @apply inline-flex gap-0.5 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800;
+  @apply inline-flex gap-0.5 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-700;
 }
 
 .seg-item {
@@ -226,16 +237,16 @@ input[type="password"]::-ms-clear {
 }
 
 .seg-item[aria-selected="true"] {
-  @apply bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50;
+  @apply bg-white text-zinc-900 shadow-sm dark:bg-zinc-600 dark:text-zinc-50;
 }
 
 /* Contador al lado del nombre de una sección: cuántas filas hay sin tener que abrirla. */
 .seg-count {
-  @apply rounded bg-zinc-200/70 px-1 text-[10px] tabular-nums dark:bg-zinc-900/60;
+  @apply rounded bg-zinc-200/70 px-1 text-[10px] tabular-nums dark:bg-zinc-800/60;
 }
 
 .seg-item[aria-selected="true"] .seg-count {
-  @apply bg-zinc-100 dark:bg-zinc-800;
+  @apply bg-zinc-100 dark:bg-zinc-700;
 }
 
 .check {
@@ -249,18 +260,18 @@ input[type="password"]::-ms-clear {
 /* Tecla del teclado, para que un atajo se vea como lo que es. */
 .kbd {
   @apply rounded border border-zinc-300 bg-zinc-100 px-1 font-sans text-[10px] leading-4
-    text-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400;
+    text-zinc-500 dark:border-zinc-500 dark:bg-zinc-700 dark:text-zinc-400;
 }
 
 /* Pestañas del panel principal: el detalle del objeto y las consultas abiertas. */
 .tab-wrap {
   @apply relative flex shrink-0 items-center rounded-t-md transition-colors
-    hover:bg-zinc-100 dark:hover:bg-zinc-800/60;
+    hover:bg-zinc-100 dark:hover:bg-zinc-700/60;
 }
 
 /* La barra activa la pinta el contenedor y no el botón, así abarca también la cruz de cerrar. */
 .tab-wrap:has([aria-selected="true"]) {
-  @apply bg-zinc-100 dark:bg-zinc-800/80;
+  @apply bg-zinc-100 dark:bg-zinc-700/80;
 }
 
 .tab-wrap:has([aria-selected="true"])::after {
@@ -282,7 +293,7 @@ input[type="password"]::-ms-clear {
 
 .tab-close {
   @apply mr-1 rounded p-1 text-zinc-400 transition-colors hover:bg-zinc-200 hover:text-zinc-700
-    dark:hover:bg-zinc-700 dark:hover:text-zinc-100;
+    dark:hover:bg-zinc-600 dark:hover:text-zinc-100;
 }
 
 /* --------------------------------------------------------------------------
@@ -335,7 +346,7 @@ input[type="password"]::-ms-clear {
 }
 
 .tag-neutral {
-  @apply bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400;
+  @apply bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400;
 }
 
 /* --------------------------------------------------------------------------
@@ -380,12 +391,12 @@ input[type="password"]::-ms-clear {
 
 .list-table thead th {
   @apply border-b border-zinc-200 px-3 py-1.5 text-[11px] font-semibold tracking-wide
-    text-zinc-500 uppercase dark:border-zinc-800 dark:text-zinc-500;
+    text-zinc-500 uppercase dark:border-zinc-700 dark:text-zinc-400;
 }
 
 .list-table tbody tr {
   @apply border-t border-zinc-200 transition-colors hover:bg-zinc-50
-    dark:border-zinc-800 dark:hover:bg-zinc-800/50;
+    dark:border-zinc-700 dark:hover:bg-zinc-700/50;
 }
 
 .list-table tbody td {
@@ -395,7 +406,7 @@ input[type="password"]::-ms-clear {
 /* Una opción del menú que se abre con el clic derecho: ancho completo y atajo alineado al final. */
 .row-menu {
   @apply flex w-full items-center justify-between gap-4 rounded px-2 py-1 text-left text-sm
-    hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-zinc-800;
+    hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-zinc-700;
 }
 
 /* Las acciones de una fila no compiten con el contenido hasta que el mouse llega a la fila. */
@@ -458,25 +469,25 @@ input[type="password"]::-ms-clear {
   --cm-function: var(--color-sky-400);
   --cm-operator: var(--color-zinc-400);
 
-  --cm-text: var(--color-zinc-100);
+  --cm-text: var(--color-zinc-200);
   --cm-gutter: var(--color-zinc-600);
   --cm-caret: var(--color-blue-400);
   --cm-selection: color-mix(in srgb, var(--color-blue-400) 28%, transparent);
   --cm-active-line: color-mix(in srgb, var(--color-zinc-400) 8%, transparent);
   --cm-active-statement: color-mix(in srgb, var(--color-blue-400) 10%, transparent);
   --cm-error: var(--color-rose-400);
-  --cm-tooltip-bg: var(--color-zinc-900);
-  --cm-tooltip-border: var(--color-zinc-700);
+  --cm-tooltip-bg: var(--color-zinc-800);
+  --cm-tooltip-border: var(--color-zinc-600);
 
   --plot-axis: var(--color-zinc-500);
   --plot-grid: color-mix(in srgb, var(--color-zinc-400) 16%, transparent);
 
-  --erd-bg: var(--color-zinc-950);
-  --erd-box: var(--color-zinc-900);
-  --erd-header: var(--color-zinc-800);
-  --erd-border: var(--color-zinc-700);
+  --erd-bg: var(--color-zinc-900);
+  --erd-box: var(--color-zinc-800);
+  --erd-header: var(--color-zinc-700);
+  --erd-border: var(--color-zinc-600);
   --erd-text: var(--color-zinc-300);
   --erd-muted: var(--color-zinc-500);
-  --erd-edge: var(--color-zinc-600);
+  --erd-edge: var(--color-zinc-500);
   --erd-accent: var(--color-blue-400);
 }

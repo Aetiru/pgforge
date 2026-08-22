@@ -1073,7 +1073,7 @@
     <header class="divider-b px-5 py-3">
       <div class="flex items-center gap-2.5">
         <div
-          class="grid size-9 shrink-0 place-items-center rounded-lg bg-zinc-100 dark:bg-zinc-800
+          class="grid size-9 shrink-0 place-items-center rounded-lg bg-zinc-100 dark:bg-zinc-700
                  {look.tone}"
         >
           <Icon name={look.icon} size={18} />

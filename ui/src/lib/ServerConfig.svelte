@@ -124,7 +124,7 @@
     {:else}
       {#each groups as [category, items] (category)}
         <div class="label mt-3 mb-1 first:mt-0">{category}</div>
-        <div class="card divide-y divide-zinc-100 overflow-hidden dark:divide-zinc-800">
+        <div class="card divide-y divide-zinc-100 overflow-hidden dark:divide-zinc-700">
           {#each items as setting (setting.name)}
             {@const canEdit = editable(setting)}
             <button

@@ -155,7 +155,7 @@
   {:else}
     <pre
       class="mt-3 overflow-x-auto rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono
-             text-xs select-text dark:border-zinc-800 dark:bg-zinc-800/50">{sql}</pre>
+             text-xs select-text dark:border-zinc-700 dark:bg-zinc-700/50">{sql}</pre>
   {/if}
 
   <p class="mt-2 text-xs muted">

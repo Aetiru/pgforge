@@ -738,7 +738,7 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
         -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
-          class="group relative w-px shrink-0 bg-zinc-200 dark:bg-zinc-800"
+          class="group relative w-px shrink-0 bg-zinc-200 dark:bg-zinc-700"
           onmousedown={startResize}
           ondblclick={() => (sidebarWidth = DEFAULT_SIDEBAR)}
           title="Arrastrá para cambiar el ancho; doble clic para restablecerlo"
@@ -916,7 +916,7 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
           {#if tabs.split && splitTab}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
-              class="group relative h-full w-px shrink-0 bg-zinc-200 dark:bg-zinc-800"
+              class="group relative h-full w-px shrink-0 bg-zinc-200 dark:bg-zinc-700"
               onmousedown={startSplitResize}
               ondblclick={() => splitView.reset()}
               title="Arrastrá para repartir el espacio; doble clic para repartirlo por la mitad"
