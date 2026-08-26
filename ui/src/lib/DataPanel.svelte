@@ -21,6 +21,12 @@
   const MIN_WIDTH = 72;
   const MAX_WIDTH = 340;
 
+  // Anchos fijos para el esqueleto de "abriendo la tabla": se repiten con módulo si hay más
+  // columnas de las que hay anchos, así ninguna franja se ve como si fuera un solo bloque.
+  const SKELETON_WIDTHS = [90, 140, 70, 110, 60, 130];
+  const SKELETON_COLUMNS = Array.from({ length: 8 });
+  const SKELETON_ROWS = Array.from({ length: 10 });
+
   /** Tipos que se leen en columna, con las unidades alineadas: van a la derecha. */
   const NUMERIC = new Set([
     "smallint",
@@ -58,15 +64,16 @@
 
       return {
         key: `${index}-${column.name}`,
-        // El tipo va en el encabezado: al editar es lo que dice qué se puede escribir en la celda.
-        header: `${column.name}  ${column.typeName}`,
+        header: column.name,
+        // El tipo va como texto secundario: al editar es lo que dice qué se puede escribir en la celda.
+        caption: column.typeName,
         width: Math.min(
           MAX_WIDTH * scale,
           Math.max(MIN_WIDTH * scale, Math.round(longest * CHAR_WIDTH * scale) + 24),
         ),
         // Acá el tipo lo dice el catálogo, así que la alineación no hay que adivinarla del valor.
         align: NUMERIC.has(column.typeName.toLowerCase()) ? "right" : "left",
-        // Con este nombre la ordena el servidor; el encabezado tiene el tipo pegado y no serviría.
+        // Con este nombre la ordena el servidor.
         orderBy: column.name,
         value: (row) => oneLine(tab.value(row, index)),
         edit: (row) => tab.value(row, index),
@@ -317,10 +324,26 @@
 
   <div class="min-h-0 flex-1">
     {#if !shape}
-      <p class="flex items-center gap-2 p-4 text-sm muted">
-        <span class="spinner"></span>
-        Abriendo la tabla…
-      </p>
+      <div class="flex flex-col gap-px p-3" aria-label="Abriendo la tabla…">
+        <div class="flex gap-2 pb-2">
+          {#each SKELETON_COLUMNS as _, column (column)}
+            <div
+              class="skeleton h-4"
+              style="width: {SKELETON_WIDTHS[column % SKELETON_WIDTHS.length]}px"
+            ></div>
+          {/each}
+        </div>
+        {#each SKELETON_ROWS as _, row (row)}
+          <div class="flex gap-2 py-1.5">
+            {#each SKELETON_COLUMNS as _, column (column)}
+              <div
+                class="skeleton h-3"
+                style="width: {SKELETON_WIDTHS[column % SKELETON_WIDTHS.length]}px"
+              ></div>
+            {/each}
+          </div>
+        {/each}
+      </div>
     {:else}
       <DataGrid
         columns={definitions}

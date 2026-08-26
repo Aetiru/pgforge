@@ -2,6 +2,8 @@
   export interface Column<T> {
     key: string;
     header: string;
+    /** Texto secundario junto al encabezado — hoy el tipo de la columna. Va con menos peso visual. */
+    caption?: string;
     /** Ancho en píxeles. La grilla no mide el contenido: el ancho es parte de la definición. */
     width: number;
     align?: "left" | "right";
@@ -280,6 +282,24 @@
   function inRange(row: number, column: number): boolean {
     if (!range) return false;
     return row >= range.top && row <= range.bottom && column >= range.left && column <= range.right;
+  }
+
+  /**
+   * Contorno del rango elegido, con `box-shadow` inset y no con clases `border-*`: dos clases de
+   * Tailwind de igual especificidad (el `border-r` que ya tiene cada celda) ganarían según el orden
+   * en que el navegador las haya leído, no según cuál se escribió después — el mismo problema que ya
+   * documentó este proyecto para el resaltado de SQL anidado. Con un solo cálculo no hay ambigüedad.
+   */
+  function rangeEdge(row: number, column: number): string {
+    if (!range || !inRange(row, column)) return "";
+    const single = range.top === range.bottom && range.left === range.right;
+    if (single) return "";
+    const parts: string[] = [];
+    if (row === range.top) parts.push("inset 0 2px 0 0 var(--grid-range-edge)");
+    if (row === range.bottom) parts.push("inset 0 -2px 0 0 var(--grid-range-edge)");
+    if (column === range.left) parts.push("inset 2px 0 0 0 var(--grid-range-edge)");
+    if (column === range.right) parts.push("inset -2px 0 0 0 var(--grid-range-edge)");
+    return parts.length ? `box-shadow: ${parts.join(", ")};` : "";
   }
 
   /**
@@ -778,7 +798,9 @@
         {sorted ? 'text-zinc-900 dark:text-zinc-100' : ''}
         {dragKey === column.key ? 'opacity-50' : ''}
         {dragOverKey === column.key ? 'bg-blue-100 dark:bg-blue-900/40' : ''}"
-      title="{column.header}{canSort(column) ? ' — clic para ordenar' : ''} — clic derecho para
+      title="{column.header}{column.caption
+        ? ` (${column.caption})`
+        : ''}{canSort(column) ? ' — clic para ordenar' : ''} — clic derecho para
         fijar u ocultar{sticky ? '' : ' — arrastrá para reordenar'}"
       tabindex="-1"
       draggable={!sticky}
@@ -807,6 +829,9 @@
         <Icon name="lock" size={9} class="mr-0.5 inline-block opacity-60" />
       {/if}
       {column.header}
+      {#if column.caption}
+        <span class="ml-1 font-normal text-zinc-400 dark:text-zinc-500">{column.caption}</span>
+      {/if}
       {#if sorted}
         <Icon
           name="chevron"
@@ -895,7 +920,9 @@
         {sticky ? 'sticky z-10 bg-inherit' : ''}
         {inRange(at, columnIndex) && !focused ? 'bg-blue-100/60 dark:bg-blue-900/30' : ''}
         {focused ? 'bg-blue-100/60 ring-1 ring-blue-500 ring-inset dark:bg-blue-900/30' : ''}"
-      style="width: {widthOf(column)}px; left: {sticky ? columnOffsets[columnIndex] : 0}px"
+      style="width: {widthOf(column)}px; left: {sticky
+        ? columnOffsets[columnIndex]
+        : 0}px {rangeEdge(at, columnIndex)}"
       title={column.title?.(row)}
       onclick={(event) => pick(at, columnIndex, event.shiftKey)}
       ondblclick={() => open(row, column)}
