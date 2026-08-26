@@ -77,6 +77,13 @@ fn build_config(
     // también cubren a las conexiones que el pool recicla. Van todos juntos en un solo llamado
     // porque `options` reemplaza lo anterior: dos llamados dejarían solo el último.
     let mut options = Vec::new();
+    // `tokio-postgres` no manda el huso del cliente al conectar como sí hace `libpq`: sin esto, el
+    // servidor formatea cada `timestamptz` con su propio `TimeZone` (el del contenedor, no el del
+    // usuario) y la hora que muestra pgforge no coincide con la de `psql` para el mismo dato. Si no
+    // se puede leer la zona del sistema, se deja el default del servidor antes que fallar la conexión.
+    if let Ok(zone) = iana_time_zone::get_timezone() {
+        options.push(format!("-c TimeZone={zone}"));
+    }
     if let Some(ms) = statement_timeout_ms {
         options.push(format!("-c statement_timeout={ms}"));
     }
