@@ -15,6 +15,10 @@ publish = false
 bytes = "1.10.1"
 deadpool-postgres = "0.14.1"
 futures-util = { version = "0.3.33", default-features = false, features = ["std", "sink"] }
+# `tokio-postgres` no imita, como sí hace `libpq`, el envío automático del `TimeZone` del cliente al
+# conectar: sin esto, el servidor formatea cada `timestamptz` con su propio huso (el del contenedor,
+# no el del usuario), y `psql`/DBeaver muestran una hora distinta a la de pgforge para el mismo dato.
+iana-time-zone = "0.1.65"
 keyring = { version = "3.6.3", features = ["apple-native", "sync-secret-service", "windows-native"] }
 # Solo para preguntarle a la API de GitHub si hay una versión nueva (`update`). Se elige
 # `rustls-no-provider` y no `rustls`: esa última prende `aws-lc-rs`, que en Windows pide NASM y cmake
