@@ -165,6 +165,12 @@
               </button>
             </div>
 
+            {#if run.status === "running"}
+              <div class="h-0.5 overflow-hidden bg-zinc-100 dark:bg-zinc-700">
+                <div class="progress-sweep h-full w-1/3 bg-blue-500 dark:bg-blue-400"></div>
+              </div>
+            {/if}
+
             {#if run.outcome}
               <p
                 class="divider-t px-3 py-1.5 text-xs select-text {run.status === 'failed'

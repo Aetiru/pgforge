@@ -19,6 +19,7 @@
   import Palette from "./lib/Palette.svelte";
   import ProcessPanel from "./lib/ProcessPanel.svelte";
   import QueryPanel from "./lib/QueryPanel.svelte";
+  import Toast from "./lib/Toast.svelte";
   import TreePanel from "./lib/TreePanel.svelte";
   import UpdateDialog from "./lib/UpdateDialog.svelte";
   import { openCompare, CompareTab } from "./lib/compare.svelte";
@@ -1101,3 +1102,5 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
     onclose={() => guard.answer(false)}
   />
 {/if}
+
+<Toast />

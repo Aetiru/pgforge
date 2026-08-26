@@ -19,9 +19,11 @@
  * explícito.
  */
 
+import { duration } from "./format";
 import { explorer } from "./explorer.svelte";
 import { notify } from "./notify.svelte";
-import { outcomeText, progressText, type TaskKind } from "./task-format";
+import { outcomeText, progressText, taskKindLabel, type TaskKind } from "./task-format";
+import { toasts } from "./toasts.svelte";
 import {
   Channel,
   backupRun,
@@ -227,10 +229,21 @@ class Tasks {
     }
   }
 
-  /** Cuenta que terminó: el contador de la barra y, si está encendido, el aviso del sistema. */
+  /**
+   * Cuenta que terminó: el contador de la barra, el aviso del sistema (si está encendido) y el
+   * toast in-app, que complementa al del sistema para cuando la ventana sí está a la vista.
+   */
   private announce(run: TaskRun) {
     this.unseen += 1;
     void notify.taskEnded(run);
+
+    const seconds = ((run.finishedAt ?? Date.now()) - run.startedAt) / 1000;
+    const what = `${taskKindLabel(run.kind)} · ${run.target}`;
+    toasts.push(
+      run.status === "failed" ? "bad" : "ok",
+      run.status === "failed" ? `Falló: ${what}` : `Terminó: ${what}`,
+      `${run.server}${run.database ? ` / ${run.database}` : ""} · ${duration(seconds)}`,
+    );
   }
 
   /** Dispara el `onDone` de un proceso que terminó bien, incluso si todavía no llegó a anotarse. */

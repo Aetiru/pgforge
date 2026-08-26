@@ -9,8 +9,9 @@
   }: {
     columns: string[];
     rows: (string | null)[][];
-    /** Tipos de cada columna, cuando se pidieron. Van pegados al nombre, como en la pestaña de
-     * datos: al leer un resultado, saber si eso es un `numeric` o un `text` cambia lo que dice. */
+    /** Tipos de cada columna, cuando se pidieron. Van como texto secundario del encabezado, como
+     * en la pestaña de datos: al leer un resultado, saber si eso es un `numeric` o un `text` cambia
+     * lo que dice. */
     types?: string[] | null;
   } = $props();
 
@@ -51,7 +52,8 @@
 
       return {
         key: `${index}-${name}`,
-        header: types?.[index] ? `${name}  ${types[index]}` : name,
+        header: name,
+        caption: types?.[index] ?? undefined,
         width: Math.min(
           MAX_WIDTH * scale,
           Math.max(MIN_WIDTH * scale, Math.round(longest * CHAR_WIDTH * scale) + 20),
