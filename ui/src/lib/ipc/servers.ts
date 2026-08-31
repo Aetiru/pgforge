@@ -9,6 +9,9 @@ export type SslMode = "disable" | "prefer" | "require" | "verifyCa" | "verifyFul
 /** Para qué se usa el servidor. No cambia cómo se conecta: cambia cuánto se avisa antes de tocarlo. */
 export type Environment = "dev" | "test" | "prod";
 
+/** Color propio del servidor en el árbol, paleta cerrada. */
+export type ServerColor = "red" | "orange" | "amber" | "green" | "teal" | "blue" | "purple" | "pink";
+
 export interface SshTunnel {
   host: string;
   port: number;
@@ -35,6 +38,9 @@ export interface ConnectionProfile {
   readOnly: boolean;
   /** Valor inicial del autocommit de cada pestaña de consulta. */
   autocommit: boolean;
+  color?: ServerColor;
+  /** Posición manual dentro de su carpeta. Ausente cae a orden alfabético, igual que el core. */
+  order?: number;
 }
 
 export interface ServerCaps {
@@ -87,6 +93,14 @@ export interface ImportCandidate {
 }
 
 export const importScan = () => invoke<ImportCandidate[]>("import_scan");
+
+/**
+ * Escanea todos los proyectos de un workspace de DBeaver: la carpeta raíz con subcarpetas
+ * `<Proyecto>/.dbeaver/data-sources.json`. `group` de cada candidato ya viene prefijado con el
+ * proyecto del que salió.
+ */
+export const importScanWorkspace = (root: string) =>
+  invoke<ImportCandidate[]>("import_scan_workspace", { root });
 
 export const importApply = (candidates: ImportCandidate[], group?: string) =>
   invoke<ConnectionProfile[]>("import_apply", { candidates, group: group ?? null });

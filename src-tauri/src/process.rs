@@ -7,11 +7,13 @@
 //! otro lado. Peor todavía: si el backup terminaba justo durante la recarga, su resultado no
 //! quedaba en ningún lado y nadie se enteraba de si había salido bien.
 //!
-//! Acá el dueño es el proceso de Rust, que sobrevive a la ventana, y la interfaz es un espejo: se
-//! engancha con un solo canal, recibe de entrada todo lo que hay y después las novedades. Cancelar
-//! sigue siendo explícito y sigue siendo lo mismo de siempre —al servidor se le pide que aborte, al
-//! proceso hijo se le avisa que corte—, solo que ahora las dos vías viven en el mismo registro y
-//! hay un único comando para cancelar en vez de uno por clase de proceso.
+//! Acá el dueño es el proceso de Rust, que sobrevive a la ventana, y cada ventana —incluida la de un
+//! workspace— es un espejo: se engancha con su propio canal, recibe de entrada todo lo que hay y
+//! después las novedades. Procesos es una vista global (todas las ventanas ven todos los procesos),
+//! así que un evento se manda a cada canal enganchado y no a uno solo. Cancelar sigue siendo
+//! explícito y sigue siendo lo mismo de siempre —al servidor se le pide que aborte, al proceso hijo
+//! se le avisa que corte—, solo que ahora las dos vías viven en el mismo registro y hay un único
+//! comando para cancelar en vez de uno por clase de proceso.
 
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -151,8 +153,10 @@ struct Inner {
     records: HashMap<String, ProcessRecord>,
     /// Solo de los que siguen corriendo: al terminar, la vía de cancelación deja de existir.
     cancels: HashMap<String, Cancel>,
-    /// La ventana enganchada. Es una sola —la aplicación tiene una— y al recargar la reemplaza.
-    watcher: Option<Channel<ProcessEvent>>,
+    /// Una ventana de workspace le roba el canal a `main` si hay una sola suscripción global:
+    /// Procesos es una vista que ven todas las ventanas a la vez, así que cada una necesita su propio
+    /// canal, con clave el label de la ventana. Recargar una ventana reemplaza solo la suya.
+    watchers: HashMap<String, Channel<ProcessEvent>>,
 }
 
 #[derive(Default)]
@@ -168,12 +172,15 @@ fn now_ms() -> u64 {
 }
 
 impl Inner {
-    fn emit(&self, event: ProcessEvent) {
-        // Que no haya nadie escuchando es lo normal mientras la ventana recarga: el proceso sigue y
-        // el récord queda al día, que es justo de lo que se trata.
-        if let Some(watcher) = &self.watcher {
-            let _ = watcher.send(event);
-        }
+    /// Manda el evento a todas las ventanas enganchadas, no a una sola: Procesos es una vista global.
+    ///
+    /// Que no haya nadie escuchando es lo normal mientras una ventana recarga: el proceso sigue y el
+    /// récord queda al día, que es justo de lo que se trata. El canal cerrado (`send` que falla)
+    /// significa que esa ventana ya no está —mismo criterio que `poll_loop` en `monitoring.rs`—, así
+    /// que se la saca del mapa en vez de seguir intentando en cada evento siguiente.
+    fn emit(&mut self, event: ProcessEvent) {
+        self.watchers
+            .retain(|_, watcher| watcher.send(event.clone()).is_ok());
     }
 
     /// Saca los terminados más viejos cuando pasan del techo.
@@ -198,8 +205,11 @@ impl Inner {
 }
 
 impl Processes {
-    /// Engancha la ventana y le manda de entrada todo lo que hay.
-    pub async fn watch(&self, channel: Channel<ProcessEvent>) {
+    /// Engancha una ventana y le manda de entrada todo lo que hay.
+    ///
+    /// Reemplaza lo que hubiera para ese mismo `label`: una ventana que recarga vuelve a llamar acá
+    /// y es la misma ventana reconectando, no una nueva suscripción.
+    pub async fn watch(&self, label: String, channel: Channel<ProcessEvent>) {
         let mut inner = self.inner.lock().await;
         let records = inner
             .order
@@ -208,7 +218,12 @@ impl Processes {
             .collect();
 
         let _ = channel.send(ProcessEvent::Snapshot { records });
-        inner.watcher = Some(channel);
+        inner.watchers.insert(label, channel);
+    }
+
+    /// Desengancha una ventana, al cerrarse. Sin esto el mapa crece con canales muertos.
+    pub async fn unwatch(&self, label: &str) {
+        self.inner.lock().await.watchers.remove(label);
     }
 
     /// Anota un proceso que arranca. Devuelve su identificador, que es con el que se lo cancela.

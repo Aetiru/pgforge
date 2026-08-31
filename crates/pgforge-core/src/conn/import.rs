@@ -91,6 +91,35 @@ pub fn sources(home: &Path, app_data: Option<&Path>) -> Vec<PathBuf> {
     out
 }
 
+/// Todos los `data-sources.json` de un espacio de trabajo de DBeaver, uno por proyecto.
+///
+/// DBeaver permite varios proyectos dentro de un mismo espacio de trabajo: cada uno es una carpeta
+/// de primer nivel bajo `root` con `.dbeaver/data-sources.json` adentro. Carpetas sin eso (como
+/// `.metadata`, que DBeaver también deja en la raíz) se saltean sin error, igual que las que no se
+/// puedan leer: un permiso denegado en una carpeta no tiene por qué frenar el resto del escaneo.
+pub fn dbeaver_workspace_sources(root: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let candidate = path.join(".dbeaver").join("data-sources.json");
+        if candidate.is_file() {
+            out.push(candidate);
+        }
+    }
+    // `read_dir` no garantiza ningún orden; se ordena para que dos corridas sobre el mismo
+    // espacio de trabajo encuentren los proyectos siempre en el mismo orden — de eso depende, por
+    // ejemplo, cuál candidato gana al deduplicar servidores repetidos en `import_scan_workspace`.
+    out.sort();
+    out
+}
+
 /// Lee los archivos que existan y devuelve lo que haya, sin repetidos.
 pub fn scan(paths: &[PathBuf]) -> Result<Vec<Candidate>> {
     let mut out: Vec<Candidate> = Vec::new();
@@ -292,6 +321,20 @@ pub fn dbeaver(text: &str, source: &str) -> Vec<Candidate> {
     out
 }
 
+/// Igual que [`dbeaver`], pero para cuando el archivo viene de un espacio de trabajo con varios
+/// proyectos: antepone `project` a la carpeta de cada candidato, para que dos proyectos que usaban
+/// la misma subcarpeta no se pisen al quedar como carpetas raíz hermanas en el árbol de pgforge.
+pub fn dbeaver_scoped(text: &str, source: &str, project: &str) -> Vec<Candidate> {
+    let mut out = dbeaver(text, source);
+    for candidate in &mut out {
+        candidate.group = Some(match candidate.group.take() {
+            Some(group) => format!("{project}/{group}"),
+            None => project.to_owned(),
+        });
+    }
+    out
+}
+
 /// El entorno que dice la otra herramienta, si es uno de los que pgforge conoce.
 fn environment(kind: &str) -> Option<Environment> {
     match kind.to_lowercase().as_str() {
@@ -446,5 +489,97 @@ mod tests {
     fn un_archivo_que_no_se_entiende_no_rompe_nada() {
         assert!(dbeaver("{ esto no es json", "x").is_empty());
         assert!(services("cualquier cosa", "x").is_empty());
+    }
+
+    /// Directorio temporal propio por test, para no pisarse con otras corridas en paralelo (mismo
+    /// patrón que usa `store.rs`).
+    fn temp_dir(name: &str) -> PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!("pgforge-test-import-{}-{name}", std::process::id()));
+        path
+    }
+
+    #[test]
+    fn encuentra_un_data_sources_json_por_proyecto_y_saltea_lo_que_no_tiene() {
+        let root = temp_dir("workspace");
+        let _ = std::fs::remove_dir_all(&root);
+
+        // Proyecto con fuente: la carpeta que interesa.
+        let con_fuente = root.join("MiProyecto").join(".dbeaver");
+        std::fs::create_dir_all(&con_fuente).unwrap();
+        std::fs::write(con_fuente.join("data-sources.json"), "{}").unwrap();
+
+        // Proyecto sin `.dbeaver`: no tiene qué leer, se saltea.
+        std::fs::create_dir_all(root.join("SinConfigurar")).unwrap();
+
+        // Carpeta técnica del espacio de trabajo, sin `.dbeaver` adentro: no tiene que romper nada.
+        std::fs::create_dir_all(root.join(".metadata")).unwrap();
+
+        let found = dbeaver_workspace_sources(&root);
+
+        assert_eq!(found.len(), 1, "se esperaba un solo proyecto: {found:?}");
+        assert_eq!(
+            found[0],
+            root.join("MiProyecto")
+                .join(".dbeaver")
+                .join("data-sources.json")
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn las_fuentes_del_workspace_salen_ordenadas_sin_importar_el_orden_de_creacion() {
+        let root = temp_dir("workspace-orden");
+        let _ = std::fs::remove_dir_all(&root);
+
+        // Se crean a propósito en orden inverso al alfabético: si `dbeaver_workspace_sources` no
+        // ordenara, devolvería justo este orden de creación en vez del de nombre.
+        for proyecto in ["Zeta", "Medio", "Alfa"] {
+            let dbeaver_dir = root.join(proyecto).join(".dbeaver");
+            std::fs::create_dir_all(&dbeaver_dir).unwrap();
+            std::fs::write(dbeaver_dir.join("data-sources.json"), "{}").unwrap();
+        }
+
+        let found = dbeaver_workspace_sources(&root);
+
+        assert_eq!(
+            found,
+            vec![
+                root.join("Alfa").join(".dbeaver").join("data-sources.json"),
+                root.join("Medio")
+                    .join(".dbeaver")
+                    .join("data-sources.json"),
+                root.join("Zeta").join(".dbeaver").join("data-sources.json"),
+            ]
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn de_un_workspace_completo_la_carpeta_lleva_el_proyecto_adelante() {
+        let texto = r#"{
+            "connections": {
+                "sin-carpeta": {
+                    "provider": "postgresql",
+                    "name": "Sin carpeta",
+                    "configuration": { "host": "sin.interno" }
+                },
+                "con-carpeta": {
+                    "provider": "postgresql",
+                    "name": "Con carpeta",
+                    "folder": "Producción",
+                    "configuration": { "host": "con.interno" }
+                }
+            }
+        }"#;
+
+        let found = dbeaver_scoped(texto, "data-sources.json", "MiProyecto");
+        let sin_carpeta = found.iter().find(|c| c.name == "Sin carpeta").unwrap();
+        let con_carpeta = found.iter().find(|c| c.name == "Con carpeta").unwrap();
+
+        assert_eq!(sin_carpeta.group.as_deref(), Some("MiProyecto"));
+        assert_eq!(con_carpeta.group.as_deref(), Some("MiProyecto/Producción"));
     }
 }

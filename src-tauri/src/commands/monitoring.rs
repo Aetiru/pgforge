@@ -57,10 +57,12 @@ impl MonitorOptions {
     }
 }
 
-/// Arranca el monitoreo del servidor. Volver a llamarlo reemplaza la suscripción anterior.
+/// Arranca el monitoreo del servidor para esta ventana. Volver a llamarlo desde la misma ventana
+/// reemplaza su suscripción anterior; otra ventana mirando el mismo servidor no se ve afectada.
 #[tauri::command]
 pub async fn monitor_start(
     state: State<'_, AppState>,
+    window: tauri::Window,
     id: ProfileId,
     database: Option<String>,
     options: Option<MonitorOptions>,
@@ -79,9 +81,10 @@ pub async fn monitor_start(
 
     let task = tokio::spawn(poll_loop(monitor.clone(), config.clone(), channel));
 
-    // Insertar descarta la entrada anterior, y su `Drop` aborta la tarea que tenía andando.
+    // Insertar descarta la entrada anterior de esta misma ventana, y su `Drop` aborta la tarea que
+    // tenía andando. La clave lleva el label: otra ventana con el mismo `id` tiene entrada aparte.
     state.monitors.lock().await.insert(
-        id,
+        (id, window.label().to_owned()),
         MonitorEntry {
             monitor,
             config,
@@ -131,8 +134,16 @@ async fn poll_loop(
 }
 
 #[tauri::command]
-pub async fn monitor_stop(state: State<'_, AppState>, id: ProfileId) -> Result<()> {
-    state.monitors.lock().await.remove(&id);
+pub async fn monitor_stop(
+    state: State<'_, AppState>,
+    window: tauri::Window,
+    id: ProfileId,
+) -> Result<()> {
+    state
+        .monitors
+        .lock()
+        .await
+        .remove(&(id, window.label().to_owned()));
     Ok(())
 }
 
@@ -140,25 +151,32 @@ pub async fn monitor_stop(state: State<'_, AppState>, id: ProfileId) -> Result<(
 #[tauri::command]
 pub async fn monitor_configure(
     state: State<'_, AppState>,
+    window: tauri::Window,
     id: ProfileId,
     options: MonitorOptions,
 ) -> Result<()> {
     let monitors = state.monitors.lock().await;
     let entry = monitors
-        .get(&id)
+        .get(&(id, window.label().to_owned()))
         .ok_or_else(|| Error::Config("el monitoreo no está activo".to_owned()))?;
 
     options.apply(&mut *entry.config.lock().await);
     Ok(())
 }
 
+/// Busca cualquier monitoreo activo de este servidor, sin importar de qué ventana es.
+///
+/// Estas consultas son puntuales —no se enganchan a nada, leen una vez y devuelven— así que no tiene
+/// sentido exigirles saber qué ventana abrió el dashboard: alcanza con que el servidor esté siendo
+/// monitoreado desde alguna.
 async fn monitor_of(state: &AppState, id: ProfileId) -> Result<Arc<Mutex<Monitor>>> {
     state
         .monitors
         .lock()
         .await
-        .get(&id)
-        .map(|entry| entry.monitor.clone())
+        .iter()
+        .find(|((pid, _), _)| *pid == id)
+        .map(|(_, entry)| entry.monitor.clone())
         .ok_or_else(|| Error::Config("el monitoreo no está activo para este servidor".to_owned()))
 }
 

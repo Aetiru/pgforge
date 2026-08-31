@@ -14,6 +14,19 @@
 
 const KEY = "pgforge.grid.font";
 
+/**
+ * Sin `wstorage`: el tamaño de letra de la grilla es preferencia de la *aplicación* —como el
+ * tamaño de letra del SQL, que razona lo mismo—, no estado de una grilla abierta en una ventana en
+ * particular.
+ */
+function get(): string | null {
+  try {
+    return localStorage.getItem(KEY);
+  } catch {
+    return null;
+  }
+}
+
 /** El tamaño con el que nació la grilla (el `text-sm` de siempre), y al que vuelve el botón central. */
 export const DEFAULT_GRID_FONT = 14;
 const MIN = 10;
@@ -24,7 +37,7 @@ function clamp(size: number): number {
 }
 
 function stored(): number {
-  const value = Number(localStorage.getItem(KEY));
+  const value = Number(get());
   return Number.isFinite(value) && value > 0 ? clamp(value) : DEFAULT_GRID_FONT;
 }
 
@@ -49,7 +62,11 @@ class GridZoom {
 
   set(size: number) {
     this.size = clamp(size);
-    localStorage.setItem(KEY, String(this.size));
+    try {
+      localStorage.setItem(KEY, String(this.size));
+    } catch {
+      // Nada que hacer sin `localStorage`: la preferencia no se recuerda esta vez.
+    }
     this.apply();
   }
 

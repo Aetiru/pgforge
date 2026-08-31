@@ -66,7 +66,8 @@
     | "unplug"
     | "diagram"
     | "compare"
-    | "format";
+    | "format"
+    | "window";
 
   const PATHS: Record<IconName, string> = {
     server:
@@ -160,6 +161,9 @@
       '<path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h6M14 18h6"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="12" cy="18" r="2"/>',
     // Tres líneas con sangría creciente: ordenar el SQL en niveles es justo lo que hace el botón.
     format: '<path d="M4 6h16M4 12h10M4 18h13"/>',
+    // Ventana con barra de título y un «+»: abrir otra ventana, no la que ya está.
+    window:
+      '<rect x="2.5" y="5.5" width="14" height="12" rx="1.5"/><path d="M2.5 9.5h14"/><path d="M18 3v6M15 6h6"/>',
   };
 
   export function iconPath(name: IconName): string {

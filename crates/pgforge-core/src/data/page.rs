@@ -74,6 +74,11 @@ pub struct PageView {
     /// con sus mismos privilegios.
     #[serde(default)]
     pub filter: Option<String>,
+    /// Término de búsqueda: arma un `OR` de `ILIKE` parametrizado sobre todas las columnas de la
+    /// tabla, para buscar texto sin que el usuario tenga que escribir SQL. A diferencia de
+    /// `filter`, viaja como valor de parámetro y no como texto interpolado en la consulta.
+    #[serde(default)]
+    pub search: Option<String>,
 }
 
 impl PageView {
@@ -83,6 +88,24 @@ impl PageView {
             .map(str::trim)
             .filter(|f| !f.is_empty())
     }
+
+    fn search_term(&self) -> Option<&str> {
+        self.search
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    }
+}
+
+/// Escapa lo que ILIKE interpreta como comodín, para que el término de búsqueda se compare
+/// literal y no como patrón. El backslash va primero: si se escapara después, escaparía también
+/// los propios `\%`/`\_` que acabamos de escribir.
+fn like_pattern(term: &str) -> String {
+    let escaped = term
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    format!("%{escaped}%")
 }
 
 /// Arma el `SELECT` de una página.
@@ -124,6 +147,31 @@ pub fn select(
         // Entre paréntesis: un filtro con `OR` adentro, pegado al `AND` del cursor, cambiaría de
         // significado y devolvería filas que el usuario no pidió.
         conditions.push(format!("({filter})"));
+    }
+
+    if view.search_term().is_some() {
+        // El cursor por clave, cuando lo hay, ya se llevó los placeholders `$1..=$key.len()`: el de
+        // búsqueda tiene que seguir después, no pisarlos. Se calcula acá, antes de armar la
+        // condición del cursor más abajo, para que la numeración sea predecible.
+        let position = match cursor {
+            Some(Cursor::After { .. }) => key.len() + 1,
+            _ => 1,
+        };
+        // Mismo placeholder repetido en cada columna: es un único valor de búsqueda, no uno por
+        // columna. `ESCAPE '\'` en cada comparación por prolijidad, para no depender de
+        // `standard_conforming_strings` del servidor.
+        let ors = shape
+            .columns
+            .iter()
+            .map(|column| {
+                format!(
+                    "t.{}::text ILIKE ${position} ESCAPE '\\'",
+                    quote_ident(&column.name)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" OR ");
+        conditions.push(format!("({ors})"));
     }
 
     match cursor {
@@ -240,10 +288,15 @@ pub async fn page(
     let sql = select(shape, cursor, limit, view)?;
     let client = handle.client(database).await?;
 
-    let values: Vec<String> = match cursor {
+    let mut values: Vec<String> = match cursor {
         Some(Cursor::After { key }) => key.clone(),
         _ => Vec::new(),
     };
+    // Mismo orden en que `select()` repartió los placeholders: clave del cursor primero, búsqueda
+    // después.
+    if let Some(term) = view.search_term() {
+        values.push(like_pattern(term));
+    }
     let params: Vec<&(dyn ToSql + Sync)> = values
         .iter()
         .map(|value| value as &(dyn ToSql + Sync))
@@ -483,6 +536,7 @@ mod tests {
                 descending,
             }),
             filter: None,
+            search: None,
         }
     }
 
@@ -532,6 +586,7 @@ mod tests {
         let view = PageView {
             order: None,
             filter: Some("nombre ILIKE 'a%' OR id < 10".into()),
+            search: None,
         };
         let cursor = Cursor::After {
             key: vec!["3".into()],
@@ -551,6 +606,7 @@ mod tests {
         let view = PageView {
             order: None,
             filter: Some("   ".into()),
+            search: None,
         };
         let sql = select(&con_clave(), None, 200, &view).unwrap();
         assert!(!sql.contains("WHERE"), "{sql}");
@@ -568,5 +624,53 @@ mod tests {
             ),
             Some(Cursor::Offset { rows: 401 })
         );
+    }
+
+    #[test]
+    fn buscar_agrega_or_ilike_sobre_todas_las_columnas() {
+        let view = PageView {
+            order: None,
+            filter: None,
+            search: Some("ana".into()),
+        };
+        let sql = select(&con_clave(), None, 200, &view).unwrap();
+
+        assert!(sql.contains("ILIKE $1 ESCAPE '\\'"), "{sql}");
+        assert!(sql.contains("t.id::text ILIKE $1"), "{sql}");
+        assert!(sql.contains("t.nombre::text ILIKE $1"), "{sql}");
+        assert!(sql.contains("t.creado::text ILIKE $1"), "{sql}");
+    }
+
+    #[test]
+    fn buscar_con_cursor_usa_el_placeholder_siguiente_a_la_clave() {
+        let cursor = Cursor::After {
+            key: vec!["1240".into(), "ana".into()],
+        };
+        let view = PageView {
+            order: None,
+            filter: None,
+            search: Some("ana".into()),
+        };
+        let sql = select(&con_clave_compuesta(), Some(&cursor), 50, &view).unwrap();
+
+        // La clave compuesta ya ocupó $1 y $2: la búsqueda tiene que seguir en $3.
+        assert!(sql.contains("ILIKE $3 ESCAPE '\\'"), "{sql}");
+        assert!(!sql.contains("ILIKE $1"), "{sql}");
+    }
+
+    #[test]
+    fn buscar_en_blanco_es_no_buscar() {
+        let view = PageView {
+            order: None,
+            filter: None,
+            search: Some("   ".into()),
+        };
+        let sql = select(&con_clave(), None, 200, &view).unwrap();
+        assert!(!sql.contains("ILIKE"), "{sql}");
+    }
+
+    #[test]
+    fn like_pattern_escapa_los_comodines() {
+        assert_eq!(like_pattern("50%_off"), "%50\\%\\_off%");
     }
 }

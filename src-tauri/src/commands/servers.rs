@@ -83,6 +83,52 @@ pub async fn import_scan(app: AppHandle) -> Result<Vec<Candidate>> {
     import::scan(&paths)
 }
 
+/// Busca servidores en TODOS los proyectos de un espacio de trabajo de DBeaver (`root`), no solo el
+/// que `import_scan` conoce de memoria. Cada proyecto es una carpeta de primer nivel bajo `root`; la
+/// carpeta resultante en pgforge lleva el nombre del proyecto adelante, para que dos proyectos con
+/// una subcarpeta igual no se pisen al quedar como carpetas raíz hermanas.
+#[tauri::command]
+pub async fn import_scan_workspace(root: String) -> Result<Vec<Candidate>> {
+    let root = std::path::PathBuf::from(root);
+    let mut out: Vec<Candidate> = Vec::new();
+
+    for path in import::dbeaver_workspace_sources(&root) {
+        // Un archivo ilegible (permisos, corrupto) no frena el resto del escaneo: se saltea y se
+        // sigue con los demás proyectos, igual que hace `scan()`.
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        // El nombre del proyecto es la carpeta padre de `.dbeaver` en la ruta del archivo.
+        let project = path
+            .parent()
+            .and_then(|dbeaver_dir| dbeaver_dir.parent())
+            .and_then(|project_dir| project_dir.file_name())
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let source = path.display().to_string();
+
+        for candidate in import::dbeaver_scoped(&text, &source, &project) {
+            // Mismo criterio de "repetido" que usa `scan()` (host, puerto, usuario y base), más la
+            // carpeta: `dbeaver_scoped` la prefija con el nombre del proyecto, así que dos servidores
+            // iguales que viven en proyectos DBeaver distintos no son el mismo servidor y no hay que
+            // fundirlos en uno — algo común, porque DBeaver deja `user` vacío muy seguido y
+            // "localhost:5432/postgres" se repite en cualquier espacio de trabajo.
+            let repetido = out.iter().any(|item| {
+                item.host == candidate.host
+                    && item.port == candidate.port
+                    && item.user == candidate.user
+                    && item.database == candidate.database
+                    && item.group == candidate.group
+            });
+            if !repetido {
+                out.push(candidate);
+            }
+        }
+    }
+
+    Ok(out)
+}
+
 /// Guarda los candidatos elegidos como servidores nuevos y devuelve los perfiles creados.
 #[tauri::command]
 pub async fn import_apply(
@@ -110,7 +156,9 @@ pub async fn import_apply(
 
 #[tauri::command]
 pub async fn delete_profile(state: State<'_, AppState>, id: ProfileId) -> Result<()> {
-    state.monitors.lock().await.remove(&id);
+    // Borrar el servidor apaga su monitoreo en cualquier ventana que lo tuviera abierto, no solo en
+    // la que pidió el borrado.
+    state.monitors.lock().await.retain(|(pid, _), _| *pid != id);
     state.manager.disconnect(id).await;
     state.store.lock().await.remove(id)
 }
@@ -201,8 +249,9 @@ pub async fn ssh_test(
 #[tauri::command]
 pub async fn disconnect(state: State<'_, AppState>, id: ProfileId) -> Result<()> {
     // El monitoreo tiene su propia conexión: hay que cerrarla también o queda consultando un
-    // servidor que la interfaz ya dio por desconectado.
-    state.monitors.lock().await.remove(&id);
+    // servidor que la interfaz ya dio por desconectado. Se sacan todas las ventanas que lo tenían
+    // abierto, no solo la que pidió desconectar.
+    state.monitors.lock().await.retain(|(pid, _), _| *pid != id);
     state.manager.disconnect(id).await;
     Ok(())
 }

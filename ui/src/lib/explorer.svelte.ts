@@ -11,14 +11,18 @@ import {
   saveProfile,
   treeChildren,
   treeSearch,
+  workspaceGet,
   type ConnectionProfile,
   type FolderKind,
   type SearchHit,
   type ServerCaps,
+  type ServerColor,
   type TreeNode,
   type TreeOptions,
+  type Workspace,
 } from "./ipc";
 import { folders, LOOSE_GROUP, normalizeGroup } from "./folders.svelte";
+import { compareServers, reorderDrop } from "./server-order";
 import { folderForKind } from "./tree-actions";
 import { filterHits, matchesKind, parseQuery } from "./tree-query";
 
@@ -65,6 +69,8 @@ export interface Row {
    * que había abierto sigue ahí.
    */
   down?: boolean;
+  /** Solo en filas de servidor: el color que eligió el usuario para distinguirlo en el árbol. */
+  color?: ServerColor;
 }
 
 /**
@@ -90,6 +96,7 @@ function serverRow(profile: ConnectionProfile, level: number): Row {
     loading: false,
     children: null,
     connected: false,
+    color: profile.color,
   };
 }
 
@@ -140,6 +147,19 @@ function parentPath(path: string): string {
 function ancestry(path: string): string[] {
   const parts = path.split(SEPARATOR);
   return parts.map((_, index) => parts.slice(0, index + 1).join(SEPARATOR));
+}
+
+/**
+ * Si `name` es `ancestor` o cuelga de ella. Mismo criterio que `group_starts_with` del núcleo
+ * (`crates/pgforge-core/src/conn/profile.rs`), acá para acotar el árbol de una ventana de workspace
+ * sin volver a pedirle nada al servidor: el filtro es sobre lo que ya trajo `list_profiles`.
+ *
+ * Exportada porque también la usan los diálogos que guardan o importan servidores, para avisar
+ * cuando la carpeta elegida queda fuera del `rootGroup` de esta ventana (`ConnectionDialog`,
+ * `ImportServersDialog`).
+ */
+export function groupStartsWith(name: string, ancestor: string): boolean {
+  return name === ancestor || name.startsWith(`${ancestor}${SEPARATOR}`);
 }
 
 /** Todas las filas de servidor que cuelgan de estas filas, a cualquier profundidad. */
@@ -197,6 +217,73 @@ class Explorer {
   selected = $state<Row | null>(null);
   options = $state<TreeOptions>({ showSystemSchemas: false });
   search = $state("");
+
+  /**
+   * El workspace al que está acotada esta ventana, o `null` en la principal y en cualquier ventana
+   * que no pidió ninguno.
+   */
+  workspace = $state<Workspace | null>(null);
+
+  /**
+   * Por qué `workspace` quedó en `null` habiendo un `id` en la URL: workspace borrado desde otra
+   * ventana, `workspaces.json` corrupto, un corte transitorio. Distinto de la ventana principal, que
+   * nunca pidió ninguno — con esto puesto, el modo degradado correcto es un árbol vacío y un aviso,
+   * nunca mostrar todo sin acotar (ver `scopedProfiles`).
+   */
+  workspaceError = $state<string | null>(null);
+
+  /** El `id` pedido por la URL, para distinguir «sin workspace» de «se le pidió uno y falló». */
+  private requestedWorkspaceId: string | null = null;
+
+  constructor() {
+    // Sin `await`: nada del arranque depende de esto, y una ventana secundaria puede tardar en
+    // confirmar su workspace sin que el árbol se quede esperando.
+    void this.loadWorkspace();
+  }
+
+  /**
+   * `workspace_open` (ver `commands/workspaces.rs`) abre la ventana con `?workspace=<id>` en la URL;
+   * acá se lee ese parámetro y se resuelve el workspace para acotar el árbol a su `rootGroup`.
+   */
+  private async loadWorkspace() {
+    // `window` no existe en los tests, que corren en Node sin DOM.
+    if (typeof window === "undefined") return;
+    const id = new URLSearchParams(window.location.search).get("workspace");
+    if (!id) return;
+    this.requestedWorkspaceId = id;
+    try {
+      this.workspace = await workspaceGet(id);
+      this.workspaceError = null;
+    } catch (error) {
+      // Degradar a «mostrar todo» sería peor que el error: una ventana pensada para acotar no puede
+      // terminar mostrando producción porque no pudo leer su propio recorte.
+      this.workspace = null;
+      this.workspaceError = describeError(error);
+    }
+    // `refreshProfiles` puede haber terminado antes que esto —las dos corren sin esperarse— y haber
+    // armado el árbol sin acotar; con el workspace ya resuelto, se rearma para que quede acotado.
+    this.rebuild();
+  }
+
+  /** El nombre del workspace de esta ventana, o `null` en la principal. */
+  get workspaceLabel(): string | null {
+    return this.workspace?.name ?? null;
+  }
+
+  /**
+   * Los perfiles que le tocan al árbol de esta ventana: todos, salvo que un workspace la acote a una
+   * carpeta —y las que cuelgan de ella—. `profiles` sigue siendo la lista entera que devolvió
+   * `list_profiles`; lo que cambia acá es solo qué se dibuja.
+   *
+   * Se pidió un workspace y no se pudo resolver: lista vacía, nunca la completa. Mostrar todo ahí
+   * sería justo lo que esta ventana existe para no hacer.
+   */
+  private get scopedProfiles(): ConnectionProfile[] {
+    if (this.requestedWorkspaceId && !this.workspace) return [];
+    const root = this.workspace?.rootGroup;
+    if (!root) return this.profiles;
+    return this.profiles.filter((profile) => profile.group && groupStartsWith(profile.group, root));
+  }
 
   /**
    * Deja fuera del árbol a los servidores sin conectar. No los desconfigura ni los borra: con veinte
@@ -262,12 +349,19 @@ class Explorer {
    * Crea una carpeta vacía y la deja seleccionada. No toca el disco: recién persiste cuando se le
    * arrastra un servidor adentro (ver [`pendingGroups`]). Si ya existe una carpeta con ese nombre,
    * no hace nada —quien la llama valida antes y avisa—.
+   *
+   * «Ya existe» se mira contra `scopedProfiles` y no contra `this.profiles` completo: en una ventana
+   * acotada a `Clientes`, una carpeta `Producción` que cuelga de otra parte del árbol no se ve desde
+   * acá, así que a todo efecto práctico no es la misma carpeta y no debería bloquear crear una con
+   * ese nombre en esta ventana. `pendingGroups` (`folders.empty`) ya vive namespaceada por ventana
+   * (ver `folders.svelte.ts`), así que no hace falta filtrarla de nuevo por `rootGroup`: lo que
+   * recuerda esta ventana como pendiente ya es, por construcción, suyo.
    */
   newGroup(name: string) {
     const trimmed = normalizeGroup(name);
     if (!trimmed) return;
     const exists =
-      this.profiles.some((profile) => profile.group === trimmed) ||
+      this.scopedProfiles.some((profile) => profile.group === trimmed) ||
       this.pendingGroups.includes(trimmed);
     if (exists) return;
 
@@ -283,7 +377,7 @@ class Explorer {
    * servidor de carpeta no lo desconecta ni descarta lo que ya se cargó de él.
    */
   private rebuild() {
-    const profiles = this.profiles;
+    const profiles = this.scopedProfiles;
 
     const previous = new Map(this.servers.map((row) => [row.profileId, row]));
     // Por clave y no por nombre: la sección de los sueltos no tiene nombre.
@@ -296,6 +390,7 @@ class Explorer {
       existing.detail = serverDetail(profile);
       existing.group = profile.group;
       existing.level = level;
+      existing.color = profile.color;
       return existing;
     };
 
@@ -311,7 +406,7 @@ class Explorer {
       return existing;
     };
 
-    const sorted = [...profiles].sort((a, b) => byName(a.name, b.name));
+    const sorted = [...profiles].sort(compareServers);
     const grouped = new Map<string, ConnectionProfile[]>();
     const loose: ConnectionProfile[] = [];
     for (const profile of sorted) {
@@ -328,10 +423,18 @@ class Explorer {
     // perfiles: se saca de la lista para no mostrarla dos veces.
     folders.keepEmpty(this.pendingGroups.filter((name) => !grouped.has(name)));
 
+    // Las pendientes fuera del alcance de esta ventana no se dibujan: sin este filtro, una carpeta
+    // vacía creada acá pero fuera de `rootGroup` colgaría como si naciera de la raíz del árbol
+    // acotado, que es justo lo que `scopedProfiles` evita para las carpetas con servidores.
+    const root = this.workspace?.rootGroup;
+    const scopedPending = root
+      ? this.pendingGroups.filter((name) => groupStartsWith(name, root))
+      : this.pendingGroups;
+
     // Toda carpeta con servidores existe, y las que la contienen también: `Clientes` se dibuja
     // aunque el único perfil esté en `Clientes/ACME`.
     const paths = new Set<string>();
-    for (const name of [...grouped.keys(), ...this.pendingGroups]) {
+    for (const name of [...grouped.keys(), ...scopedPending]) {
       for (const ancestor of ancestry(name)) paths.add(ancestor);
     }
 
@@ -393,6 +496,38 @@ class Explorer {
 
     // Sin contraseña: el comando deja intacta la que ya esté guardada.
     await saveProfile({ ...$state.snapshot(profile), group: group ?? undefined });
+    await this.refreshProfiles();
+  }
+
+  /**
+   * Ordena un servidor por arrastre, adentro de su carpeta o cambiando de carpeta a la vez.
+   * `beforeProfileId` es el servidor delante del cual queda, o `null` para dejarlo al final.
+   */
+  async reorder(profileId: string, group: string | null, beforeProfileId: string | null) {
+    const profile = this.profiles.find((item) => item.id === profileId);
+    if (!profile) return;
+
+    const patches = reorderDrop($state.snapshot(this.profiles), profileId, group, beforeProfileId);
+    if (patches.length === 0) return;
+
+    // Misma regla que `moveToGroup`: si la carpeta vieja se queda sin nadie, se conserva pendiente
+    // en vez de dejarla desaparecer sola.
+    const from = profile.group ?? null;
+    if (from && !this.profiles.some((item) => item.id !== profileId && item.group === from)) {
+      folders.remember(from);
+    }
+
+    await Promise.all(
+      patches.map((patch) => {
+        const original = this.profiles.find((item) => item.id === patch.id);
+        if (!original) return Promise.resolve();
+        return saveProfile({
+          ...$state.snapshot(original),
+          group: patch.group ?? undefined,
+          order: patch.order,
+        });
+      }),
+    );
     await this.refreshProfiles();
   }
 

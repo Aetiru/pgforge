@@ -23,8 +23,18 @@ export const DEFAULT_PAGE_SIZE = 200;
  */
 export const AUTO_LIMIT = 10_000;
 
+// Sin `wstorage`: el tamaño de tanda es preferencia de la aplicación, no de una ventana particular
+// — quien lo sube una vez lo quiere en todas.
+function get(): string | null {
+  try {
+    return localStorage.getItem(KEY);
+  } catch {
+    return null;
+  }
+}
+
 function stored(): number {
-  const value = Number(localStorage.getItem(KEY));
+  const value = Number(get());
   return (PAGE_SIZES as readonly number[]).includes(value) ? value : DEFAULT_PAGE_SIZE;
 }
 
@@ -33,7 +43,11 @@ class Paging {
 
   set(size: number) {
     this.size = size;
-    localStorage.setItem(KEY, String(size));
+    try {
+      localStorage.setItem(KEY, String(size));
+    } catch {
+      // Nada que hacer sin `localStorage`: la preferencia no se recuerda esta vez.
+    }
   }
 }
 

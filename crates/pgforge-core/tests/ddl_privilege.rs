@@ -152,6 +152,7 @@ async fn otorga_y_revoca_privilegios_contra_servidores_reales() {
                 privilegios_de_secuencia(&handle, &schema, &role).await;
                 privilegios_de_funcion(&handle, &schema, &role).await;
                 privilegios_por_columna(&handle, &schema, &role).await;
+                privilegios_sobre_todo_un_esquema(&handle, &schema, &role).await;
                 privilegios_de_base(&handle, &role).await;
                 privilegios_por_omision(&handle, &schema, &role).await;
                 privilegio_a_public(&handle, &schema).await;
@@ -422,6 +423,108 @@ async fn privilegios_por_columna(handle: &ServerHandle, schema: &str, role_name:
     assert!(
         !grants.iter().any(|g| g.column == "id"),
         "una columna sin ACL propio no tiene que aparecer: {grants:?}"
+    );
+}
+
+/// `ON ALL TABLES IN SCHEMA` alcanza lo que existe al momento de otorgar, y nada más: una tabla
+/// creada después no lo hereda. Esa es exactamente la mitad que cubre `ALTER DEFAULT PRIVILEGES`
+/// y no esta sentencia.
+async fn privilegios_sobre_todo_un_esquema(handle: &ServerHandle, schema: &str, role_name: &str) {
+    let database = handle.default_database().to_owned();
+
+    table::apply(
+        handle,
+        &database,
+        &[TableChange::CreateTable {
+            schema: schema.to_owned(),
+            name: "esquema_anterior".into(),
+            columns: vec![ColumnDef {
+                name: "id".into(),
+                type_name: "bigint".into(),
+                not_null: false,
+                default: None,
+                identity: None,
+            }],
+        }],
+    )
+    .await
+    .expect("tenía que crear la tabla anterior al GRANT");
+
+    grant(
+        handle,
+        Grantable::AllInSchema {
+            schemas: vec![schema.to_owned()],
+            objects: privilege::SchemaWide::Tables {
+                privileges: vec![TablePrivilege::Select],
+            },
+        },
+        role_name,
+        false,
+    )
+    .await;
+
+    table::apply(
+        handle,
+        &database,
+        &[TableChange::CreateTable {
+            schema: schema.to_owned(),
+            name: "esquema_posterior".into(),
+            columns: vec![ColumnDef {
+                name: "id".into(),
+                type_name: "bigint".into(),
+                not_null: false,
+                default: None,
+                identity: None,
+            }],
+        }],
+    )
+    .await
+    .expect("tenía que crear la tabla posterior al GRANT");
+
+    let anterior = relation_oid(handle, schema, "esquema_anterior").await;
+    let grants = privilege::relation_privileges(handle, &database, anterior)
+        .await
+        .unwrap();
+    assert!(
+        grants
+            .iter()
+            .any(|g| g.grantee == role_name && g.privilege == "SELECT"),
+        "una tabla que ya existía al otorgar tenía que quedar alcanzada: {grants:?}"
+    );
+
+    let posterior = relation_oid(handle, schema, "esquema_posterior").await;
+    let grants = privilege::relation_privileges(handle, &database, posterior)
+        .await
+        .unwrap();
+    assert!(
+        !grants
+            .iter()
+            .any(|g| g.grantee == role_name && g.privilege == "SELECT"),
+        "una tabla creada después del GRANT no tiene que heredar nada: {grants:?}"
+    );
+
+    grant(
+        handle,
+        Grantable::AllInSchema {
+            schemas: vec![schema.to_owned()],
+            objects: privilege::SchemaWide::Routines {
+                privileges: vec![FunctionPrivilege::Execute],
+            },
+        },
+        role_name,
+        false,
+    )
+    .await;
+
+    let function = function_oid(handle, schema, "doble").await;
+    let grants = privilege::function_privileges(handle, &database, function)
+        .await
+        .unwrap();
+    assert!(
+        grants
+            .iter()
+            .any(|g| g.grantee == role_name && g.privilege == "EXECUTE"),
+        "ALL ROUTINES tenía que alcanzar a la función: {grants:?}"
     );
 }
 

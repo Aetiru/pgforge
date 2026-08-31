@@ -27,6 +27,13 @@ export type DatabasePrivilege = "connect" | "create" | "temporary";
 
 export type TypePrivilege = "usage";
 
+/** El vocabulario de un `GRANT ... ON ALL <familia> IN SCHEMA`. */
+export type SchemaWide =
+  | { on: "tables"; privileges: TablePrivilege[] }
+  | { on: "sequences"; privileges: SequencePrivilege[] }
+  /** `routines` y no `functions`: desde PG 11 alcanza también a los procedimientos. */
+  | { on: "routines"; privileges: FunctionPrivilege[] };
+
 /**
  * Sobre qué se otorga o se revoca. El objeto y su vocabulario van juntos a propósito: así el tipo
  * no deja pedir `TRUNCATE` sobre un esquema.
@@ -51,7 +58,13 @@ export type Grantable =
       procedure: boolean;
       privileges: FunctionPrivilege[];
     }
-  | { on: "database"; database: string; privileges: DatabasePrivilege[] };
+  | { on: "database"; database: string; privileges: DatabasePrivilege[] }
+  /**
+   * `GRANT ... ON ALL TABLES IN SCHEMA a, b`. Alcanza lo que existe hoy: la tabla que alguien cree
+   * mañana no lo hereda — esa es la otra mitad, y la cubre un `PrivilegeChange` de tipo
+   * `grantDefault`.
+   */
+  | { on: "allInSchema"; schemas: string[]; objects: SchemaWide };
 
 /** Sobre qué actúan los privilegios por omisión. */
 export type DefaultPrivileges =

@@ -152,6 +152,43 @@ impl TypePrivilege {
     }
 }
 
+/// El vocabulario de un `GRANT ... ON ALL <familia> IN SCHEMA`. Vocabulario y familia van juntos
+/// por la misma razón que en [`Grantable`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "on", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum SchemaWide {
+    Tables {
+        privileges: Vec<TablePrivilege>,
+    },
+    Sequences {
+        privileges: Vec<SequencePrivilege>,
+    },
+    /// `ROUTINES` y no `FUNCTIONS`: desde PG 11 `ALL FUNCTIONS IN SCHEMA` no alcanza a los
+    /// procedimientos y los saltea sin decir nada, igual que pasa con `ON FUNCTION` sobre uno solo.
+    Routines {
+        privileges: Vec<FunctionPrivilege>,
+    },
+}
+
+impl SchemaWide {
+    /// La palabra que va entre `ALL` e `IN SCHEMA`.
+    fn objects(&self) -> &'static str {
+        match self {
+            SchemaWide::Tables { .. } => "TABLES",
+            SchemaWide::Sequences { .. } => "SEQUENCES",
+            SchemaWide::Routines { .. } => "ROUTINES",
+        }
+    }
+
+    fn privileges(&self) -> Result<String> {
+        match self {
+            SchemaWide::Tables { privileges } => list(privileges, TablePrivilege::sql),
+            SchemaWide::Sequences { privileges } => list(privileges, SequencePrivilege::sql),
+            SchemaWide::Routines { privileges } => list(privileges, FunctionPrivilege::sql),
+        }
+    }
+}
+
 /// Sobre qué se otorga o se revoca: el objeto y, atado a él, su vocabulario de privilegios. Que
 /// vayan juntos es a propósito — así no se puede pedir `TRUNCATE` sobre un esquema.
 #[derive(Debug, Clone, Deserialize)]
@@ -193,6 +230,12 @@ pub enum Grantable {
         database: String,
         privileges: Vec<DatabasePrivilege>,
     },
+    /// `GRANT ... ON ALL TABLES IN SCHEMA a, b`. Alcanza **lo que existe hoy**: la tabla que
+    /// alguien cree mañana no lo hereda — esa es la otra mitad, y la cubre [`PrivilegeChange::GrantDefault`].
+    AllInSchema {
+        schemas: Vec<String>,
+        objects: SchemaWide,
+    },
 }
 
 impl Grantable {
@@ -218,6 +261,14 @@ impl Grantable {
             ),
             Grantable::Database { database, .. } => {
                 format!("DATABASE {}", quote_ident(database))
+            }
+            Grantable::AllInSchema { schemas, objects } => {
+                let names = schemas
+                    .iter()
+                    .map(|schema| quote_ident(schema))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("ALL {} IN SCHEMA {names}", objects.objects())
             }
         }
     }
@@ -254,6 +305,14 @@ impl Grantable {
             Grantable::Sequence { privileges, .. } => list(privileges, SequencePrivilege::sql),
             Grantable::Function { privileges, .. } => list(privileges, FunctionPrivilege::sql),
             Grantable::Database { privileges, .. } => list(privileges, DatabasePrivilege::sql),
+            Grantable::AllInSchema { schemas, objects } => {
+                if schemas.is_empty() {
+                    return Err(Error::Config(
+                        "hace falta elegir al menos un esquema".to_owned(),
+                    ));
+                }
+                objects.privileges()
+            }
         }
     }
 }
@@ -1017,6 +1076,91 @@ mod tests {
         assert_eq!(
             statement.sql,
             "GRANT SELECT ON \"mi esquema\".\"Clientes\" TO \"Ana Gómez\""
+        );
+    }
+
+    #[test]
+    fn otorga_sobre_todas_las_tablas_de_un_esquema() {
+        let statement = grant(
+            Grantable::AllInSchema {
+                schemas: vec!["app".into()],
+                objects: SchemaWide::Tables {
+                    privileges: vec![TablePrivilege::Select],
+                },
+            },
+            "lectores",
+        );
+        assert_eq!(
+            statement.sql,
+            "GRANT SELECT ON ALL TABLES IN SCHEMA app TO lectores"
+        );
+    }
+
+    /// Varios esquemas de una vez, para no repetir la sentencia por cada uno.
+    #[test]
+    fn alcanza_a_varios_esquemas_de_una_vez() {
+        let statement = grant(
+            Grantable::AllInSchema {
+                schemas: vec!["app".into(), "ventas".into()],
+                objects: SchemaWide::Sequences {
+                    privileges: vec![SequencePrivilege::Usage],
+                },
+            },
+            "lectores",
+        );
+        assert_eq!(
+            statement.sql,
+            "GRANT USAGE ON ALL SEQUENCES IN SCHEMA app, ventas TO lectores"
+        );
+    }
+
+    /// `ROUTINES` y no `FUNCTIONS`: desde PG 11 alcanza también a los procedimientos.
+    #[test]
+    fn usa_routines_para_alcanzar_tambien_los_procedimientos() {
+        let statement = grant(
+            Grantable::AllInSchema {
+                schemas: vec!["app".into()],
+                objects: SchemaWide::Routines {
+                    privileges: vec![FunctionPrivilege::Execute],
+                },
+            },
+            "lectores",
+        );
+        assert_eq!(
+            statement.sql,
+            "GRANT EXECUTE ON ALL ROUTINES IN SCHEMA app TO lectores"
+        );
+    }
+
+    #[test]
+    fn sin_esquemas_no_se_genera_un_privilegio_sobre_todo_el_esquema() {
+        assert!(statements(&[PrivilegeChange::Grant {
+            target: Grantable::AllInSchema {
+                schemas: vec![],
+                objects: SchemaWide::Tables {
+                    privileges: vec![TablePrivilege::Select],
+                },
+            },
+            grantee: "lectores".into(),
+            grant_option: false,
+        }])
+        .is_err());
+    }
+
+    #[test]
+    fn cita_los_esquemas_que_lo_necesitan() {
+        let statement = grant(
+            Grantable::AllInSchema {
+                schemas: vec!["mi esquema".into(), "Ventas".into()],
+                objects: SchemaWide::Tables {
+                    privileges: vec![TablePrivilege::Select],
+                },
+            },
+            "ana",
+        );
+        assert_eq!(
+            statement.sql,
+            "GRANT SELECT ON ALL TABLES IN SCHEMA \"mi esquema\", \"Ventas\" TO ana"
         );
     }
 }

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use pgforge_core::conn::CancelSink;
 use pgforge_core::monitor::{ActivityFilter, Monitor};
 use pgforge_core::sql::{HistoryStore, QuerySession, SavedStore, SnippetStore};
-use pgforge_core::{ConnectionManager, ProfileId, ProfileStore};
+use pgforge_core::{ConnectionManager, ProfileId, ProfileStore, WorkspaceStore};
 use tauri::ipc::Channel;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
@@ -86,7 +86,12 @@ pub struct ReadEntry {
 pub struct AppState {
     pub manager: ConnectionManager,
     pub store: Mutex<ProfileStore>,
-    pub monitors: Mutex<HashMap<ProfileId, MonitorEntry>>,
+    /// El dashboard es una vista que cada ventana abre y cierra por su cuenta —a diferencia de
+    /// Procesos, que es global—, así que la clave lleva el label de la ventana: dos ventanas
+    /// monitoreando el mismo servidor tienen cada una su propio sondeo, y una no le pisa la
+    /// suscripción a la otra (antes `insert` bajo la misma clave abortaba, vía `Drop` de
+    /// `MonitorEntry`, la tarea de la ventana que ya estaba mirando).
+    pub monitors: Mutex<HashMap<(ProfileId, String), MonitorEntry>>,
     /// Todo lo que corre en segundo plano: mantenimiento, índices, backups, restores y copias de
     /// datos. Vive acá y no en la ventana porque el proceso de Rust le sobrevive a una recarga (ver
     /// [`crate::process`]).
@@ -101,6 +106,9 @@ pub struct AppState {
     /// Las abreviaturas del editor. Archivo JSON y no SQLite como las guardadas: es una lista corta
     /// que se edita entera a mano, y poder abrirla con un editor de texto es parte de la gracia.
     pub snippets: Mutex<SnippetStore>,
+    /// Los workspaces (ventanas acotadas a una carpeta de servidores). Archivo aparte de
+    /// `connections.json`: un workspace no es un perfil, es una vista sobre perfiles ya guardados.
+    pub workspaces: Mutex<WorkspaceStore>,
 }
 
 impl AppState {
@@ -112,6 +120,7 @@ impl AppState {
             history: Mutex::new(HistoryStore::open(config_dir.join("history.db"))?),
             saved: Mutex::new(SavedStore::open(config_dir.join("saved.db"))?),
             snippets: Mutex::new(SnippetStore::load(config_dir.join("snippets.json"))?),
+            workspaces: Mutex::new(WorkspaceStore::load(config_dir.join("workspaces.json"))?),
             monitors: Mutex::new(HashMap::new()),
             processes: Processes::default(),
             queries: Mutex::new(HashMap::new()),

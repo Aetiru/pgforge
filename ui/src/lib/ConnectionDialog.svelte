@@ -2,8 +2,10 @@
   import { untrack } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import Alert from "./Alert.svelte";
+  import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
-  import { explorer } from "./explorer.svelte";
+  import { serverColorLook } from "./badges";
+  import { explorer, groupStartsWith } from "./explorer.svelte";
   import {
     describeError,
     saveProfile,
@@ -11,6 +13,7 @@
     sshTest,
     type ConnectionProfile,
     type Environment,
+    type ServerColor,
     type SshTunnel,
     type SslMode,
   } from "./ipc";
@@ -38,6 +41,11 @@
       savePassword: false,
       readOnly: false,
       autocommit: true,
+      // Un servidor nuevo creado desde una ventana de workspace nace en su carpeta: guardado sin
+      // carpeta, o en una que cuelga de otra rama, no aparecería en el árbol de esta ventana y se
+      // vería como si el guardado hubiera fallado. Sigue siendo el valor de partida nada más — el
+      // campo de abajo lo deja cambiar.
+      group: explorer.workspace?.rootGroup,
     };
   }
 
@@ -53,6 +61,12 @@
   let sshPassword = $state("");
   let error = $state<string | null>(null);
   let saving = $state(false);
+
+  /** La carpeta elegida no cuelga del `rootGroup` de esta ventana: se guarda igual, solo se avisa. */
+  const outOfWorkspaceScope = $derived.by(() => {
+    const root = explorer.workspace?.rootGroup;
+    return !!root && !!form.group && !groupStartsWith(form.group, root);
+  });
 
   // El túnel se activa con un interruptor, pero el estado real es `form.tunnel`: cuando está apagado
   // el perfil no lleva túnel, no queda uno "escondido" que se guardaría igual.
@@ -84,6 +98,17 @@
     { value: "dev", label: "Desarrollo" },
     { value: "test", label: "Pruebas" },
     { value: "prod", label: "Producción" },
+  ];
+
+  const SERVER_COLORS: ServerColor[] = [
+    "red",
+    "orange",
+    "amber",
+    "green",
+    "teal",
+    "blue",
+    "purple",
+    "pink",
   ];
 
   const SSL_MODES: { value: SslMode; label: string }[] = [
@@ -200,6 +225,44 @@
           <option value={group}></option>
         {/each}
       </datalist>
+      {#if outOfWorkspaceScope}
+        <!-- No bloquea: el usuario puede haberlo elegido a propósito. Guardarlo bien y no verlo en
+             esta ventana se parecía a que el guardado hubiera fallado, sin ningún aviso. -->
+        <Alert tone="warn" class="mt-1">
+          Esto no va a verse en esta ventana: queda fuera de «{explorer.workspace?.rootGroup}».
+        </Alert>
+      {/if}
+    </label>
+
+    <!--
+      Independiente del entorno: el color no tiene significado fijo, solo distingue servidores a
+      simple vista en el árbol. Paleta cerrada — nada de selector libre — para no tener que validar
+      ni pensar en contraste contra el tema oscuro.
+    -->
+    <label class="col-span-2 flex flex-col gap-1">
+      <span class="label">Color</span>
+      <div class="flex items-center gap-1.5">
+        <button
+          type="button"
+          class="grid size-6 shrink-0 place-items-center rounded-full border border-dashed
+                 border-zinc-400 text-[10px] text-zinc-400 dark:border-zinc-500 dark:text-zinc-500
+                 {form.color === undefined ? 'ring-2 ring-blue-500 ring-offset-1' : ''}"
+          title="Sin color"
+          onclick={() => (form.color = undefined)}
+        >
+          <Icon name="close" size={11} />
+        </button>
+        {#each SERVER_COLORS as color (color)}
+          <button
+            type="button"
+            class="size-6 shrink-0 rounded-full {serverColorLook(color).dot}
+                   {form.color === color ? 'ring-2 ring-blue-500 ring-offset-1' : ''}"
+            title={serverColorLook(color).label}
+            aria-label={serverColorLook(color).label}
+            onclick={() => (form.color = color)}
+          ></button>
+        {/each}
+      </div>
     </label>
 
     <label class="flex flex-col gap-1">

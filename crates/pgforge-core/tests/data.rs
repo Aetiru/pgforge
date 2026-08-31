@@ -142,6 +142,7 @@ async fn lee_y_edita_contra_servidores_reales() {
                 recorre_todas_las_paginas(&handle, &schema).await;
                 recorre_con_clave_compuesta(&handle, &schema).await;
                 ordena_y_filtra_contra_el_servidor(&handle, &schema).await;
+                busca_texto_contra_el_servidor(&handle, &schema).await;
                 da_de_alta_modifica_y_borra(&handle, &schema).await;
                 escribe_cualquier_tipo(&handle, &schema).await;
                 detecta_que_otro_toco_la_fila(&handle, &schema).await;
@@ -237,6 +238,7 @@ async fn ordena_y_filtra_contra_el_servidor(handle: &ServerHandle, schema: &str)
             descending: true,
         }),
         filter: None,
+        search: None,
     };
     let page = data::page(handle, database, &shape, None, 10, &vista)
         .await
@@ -254,6 +256,7 @@ async fn ordena_y_filtra_contra_el_servidor(handle: &ServerHandle, schema: &str)
     let filtrada = data::PageView {
         order: None,
         filter: Some("nombre = 'cliente 4999'".to_owned()),
+        search: None,
     };
     let page = data::page(handle, database, &shape, None, 200, &filtrada)
         .await
@@ -273,6 +276,7 @@ async fn ordena_y_filtra_contra_el_servidor(handle: &ServerHandle, schema: &str)
             descending: false,
         }),
         filter: None,
+        search: None,
     };
     assert!(data::page(handle, database, &shape, None, 10, &inventada)
         .await
@@ -282,6 +286,7 @@ async fn ordena_y_filtra_contra_el_servidor(handle: &ServerHandle, schema: &str)
     let rota = data::PageView {
         order: None,
         filter: Some("no_existe = 1".to_owned()),
+        search: None,
     };
     assert!(matches!(
         data::page(handle, database, &shape, None, 10, &rota).await,
@@ -295,6 +300,7 @@ async fn ordena_y_filtra_contra_el_servidor(handle: &ServerHandle, schema: &str)
             descending: false,
         }),
         filter: Some("id <= 1000".to_owned()),
+        search: None,
     };
     let mut vistas: Vec<String> = Vec::new();
     let mut cursor: Option<Cursor> = None;
@@ -312,6 +318,30 @@ async fn ordena_y_filtra_contra_el_servidor(handle: &ServerHandle, schema: &str)
     let unicas: std::collections::HashSet<&String> = vistas.iter().collect();
     assert_eq!(vistas.len(), 1000, "faltan o sobran filas con orden propio");
     assert_eq!(unicas.len(), 1000, "alguna fila salió repetida");
+}
+
+/// La búsqueda es un mecanismo aparte del filtro: arma el `OR` de `ILIKE` ella misma y el término
+/// viaja como parámetro, así que alcanza una columna de texto que no es la clave sin que el
+/// usuario escriba SQL.
+async fn busca_texto_contra_el_servidor(handle: &ServerHandle, schema: &str) {
+    let shape = shape_of(handle, schema, "clientes").await;
+    let database = handle.default_database();
+
+    let vista = data::PageView {
+        order: None,
+        filter: None,
+        search: Some("cliente 4999".to_owned()),
+    };
+    let page = data::page(handle, database, &shape, None, 200, &vista)
+        .await
+        .expect("no se pudo buscar contra el servidor");
+
+    assert_eq!(
+        page.rows.len(),
+        1,
+        "la búsqueda tenía que dejar una sola fila"
+    );
+    assert_eq!(page.rows[0][0].as_deref(), Some("4999"));
 }
 
 async fn recorre_con_clave_compuesta(handle: &ServerHandle, schema: &str) {

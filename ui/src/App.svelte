@@ -8,6 +8,7 @@
   import GroupDialog from "./lib/GroupDialog.svelte";
   import ImportServersDialog from "./lib/ImportServersDialog.svelte";
   import NewGroupDialog from "./lib/NewGroupDialog.svelte";
+  import WorkspaceDialog from "./lib/WorkspaceDialog.svelte";
   import Dashboard from "./lib/Dashboard.svelte";
   import ServerConfig from "./lib/ServerConfig.svelte";
   import DataPanel from "./lib/DataPanel.svelte";
@@ -43,10 +44,12 @@
     describeError,
     formatVersion,
     sshHostKey,
+    workspaceDelete,
     type AppInfo,
     type CompareSide,
     type ConnectionProfile,
     type Environment,
+    type Workspace,
   } from "./lib/ipc";
 
   let info = $state<AppInfo | null>(null);
@@ -88,6 +91,12 @@
   let newGroupDialog = $state(false);
   /** Abierto mientras se buscan servidores ya configurados en otras herramientas. */
   let importDialog = $state(false);
+  /** Abierto mientras se crea o reabre una ventana de workspace. */
+  let workspaceDialog = $state(false);
+  /** El workspace que se pidió borrar desde `WorkspaceDialog`, a confirmar acá (no anidado). */
+  let confirmDeleteWorkspace = $state<Workspace | null>(null);
+  /** Cambia cada vez que se borra un workspace, para que `WorkspaceDialog` vuelva a leer su lista. */
+  let workspaceReload = $state(0);
   /** La paleta de comandos (Ctrl+K). */
   let paletteOpen = $state(false);
   /** El menú con lo que no se usa todos los días del árbol. */
@@ -245,6 +254,23 @@
       await deleteProfile(profile.id);
       await explorer.refreshProfiles();
       if (explorer.selected?.profileId === profile.id) explorer.selected = null;
+    } catch (error) {
+      banner = describeError(error);
+    }
+  }
+
+  /**
+   * Borra la referencia guardada de un workspace. No toca perfiles ni servidores —el borrado real
+   * vive en `WorkspaceStore::delete`, del lado de Rust—; acá solo se saca de la lista de «ventanas
+   * guardadas». Si una ventana ya abierta seguía apuntando a este workspace, la próxima vez que
+   * intente algo que dependa de él (por ejemplo recargarse) se comporta como cualquier resolución
+   * fallida — ver `Explorer.loadWorkspace` y `workspaceError`—, no como si nunca hubiera existido.
+   */
+  async function removeWorkspace(workspace: Workspace) {
+    confirmDeleteWorkspace = null;
+    try {
+      await workspaceDelete(workspace.id);
+      workspaceReload += 1;
     } catch (error) {
       banner = describeError(error);
     }
@@ -431,6 +457,17 @@
                font-bold text-white shadow-sm shadow-blue-600/30">pg</span
       >
       <span class="text-sm font-semibold tracking-tight">pgforge</span>
+      {#if explorer.workspaceLabel}
+        <!-- Solo aparece en la ventana de un workspace: es lo único que la distingue de la
+             principal, que muestra el mismo título sin nada al lado. -->
+        <span
+          class="tag tag-neutral"
+          title="Esta ventana está acotada al workspace «{explorer.workspaceLabel}»"
+        >
+          <Icon name="window" size={10} />
+          {explorer.workspaceLabel}
+        </span>
+      {/if}
     </div>
 
     <div class="seg ml-2" role="tablist">
@@ -689,6 +726,23 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
                   >
                     <span class="flex items-center gap-2">
                       <Icon name="collapse" size={13} /> Contraer todo
+                    </span>
+                  </button>
+
+                  <div class="divider-t my-1"></div>
+
+                  <!-- Una ventana aparte, acotada a una carpeta: no reemplaza al árbol de acá, lo
+                       mira desde otro lado. El diálogo junta crear una nueva y reabrir una guardada,
+                       así que un solo botón alcanza. -->
+                  <button
+                    class="row-menu"
+                    onclick={() => {
+                      treeMenu = false;
+                      workspaceDialog = true;
+                    }}
+                  >
+                    <span class="flex items-center gap-2">
+                      <Icon name="window" size={13} /> Ventana de workspace…
                     </span>
                   </button>
 
@@ -1013,6 +1067,14 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
   <NewGroupDialog onclose={() => (newGroupDialog = false)} />
 {/if}
 
+{#if workspaceDialog}
+  <WorkspaceDialog
+    onclose={() => (workspaceDialog = false)}
+    ondelete={(workspace) => (confirmDeleteWorkspace = workspace)}
+    reload={workspaceReload}
+  />
+{/if}
+
 {#if prompt}
   <Modal
     title="Contraseña de {prompt.profile.name}"
@@ -1085,6 +1147,16 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
     confirmLabel="Eliminar"
     onconfirm={() => confirmDelete && remove(confirmDelete)}
     onclose={() => (confirmDelete = null)}
+  />
+{/if}
+
+{#if confirmDeleteWorkspace}
+  <Confirm
+    title="Eliminar «{confirmDeleteWorkspace.name}»"
+    message="Se borra la referencia a esta ventana guardada. No se toca ningún servidor ni carpeta de conexiones, y una ventana que la tenga abierta en este momento sigue abierta."
+    confirmLabel="Eliminar"
+    onconfirm={() => confirmDeleteWorkspace && removeWorkspace(confirmDeleteWorkspace)}
+    onclose={() => (confirmDeleteWorkspace = null)}
   />
 {/if}
 

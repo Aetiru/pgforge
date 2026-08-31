@@ -21,16 +21,22 @@ use crate::state::AppState;
 
 /// Engancha la ventana al registro de procesos.
 ///
-/// Se llama una sola vez al arrancar la interfaz, y de nuevo cada vez que la ventana se recarga: el
-/// primer mensaje que llega es el estado completo de lo que hay, así que reengancharse y ponerse al
-/// día son la misma operación. Es lo que hace que recargar no pierda de vista un backup a medio
-/// correr —ni el resultado de uno que terminó justo mientras no había nadie escuchando—.
+/// Se llama una vez al arrancar cada ventana —la principal y cada una de workspace—, y de nuevo cada
+/// vez que se recarga: el primer mensaje que llega es el estado completo de lo que hay, así que
+/// reengancharse y ponerse al día son la misma operación. Es lo que hace que recargar no pierda de
+/// vista un backup a medio correr —ni el resultado de uno que terminó justo mientras no había nadie
+/// escuchando—. Procesos es una vista global: todas las ventanas reciben todos los procesos, cada
+/// una por su propio canal (`Processes::watch` los guarda por `label`, que Tauri inyecta solo).
 #[tauri::command]
 pub async fn process_watch(
     state: State<'_, AppState>,
+    window: tauri::Window,
     channel: Channel<ProcessEvent>,
 ) -> Result<()> {
-    state.processes.watch(channel).await;
+    state
+        .processes
+        .watch(window.label().to_owned(), channel)
+        .await;
     Ok(())
 }
 

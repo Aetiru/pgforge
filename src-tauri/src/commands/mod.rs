@@ -15,6 +15,7 @@ pub mod servers;
 pub mod settings;
 pub mod tasks;
 pub mod update;
+pub mod workspaces;
 
 use pgforge_core::caps::MIN_SUPPORTED_VERSION_NUM;
 use pgforge_core::ddl::table::Statement;

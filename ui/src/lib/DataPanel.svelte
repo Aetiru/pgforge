@@ -135,6 +135,12 @@
   let draftFilter = $state(untrack(() => tab.filter));
 
   /**
+   * Lo escrito en la caja de búsqueda antes de aplicarla. Mismo patrón que `draftFilter`: tipear
+   * no puede releer la tabla en cada tecla.
+   */
+  let draftSearch = $state(untrack(() => tab.search));
+
+  /**
    * Ordenar o filtrar vuelve a leer desde la primera tanda, y eso se llevaría puestas las ediciones
    * sin guardar. En vez de perderlas en silencio, los controles se apagan y dicen por qué.
    */
@@ -269,45 +275,90 @@
   </header>
 
   <!--
-    El `WHERE` lo resuelve el servidor: filtrar acá lo ya traído contestaría otra pregunta —«entre
-    estas doscientas» y no «en la tabla»—. Se aplica con Enter y se limpia con Escape; un predicado
-    inválido lo rechaza el servidor y el error aparece abajo, sin filtro a medias.
+    Dos mecanismos distintos, a propósito. El `WHERE` es la expresión que escribe el usuario, va
+    cruda a la consulta —misma frontera de confianza que el editor de SQL— y la valida el servidor
+    al ejecutar. La búsqueda es un `OR` de `ILIKE` que arma el núcleo y viaja parametrizada: no hay
+    SQL que escribir ni riesgo de inyección, a cambio de que solo busca texto literal en cualquier
+    columna. Las dos resuelven en el servidor y no en lo ya traído —sobre una tabla grande, «las
+    que contienen X» no está entre las doscientas que se leyeron primero—, así que las dos vuelven
+    a leer desde la primera tanda y se aplican con Enter y se limpian con Escape.
   -->
-  <div class="divider-b flex items-center gap-2 px-2 py-1">
-    <span class="shrink-0 font-mono text-xs muted">WHERE</span>
-    <input
-      class="field min-w-0 flex-1 py-0.5 font-mono text-xs"
-      placeholder="estado = 'activo' AND creado &gt; now() - interval '7 days'"
-      title={pendingBlocks ?? "Se aplica con Enter; vuelve a leer la tabla desde la primera tanda"}
-      disabled={pendingBlocks !== null}
-      bind:value={draftFilter}
-      onkeydown={(event) => {
-        if (event.key === "Enter") tab.applyFilter(draftFilter);
-        else if (event.key === "Escape") {
-          draftFilter = "";
-          if (tab.filter !== "") tab.applyFilter("");
-        }
-      }}
-    />
-    <button
-      class="btn btn-sm"
-      disabled={pendingBlocks !== null || tab.loading || draftFilter.trim() === tab.filter.trim()}
-      onclick={() => tab.applyFilter(draftFilter)}
-    >
-      Aplicar
-    </button>
-    {#if tab.filter.trim() !== ""}
+  <div class="divider-b flex flex-col gap-1 px-2 py-1">
+    <div class="flex items-center gap-2">
+      <span class="shrink-0 font-mono text-xs muted">WHERE</span>
+      <input
+        class="field min-w-0 flex-1 py-0.5 font-mono text-xs"
+        placeholder="estado = 'activo' AND creado &gt; now() - interval '7 days'"
+        title={pendingBlocks ?? "Se aplica con Enter; vuelve a leer la tabla desde la primera tanda"}
+        disabled={pendingBlocks !== null}
+        bind:value={draftFilter}
+        onkeydown={(event) => {
+          if (event.key === "Enter") tab.applyFilter(draftFilter);
+          else if (event.key === "Escape") {
+            draftFilter = "";
+            if (tab.filter !== "") tab.applyFilter("");
+          }
+        }}
+      />
       <button
         class="btn btn-sm"
-        disabled={pendingBlocks !== null || tab.loading}
-        onclick={() => {
-          draftFilter = "";
-          tab.applyFilter("");
-        }}
+        disabled={pendingBlocks !== null || tab.loading || draftFilter.trim() === tab.filter.trim()}
+        onclick={() => tab.applyFilter(draftFilter)}
       >
-        Quitar
+        Aplicar
       </button>
-    {/if}
+      {#if tab.filter.trim() !== ""}
+        <button
+          class="btn btn-sm"
+          disabled={pendingBlocks !== null || tab.loading}
+          onclick={() => {
+            draftFilter = "";
+            tab.applyFilter("");
+          }}
+        >
+          Quitar
+        </button>
+      {/if}
+    </div>
+
+    <div class="flex items-center gap-2">
+      <span class="shrink-0" title="Busca texto literal en todas las columnas">
+        <Icon name="search" size={12} />
+      </span>
+      <input
+        class="field min-w-0 flex-1 py-0.5 text-xs"
+        placeholder="Buscar en cualquier columna…"
+        title={pendingBlocks ?? "Se aplica con Enter; vuelve a leer la tabla desde la primera tanda"}
+        disabled={pendingBlocks !== null}
+        bind:value={draftSearch}
+        onkeydown={(event) => {
+          if (event.key === "Enter") tab.applySearch(draftSearch);
+          else if (event.key === "Escape") {
+            draftSearch = "";
+            if (tab.search !== "") tab.applySearch("");
+          }
+        }}
+      />
+      <button
+        class="btn btn-sm"
+        disabled={pendingBlocks !== null || tab.loading || draftSearch.trim() === tab.search.trim()}
+        onclick={() => tab.applySearch(draftSearch)}
+      >
+        Aplicar
+      </button>
+      {#if tab.search.trim() !== ""}
+        <button
+          class="btn btn-sm"
+          disabled={pendingBlocks !== null || tab.loading}
+          onclick={() => {
+            draftSearch = "";
+            tab.applySearch("");
+          }}
+        >
+          Quitar
+        </button>
+      {/if}
+    </div>
   </div>
 
   <!-- Dos motivos distintos por los que no se puede editar; el del perfil manda porque vale para
