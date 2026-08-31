@@ -52,6 +52,7 @@ export class DataTab extends Tab {
    */
   order = $state.raw<PageOrder | null>(null);
   filter = $state("");
+  search = $state("");
 
   loading = $state(false);
   saving = $state(false);
@@ -130,7 +131,7 @@ export class DataTab extends Tab {
         this.cursor,
         paging.size,
         this.database,
-        { order: this.order, filter: this.filter.trim() || null },
+        { order: this.order, filter: this.filter.trim() || null, search: this.search.trim() || null },
       );
       const base = this.rows.length;
 
@@ -164,6 +165,12 @@ export class DataTab extends Tab {
   /** Aplica el `WHERE` escrito en la barra. Lo valida el servidor: un error se muestra tal cual. */
   applyFilter(filter: string) {
     this.filter = filter;
+    return this.load();
+  }
+
+  /** Aplica la búsqueda de texto sobre todas las columnas. Vuelve a leer desde la primera tanda. */
+  applySearch(search: string) {
+    this.search = search;
     return this.load();
   }
 

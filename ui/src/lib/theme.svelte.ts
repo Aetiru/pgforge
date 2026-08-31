@@ -16,8 +16,20 @@ const KEY = "pgforge.theme";
 
 const media = window.matchMedia("(prefers-color-scheme: dark)");
 
+/**
+ * Sin `wstorage`: el tema es preferencia de la aplicación, no de una ventana particular — cambiar a
+ * oscuro en una ventana de workspace tiene que cambiarlo también en las demás.
+ */
+function get(): string | null {
+  try {
+    return localStorage.getItem(KEY);
+  } catch {
+    return null;
+  }
+}
+
 function stored(): ThemePreference {
-  const value = localStorage.getItem(KEY);
+  const value = get();
   return value === "light" || value === "dark" || value === "system" ? value : "system";
 }
 
@@ -45,7 +57,11 @@ class Theme {
 
   set(preference: ThemePreference) {
     this.preference = preference;
-    localStorage.setItem(KEY, preference);
+    try {
+      localStorage.setItem(KEY, preference);
+    } catch {
+      // Nada que hacer sin `localStorage`: la preferencia no se recuerda esta vez.
+    }
     this.apply();
   }
 

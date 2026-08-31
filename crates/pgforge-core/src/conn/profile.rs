@@ -82,6 +82,24 @@ pub enum Environment {
     Prod,
 }
 
+/// Color propio de un servidor en el árbol, paleta cerrada.
+///
+/// Cerrada a propósito: un selector de color libre pediría persistir y validar un valor arbitrario
+/// (contraste con el tema oscuro, formato del código) por una distinción que solo necesita separar
+/// unos pocos servidores a simple vista.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ServerColor {
+    Red,
+    Orange,
+    Amber,
+    Green,
+    Teal,
+    Blue,
+    Purple,
+    Pink,
+}
+
 /// Túnel SSH.
 ///
 /// Todavía no se establece ninguna conexión con esto: está en el modelo desde el principio porque
@@ -142,6 +160,14 @@ pub struct ConnectionProfile {
     /// Valor inicial del autocommit de cada pestaña de consulta; la pestaña después lo alterna sola.
     #[serde(default = "default_autocommit")]
     pub autocommit: bool,
+    /// Color propio en el árbol. `None` no pinta nada, que es lo que trae un perfil viejo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<ServerColor>,
+    /// Posición dentro de su carpeta para el orden manual por arrastre. `None` cae al orden
+    /// alfabético (empate por nombre), y se asigna recién cuando el usuario arrastra un servidor
+    /// de esa carpeta.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<i32>,
 }
 
 fn default_connect_timeout() -> u64 {
@@ -206,6 +232,8 @@ impl ConnectionProfile {
             environment: None,
             read_only: false,
             autocommit: default_autocommit(),
+            color: None,
+            order: None,
         }
     }
 
@@ -270,6 +298,8 @@ impl ConnectionProfile {
             environment: None,
             read_only: false,
             autocommit: default_autocommit(),
+            color: None,
+            order: None,
         };
 
         Ok((profile, password))
@@ -330,5 +360,7 @@ mod tests {
         assert!(!profile.read_only);
         // Un perfil sin el campo no puede quedar esperando un COMMIT que nunca escribió nadie.
         assert!(profile.autocommit);
+        assert!(profile.color.is_none());
+        assert!(profile.order.is_none());
     }
 }

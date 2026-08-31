@@ -444,6 +444,7 @@ async fn main() -> ExitCode {
                     descending: desc,
                 }),
                 filter,
+                search: None,
             };
             show_data(&url, &table, limit, after, offset, &view).await
         }

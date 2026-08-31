@@ -4,7 +4,7 @@
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
   import { environmentOf, isReadOnly } from "./access.svelte";
-  import { envLook, lookOf, READ_ONLY_LOOK, tagLook } from "./badges";
+  import { envLook, lookOf, READ_ONLY_LOOK, serverColorLook, tagLook } from "./badges";
   import { explorer, visibleRows, type Row } from "./explorer.svelte";
   import { describeError, folderOf, type CompareSide } from "./ipc";
   import {
@@ -542,18 +542,19 @@
     return row.group ?? null;
   }
 
-  function onDrop(group: string | null) {
+  function onDrop(group: string | null, beforeProfileId: string | null) {
     const profileId = dragging;
     dragging = null;
     dropGroup = undefined;
     if (!profileId) return;
     // Mover un servidor reescribe el archivo de conexiones: si no se pudo, hay que decirlo, o la
     // fila vuelve a su lugar sin explicación. Con varios marcados se mueven todos, que es lo que se
-    // ve al arrastrar: la fila que se agarró es una del bloque resaltado.
+    // ve al arrastrar: la fila que se agarró es una del bloque resaltado. El reordenamiento fino
+    // (soltar delante de un servidor puntual) solo aplica al arrastre de uno solo.
     const moved =
       explorer.marked.length > 0
         ? explorer.moveMarkedToGroup(group)
-        : explorer.moveToGroup(profileId, group);
+        : explorer.reorder(profileId, group, beforeProfileId);
     moved.catch((error) => (moveError = describeError(error)));
   }
 
@@ -611,7 +612,7 @@
   }}
   ondrop={(event) => {
     event.preventDefault();
-    onDrop(null);
+    onDrop(null, null);
   }}
   bind:clientHeight={viewportHeight}
   role="tree"
@@ -623,7 +624,19 @@
     <Alert tone="bad" onclose={() => (moveError = null)}>{moveError}</Alert>
   {/if}
 
-  {#if explorer.hits !== null}
+  {#if explorer.workspaceError}
+    <!--
+      Se pidió un workspace por la URL y no se pudo resolver: el árbol queda vacío a propósito (ver
+      `scopedProfiles`) y acá se explica por qué, en vez de mostrarse sin más como si no hubiera
+      ningún servidor guardado. Mostrar todo sin acotar, que era el comportamiento viejo, es
+      justamente lo que esta ventana existe para no hacer.
+    -->
+    <Empty
+      icon="warn"
+      title="No se pudo abrir este workspace"
+      hint={explorer.workspaceError}
+    />
+  {:else if explorer.hits !== null}
     <!--
       El resultado de buscar contra el servidor reemplaza al árbol mientras dura. No se mezcla con
       las filas: lo que se encontró puede estar en esquemas que el árbol nunca abrió, y meterlo
@@ -795,7 +808,7 @@
           ondrop={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            onDrop(dropTargetOf(row));
+            onDrop(dropTargetOf(row), isServer ? row.profileId : null);
           }}
         >
           <!--
@@ -912,6 +925,18 @@
                   {:else}{piece.text}{/if}
                 {/each}
               </span>
+
+              <!--
+                El color propio del servidor, independiente del entorno: conviven, no se reemplazan.
+                El entorno ya tiene la línea del borde (`spine`) y, en producción, su pastilla; el
+                color es la señal que elige el usuario, sin significado fijo.
+              -->
+              {#if isServer && row.color}
+                <span
+                  class="size-2 shrink-0 rounded-full {serverColorLook(row.color).dot}"
+                  title={serverColorLook(row.color).label}
+                ></span>
+              {/if}
 
               <!--
                 Los rasgos del objeto van como etiquetas y no como texto: que un rol pueda entrar o

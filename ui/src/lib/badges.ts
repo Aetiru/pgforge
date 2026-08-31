@@ -5,6 +5,7 @@ import {
   type Environment,
   type NodeKind,
   type NodeTag,
+  type ServerColor,
 } from "./ipc";
 
 /**
@@ -180,6 +181,26 @@ export function envLook(environment: Environment) {
  */
 export function envBar(environment: Environment | null): string {
   return environment === null ? "border-l-[3px] border-l-transparent" : ENVIRONMENTS[environment].bar;
+}
+
+/**
+ * Color propio de un servidor en el árbol, independiente del entorno: el entorno avisa cuánto
+ * cuidado pedir, el color solo ayuda a distinguir servidores a simple vista, así que conviven sin
+ * pisarse — uno es la línea del borde (`spine`), el otro un punto junto al nombre.
+ */
+const SERVER_COLORS: Record<ServerColor, { label: string; dot: string }> = {
+  red: { label: "Rojo", dot: "bg-red-500" },
+  orange: { label: "Naranja", dot: "bg-orange-500" },
+  amber: { label: "Ámbar", dot: "bg-amber-500" },
+  green: { label: "Verde", dot: "bg-green-500" },
+  teal: { label: "Verde azulado", dot: "bg-teal-500" },
+  blue: { label: "Azul", dot: "bg-blue-500" },
+  purple: { label: "Violeta", dot: "bg-purple-500" },
+  pink: { label: "Rosa", dot: "bg-pink-500" },
+};
+
+export function serverColorLook(color: ServerColor) {
+  return SERVER_COLORS[color];
 }
 
 /** Conexión abierta en solo lectura: el servidor rechaza toda escritura. */

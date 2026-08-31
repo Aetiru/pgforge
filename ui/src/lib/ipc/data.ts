@@ -43,6 +43,8 @@ export interface PageView {
   order?: PageOrder | null;
   /** Predicado del `WHERE`, tal como lo escribió el usuario. */
   filter?: string | null;
+  /** Término de búsqueda: arma un OR de ILIKE parametrizado sobre todas las columnas. */
+  search?: string | null;
 }
 
 export interface DataPage {

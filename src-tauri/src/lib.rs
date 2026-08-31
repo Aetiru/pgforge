@@ -46,6 +46,23 @@ pub fn run() {
             app.manage(state::AppState::new(config_dir)?);
             Ok(())
         })
+        // El canal de Procesos y la suscripción de Monitoreo sí quedan atados a la ventana que los
+        // abrió (ver `process::Processes::watchers` y `AppState::monitors`), así que al cerrar
+        // cualquier ventana —`main` incluida, aunque ahí casi siempre implique que la app entera se
+        // cierra— hay que soltar lo suyo: sin esto, el canal de Procesos de una ventana cerrada queda
+        // en el mapa recibiendo eventos que nadie escucha, y el sondeo de un dashboard que esa
+        // ventana tenía abierto sigue consultando al servidor para siempre.
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                let label = window.label().to_owned();
+                let app = window.app_handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let state = app.state::<state::AppState>();
+                    state.processes.unwatch(&label).await;
+                    state.monitors.lock().await.retain(|(_, l), _| l != &label);
+                });
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
             commands::servers::list_profiles,
@@ -53,12 +70,19 @@ pub fn run() {
             commands::servers::rename_group,
             commands::servers::save_profile,
             commands::servers::import_scan,
+            commands::servers::import_scan_workspace,
             commands::servers::import_apply,
             commands::servers::delete_profile,
             commands::servers::connect,
             commands::servers::ssh_test,
             commands::servers::disconnect,
             commands::servers::connected_servers,
+            commands::workspaces::workspace_list,
+            commands::workspaces::workspace_get,
+            commands::workspaces::workspace_create,
+            commands::workspaces::workspace_rename,
+            commands::workspaces::workspace_delete,
+            commands::workspaces::workspace_open,
             commands::schema::tree_children,
             commands::schema::tree_search,
             commands::schema::read_cancel,

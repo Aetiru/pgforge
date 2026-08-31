@@ -1,9 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permisos de la ventana principal. Se agregan solo los que cada etapa necesita.",
+  "description": "Permisos de la ventana principal y de las de workspace. Se agregan solo los que cada etapa necesita.",
   "windows": [
-    "main"
+    "main",
+    "ws-*"
   ],
   "permissions": [
     "core:default",

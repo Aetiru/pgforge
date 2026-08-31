@@ -277,6 +277,28 @@ fn un_grant_sobre_una_tabla_traduce_los_privilegios_elegidos() {
     assert!(sql.contains("WITH GRANT OPTION"), "{sql}");
 }
 
+/// `rename_all_fields` es lo que hace que `objects`/`schemas` viajen en camelCase adentro de una
+/// variante etiquetada; sin él esto se cae recién acá, con "missing field", no al compilar.
+#[test]
+fn un_grant_sobre_todo_un_esquema_alcanza_a_las_rutinas() {
+    let changes: Vec<PrivilegeChange> = payload(json!([{
+        "kind": "grant",
+        "target": {
+            "on": "allInSchema",
+            "schemas": ["app", "ventas"],
+            "objects": { "on": "routines", "privileges": ["execute"] }
+        },
+        "grantee": "lectores",
+        "grantOption": false
+    }]));
+
+    let sql = &commands::ddl::privilege_preview(changes).unwrap()[0].sql;
+    assert_eq!(
+        sql,
+        "GRANT EXECUTE ON ALL ROUTINES IN SCHEMA app, ventas TO lectores"
+    );
+}
+
 #[test]
 fn una_politica_manda_solo_la_expresion_que_su_comando_acepta() {
     let changes: Vec<PolicyChange> = payload(json!([{

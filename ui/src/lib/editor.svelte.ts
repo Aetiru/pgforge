@@ -9,6 +9,29 @@
  * configura con temas propios y así el tamaño lo decide un solo lugar, igual que los colores.
  */
 
+import { wGet, wSet } from "./wstorage";
+
+/**
+ * `localStorage` directo, sin `wstorage`: el tamaño de letra del SQL y si se autoformatea son
+ * preferencias de la *aplicación*, no de una ventana en particular — el alto y el modo del panel
+ * dividido, más abajo en este archivo, sí son de la pestaña/ventana y siguen con `wGet`/`wSet`.
+ */
+function readGlobal(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeGlobal(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Nada que hacer sin `localStorage`: la preferencia no se recuerda esta vez.
+  }
+}
+
 const KEY = "pgforge.sql.font";
 
 /** El tamaño con el que nació el editor, y al que vuelve `Ctrl 0`. */
@@ -21,7 +44,7 @@ function clamp(size: number): number {
 }
 
 function stored(): number {
-  const value = Number(localStorage.getItem(KEY));
+  const value = Number(readGlobal(KEY));
   return Number.isFinite(value) && value > 0 ? clamp(value) : DEFAULT_SQL_FONT;
 }
 
@@ -38,7 +61,7 @@ class SqlFont {
 
   set(size: number) {
     this.size = clamp(size);
-    localStorage.setItem(KEY, String(this.size));
+    writeGlobal(KEY, String(this.size));
     this.apply();
   }
 
@@ -84,7 +107,7 @@ function clampHeight(height: number): number {
 }
 
 function storedHeight(): number {
-  const value = Number(localStorage.getItem(SPLIT_KEY));
+  const value = Number(wGet(SPLIT_KEY));
   return Number.isFinite(value) && value > 0 ? clampHeight(value) : DEFAULT_EDITOR_HEIGHT;
 }
 
@@ -108,10 +131,10 @@ const SPLIT_MODE_KEY = "pgforge.sql.split";
 const LEGACY_HIDDEN_KEY = "pgforge.sql.resultsHidden";
 
 function storedMode(): SplitMode {
-  const value = localStorage.getItem(SPLIT_MODE_KEY);
+  const value = wGet(SPLIT_MODE_KEY);
   if (value === "split" || value === "sql" || value === "rows") return value;
   // Sin la clave nueva, se respeta la preferencia vieja en vez de perderla al actualizar.
-  return localStorage.getItem(LEGACY_HIDDEN_KEY) === "on" ? "sql" : "split";
+  return wGet(LEGACY_HIDDEN_KEY) === "on" ? "sql" : "split";
 }
 
 class EditorSplit {
@@ -120,7 +143,7 @@ class EditorSplit {
 
   set(height: number) {
     this.height = clampHeight(height);
-    localStorage.setItem(SPLIT_KEY, String(this.height));
+    wSet(SPLIT_KEY, String(this.height));
   }
 
   reset() {
@@ -129,7 +152,7 @@ class EditorSplit {
 
   private setMode(mode: SplitMode) {
     this.mode = mode;
-    localStorage.setItem(SPLIT_MODE_KEY, mode);
+    wSet(SPLIT_MODE_KEY, mode);
   }
 
   get resultsHidden() {
@@ -165,7 +188,7 @@ export const editorSplit = new EditorSplit();
 const AUTO_FORMAT_KEY = "pgforge.sql.autoFormat";
 
 function storedAutoFormat(): boolean {
-  return localStorage.getItem(AUTO_FORMAT_KEY) === "on";
+  return readGlobal(AUTO_FORMAT_KEY) === "on";
 }
 
 class AutoFormat {
@@ -173,7 +196,7 @@ class AutoFormat {
 
   set(enabled: boolean) {
     this.enabled = enabled;
-    localStorage.setItem(AUTO_FORMAT_KEY, enabled ? "on" : "off");
+    writeGlobal(AUTO_FORMAT_KEY, enabled ? "on" : "off");
   }
 }
 

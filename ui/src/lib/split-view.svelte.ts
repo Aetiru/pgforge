@@ -6,6 +6,8 @@
  * guarda para no tener que volver a acomodarla la próxima vez que se abre un panel al lado.
  */
 
+import { wGet, wSet } from "./wstorage";
+
 const RATIO_KEY = "pgforge.tabs.splitRatio";
 
 const MIN_RATIO = 0.2;
@@ -16,7 +18,7 @@ function clampRatio(value: number): number {
 }
 
 function storedRatio(): number {
-  const value = Number(localStorage.getItem(RATIO_KEY));
+  const value = Number(wGet(RATIO_KEY));
   return Number.isFinite(value) && value > 0 ? clampRatio(value) : 0.5;
 }
 
@@ -26,7 +28,7 @@ class SplitView {
 
   set(ratio: number) {
     this.ratio = clampRatio(ratio);
-    localStorage.setItem(RATIO_KEY, String(this.ratio));
+    wSet(RATIO_KEY, String(this.ratio));
   }
 
   reset() {

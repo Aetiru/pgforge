@@ -13,6 +13,8 @@
  * disparar una consulta por nivel sin que nadie lo haya pedido.
  */
 
+import { wGet, wSet } from "./wstorage";
+
 const COLLAPSED_KEY = "pgforge.folders.collapsed";
 const EMPTY_KEY = "pgforge.folders.empty";
 
@@ -24,17 +26,17 @@ export const LOOSE_GROUP = "";
 
 function stored(key: string): string[] {
   try {
-    const value = JSON.parse(localStorage.getItem(key) ?? "[]");
+    const value = JSON.parse(wGet(key) ?? "[]");
     return Array.isArray(value) ? value.filter((name) => typeof name === "string") : [];
   } catch {
-    // Ni un valor corrupto ni la falta de `localStorage` —los tests corren en Node— pueden impedir
-    // que esto se cargue: se descarta y se escribe de nuevo en cuanto el usuario toque una carpeta.
+    // Un valor corrupto no puede impedir que esto se cargue: se descarta y se escribe de nuevo en
+    // cuanto el usuario toque una carpeta.
     return [];
   }
 }
 
 function save(key: string, names: string[]) {
-  localStorage.setItem(key, JSON.stringify(names));
+  wSet(key, JSON.stringify(names));
 }
 
 class Folders {

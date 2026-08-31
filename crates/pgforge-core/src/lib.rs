@@ -18,6 +18,7 @@ pub mod monitor;
 pub mod settings;
 pub mod sql;
 pub mod update;
+pub mod workspace;
 
 pub use caps::{ServerCaps, ServerVersion};
 pub use conn::{
@@ -25,3 +26,4 @@ pub use conn::{
 };
 pub use error::{Error, Result};
 pub use introspect::{TreeNode, TreeOptions};
+pub use workspace::{Workspace, WorkspaceId, WorkspaceSource, WorkspaceStore};
