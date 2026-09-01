@@ -85,60 +85,62 @@
     {#if security.policies.length === 0}
       <p class="px-3 py-4 text-sm muted">No tiene políticas.</p>
     {:else}
-      <table class="list-table">
-        <thead>
-          <tr>
-            <th class="w-px whitespace-nowrap">Nombre</th>
-            <th class="w-px whitespace-nowrap">Comando</th>
-            <th class="w-px whitespace-nowrap">Roles</th>
-            <th class="w-full">Condición</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each security.policies as policy (policy.oid)}
-            <tr class="group">
-              <td class="w-px font-medium whitespace-nowrap">{policy.name}</td>
-              <td class="w-px whitespace-nowrap">
-                <span class="tag tag-neutral font-mono">{policy.command.toUpperCase()}</span>
-                {#if policy.kind === "restrictive"}
-                  <span class="tag tag-info">restrictiva</span>
-                {/if}
-              </td>
-              <td class="w-px text-xs whitespace-nowrap muted">
-                {policy.roles.length === 0 ? "PUBLIC" : policy.roles.join(", ")}
-              </td>
-              <td class="max-w-0 truncate font-mono text-xs muted">
-                {policy.using ?? ""}{policy.using && policy.check ? " · " : ""}{policy.check
-                  ? `CHECK ${policy.check}`
-                  : ""}
-              </td>
-              <td class="w-24">
-                <div class="row-actions">
-                  <button
-                    class="btn btn-ghost btn-icon size-6"
-                    title="Editar la política"
-                    aria-label="Editar la política"
-                    {...blocked}
-                    onclick={() => onedit(policy)}
-                  >
-                    <Icon name="edit" size={12} />
-                  </button>
-                  <button
-                    class="btn btn-danger-ghost btn-icon size-6"
-                    title="Eliminar la política"
-                    aria-label="Eliminar la política"
-                    {...blocked}
-                    onclick={() => ondrop(policy.name)}
-                  >
-                    <Icon name="trash" size={12} />
-                  </button>
-                </div>
-              </td>
+      <div class="table-scroll">
+        <table class="list-table">
+          <thead>
+            <tr>
+              <th class="w-px whitespace-nowrap">Nombre</th>
+              <th class="w-px whitespace-nowrap">Comando</th>
+              <th class="w-px whitespace-nowrap">Roles</th>
+              <th class="w-full">Condición</th>
+              <th></th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {#each security.policies as policy (policy.oid)}
+              <tr class="group">
+                <td class="w-px font-medium whitespace-nowrap">{policy.name}</td>
+                <td class="w-px whitespace-nowrap">
+                  <span class="tag tag-neutral font-mono">{policy.command.toUpperCase()}</span>
+                  {#if policy.kind === "restrictive"}
+                    <span class="tag tag-info">restrictiva</span>
+                  {/if}
+                </td>
+                <td class="w-px text-xs whitespace-nowrap muted">
+                  {policy.roles.length === 0 ? "PUBLIC" : policy.roles.join(", ")}
+                </td>
+                <td class="max-w-0 truncate font-mono text-xs muted">
+                  {policy.using ?? ""}{policy.using && policy.check ? " · " : ""}{policy.check
+                    ? `CHECK ${policy.check}`
+                    : ""}
+                </td>
+                <td class="w-24">
+                  <div class="row-actions">
+                    <button
+                      class="btn btn-ghost btn-icon size-6"
+                      title="Editar la política"
+                      aria-label="Editar la política"
+                      {...blocked}
+                      onclick={() => onedit(policy)}
+                    >
+                      <Icon name="edit" size={12} />
+                    </button>
+                    <button
+                      class="btn btn-danger-ghost btn-icon size-6"
+                      title="Eliminar la política"
+                      aria-label="Eliminar la política"
+                      {...blocked}
+                      onclick={() => ondrop(policy.name)}
+                    >
+                      <Icon name="trash" size={12} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
     {/if}
   {/if}
 </Card>

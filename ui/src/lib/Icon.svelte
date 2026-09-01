@@ -4,6 +4,16 @@
    *
    * Se dibujan a mano en vez de sumar una librería: son unas pocas decenas de formas simples y una
    * dependencia de íconos completa pesa más que toda la interfaz.
+   *
+   * **El trazo es plano, no redondeado.** Las puntas van al ras (`butt`) y las esquinas en punta
+   * (`miter`), con las cajas casi sin redondear: es el dibujo de herramienta —el de una barra de
+   * IDE— y no el de una aplicación web. Con puntas y uniones redondeadas, a 14 píxeles cada línea
+   * pierde medio píxel en cada extremo y el conjunto se lee blando y desalineado; al ras, las
+   * líneas caen sobre la grilla de píxeles y el ícono queda nítido al tamaño en que se usa.
+   *
+   * De ahí también que la geometría sea recta y centrada en la grilla de 24: rectángulos con
+   * `rx="1"`, líneas horizontales y verticales enteras, y relleno sólido solo donde la forma **es**
+   * maciza (el triángulo de ejecutar), no como decoración.
    */
   export type IconName =
     | "server"
@@ -52,6 +62,8 @@
     | "collapse"
     | "expand"
     | "columns"
+    | "panel-top"
+    | "panel-bottom"
     | "chart"
     | "compass"
     | "download"
@@ -67,21 +79,26 @@
     | "diagram"
     | "compare"
     | "format"
-    | "window";
+    | "format-auto"
+    | "autocommit"
+    | "window"
+    | "gear";
 
   const PATHS: Record<IconName, string> = {
     server:
-      '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>',
+      '<rect x="3" y="4" width="18" height="7" rx="1"/><rect x="3" y="13" width="18" height="7" rx="1"/><circle cx="7" cy="7.5" r="1" fill="currentColor" stroke="none"/><circle cx="7" cy="16.5" r="1" fill="currentColor" stroke="none"/>',
     database:
       '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/>',
     schema: '<path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4"/><path d="M3 17l9 4 9-4"/>',
-    folder: '<path d="M3 7a2 2 0 0 1 2-2h3.5l2 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
-    table: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.5h18M9 9.5V20"/>',
+    // Carpeta de lados rectos: la de esquinas redondeadas era la única forma «blanda» que aparecía
+    // en cada fila del árbol, y a ese tamaño se leía como una mancha antes que como una carpeta.
+    folder: '<path d="M3.5 19.5v-15h5.5l2 2.5h9.5v12.5z"/>',
+    table: '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9.5h18M9 9.5V20"/>',
     // Dos cajas unidas por una relación: el diagrama entero en 24 píxeles.
     diagram:
-      '<rect x="2.5" y="3.5" width="8" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="8" height="7" rx="1.5"/><path d="M6.5 10.5v4a2 2 0 0 0 2 2h5"/>',
+      '<rect x="2.5" y="3.5" width="8" height="7" rx="1"/><rect x="13.5" y="13.5" width="8" height="7" rx="1"/><path d="M6.5 10.5v4a2 2 0 0 0 2 2h5"/>',
     partitioned:
-      '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.5h18"/><path d="M9 9.5v3.5M9 16v4"/>',
+      '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9.5h18"/><path d="M9 9.5v3.5M9 16v4"/>',
     view: '<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/>',
     matview:
       '<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/><path d="M17 4l3 1-1 3"/>',
@@ -98,10 +115,13 @@
       '<path d="M12 3l8 3v6c0 4.8-3.4 8.4-8 9-4.6-.6-8-4.2-8-9V6z"/><circle cx="12" cy="11.5" r="2"/><path d="M7.5 11.5c1.4-2 3-3 4.5-3s3.1 1 4.5 3c-1.4 2-3 3-4.5 3s-3.1-1-4.5-3z"/>',
     role: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
-    play: '<path d="M7 4.8l12 7.2-12 7.2z"/>',
+    // Macizo y no de contorno: es el botón que se aprieta todo el tiempo, y a 14 píxeles un
+    // triángulo hueco se confunde con una flecha.
+    play: '<path d="M7 4.8l12 7.2-12 7.2z" fill="currentColor" stroke="none"/>',
     // Dos triangulos: ejecutar el script entero y no la sentencia del cursor. Antes era el icono
     // `sql`, que en una barra de consultas no distingue nada: todo ahi es SQL.
-    "play-all": '<path d="M4 5l7.5 7L4 19z"/><path d="M13 5l7.5 7L13 19z"/>',
+    "play-all":
+      '<path d="M4 5l7.5 7L4 19z" fill="currentColor" stroke="none"/><path d="M13 5l7.5 7L13 19z" fill="currentColor" stroke="none"/>',
     // El arbol del plan, con su raiz y sus dos nodos. Antes «explicar» usaba `compass`, que en el
     // arbol significa preguntarle al servidor: el mismo dibujo para dos cosas distintas.
     plan: '<rect x="9" y="3" width="6" height="4" rx="1"/><rect x="2.5" y="17" width="6" height="4" rx="1"/><rect x="15.5" y="17" width="6" height="4" rx="1"/><path d="M12 7v3.5"/><path d="M5.5 17v-3.5h13V17"/>',
@@ -116,15 +136,15 @@
     undo: '<path d="M4 9h11a5 5 0 0 1 0 10H9"/><path d="M8 5L4 9l4 4"/>',
     // Aguja de un medidor: el plan con los tiempos reales, no el estimado.
     gauge: '<path d="M4 17a9 9 0 1 1 16 0"/><path d="M12 17l4.5-5"/><circle cx="12" cy="17" r="1.2"/>',
-    sql: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M6.5 10l2.5 2-2.5 2M12 14.5h5.5"/>',
+    sql: '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M6.5 10l2.5 2-2.5 2M12 14.5h5.5"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
     refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/>',
     chevron: '<path d="M9 6l6 6-6 6"/>',
     // Dos flechas encontradas: lo que va de un esquema al otro y lo que vuelve.
     compare: '<path d="M4 8h13M14 5l3 3-3 3"/><path d="M20 16H7M10 13l-3 3 3 3"/>',
     close: '<path d="M6 6l12 12M18 6L6 18"/>',
-    copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
-    dots: '<circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/>',
+    copy: '<rect x="9" y="9" width="12" height="12" rx="1"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
+    dots: '<circle cx="5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.3" fill="currentColor" stroke="none"/>',
     sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/>',
     moon: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>',
     /* El automático es el mismo círculo con una mitad llena: sigue al sistema, sea cual sea. */
@@ -132,11 +152,11 @@
     trash: '<path d="M4 7h16M9.5 7V5h5v2M6.5 7l1 13h9l1-13"/>',
     edit: '<path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M14.5 6.5l3 3"/>',
     check: '<path d="M5 12.5l4.5 4.5L19 7"/>',
-    warn: '<path d="M12 3.5l9 16H3z"/><path d="M12 10v4.5M12 17.2h.01"/>',
-    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.8h.01"/>',
+    warn: '<path d="M12 3.5l9 16H3z"/><path d="M12 9.5v5"/><circle cx="12" cy="17.2" r="1" fill="currentColor" stroke="none"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5"/><circle cx="12" cy="7.8" r="1" fill="currentColor" stroke="none"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5.5l3.5 2"/>',
     key: '<circle cx="8" cy="15" r="4"/><path d="M10.9 12.1L20 3l1.5 1.5-1.5 1.5 1.5 1.5-3 3-1.5-1.5-1.5 1.5"/>',
-    lock: '<rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
+    lock: '<rect x="4" y="10" width="16" height="10" rx="1"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
     sort: '<path d="M8 4v16M8 4L4.5 7.5M8 4l3.5 3.5"/><path d="M16 20V4M16 20l-3.5-3.5M16 20l3.5-3.5"/>',
     // Dos flechas que se juntan sobre una línea: todo lo abierto vuelve al mismo lugar.
     collapse: '<path d="M4 12h16"/><path d="M8.5 4L12 7.5 15.5 4"/><path d="M8.5 20L12 16.5l3.5 3.5"/>',
@@ -144,8 +164,15 @@
     // hacia adentro.
     expand: '<path d="M4 12h16"/><path d="M8.5 7.5L12 4l3.5 3.5"/><path d="M8.5 16.5L12 20l3.5-3.5"/>',
     // Dos rectángulos separados: panel dividido. Rotado 90° representa apilado en vez de lado a lado.
-    columns: '<rect x="3" y="4" width="8" height="16" rx="1.5"/><rect x="13" y="4" width="8" height="16" rx="1.5"/>',
+    columns: '<rect x="3" y="4" width="8" height="16" rx="1"/><rect x="13" y="4" width="8" height="16" rx="1"/>',
     chart: '<path d="M4 20V4"/><path d="M4 20h16"/><path d="M8 16.5v-4M12.5 16.5v-8M17 16.5v-5.5"/>',
+    // La ventana partida en dos, con la mitad de la que habla marcada. Reemplazan al ojo tachado y
+    // a las flechas: esconder los resultados y esconder el editor son la misma pregunta —quién se
+    // queda con el alto— y con dos dibujos sin relación se leían como dos cosas distintas.
+    "panel-top":
+      '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 10h18"/><rect x="4" y="5" width="16" height="4" fill="currentColor" stroke="none" opacity="0.35"/>',
+    "panel-bottom":
+      '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 14h18"/><rect x="4" y="15" width="16" height="4" fill="currentColor" stroke="none" opacity="0.35"/>',
     compass: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
     download: '<path d="M12 3v12"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M4 20h16"/>',
     upload: '<path d="M12 15V3"/><path d="M7.5 7.5L12 3l4.5 4.5"/><path d="M4 20h16"/>',
@@ -161,9 +188,17 @@
       '<path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h6M14 18h6"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="12" cy="18" r="2"/>',
     // Tres líneas con sangría creciente: ordenar el SQL en niveles es justo lo que hace el botón.
     format: '<path d="M4 6h16M4 12h10M4 18h13"/>',
+    // Las mismas líneas con una chispa: formatear solo, sin que nadie apriete el botón de al lado.
+    "format-auto":
+      '<path d="M4 6h12M4 12h7M4 18h10"/><path d="M18.5 13.5l1 2.5 2.5 1-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1z"/>',
+    // Un tilde adentro de un círculo: confirmar solo. El tilde pelado ya es «commit», que es el
+    // botón de al lado y es otra cosa: uno confirma ahora, el otro decide quién confirma.
+    autocommit: '<circle cx="12" cy="12" r="8.5"/><path d="M8 12.2l2.8 2.8L16 9.4"/>',
     // Ventana con barra de título y un «+»: abrir otra ventana, no la que ya está.
     window:
-      '<rect x="2.5" y="5.5" width="14" height="12" rx="1.5"/><path d="M2.5 9.5h14"/><path d="M18 3v6M15 6h6"/>',
+      '<rect x="2.5" y="5.5" width="14" height="12" rx="1"/><path d="M2.5 9.5h14"/><path d="M18 3v6M15 6h6"/>',
+    // Engranaje: preferencias de la aplicación, distinto de `sliders` (parámetros del servidor).
+    gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .35 1.9l.05.05a2 2 0 1 1-2.85 2.85l-.05-.05a1.7 1.7 0 0 0-1.9-.35 1.7 1.7 0 0 0-1 1.55V19.6a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.9.35l-.05.05a2 2 0 1 1-2.85-2.85l.05-.05a1.7 1.7 0 0 0 .35-1.9 1.7 1.7 0 0 0-1.55-1H4.4a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.55-1.1 1.7 1.7 0 0 0-.35-1.9l-.05-.05a2 2 0 1 1 2.85-2.85l.05.05a1.7 1.7 0 0 0 1.9.35H10.5a1.7 1.7 0 0 0 1-1.55V4.4a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.9-.35l.05-.05a2 2 0 1 1 2.85 2.85l-.05.05a1.7 1.7 0 0 0-.35 1.9V10.5a1.7 1.7 0 0 0 1.55 1H19.6a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.55 1z"/>',
   };
 
   export function iconPath(name: IconName): string {
@@ -189,9 +224,10 @@
   viewBox="0 0 24 24"
   fill="none"
   stroke="currentColor"
-  stroke-width="1.7"
-  stroke-linecap="round"
-  stroke-linejoin="round"
+  stroke-width="1.5"
+  stroke-linecap="butt"
+  stroke-linejoin="miter"
+  stroke-miterlimit="4"
   class="shrink-0 {className}"
   aria-hidden="true">{@html iconPath(name)}</svg
 >

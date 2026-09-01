@@ -1,6 +1,8 @@
 <script lang="ts">
   import DataGrid, { type Column } from "./DataGrid.svelte";
-  import { DEFAULT_GRID_FONT, gridZoom } from "./grid.svelte";
+  import { boolText, isBoolType } from "./format";
+  import { columnWidth, gutterWidth } from "./grid-width";
+  import { gridZoom } from "./grid.svelte";
 
   let {
     columns,
@@ -24,7 +26,6 @@
    * muestra: recorrer cien mil filas para elegir un ancho costaría más que dibujarlas.
    */
   const SAMPLE = 50;
-  const CHAR_WIDTH = 7.3;
   const MIN_WIDTH = 64;
   const MAX_WIDTH = 340;
 
@@ -37,14 +38,13 @@
   // un `indexOf` por celda visible recorrería la tabla entera en cada cuadro.
   const numbered = $derived(rows.map((cells, index) => ({ index, cells })));
 
-  // La letra de la grilla es una preferencia (`gridZoom`): con la letra más grande, la misma cantidad
-  // de caracteres ocupa más ancho, o las columnas quedarían del tamaño calculado para la letra chica.
-  const scale = $derived(gridZoom.size / DEFAULT_GRID_FONT);
-
   const definitions = $derived.by<Column<Numbered>[]>(() => {
     const sample = rows.slice(0, SAMPLE);
 
     const cells: Column<Numbered>[] = columns.map((name, index) => {
+      // El tipo lo trae el interruptor «Tipos», que viene encendido. Sin él, una columna de textos
+      // que dijeran «t» y «f» se traduciría sola, que es peor que no traducir ninguna.
+      const bool = isBoolType(types?.[index]);
       const longest = sample.reduce(
         (max, row) => Math.max(max, (row[index] ?? NULL).length),
         name.length,
@@ -54,12 +54,21 @@
         key: `${index}-${name}`,
         header: name,
         caption: types?.[index] ?? undefined,
-        width: Math.min(
-          MAX_WIDTH * scale,
-          Math.max(MIN_WIDTH * scale, Math.round(longest * CHAR_WIDTH * scale) + 20),
-        ),
+        // La letra de la grilla es una preferencia (`gridZoom`), así que el ancho se calcula con
+        // ella: con la letra más grande, la misma cantidad de caracteres ocupa más.
+        width: columnWidth({
+          longest,
+          fontSize: gridZoom.size,
+          min: MIN_WIDTH,
+          max: MAX_WIDTH,
+          padding: 20,
+        }),
         align: numeric(sample, index) ? "right" : "left",
-        value: (row) => oneLine(row.cells[index]),
+        value: (row) => {
+          const value = row.cells[index];
+          if (value === null) return NULL;
+          return bool ? boolText(value) : oneLine(value);
+        },
         // Lo que se copia y lo que muestra el visor es el valor como vino, no el de una línea.
         raw: (row) => row.cells[index],
         title: (row) => row.cells[index] ?? undefined,
@@ -72,7 +81,7 @@
       {
         key: "#",
         header: "#",
-        width: 56 * scale,
+        width: gutterWidth(rows.length, gridZoom.size),
         align: "right",
         value: (row) => String(row.index + 1),
         // Ordenar por esta columna devuelve el resultado al orden en que lo mandó el servidor.
@@ -84,7 +93,11 @@
 
   /** Un valor con saltos de línea rompería la altura fija de la fila. */
   function oneLine(value: string | null): string {
-    return value === null ? NULL : value.replace(/\s*\n\s*/g, " ↵ ");
+    if (value === null) return NULL;
+    // El `includes` antes de la expresión regular no es una manía: `value()` se llama por cada
+    // celda dibujada y en cada cuadro del desplazamiento, y la enorme mayoría de los valores no
+    // tiene ningún salto de línea que aplastar.
+    return value.includes("\n") ? value.replace(/\s*\n\s*/g, " ↵ ") : value;
   }
 
   /**

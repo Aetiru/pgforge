@@ -71,7 +71,7 @@
   }
 </script>
 
-<div class="flex h-full flex-col">
+<div class="@container/saved flex h-full flex-col">
   <div class="divider-b flex items-center gap-2 px-2 py-1.5">
     <div class="relative flex-1">
       <Icon
@@ -111,18 +111,24 @@
           class="group flex items-center gap-2 px-3 py-1.5 hover:bg-zinc-100
                  dark:hover:bg-zinc-700/70"
         >
+          <!-- Angosto, el nombre y el SQL se apilan: en una sola línea el nombre se quedaba con
+               todo el ancho y de la consulta no se leía ni la primera palabra. -->
           <button
-            class="flex min-w-0 flex-1 items-baseline gap-2 text-left"
+            class="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left
+                   @sm/saved:flex-row @sm/saved:items-baseline @sm/saved:gap-2"
             title="Traer esta consulta al editor"
             onclick={() => onpick(entry)}
           >
-            <span class="shrink-0 truncate text-sm">{entry.name}</span>
-            <span class="min-w-0 flex-1 truncate font-mono text-xs muted">
+            <span class="max-w-full shrink-0 truncate text-sm">{entry.name}</span>
+            <span class="w-full min-w-0 truncate font-mono text-xs muted @sm/saved:flex-1">
               {entry.sql.replace(/\s+/g, " ")}
             </span>
           </button>
 
-          <span class="shrink-0 text-xs tabular-nums muted" title="Última vez que se guardó">
+          <span
+            class="hidden shrink-0 text-xs tabular-nums muted @sm/saved:inline"
+            title="Última vez que se guardó"
+          >
             {when(entry.updatedAt)}
           </span>
 

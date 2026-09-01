@@ -26,8 +26,9 @@
   let confirmingReset = $state(false);
 
   function nueva(): Snippet {
-    // El identificador vacío hace que Rust le ponga uno: es una alta, no una reescritura.
-    return { id: "", abbreviation: "", body: "", description: "" };
+    // Sin `id`: Rust le pone uno. Mandar cadena vacía falla el parseo de UUID en vez de tomarse
+    // como ausente.
+    return { abbreviation: "", body: "", description: "" };
   }
 
   async function submit() {
@@ -40,7 +41,8 @@
 
   async function remove(item: Snippet) {
     busy = true;
-    await snippets.remove(item.id);
+    // Viene de la lista ya guardada: siempre tiene id.
+    await snippets.remove(item.id!);
     busy = false;
   }
 

@@ -50,20 +50,31 @@
     load();
   });
 
+  /**
+   * La hora va en 24 horas y no en la del sistema: con `a. m.` detrás, «30/8 01:59 a. m.» no entra
+   * en la columna y se parte en dos líneas, que en un panel de 300 píxeles se come justamente el
+   * lugar donde tiene que leerse la consulta.
+   */
   function when(seconds: number): string {
     const date = new Date(seconds * 1000);
-    const today = new Date().toDateString() === date.toDateString();
-    return today
-      ? date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
-      : date.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit" }) +
-          " " +
-          date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    const time = date.toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    if (new Date().toDateString() === date.toDateString()) return time;
+    const day = date.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit" });
+    return `${day} ${time}`;
   }
 </script>
 
-<div class="flex h-full flex-col">
-  <div class="divider-b flex items-center gap-2 px-2 py-1.5">
-    <div class="relative flex-1">
+<!-- Se mide contra el panel y no contra la ventana: esta lista vive tanto en el panel lateral,
+     que arranca en 300 píxeles, como en el resultado de una consulta a pantalla completa. -->
+<div class="@container/history flex h-full flex-col">
+  <div class="divider-b flex flex-wrap items-center gap-2 px-2 py-1.5">
+    <!-- Angosto, la caja de búsqueda se queda con su propia línea: compartiéndola con la casilla y
+         el botón quedaba de cuarenta píxeles, que no alcanza ni para ver lo que uno escribió. -->
+    <div class="relative min-w-0 basis-full @sm/history:flex-1 @sm/history:basis-auto">
       <Icon
         name="search"
         size={13}
@@ -114,7 +125,9 @@
             title="Traer esta consulta al editor"
             onclick={() => onpick(entry.sql)}
           >
-            <span class="w-20 shrink-0 text-xs tabular-nums muted">{when(entry.startedAt)}</span>
+            <span class="shrink-0 text-xs whitespace-nowrap tabular-nums muted">
+              {when(entry.startedAt)}
+            </span>
             <!-- Lo que salió de un diálogo se marca: el historial ya no es solo lo que uno escribió,
                  es todo lo que la aplicación ejecutó contra el servidor. -->
             {#if entry.source === "dialog"}
@@ -130,7 +143,11 @@
             </span>
             <span class="shrink-0 text-xs tabular-nums muted">
               {#if entry.succeeded}
-                {#if entry.rowCount !== null}{count(entry.rowCount)} filas ·{/if}
+                <!-- Cuántas filas devolvió es lo primero que sobra cuando el panel es angosto: lo
+                     que se busca en la lista es la consulta, y el tiempo dice más que el conteo. -->
+                {#if entry.rowCount !== null}
+                  <span class="hidden @sm/history:inline">{count(entry.rowCount)} filas ·</span>
+                {/if}
                 {decimal(entry.seconds * 1000, 0)} ms
               {:else}
                 <span class="tag tag-bad">falló</span>

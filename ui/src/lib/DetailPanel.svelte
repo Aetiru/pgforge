@@ -1062,7 +1062,12 @@
   }
 </script>
 
-<div class="flex h-full flex-col">
+<!--
+  `@container/detail`: el panel ya no mide lo que la ventana sino lo que el usuario le dejó al
+  inspector, así que lo que se aprieta se decide contra **su** ancho y no contra el de la pantalla.
+  Una consulta de medios acá miente: la ventana puede estar maximizada con el inspector en 320.
+-->
+<div class="@container/detail flex h-full flex-col overflow-hidden">
   {#if !selected}
     <Empty
       icon="compass"
@@ -1070,7 +1075,7 @@
       hint="Elegí un servidor, una base o un objeto del árbol de la izquierda para ver su detalle, su DDL y las acciones que admite."
     />
   {:else}
-    <header class="divider-b px-5 py-3">
+    <header class="divider-b px-3 py-2 @md/detail:px-5 @md/detail:py-3">
       <div class="flex items-center gap-2.5">
         <div
           class="grid size-9 shrink-0 place-items-center rounded-lg bg-zinc-100 dark:bg-zinc-700
@@ -1105,7 +1110,7 @@
     </header>
 
     {#if isGroup}
-      <div class="min-h-0 flex-1 overflow-auto p-4">
+      <div class="min-h-0 flex-1 overflow-auto p-2 @md/detail:p-4">
         <GroupServers
           servers={groupServers}
           {onconnect}
@@ -1133,8 +1138,12 @@
       <Empty icon="info" title="Sin detalle" hint="Este nodo no tiene propiedades para mostrar." />
     {:else}
       {#if sections.length > 1}
-        <div class="divider-b flex items-center gap-2 px-4 py-1.5">
-          <div class="seg" role="tablist">
+        <!-- La tira desplaza en vez de estirarse: con siete secciones no entra en un inspector
+             angosto, y estirándose empujaba el ancho de todo lo que tiene arriba. -->
+        <div
+          class="divider-b flex items-center gap-2 overflow-x-auto px-2 py-1.5 @md/detail:px-4"
+        >
+          <div class="seg shrink-0" role="tablist">
             {#each sections as item (item.id)}
               <button
                 class="seg-item"
@@ -1152,7 +1161,7 @@
         </div>
       {/if}
 
-      <div class="min-h-0 flex-1 overflow-auto p-4">
+      <div class="min-h-0 flex-1 overflow-auto p-2 @md/detail:p-4">
         {#if section === "info"}
           <Properties rows={properties} />
         {:else if section === "columns"}

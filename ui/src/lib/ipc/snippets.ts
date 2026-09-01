@@ -7,7 +7,8 @@ import { invoke } from "./core";
  * se confunda con crear otra; la abreviatura es única sin distinguir mayúsculas.
  */
 export interface Snippet {
-  id: string;
+  /** Ausente al crear una nueva: Rust le asigna uno. Presente siempre en lo que devuelve el servidor. */
+  id?: string;
   /** Lo que se escribe antes del tabulador. */
   abbreviation: string;
   /** El texto que la reemplaza. Los `${}` son huecos por los que se salta con el tabulador. */

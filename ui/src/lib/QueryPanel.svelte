@@ -340,14 +340,19 @@
   // Historial/Guardadas son de dónde sacar el SQL para la siguiente. Mezclados en una sola `.seg` se
   // leían como si fueran la misma pregunta.
   const RESULT_VIEWS = [
-    { value: "rows", label: "Resultados" },
-    { value: "plan", label: "Plan" },
-    { value: "messages", label: "Mensajes" },
+    { value: "rows", label: "Resultados", icon: "table", hint: "Las filas que devolvió" },
+    { value: "plan", label: "Plan", icon: "plan", hint: "Cómo resolvió la consulta el servidor" },
+    {
+      value: "messages",
+      label: "Mensajes",
+      icon: "info",
+      hint: "Los avisos del servidor y los errores de cada sentencia",
+    },
   ] as const;
 
   const SOURCE_VIEWS = [
-    { value: "history", label: "Historial" },
-    { value: "saved", label: "Guardadas" },
+    { value: "history", label: "Historial", icon: "clock", hint: "Lo que se ejecutó antes" },
+    { value: "saved", label: "Guardadas", icon: "star", hint: "Las consultas guardadas con nombre" },
   ] as const;
 
   /**
@@ -388,13 +393,22 @@
   -->
   <header class="toolbar {envBar(environment)}">
     {#if tab.running}
-      <button class="btn btn-danger" title="Cancela la consulta en curso" onclick={() => tab.cancel()}>
-        <Icon name="close" size={12} />
+      <button
+        class="btn btn-danger-ghost font-medium"
+        title="Cancela la consulta en curso"
+        onclick={() => tab.cancel()}
+      >
+        <Icon name="close" size={13} />
         Cancelar
       </button>
     {:else}
+      <!--
+        Ejecutar dejó de ser una pastilla azul con el atajo adentro. Lo que la hacía visible no era
+        la caja sino el color y el nombre: en una barra de doce acciones, la única con fondo sólido
+        pesa más que todo lo que tiene al lado, y el atajo escrito repetía lo que ya dice el `title`.
+      -->
       <button
-        class="btn btn-primary"
+        class="btn btn-ghost font-medium text-emerald-600 dark:text-emerald-400"
         disabled={tab.tabId === null}
         title="Ejecuta la selección, o la sentencia donde está el cursor (Ctrl+Enter)"
         onclick={() => {
@@ -402,12 +416,11 @@
           run(text, cursor);
         }}
       >
-        <Icon name="play" size={12} />
+        <Icon name="play" size={13} />
         Ejecutar
-        <span class="kbd border-white/30 bg-white/15 text-white/80">Ctrl+↵</span>
       </button>
       <button
-        class="btn btn-icon"
+        class="btn btn-ghost btn-icon"
         disabled={tab.tabId === null}
         aria-label="Ejecutar el script entero"
         title="Ejecuta todas las sentencias del editor (Ctrl+Mayús+Enter)"
@@ -423,20 +436,23 @@
       El interruptor y los dos botones van juntos: apagar el autocommit sin tener a la vista con qué
       confirmar deja al usuario con una transacción abierta y sin dónde cerrarla.
     -->
-    <label class="check" title="Apagado, cada ejecución abre una transacción que hay que confirmar">
-      <input
-        type="checkbox"
-        checked={tab.autocommit}
-        disabled={tab.tabId === null || tab.running}
-        onchange={(event) => tab.setAutocommit(event.currentTarget.checked)}
-      />
-      Autocommit
-    </label>
+    <button
+      class="btn btn-ghost btn-icon btn-toggle"
+      aria-pressed={tab.autocommit}
+      aria-label="Autocommit"
+      disabled={tab.tabId === null || tab.running}
+      title={tab.autocommit
+        ? "Autocommit encendido: cada ejecución se confirma sola. Apagalo para trabajar dentro de una transacción"
+        : "Autocommit apagado: cada ejecución abre una transacción que hay que confirmar con el tilde de al lado"}
+      onclick={() => tab.setAutocommit(!tab.autocommit)}
+    >
+      <Icon name="autocommit" size={14} />
+    </button>
 
     <!-- El par va con los dos colores puestos: el rollback en rojo y el commit sin nada era una
          advertencia sin su contraparte, y de un vistazo no se sabía cuál de los dos confirmaba. -->
     <button
-      class="btn btn-icon text-emerald-600 dark:text-emerald-400"
+      class="btn btn-ghost btn-icon text-emerald-600 dark:text-emerald-400"
       disabled={tab.tabId === null || tab.running || tab.txStatus === "idle"}
       aria-label="Commit"
       title="Confirma la transacción abierta en esta pestaña"
@@ -445,7 +461,7 @@
       <Icon name="check" size={14} />
     </button>
     <button
-      class="btn btn-danger btn-icon"
+      class="btn btn-danger-ghost btn-icon"
       disabled={tab.tabId === null || tab.running || tab.txStatus === "idle"}
       aria-label="Rollback"
       title="Descarta todo lo hecho desde que se abrió la transacción"
@@ -457,7 +473,7 @@
     <span class="toolbar-sep"></span>
 
     <button
-      class="btn btn-icon"
+      class="btn btn-ghost btn-icon"
       disabled={tab.tabId === null || tab.running}
       aria-label="Explicar"
       title="Muestra el plan estimado sin ejecutar la consulta"
@@ -469,7 +485,7 @@
       <Icon name="plan" size={14} />
     </button>
     <button
-      class="btn btn-icon"
+      class="btn btn-ghost btn-icon"
       disabled={tab.tabId === null || tab.running}
       aria-label="Explicar y medir"
       title="Ejecuta la consulta y muestra los tiempos reales"
@@ -484,7 +500,7 @@
     <span class="toolbar-sep"></span>
 
     <button
-      class="btn btn-icon"
+      class="btn btn-ghost btn-icon"
       aria-label="Guardar como archivo .sql"
       title={tab.filePath
         ? `Guarda en ${tab.filePath} (Ctrl+S; Ctrl+Mayús+S para elegir otro archivo)`
@@ -497,7 +513,7 @@
     <!-- Guardar con nombre no es guardar en un archivo: queda adentro de la aplicación, en la
          pestaña «Guardadas», y no depende de acordarse dónde se dejó el .sql. -->
     <button
-      class="btn btn-icon"
+      class="btn btn-ghost btn-icon"
       aria-label="Guardar la consulta con un nombre"
       title={tab.savedName
         ? `Guarda los cambios en «${tab.savedName}»`
@@ -509,7 +525,7 @@
 
     <!-- Con selección, formatea solo eso; sin selección, el documento entero. -->
     <button
-      class="btn btn-icon"
+      class="btn btn-ghost btn-icon"
       aria-label="Formatear el SQL"
       title="Ordena el SQL: la selección si hay una, si no el documento entero (Ctrl+Mayús+F)"
       onclick={() => {
@@ -525,7 +541,7 @@
     <!-- Se configuran acá y no en una pantalla de preferencias aparte: uno se acuerda de que quiere
          una abreviatura mientras escribe la consulta que la pediría. -->
     <button
-      class="btn btn-icon"
+      class="btn btn-ghost btn-icon"
       aria-label="Abreviaturas del editor"
       title="Abreviaturas: escribí una y apretá Tab para expandirla"
       onclick={() => (snippetsOpen = true)}
@@ -538,14 +554,17 @@
     <FontSize />
 
     <!-- Al lado de la letra: es la barra donde uno está cuando se pregunta por este interruptor. -->
-    <label class="check" title="Formatea el SQL solo, antes de guardar y antes de ejecutar el script entero">
-      <input
-        type="checkbox"
-        checked={autoFormat.enabled}
-        onchange={(event) => autoFormat.set(event.currentTarget.checked)}
-      />
-      Autoformatear
-    </label>
+    <button
+      class="btn btn-ghost btn-icon btn-toggle"
+      aria-pressed={autoFormat.enabled}
+      aria-label="Autoformatear"
+      title={autoFormat.enabled
+        ? "Autoformatear encendido: el SQL se ordena solo antes de guardar y antes de ejecutar el script entero"
+        : "Autoformatear apagado: el SQL se ordena solo cuando apretás el botón de formatear"}
+      onclick={() => autoFormat.set(!autoFormat.enabled)}
+    >
+      <Icon name="format-auto" size={14} />
+    </button>
 
     <span class="ml-auto flex items-center gap-2 text-xs muted">
       {#if tab.running}
@@ -648,42 +667,51 @@
       <!-- El botón queda del lado del panel que esconde, y sigue a la vista plegado: un panel que
            se esconde sin dejar de dónde agarrarlo no se vuelve a abrir. -->
       <button
-        class="btn btn-ghost btn-icon"
+        class="btn btn-ghost btn-icon btn-toggle"
         aria-label={editorSplit.resultsHidden ? "Mostrar los resultados" : "Ocultar los resultados"}
-        aria-expanded={!editorSplit.resultsHidden}
+        aria-pressed={!editorSplit.resultsHidden}
         title={editorSplit.resultsHidden
           ? "Muestra de nuevo los resultados"
           : "Pliega los resultados y le deja todo el alto al editor"}
         onclick={() => editorSplit.toggleResults()}
       >
-        <Icon name={editorSplit.resultsHidden ? "eye" : "eye-off"} size={13} />
+        <Icon name="panel-bottom" size={13} />
       </button>
 
       <!-- El inverso: le da todo el alto a la grilla. Va al lado del anterior porque son la misma
            pregunta —qué se queda con el espacio— hecha desde el otro lado. -->
       <button
-        class="btn btn-ghost btn-icon"
+        class="btn btn-ghost btn-icon btn-toggle"
         aria-label={editorSplit.editorHidden ? "Restablecer el reparto" : "Maximizar los resultados"}
-        aria-expanded={editorSplit.editorHidden}
+        aria-pressed={!editorSplit.editorHidden}
         title={editorSplit.editorHidden
           ? "Vuelve a mostrar el editor"
           : "Pliega el editor y le deja todo el alto a la grilla"}
         onclick={() => editorSplit.toggleEditor()}
       >
-        <Icon name={editorSplit.editorHidden ? "collapse" : "expand"} size={13} />
+        <Icon name="panel-top" size={13} />
       </button>
 
-      <div class="seg" role="tablist">
+      <!--
+        Cinco solapas escritas ocupaban un tercio de la barra para decir cinco palabras que no
+        cambian nunca. Como íconos elegidos ocupan lo que ocupa un ícono, el nombre está en el
+        `title`, y la única que necesita decir algo —cuántos errores tiene el script— lo dice con un
+        contador encima. La raya del medio se queda: Resultados/Plan/Mensajes son el resultado de la
+        corrida, e Historial/Guardadas son de dónde sacar el SQL de la próxima.
+      -->
+      <div class="flex items-center gap-0.5" role="tablist">
         {#each RESULT_VIEWS as item (item.value)}
           <button
-            class="seg-item"
+            class="btn btn-ghost btn-icon btn-toggle relative"
             role="tab"
             aria-selected={tab.view === item.value}
+            aria-label={item.label}
+            title="{item.label} — {item.hint}"
             onclick={() => (tab.view = item.value)}
           >
-            {item.label}
+            <Icon name={item.value === "messages" && errors > 0 ? "warn" : item.icon} size={14} />
             {#if item.value === "messages" && errors > 0}
-              <span class="tag tag-bad px-1 py-0 text-[10px]">{errors}</span>
+              <span class="badge-count bg-rose-600">{errors}</span>
             {/if}
           </button>
         {/each}
@@ -691,15 +719,17 @@
 
       <span class="toolbar-sep"></span>
 
-      <div class="seg" role="tablist">
+      <div class="flex items-center gap-0.5" role="tablist">
         {#each SOURCE_VIEWS as item (item.value)}
           <button
-            class="seg-item"
+            class="btn btn-ghost btn-icon btn-toggle"
             role="tab"
             aria-selected={tab.view === item.value}
+            aria-label={item.label}
+            title="{item.label} — {item.hint}"
             onclick={() => (tab.view = item.value)}
           >
-            {item.label}
+            <Icon name={item.icon} size={14} />
           </button>
         {/each}
       </div>
@@ -708,10 +738,31 @@
         Los controles que solo tienen sentido mirando un resultado: en «Mensajes» o «Historial»,
         «Tipos» y «Exportar» no actúan sobre nada.
       -->
-      {#if tab.view === "rows"}
-        <span class="ml-auto flex flex-wrap items-center gap-2">
-          <GridSize />
+      <!--
+        Cuántas filas y cuánto tardó es lo primero que se mira al terminar una consulta, y estaba
+        último: después de la letra, del techo, de los tipos y de los dos botones, contra el borde
+        derecho de una pantalla ancha. Va acá, al lado de la pestaña que lo produjo.
+      -->
+      {#if tab.view === "rows" && withRows}
+        <span class="flex items-center gap-2 text-xs muted">
+          {#if withRows.truncated}
+            <span
+              class="tag tag-warn"
+              title="La consulta devolvió más filas de las que entran en el máximo elegido"
+            >
+              se muestran {count(withRows.rows.length)}
+            </span>
+          {/if}
+          <span class="tabular-nums">
+            {count(withRows.rowCount)}
+            {withRows.rowCount === 1 ? "fila" : "filas"}
+          </span>
+          <span class="tabular-nums">{decimal(withRows.seconds * 1000, 0)} ms</span>
+        </span>
+      {/if}
 
+      {#if tab.view === "rows"}
+        <span class="ml-auto flex flex-wrap items-center gap-1.5">
           <!--
             Estos actúan sobre el resultado en vivo —el techo de filas, sus tipos, exportarlo—, así
             que mirando una pestaña anclada no pintan nada: es una foto ya tomada, no algo que se
@@ -723,18 +774,16 @@
                  vuelve a ejecutar. -->
             <!-- Los tipos no vienen con las filas: pedirlos cuesta preparar la sentencia de nuevo en
                  el servidor, así que es un interruptor y no algo que pase siempre. -->
-            <label
-              class="check"
+            <button
+              class="btn btn-ghost btn-icon btn-toggle"
+              aria-pressed={tab.showTypes}
+              aria-label="Tipos de las columnas"
+              disabled={tab.running}
               title="Muestra el tipo de cada columna; se le pregunta al servidor sin ejecutar de nuevo"
+              onclick={() => tab.setShowTypes(!tab.showTypes)}
             >
-              <input
-                type="checkbox"
-                checked={tab.showTypes}
-                disabled={tab.running}
-                onchange={(event) => tab.setShowTypes(event.currentTarget.checked)}
-              />
-              Tipos
-            </label>
+              <Icon name="type" size={14} />
+            </button>
 
             <label
               class="flex items-center gap-1 text-xs muted"
@@ -758,13 +807,13 @@
               `{#if withRows}`.
             -->
             <button
-              class="btn btn-sm"
+              class="btn btn-ghost btn-icon"
               disabled={!tab.result}
+              aria-label="Anclar el resultado"
               title="Ancla este resultado como una pestaña más, que no se pisa con la próxima ejecución"
               onclick={pinCurrent}
             >
-              <Icon name="pin" size={11} />
-              Anclar
+              <Icon name="pin" size={14} />
             </button>
 
             <!--
@@ -777,32 +826,23 @@
             -->
             {#if withRows}
               <button
-                class="btn btn-sm"
+                class="btn btn-ghost btn-icon"
                 disabled={tab.ranSql.trim() === ""}
+                aria-label="Exportar el resultado"
                 title="Exporta todas las filas del resultado elegido, no solo las que se muestran"
                 onclick={openExport}
               >
-                <Icon name="download" size={11} />
-                Exportar
+                <Icon name="download" size={14} />
               </button>
-
-              <span class="flex items-center gap-2 text-xs muted">
-                {#if withRows.truncated}
-                  <span
-                    class="tag tag-warn"
-                    title="La consulta devolvió más filas de las que entran en el máximo elegido"
-                  >
-                    se muestran {count(withRows.rows.length)}
-                  </span>
-                {/if}
-                <span class="tabular-nums">
-                  {count(withRows.rowCount)}
-                  {withRows.rowCount === 1 ? "fila" : "filas"}
-                </span>
-                <span class="tabular-nums">{decimal(withRows.seconds * 1000, 0)} ms</span>
-              </span>
             {/if}
+
           {/if}
+
+          <!-- El tamaño de letra de la grilla va al final: se toca una vez y no se vuelve a mirar,
+               al revés de todo lo que tiene a la izquierda. Y va afuera del `{#if}` de arriba: la
+               letra se lee igual mirando un resultado anclado. -->
+          <span class="toolbar-sep"></span>
+          <GridSize />
         </span>
       {/if}
     </div>

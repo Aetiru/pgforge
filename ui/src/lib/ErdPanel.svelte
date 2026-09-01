@@ -164,11 +164,11 @@
 
     <span class="toolbar-sep"></span>
 
-    <button class="btn btn-icon" title="Alejar" onclick={() => (zoom = Math.max(ZOOM_MIN, zoom / 1.2))}>
+    <button class="btn btn-ghost btn-icon" title="Alejar" onclick={() => (zoom = Math.max(ZOOM_MIN, zoom / 1.2))}>
       −
     </button>
     <span class="text-xs muted tabular-nums">{Math.round(zoom * 100)}%</span>
-    <button class="btn btn-icon" title="Acercar" onclick={() => (zoom = Math.min(ZOOM_MAX, zoom * 1.2))}>
+    <button class="btn btn-ghost btn-icon" title="Acercar" onclick={() => (zoom = Math.min(ZOOM_MAX, zoom * 1.2))}>
       +
     </button>
     <button class="btn" title="Deja todo el diagrama a la vista" onclick={fit}>Encajar</button>

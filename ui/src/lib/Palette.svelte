@@ -5,12 +5,12 @@
   import { QueryTab } from "./query.svelte";
   import { tabs } from "./tabs.svelte";
   import { theme } from "./theme.svelte";
-  import { view, type MainView } from "./view.svelte";
+  import { view, type SidePane } from "./view.svelte";
 
   /**
    * La paleta de comandos.
    *
-   * En una aplicación con árbol, pestañas, cuatro vistas y treinta diálogos, lo que más tiempo come
+   * En una aplicación con árbol, pestañas y treinta diálogos, lo que más tiempo come
    * no es ejecutar la acción sino llegar hasta ella. Acá se escribe lo que se quiere —«monit»,
    * «pedidos», el nombre de un servidor— y se llega en dos teclas.
    *
@@ -23,12 +23,17 @@
     onnewquery,
     onopensql,
     onnewserver,
+    onmonitor,
+    onconfig,
     onconnect,
     onclose,
   }: {
     onnewquery: () => void;
     onopensql: () => void;
     onnewserver: () => void;
+    /** Abre el dashboard del servidor en contexto, que lo decide `App`. */
+    onmonitor: () => void;
+    onconfig: () => void;
     onconnect: (profileId: string) => void;
     onclose: () => void;
   } = $props();
@@ -39,10 +44,13 @@
   let cursor = $state(0);
   let input = $state<HTMLInputElement | null>(null);
 
-  const VIEWS: { value: MainView; label: string }[] = [
+  /**
+   * Los paneles laterales. Monitoreo y configuración salieron de esta lista cuando dejaron de ser
+   * vistas: son pestañas, y por eso están arriba entre las acciones que abren algo.
+   */
+  const PANES: { value: SidePane; label: string }[] = [
     { value: "explorer", label: "Explorador" },
-    { value: "monitor", label: "Monitoreo" },
-    { value: "config", label: "Configuración del servidor" },
+    { value: "library", label: "Historial y consultas guardadas" },
     { value: "processes", label: "Procesos" },
   ];
 
@@ -70,6 +78,8 @@
       },
       { id: "sql", label: "Abrir un archivo SQL", hint: "Ctrl+O", group: "acción", run: onopensql },
       { id: "server", label: "Nuevo servidor", group: "acción", run: onnewserver },
+      { id: "monitor", label: "Monitoreo del servidor", group: "acción", run: onmonitor },
+      { id: "config", label: "Configuración del servidor", group: "acción", run: onconfig },
       {
         id: "theme",
         label: "Cambiar el tema",
@@ -92,9 +102,9 @@
       });
     }
 
-    for (const item of VIEWS) {
+    for (const item of PANES) {
       out.push({
-        id: `view:${item.value}`,
+        id: `pane:${item.value}`,
         label: `Ir a ${item.label}`,
         group: "vista",
         run: () => view.show(item.value),
@@ -107,10 +117,8 @@
         label: tab.title,
         hint: tab.database,
         group: "pestaña",
-        run: () => {
-          tabs.active = tab.key;
-          view.show("explorer");
-        },
+        // Ya no hace falta llevar a ninguna vista: las pestañas están siempre a la vista.
+        run: () => tabs.activate(tab.key),
       });
     }
 
