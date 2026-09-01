@@ -39,40 +39,42 @@
   {/snippet}
 
   {#if constraints}
-    <table class="list-table">
-      <thead>
-        <tr>
-          <th class="w-px whitespace-nowrap">Nombre</th>
-          <th class="w-full">Definición</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each constraints as constraint (constraint.oid)}
-          <tr class="group">
-            <td class="w-px font-medium whitespace-nowrap">
-              {constraint.name}
-              <span class="tag tag-neutral ml-1">{constraint.kind}</span>
-            </td>
-            <td class="max-w-0 truncate font-mono text-xs muted" title={constraint.definition}>
-              {constraint.definition}
-            </td>
-            <td class="w-16">
-              <div class="row-actions">
-                <button
-                  class="btn btn-danger-ghost btn-icon size-6"
-                  title="Eliminar la restricción"
-                  aria-label="Eliminar la restricción"
-                  {...blocked}
-                  onclick={() => ondrop(constraint.name)}
-                >
-                  <Icon name="trash" size={12} />
-                </button>
-              </div>
-            </td>
+    <div class="table-scroll">
+      <table class="list-table">
+        <thead>
+          <tr>
+            <th class="w-px whitespace-nowrap">Nombre</th>
+            <th class="w-full">Definición</th>
+            <th></th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each constraints as constraint (constraint.oid)}
+            <tr class="group">
+              <td class="w-px font-medium whitespace-nowrap">
+                {constraint.name}
+                <span class="tag tag-neutral ml-1">{constraint.kind}</span>
+              </td>
+              <td class="max-w-0 truncate font-mono text-xs muted" title={constraint.definition}>
+                {constraint.definition}
+              </td>
+              <td class="w-16">
+                <div class="row-actions">
+                  <button
+                    class="btn btn-danger-ghost btn-icon size-6"
+                    title="Eliminar la restricción"
+                    aria-label="Eliminar la restricción"
+                    {...blocked}
+                    onclick={() => ondrop(constraint.name)}
+                  >
+                    <Icon name="trash" size={12} />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
   {/if}
 </Card>

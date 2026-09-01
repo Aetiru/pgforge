@@ -52,13 +52,18 @@
   }
 </script>
 
-<div class="flex h-full flex-col">
+<!-- Vive en el panel lateral, que arranca en 300 píxeles: lo que se aprieta se decide contra el
+     ancho del panel y no contra el de la ventana. -->
+<div class="@container/tasks flex h-full flex-col">
   <div class="toolbar">
     <span class="text-xs font-medium">
       {tasks.running.length}
       {tasks.running.length === 1 ? "proceso en curso" : "procesos en curso"}
     </span>
-    <label class="check ml-auto" title="Un aviso del sistema cuando termina algo que tardó">
+    <label
+      class="check ml-auto @max-sm/tasks:ml-0 @max-sm/tasks:basis-full"
+      title="Un aviso del sistema cuando termina algo que tardó"
+    >
       <input
         type="checkbox"
         checked={notify.enabled}
@@ -68,7 +73,7 @@
     </label>
 
     <select
-      class="field py-0.5 text-xs"
+      class="field min-w-0 flex-1 py-0.5 text-xs @sm/tasks:flex-none"
       disabled={!notify.enabled}
       aria-label="A partir de cuánto avisar"
       title="Por debajo de esto no se avisa: el resultado aparece mientras todavía se está mirando"
@@ -81,7 +86,7 @@
     </select>
 
     <button
-      class="btn btn-sm"
+      class="btn btn-sm shrink-0"
       disabled={tasks.finished.length === 0}
       onclick={() => tasks.clearFinished()}
     >
@@ -96,11 +101,13 @@
       hint="Acá aparecen el mantenimiento, la creación de índices, los backups y las copias de datos mientras corren. Se los puede dejar corriendo y seguir usando la aplicación."
     />
   {:else}
-    <div class="min-h-0 flex-1 overflow-auto p-3">
+    <div class="min-h-0 flex-1 overflow-auto p-2 @sm/tasks:p-3">
       <div class="flex flex-col gap-2">
         {#each tasks.list as run (run.taskId)}
           <div class="card p-0">
-            <div class="flex items-center gap-3 px-3 py-2">
+            <!-- Angosto, la fila envuelve en vez de apretar cada cosa hasta que no se lee ninguna:
+                 el nombre se queda con la primera línea y el reloj y los botones bajan. -->
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-2 @sm/tasks:px-3">
               {#if run.status === "running"}
                 <span class="spinner"></span>
               {:else}
@@ -115,7 +122,7 @@
 
               <Icon name={KIND_ICON[run.kind]} size={13} class="muted" />
 
-              <div class="min-w-0 flex-1">
+              <div class="min-w-0 flex-1 basis-40">
                 <p class="truncate text-sm font-medium">
                   {taskKindLabel(run.kind)}
                   <span class="font-normal muted">· {run.target}</span>

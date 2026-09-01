@@ -18,12 +18,18 @@
   import Icon, { type IconName } from "./lib/Icon.svelte";
   import Modal from "./lib/Modal.svelte";
   import Palette from "./lib/Palette.svelte";
+  import Preferences from "./lib/Preferences.svelte";
+  import Rail from "./lib/Rail.svelte";
+  import LibraryPanel from "./lib/LibraryPanel.svelte";
   import ProcessPanel from "./lib/ProcessPanel.svelte";
   import QueryPanel from "./lib/QueryPanel.svelte";
   import Toast from "./lib/Toast.svelte";
   import TreePanel from "./lib/TreePanel.svelte";
   import UpdateDialog from "./lib/UpdateDialog.svelte";
   import { openCompare, CompareTab } from "./lib/compare.svelte";
+  import { openConfig, ConfigTab } from "./lib/config.svelte";
+  import { dock, INSPECTOR_DEFAULT, SIDEBAR_DEFAULT } from "./lib/dock.svelte";
+  import { openMonitor, MonitorTab } from "./lib/monitor.svelte";
   import { openData, DataTab } from "./lib/data.svelte";
   import { openErd, ErdTab } from "./lib/erd.svelte";
   import { environmentOf, guard } from "./lib/access.svelte";
@@ -35,7 +41,6 @@
   import { tabs, type Tab, type TabKind } from "./lib/tabs.svelte";
   import { tasks } from "./lib/tasks.svelte";
   import { view } from "./lib/view.svelte";
-  import { theme } from "./lib/theme.svelte";
   import { updates } from "./lib/update.svelte";
   import { snippets } from "./lib/snippets.svelte";
   import {
@@ -102,20 +107,14 @@
   /** El menú con lo que no se usa todos los días del árbol. */
   let treeMenu = $state(false);
   let banner = $state<string | null>(null);
-  let sidebarWidth = $state(300);
-  let sidebarOpen = $state(true);
-  /** Servidor elegido a mano en la vista de monitoreo; si es `null` se usa el del árbol. */
-  let monitorChoice = $state<string | null>(null);
-  /** Servidor elegido a mano en la vista de configuración. */
-  let configChoice = $state<string | null>(null);
-
-  const DEFAULT_SIDEBAR = 300;
-
+  let preferences = $state(false);
   const TAB_ICON: Record<TabKind, IconName> = {
     query: "sql",
     data: "table",
     erd: "diagram",
     compare: "compare",
+    monitor: "chart",
+    config: "sliders",
   };
 
   /** Los mismos colores que las pastillas de entorno, aplicados al ícono de la pestaña. */
@@ -143,17 +142,19 @@
 
   const connectedServers = $derived(explorer.servers.filter((row) => row.connected));
 
-  const monitorServer = $derived.by(() => {
-    if (monitorChoice && explorer.isConnected(monitorChoice)) return monitorChoice;
+  /**
+   * Contra qué servidor abren el monitoreo y la configuración.
+   *
+   * Antes cada una de esas dos vistas tenía su propio `<select>` en la barra de arriba, y eso eran
+   * tres respuestas distintas a «dónde estoy parado» conviviendo en la misma ventana. Ahora la
+   * respuesta es una sola y sale de lo mismo que todo el resto: lo elegido en el árbol, la pestaña
+   * que se está mirando, o el único servidor conectado si no hay nada elegido.
+   */
+  const contextServer = $derived.by(() => {
     const selected = explorer.selected;
     if (selected && explorer.isConnected(selected.profileId)) return selected.profileId;
-    return connectedServers[0]?.profileId ?? null;
-  });
-
-  const configServer = $derived.by(() => {
-    if (configChoice && explorer.isConnected(configChoice)) return configChoice;
-    const selected = explorer.selected;
-    if (selected && explorer.isConnected(selected.profileId)) return selected.profileId;
+    const current = tabs.current;
+    if (current && explorer.isConnected(current.profileId)) return current.profileId;
     return connectedServers[0]?.profileId ?? null;
   });
 
@@ -289,8 +290,13 @@
 
   function startResize(event: MouseEvent) {
     event.preventDefault();
+    // El ancho se mide contra el borde izquierdo del panel y no contra el de la ventana: el riel
+    // está en el medio, y con `clientX` pelado el panel quedaba 48 píxeles más angosto de lo que
+    // decía el cursor.
+    const left = (event.currentTarget as HTMLElement).previousElementSibling?.getBoundingClientRect()
+      .left;
     const move = (moved: MouseEvent) => {
-      sidebarWidth = Math.min(560, Math.max(220, moved.clientX));
+      dock.setSidebarWidth(moved.clientX - (left ?? 0));
     };
     const up = () => {
       window.removeEventListener("mousemove", move);
@@ -298,6 +304,27 @@
       document.body.classList.remove("cursor-col-resize");
     };
     // Mientras se arrastra, el cursor no cambia al pasar por encima de otros elementos.
+    document.body.classList.add("cursor-col-resize");
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  }
+
+  /**
+   * El divisor del inspector, del otro lado: se arrastra hacia la izquierda para agrandarlo, así
+   * que el ancho se mide desde el borde derecho de la ventana y no desde el izquierdo.
+   */
+  function startInspectorResize(event: MouseEvent) {
+    event.preventDefault();
+    const right = (event.currentTarget as HTMLElement).nextElementSibling?.getBoundingClientRect()
+      .right;
+    const move = (moved: MouseEvent) => {
+      dock.setInspectorWidth((right ?? window.innerWidth) - moved.clientX);
+    };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      document.body.classList.remove("cursor-col-resize");
+    };
     document.body.classList.add("cursor-col-resize");
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
@@ -384,7 +411,13 @@
     switch (event.key.toLowerCase()) {
       case "b":
         event.preventDefault();
-        sidebarOpen = !sidebarOpen;
+        dock.toggleSidebar();
+        break;
+      case "i":
+        // El inspector es el antiguo panel de Detalle. Se pliega porque contra una pantalla de
+        // portátil, mirar el árbol y escribir SQL a la vez ya se lleva todo el ancho.
+        event.preventDefault();
+        dock.toggleInspector();
         break;
       case "k":
         // La misma tecla abre y cierra: es lo que uno intenta cuando se abrió sin querer.
@@ -408,22 +441,17 @@
     }
   }
 
-  const THEME_LABEL = {
-    system: "Tema: el del sistema",
-    light: "Tema: claro",
-    dark: "Tema: oscuro",
-  } as const;
+  /**
+   * Abre el dashboard del servidor en contexto. Es una pestaña y no una vista: mirar cómo va el
+   * servidor mientras corre una consulta dejó de costar irse de donde uno estaba.
+   */
+  function showMonitor() {
+    if (contextServer) openMonitor(contextServer);
+  }
 
-  const THEME_ICON = { system: "auto", light: "sun", dark: "moon" } as const;
-
-  const VIEWS = [
-    { value: "explorer", label: "Explorador", icon: "schema" },
-    { value: "monitor", label: "Monitoreo", icon: "chart" },
-    { value: "config", label: "Configuración", icon: "sliders" },
-    // Cuarta vista y no un panel adentro del explorador: lo que corre en segundo plano no es de un
-    // servidor ni de una base, y se mira justo cuando uno está haciendo otra cosa.
-    { value: "processes", label: "Procesos", icon: "clock" },
-  ] as const;
+  function showConfig() {
+    if (contextServer) openConfig(contextServer);
+  }
 
   /** Lo que dice la barra de estado: dónde está parado el usuario ahora mismo. */
   const context = $derived.by(() => {
@@ -449,402 +477,247 @@
 
 <svelte:window onkeydown={onKeydown} onclick={() => (treeMenu = false)} />
 
+<!--
+  La carcasa: riel, panel lateral, pestañas e inspector.
+
+  Antes había dos navegaciones superpuestas: una barra de cuatro vistas excluyentes arriba —que al
+  cambiar se llevaba puestos el árbol y las pestañas— y adentro de una de ellas la barra de
+  pestañas. Eso convertía «mirar el dashboard mientras corre una consulta» en irse, mirar y volver a
+  buscar dónde estaba uno. Quedó una sola navegación: lo que tiene un servidor adentro (consulta,
+  datos, ERD, comparación, monitoreo, configuración) es una pestaña, y el riel de la izquierda solo
+  cambia qué muestra el panel de al lado.
+-->
 <div class="flex h-full flex-col">
-  <header class="divider-b flex items-center gap-3 px-3 py-2">
-    <div class="flex items-center gap-2">
-      <span
-        class="grid size-6 place-items-center rounded-md bg-blue-600 font-mono text-[11px]
-               font-bold text-white shadow-sm shadow-blue-600/30">pg</span
-      >
-      <span class="text-sm font-semibold tracking-tight">pgforge</span>
-      {#if explorer.workspaceLabel}
-        <!-- Solo aparece en la ventana de un workspace: es lo único que la distingue de la
-             principal, que muestra el mismo título sin nada al lado. -->
-        <span
-          class="tag tag-neutral"
-          title="Esta ventana está acotada al workspace «{explorer.workspaceLabel}»"
-        >
-          <Icon name="window" size={10} />
-          {explorer.workspaceLabel}
-        </span>
-      {/if}
-    </div>
-
-    <div class="seg ml-2" role="tablist">
-      {#each VIEWS as item (item.value)}
-        <button
-          class="seg-item"
-          role="tab"
-          aria-selected={view.current === item.value}
-          onclick={() => view.show(item.value)}
-        >
-          <Icon name={item.icon} size={12} />
-          {item.label}
-          <!-- Cuántos corren, y un punto si algo terminó sin que nadie lo mirara: la vista de
-               procesos está pensada para no tener que estar mirándola. -->
-          {#if item.value === "processes" && tasks.running.length > 0}
-            <span class="tag tag-info">{tasks.running.length}</span>
-          {:else if item.value === "processes" && tasks.unseen > 0}
-            <span class="dot dot-on"></span>
-          {/if}
-        </button>
-      {/each}
-    </div>
-
-    {#if view.current === "monitor" && connectedServers.length > 0}
-      <label class="check gap-1.5">
-        Servidor
-        <select
-          class="field w-44 py-0.5 text-xs"
-          title="Servidor que se está monitoreando"
-          value={monitorServer}
-          onchange={(event) => (monitorChoice = event.currentTarget.value)}
-        >
-          {#each connectedServers as server (server.profileId)}
-            <option value={server.profileId}>{server.label}</option>
-          {/each}
-        </select>
-      </label>
-    {/if}
-
-    {#if view.current === "config" && connectedServers.length > 0}
-      <label class="check gap-1.5">
-        Servidor
-        <select
-          class="field w-44 py-0.5 text-xs"
-          title="Servidor cuya configuración se está viendo"
-          value={configServer}
-          onchange={(event) => (configChoice = event.currentTarget.value)}
-        >
-          {#each connectedServers as server (server.profileId)}
-            <option value={server.profileId}>{server.label}</option>
-          {/each}
-        </select>
-      </label>
-    {/if}
-
-    <div class="ml-auto flex items-center gap-2">
-      {#if connectedServers.length > 0}
-        <span class="flex items-center gap-1.5 text-xs muted" title="Servidores conectados">
-          <span class="dot dot-on"></span>
-          {connectedServers.length}
-          {connectedServers.length === 1 ? "conectado" : "conectados"}
-        </span>
-      {/if}
-
-      <button
-        class="btn btn-ghost btn-icon"
-        title={THEME_LABEL[theme.preference]}
-        aria-label={THEME_LABEL[theme.preference]}
-        onclick={() => theme.cycle()}
-      >
-        <Icon name={THEME_ICON[theme.preference]} size={15} />
-      </button>
-
-      {#if info}
-        {#if updates.release}
-          <!-- Aparece solo cuando hay algo más nuevo publicado. Es una pastilla y no un cartel: la
-               versión nueva no interrumpe lo que se estaba haciendo. -->
-          <button
-            class="tag-ok flex items-center gap-1"
-            title="pgforge {updates.release.version} está disponible"
-            onclick={() => (updates.showing = true)}
-          >
-            <Icon name="download" size={11} />
-            {updates.release.version}
-          </button>
-        {/if}
-
-        <!-- La ruta del registro cuelga de la versión: es lo que se pide junto con ella cuando algo
-             falla, y no merece un lugar propio en la barra. Hacer clic vuelve a preguntar por una
-             versión nueva sin esperar al próximo día. -->
-        <button
-          class="text-xs select-text muted"
-          title="{info.logDir ? `Registro en ${info.logDir}\n` : ''}Buscar una versión nueva"
-          onclick={() => updates.check(true)}
-        >
-          v{info.version}
-        </button>
-      {/if}
-    </div>
-  </header>
-
   {#if banner}
     <Alert tone="bad" onclose={() => (banner = null)}>{banner}</Alert>
   {/if}
 
-  {#if view.current === "monitor"}
-    {#if monitorServer}
-      <div class="min-h-0 flex-1">
-        {#key monitorServer}
-          <Dashboard profileId={monitorServer} />
-        {/key}
-      </div>
-    {:else}
-      <Empty
-        icon="server"
-        title="No hay ningún servidor conectado"
-        hint="El monitoreo lee las estadísticas en vivo de una conexión abierta."
-      >
-        <button class="btn btn-primary" onclick={() => view.show("explorer")}>
-          Ir al explorador
-        </button>
-      </Empty>
-    {/if}
-  {:else if view.current === "processes"}
-    <div class="min-h-0 flex-1">
-      <ProcessPanel />
-    </div>
-  {:else if view.current === "config"}
-    {#if configServer}
-      <div class="min-h-0 flex-1">
-        {#key configServer}
-          <ServerConfig profileId={configServer} />
-        {/key}
-      </div>
-    {:else}
-      <Empty
-        icon="server"
-        title="No hay ningún servidor conectado"
-        hint="La configuración se lee de una conexión abierta."
-      >
-        <button class="btn btn-primary" onclick={() => view.show("explorer")}>
-          Ir al explorador
-        </button>
-      </Empty>
-    {/if}
-  {:else}
-    <div class="flex min-h-0 flex-1">
-      {#if sidebarOpen}
-        <aside class="panel flex min-h-0 flex-col" style="width: {sidebarWidth}px">
-          <div class="flex items-center gap-1.5 px-2 py-2">
-            <div class="relative flex-1">
-              <Icon
-                name="search"
-                size={13}
-                class="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-zinc-400"
-              />
-              <input
-                class="field w-full py-1 pr-7 pl-7"
-                placeholder="Buscar"
-                title="Filtra lo que el árbol ya trajo. Enter busca en el servidor.
-Con prefijo se acota al tipo — {PREFIX_HELP}"
-                bind:value={explorer.search}
-                onkeydown={(event) => {
-                  if (event.key === "Escape") clearSearch();
-                  // Enter es lo que uno aprieta cuando el filtro no encontró lo que buscaba, así
-                  // que ahí es donde tiene que estar la búsqueda que sí alcanza todo el catálogo.
-                  if (event.key === "Enter") searchServer();
-                }}
-              />
-              {#if explorer.search}
-                <button
-                  class="btn btn-ghost btn-icon absolute top-1/2 right-0.5 size-6 -translate-y-1/2"
-                  aria-label="Limpiar la búsqueda"
-                  onclick={clearSearch}
-                >
-                  <Icon name="close" size={11} />
-                </button>
-              {/if}
-            </div>
-            <button
-              class="btn btn-icon"
-              title={searchTarget
-                ? `Buscar «${explorer.search}» en el catálogo de ${searchTarget.database}`
-                : "Elegí una base o un objeto del árbol para buscar en el servidor"}
-              aria-label="Buscar en el servidor"
-              disabled={!searchTarget || parseQuery(explorer.search).text === "" || explorer.searching}
-              onclick={searchServer}
-            >
-              <Icon name="compass" />
-            </button>
-            <button
-              class="btn btn-icon"
-              title="Nuevo servidor"
-              aria-label="Nuevo servidor"
-              onclick={() => (dialog = { profile: null })}
-            >
-              <Icon name="plus" />
-            </button>
+  <div class="flex min-h-0 flex-1">
+    <Rail onpreferences={() => (preferences = true)} />
 
-            <!--
-              Todo lo demás del árbol vive acá adentro. Eran siete controles repartidos entre la
-              barra y el pie del panel, en 300 píxeles de ancho: lo que se usa todos los días es
-              buscar y agregar un servidor, y el resto se abre cuando hace falta.
-            -->
-            <div class="relative">
+    {#if dock.sidebarOpen}
+      <aside
+        class="panel flex min-h-0 flex-col overflow-hidden"
+        style="width: {dock.sidebarWidth}px"
+      >
+        {#if view.pane === "explorer"}
+            <div class="flex items-center gap-1.5 px-2 py-2">
+              <div class="relative flex-1">
+                <Icon
+                  name="search"
+                  size={13}
+                  class="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-zinc-400"
+                />
+                <input
+                  class="field w-full py-1 pr-7 pl-7"
+                  placeholder="Buscar"
+                  title="Filtra lo que el árbol ya trajo. Enter busca en el servidor.
+  Con prefijo se acota al tipo — {PREFIX_HELP}"
+                  bind:value={explorer.search}
+                  onkeydown={(event) => {
+                    if (event.key === "Escape") clearSearch();
+                    // Enter es lo que uno aprieta cuando el filtro no encontró lo que buscaba, así
+                    // que ahí es donde tiene que estar la búsqueda que sí alcanza todo el catálogo.
+                    if (event.key === "Enter") searchServer();
+                  }}
+                />
+                {#if explorer.search}
+                  <button
+                    class="btn btn-ghost btn-icon absolute top-1/2 right-0.5 size-6 -translate-y-1/2"
+                    aria-label="Limpiar la búsqueda"
+                    onclick={clearSearch}
+                  >
+                    <Icon name="close" size={11} />
+                  </button>
+                {/if}
+              </div>
               <button
-                class="btn btn-icon"
-                title="Más opciones del árbol"
-                aria-label="Más opciones del árbol"
-                aria-expanded={treeMenu}
-                onclick={(event) => {
-                  event.stopPropagation();
-                  treeMenu = !treeMenu;
-                }}
+                class="btn btn-ghost btn-icon"
+                title={searchTarget
+                  ? `Buscar «${explorer.search}» en el catálogo de ${searchTarget.database}`
+                  : "Elegí una base o un objeto del árbol para buscar en el servidor"}
+                aria-label="Buscar en el servidor"
+                disabled={!searchTarget || parseQuery(explorer.search).text === "" || explorer.searching}
+                onclick={searchServer}
               >
-                <Icon name="dots" />
+                <Icon name="compass" />
+              </button>
+              <button
+                class="btn btn-ghost btn-icon"
+                title="Nuevo servidor"
+                aria-label="Nuevo servidor"
+                onclick={() => (dialog = { profile: null })}
+              >
+                <Icon name="plus" />
               </button>
 
-              {#if treeMenu}
-                <!-- svelte-ignore a11y_click_events_have_key_events -->
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <div
-                  class="card absolute top-full right-0 z-40 mt-1 min-w-60 p-1 text-sm shadow-lg"
-                  role="menu"
-                  tabindex="-1"
-                  onclick={(event) => event.stopPropagation()}
+              <!--
+                Todo lo demás del árbol vive acá adentro. Eran siete controles repartidos entre la
+                barra y el pie del panel, en 300 píxeles de ancho: lo que se usa todos los días es
+                buscar y agregar un servidor, y el resto se abre cuando hace falta.
+              -->
+              <div class="relative">
+                <button
+                  class="btn btn-ghost btn-icon"
+                  title="Más opciones del árbol"
+                  aria-label="Más opciones del árbol"
+                  aria-expanded={treeMenu}
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    treeMenu = !treeMenu;
+                  }}
                 >
-                  <button
-                    class="row-menu"
-                    onclick={() => {
-                      treeMenu = false;
-                      newGroupDialog = true;
-                    }}
-                  >
-                    <span class="flex items-center gap-2">
-                      <Icon name="folder" size={13} /> Nueva carpeta
-                    </span>
-                  </button>
-                  <button
-                    class="row-menu"
-                    onclick={() => {
-                      treeMenu = false;
-                      importDialog = true;
-                    }}
-                  >
-                    <span class="flex items-center gap-2">
-                      <Icon name="download" size={13} /> Importar servidores…
-                    </span>
-                  </button>
-                  <button
-                    class="row-menu"
-                    onclick={() => {
-                      treeMenu = false;
-                      explorer.collapseAll();
-                    }}
-                  >
-                    <span class="flex items-center gap-2">
-                      <Icon name="collapse" size={13} /> Contraer todo
-                    </span>
-                  </button>
+                  <Icon name="dots" />
+                </button>
 
-                  <div class="divider-t my-1"></div>
-
-                  <!-- Una ventana aparte, acotada a una carpeta: no reemplaza al árbol de acá, lo
-                       mira desde otro lado. El diálogo junta crear una nueva y reabrir una guardada,
-                       así que un solo botón alcanza. -->
-                  <button
-                    class="row-menu"
-                    onclick={() => {
-                      treeMenu = false;
-                      workspaceDialog = true;
-                    }}
+                {#if treeMenu}
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div
+                    class="card absolute top-full right-0 z-40 mt-1 min-w-60 p-1 text-sm shadow-lg"
+                    role="menu"
+                    tabindex="-1"
+                    onclick={(event) => event.stopPropagation()}
                   >
-                    <span class="flex items-center gap-2">
-                      <Icon name="window" size={13} /> Ventana de workspace…
-                    </span>
-                  </button>
-
-                  <div class="divider-t my-1"></div>
-
-                  <!-- Filtra sin releer nada del servidor: es cambiar qué se dibuja, no qué se
-                       cargó. -->
-                  <label class="check px-2 py-1" title="Esconde los servidores sin conectar">
-                    <input type="checkbox" bind:checked={explorer.onlyConnected} />
-                    Solo servidores conectados
-                  </label>
-                  <label class="check px-2 py-1">
-                    <input
-                      type="checkbox"
-                      checked={explorer.options.showSystemSchemas}
-                      onchange={(event) => {
-                        explorer.options = { showSystemSchemas: event.currentTarget.checked };
-                        explorer.reloadAll();
+                    <button
+                      class="row-menu"
+                      onclick={() => {
+                        treeMenu = false;
+                        newGroupDialog = true;
                       }}
-                    />
-                    Mostrar objetos del sistema
-                  </label>
-                </div>
-              {/if}
+                    >
+                      <span class="flex items-center gap-2">
+                        <Icon name="folder" size={13} /> Nueva carpeta
+                      </span>
+                    </button>
+                    <button
+                      class="row-menu"
+                      onclick={() => {
+                        treeMenu = false;
+                        importDialog = true;
+                      }}
+                    >
+                      <span class="flex items-center gap-2">
+                        <Icon name="download" size={13} /> Importar servidores…
+                      </span>
+                    </button>
+                    <button
+                      class="row-menu"
+                      onclick={() => {
+                        treeMenu = false;
+                        explorer.collapseAll();
+                      }}
+                    >
+                      <span class="flex items-center gap-2">
+                        <Icon name="collapse" size={13} /> Contraer todo
+                      </span>
+                    </button>
+
+                    <div class="divider-t my-1"></div>
+
+                    <!-- Una ventana aparte, acotada a una carpeta: no reemplaza al árbol de acá, lo
+                         mira desde otro lado. El diálogo junta crear una nueva y reabrir una guardada,
+                         así que un solo botón alcanza. -->
+                    <button
+                      class="row-menu"
+                      onclick={() => {
+                        treeMenu = false;
+                        workspaceDialog = true;
+                      }}
+                    >
+                      <span class="flex items-center gap-2">
+                        <Icon name="window" size={13} /> Ventana de workspace…
+                      </span>
+                    </button>
+
+                    <div class="divider-t my-1"></div>
+
+                    <!-- Filtra sin releer nada del servidor: es cambiar qué se dibuja, no qué se
+                         cargó. -->
+                    <label class="check px-2 py-1" title="Esconde los servidores sin conectar">
+                      <input type="checkbox" bind:checked={explorer.onlyConnected} />
+                      Solo servidores conectados
+                    </label>
+                    <label class="check px-2 py-1">
+                      <input
+                        type="checkbox"
+                        checked={explorer.options.showSystemSchemas}
+                        onchange={(event) => {
+                          explorer.options = { showSystemSchemas: event.currentTarget.checked };
+                          explorer.reloadAll();
+                        }}
+                      />
+                      Mostrar objetos del sistema
+                    </label>
+                  </div>
+                {/if}
+              </div>
             </div>
-          </div>
 
-          <div class="min-h-0 flex-1 px-1 pb-1">
-            <TreePanel
-              onconnect={connectById}
-              onnew={() => (dialog = { profile: null })}
-              onedit={editProfile}
-              onduplicate={duplicateProfile}
-              ondelete={(profileId) => (confirmDelete = profileOf(profileId))}
-              ongroup={(name) => (groupDialog = name)}
-              onquery={openQuery}
-              ondata={openData}
-              onerd={openErd}
-              oncompare={(source) => (compareSource = source)}
-            />
-          </div>
+            <div class="min-h-0 flex-1 px-1 pb-1">
+              <TreePanel
+                onconnect={connectById}
+                onnew={() => (dialog = { profile: null })}
+                onedit={editProfile}
+                onduplicate={duplicateProfile}
+                ondelete={(profileId) => (confirmDelete = profileOf(profileId))}
+                ongroup={(name) => (groupDialog = name)}
+                onquery={openQuery}
+                ondata={openData}
+                onerd={openErd}
+                oncompare={(source) => (compareSource = source)}
+              />
+            </div>
+        {:else if view.pane === "library"}
+          <LibraryPanel
+            profileId={contextServer}
+            database={queryTarget?.database ?? null}
+            onerror={(message) => (banner = message)}
+          />
+        {:else}
+          <ProcessPanel />
+        {/if}
+      </aside>
 
-        </aside>
-
-        <!--
-          El separador mide un píxel a la vista pero atrapa el mouse en seis: agarrar una línea de
-          un píxel es de las cosas más frustrantes de una interfaz de escritorio.
-        -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <!--
+        El separador mide un píxel a la vista pero atrapa el mouse en seis: agarrar una línea de
+        un píxel es de las cosas más frustrantes de una interfaz de escritorio.
+      -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="group relative w-px shrink-0 bg-zinc-200 dark:bg-zinc-700"
+        onmousedown={startResize}
+        ondblclick={() => dock.setSidebarWidth(SIDEBAR_DEFAULT)}
+        title="Arrastrá para cambiar el ancho; doble clic para restablecerlo"
+      >
         <div
-          class="group relative w-px shrink-0 bg-zinc-200 dark:bg-zinc-700"
-          onmousedown={startResize}
-          ondblclick={() => (sidebarWidth = DEFAULT_SIDEBAR)}
-          title="Arrastrá para cambiar el ancho; doble clic para restablecerlo"
-        >
-          <div
-            class="absolute inset-y-0 -left-[3px] w-[7px] cursor-col-resize
-                   transition-colors group-hover:bg-blue-500/40"
-          ></div>
-        </div>
-      {/if}
+          class="absolute inset-y-0 -left-[3px] w-[7px] cursor-col-resize
+                 transition-colors group-hover:bg-blue-500/40"
+        ></div>
+      </div>
+    {/if}
 
-      <main class="flex min-w-0 flex-1 flex-col">
+    <main class="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <!--
+        La tira de pestañas y, aparte, las acciones. Van en dos contenedores porque solo el primero
+        desplaza: con seis pestañas abiertas, el botón de «nueva consulta» se iba de pantalla justo
+        cuando más se lo usaba.
+      -->
+      <div class="divider-b flex items-stretch">
         <!-- `overflow-y-hidden`: sin eso, el subrayado de la pestaña activa desborda un píxel hacia
              abajo y el navegador dibuja una barra de desplazamiento vertical en toda la tira. -->
         <div
-          class="divider-b flex items-stretch gap-px overflow-x-auto overflow-y-hidden px-1 pt-1"
+          class="flex min-w-0 flex-1 items-stretch gap-px overflow-x-auto overflow-y-hidden px-1
+                 pt-1"
           role="tablist"
         >
-          <button
-            class="btn btn-ghost btn-icon mr-1 self-center"
-            title={sidebarOpen ? "Ocultar el árbol (Ctrl+B)" : "Mostrar el árbol (Ctrl+B)"}
-            aria-label={sidebarOpen ? "Ocultar el árbol" : "Mostrar el árbol"}
-            onclick={() => (sidebarOpen = !sidebarOpen)}
-          >
-            <Icon
-              name="chevron"
-              size={13}
-              class="transition-transform {sidebarOpen ? 'rotate-180' : ''}"
-            />
-          </button>
-
-          <div class="tab-wrap">
-            <button
-              class="tab"
-              role="tab"
-              aria-selected={tabs.active === null}
-              title="El objeto seleccionado en el árbol"
-              onclick={() => tabs.activate(null)}
-            >
-              <Icon name="compass" size={12} class="muted" />
-              Detalle
-            </button>
-          </div>
-
           {#each tabs.all as tab (tab.key)}
             <div class="tab-wrap">
               <button
                 class="tab pr-1"
                 role="tab"
                 aria-selected={tabs.active === tab.key}
-                title={`${tab.title} · ${serverName(tab.profileId)} / ${tab.database}`}
+                title={`${tab.title} · ${serverName(tab.profileId)}${tab.database ? ` / ${tab.database}` : ""}`}
                 onclick={() => tabs.activate(tab.key)}
                 onauxclick={(event) => {
                   // Botón del medio: cerrar, como en cualquier navegador.
@@ -903,11 +776,13 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
               </button>
             </div>
           {/each}
+        </div>
 
+        <div class="flex shrink-0 items-center gap-0.5 px-1">
           <!-- Abrir una consulta contra lo que ya se está mirando, sin volver al panel de detalle:
                era el camino de todos los días y son dos clics de más cada vez. -->
           <button
-            class="btn btn-ghost btn-icon ml-1 shrink-0 self-center"
+            class="btn btn-ghost btn-icon"
             disabled={queryTarget === null}
             aria-label="Nueva consulta"
             title={queryTarget
@@ -921,7 +796,7 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
           <!-- Guardar existía desde el principio; abrir, no. Un `.sql` que ya está en disco había
                que abrirlo en otro editor y pegarlo acá. -->
           <button
-            class="btn btn-ghost btn-icon shrink-0 self-center"
+            class="btn btn-ghost btn-icon"
             disabled={sqlTarget === null}
             aria-label="Abrir un archivo SQL"
             title={sqlTarget
@@ -931,89 +806,231 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
           >
             <Icon name="upload" size={13} />
           </button>
+
+          <span class="mx-1 h-4 w-px bg-zinc-200 dark:bg-zinc-700"></span>
+
+          <!-- Monitoreo y configuración abren contra el servidor en contexto. Eran dos vistas que
+               tapaban la pantalla y traían su propio selector de servidor; son dos pestañas más. -->
+          <button
+            class="btn btn-ghost btn-icon"
+            disabled={contextServer === null}
+            aria-label="Monitoreo"
+            title={contextServer
+              ? `Monitoreo de ${serverName(contextServer)}`
+              : "Conectá un servidor para ver su monitoreo"}
+            onclick={showMonitor}
+          >
+            <Icon name="chart" size={13} />
+          </button>
+          <button
+            class="btn btn-ghost btn-icon"
+            disabled={contextServer === null}
+            aria-label="Configuración del servidor"
+            title={contextServer
+              ? `Configuración de ${serverName(contextServer)}`
+              : "Conectá un servidor para ver su configuración"}
+            onclick={showConfig}
+          >
+            <Icon name="sliders" size={13} />
+          </button>
+
+          <span class="mx-1 h-4 w-px bg-zinc-200 dark:bg-zinc-700"></span>
+
+          <button
+            class="btn btn-ghost btn-icon {dock.inspectorOpen
+              ? 'text-blue-600 dark:text-blue-400'
+              : ''}"
+            aria-label="Inspector"
+            aria-pressed={dock.inspectorOpen}
+            title={dock.inspectorOpen
+              ? "Ocultar el inspector (Ctrl+I)"
+              : "Mostrar el inspector (Ctrl+I)"}
+            onclick={() => dock.toggleInspector()}
+          >
+            <Icon name="compass" size={13} />
+          </button>
+        </div>
+      </div>
+
+      {#snippet tabBody(tab: Tab)}
+        {#if tab instanceof QueryTab}
+          <QueryPanel {tab} />
+        {:else if tab instanceof DataTab}
+          <DataPanel {tab} />
+        {:else if tab instanceof ErdTab}
+          <ErdPanel {tab} />
+        {:else if tab instanceof CompareTab}
+          <ComparePanel {tab} />
+        {:else if tab instanceof MonitorTab}
+          <Dashboard profileId={tab.profileId} />
+        {:else if tab instanceof ConfigTab}
+          <ServerConfig profileId={tab.profileId} />
+        {/if}
+      {/snippet}
+
+      <div class="flex min-h-0 flex-1 flex-row">
+        <div
+          class="flex min-h-0 min-w-0 flex-col {tabs.split ? '' : 'flex-1'}"
+          style={tabs.split ? `flex: 0 0 ${splitView.ratio * 100}%` : ""}
+        >
+          {#if tabs.current}
+            {#key tabs.current.key}
+              {@render tabBody(tabs.current)}
+            {/key}
+          {:else}
+            <!-- Sin pestañas la ventana no está vacía: el objeto elegido se ve en el inspector, y
+                 acá van las tres cosas que se abren desde cero. -->
+            <Empty
+              icon="sql"
+              title="No hay ninguna pestaña abierta"
+              hint="Elegí algo en el árbol para verlo en el inspector, o abrí una consulta contra la base con la que estés trabajando."
+            >
+              <button class="btn btn-primary" disabled={queryTarget === null} onclick={newQuery}>
+                Nueva consulta
+              </button>
+              <button class="btn" disabled={contextServer === null} onclick={showMonitor}>
+                Monitoreo
+              </button>
+              <button class="btn" disabled={contextServer === null} onclick={showConfig}>
+                Configuración
+              </button>
+            </Empty>
+          {/if}
         </div>
 
-        {#snippet tabBody(tab: Tab)}
-          {#if tab instanceof QueryTab}
-            <QueryPanel {tab} />
-          {:else if tab instanceof DataTab}
-            <DataPanel {tab} />
-          {:else if tab instanceof ErdTab}
-            <ErdPanel {tab} />
-          {:else if tab instanceof CompareTab}
-            <ComparePanel {tab} />
-          {/if}
-        {/snippet}
-
-        <div class="flex min-h-0 flex-1 flex-row">
+        {#if tabs.split && splitTab}
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
-            class="flex min-h-0 min-w-0 flex-col {tabs.split ? '' : 'flex-1'}"
-            style={tabs.split ? `flex: 0 0 ${splitView.ratio * 100}%` : ""}
+            class="group relative h-full w-px shrink-0 bg-zinc-200 dark:bg-zinc-700"
+            onmousedown={startSplitResize}
+            ondblclick={() => splitView.reset()}
+            title="Arrastrá para repartir el espacio; doble clic para repartirlo por la mitad"
           >
-            {#if tabs.current}
-              {#key tabs.current.key}
-                {@render tabBody(tabs.current)}
-              {/key}
-            {:else}
-              <DetailPanel
-                onconnect={connectById}
-                onedit={editProfile}
-                ondelete={(profileId) => (confirmDelete = profileOf(profileId))}
-                ongroup={(name) => (groupDialog = name)}
-                onquery={openQuery}
-                ondata={openData}
-                onerd={openErd}
-                oncompare={(source) => (compareSource = source)}
-              />
-            {/if}
+            <div
+              class="absolute inset-y-0 -left-[3px] w-[7px] cursor-col-resize
+                     transition-colors group-hover:bg-blue-500/40"
+            ></div>
           </div>
 
-          {#if tabs.split && splitTab}
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div
-              class="group relative h-full w-px shrink-0 bg-zinc-200 dark:bg-zinc-700"
-              onmousedown={startSplitResize}
-              ondblclick={() => splitView.reset()}
-              title="Arrastrá para repartir el espacio; doble clic para repartirlo por la mitad"
-            >
-              <div
-                class="absolute inset-y-0 -left-[3px] w-[7px] cursor-col-resize
-                       transition-colors group-hover:bg-blue-500/40"
-              ></div>
-            </div>
+          <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+            {#key splitTab.key}
+              {@render tabBody(splitTab)}
+            {/key}
+          </div>
+        {/if}
+      </div>
+    </main>
 
-            <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-              {#key splitTab.key}
-                {@render tabBody(splitTab)}
-              {/key}
-            </div>
-          {/if}
+    {#if dock.inspectorOpen}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="group relative w-px shrink-0 bg-zinc-200 dark:bg-zinc-700"
+        onmousedown={startInspectorResize}
+        ondblclick={() => dock.setInspectorWidth(INSPECTOR_DEFAULT)}
+        title="Arrastrá para cambiar el ancho; doble clic para restablecerlo"
+      >
+        <div
+          class="absolute inset-y-0 -left-[3px] w-[7px] cursor-col-resize
+                 transition-colors group-hover:bg-blue-500/40"
+        ></div>
+      </div>
+
+      <!--
+        El inspector es el antiguo panel de «Detalle», que era una pestaña más. Como pestaña, mirar
+        las columnas de una tabla mientras se escribía la consulta que las usa costaba cambiar de
+        pestaña —y perder de vista el editor— cada vez. Acá sigue al árbol sin tapar nada.
+      -->
+      <aside
+        class="panel flex min-h-0 shrink-0 flex-col overflow-hidden"
+        style="width: {dock.inspectorWidth}px"
+        aria-label="Inspector"
+      >
+        <div class="divider-b flex h-8 shrink-0 items-center gap-2 px-2">
+          <Icon name="compass" size={12} class="muted" />
+          <span class="card-title">Detalle</span>
+          <button
+            class="btn btn-ghost btn-icon ml-auto"
+            aria-label="Ocultar el inspector"
+            title="Ocultar el inspector (Ctrl+I)"
+            onclick={() => dock.setInspector(false)}
+          >
+            <Icon name="close" size={11} />
+          </button>
         </div>
-      </main>
-    </div>
 
-    <!--
-      Barra de estado: dónde está parado uno. En una aplicación con árbol, pestañas y diálogos, el
-      nombre de una tabla no dice contra qué servidor se está trabajando, y esa es justo la
-      pregunta que conviene poder contestar sin hacer clic.
-    -->
-    <footer
-      class="panel divider-t flex h-6 shrink-0 items-center gap-2 px-3 text-[11px] muted"
-    >
-      {#if context}
-        <span class="dot {context.connected ? 'dot-on' : 'dot-off'}"></span>
-        <span class="font-medium text-zinc-600 dark:text-zinc-300">{context.server}</span>
-        {#if context.path}
-          <span class="truncate">{context.path}</span>
-        {/if}
-        {#if context.version}
-          <span class="ml-auto shrink-0">{context.version}</span>
-        {/if}
-      {:else}
-        <span>Elegí un objeto del árbol para ver su detalle.</span>
+        <div class="min-h-0 flex-1">
+          <DetailPanel
+            onconnect={connectById}
+            onedit={editProfile}
+            ondelete={(profileId) => (confirmDelete = profileOf(profileId))}
+            ongroup={(name) => (groupDialog = name)}
+            onquery={openQuery}
+            ondata={openData}
+            onerd={openErd}
+            oncompare={(source) => (compareSource = source)}
+          />
+        </div>
+      </aside>
+    {/if}
+  </div>
+
+  <!--
+    Barra de estado: dónde está parado uno. En una aplicación con árbol, pestañas y diálogos, el
+    nombre de una tabla no dice contra qué servidor se está trabajando, y esa es justo la pregunta
+    que conviene poder contestar sin hacer clic. Al sacar la barra de arriba, también es donde
+    quedaron la versión y el aviso de que hay una más nueva: son datos de la ventana, no acciones.
+  -->
+  <footer class="panel divider-t flex h-6 shrink-0 items-center gap-2 px-3 text-[11px] muted">
+    {#if context}
+      <span class="dot {context.connected ? 'dot-on' : 'dot-off'}"></span>
+      <span class="font-medium text-zinc-600 dark:text-zinc-300">{context.server}</span>
+      {#if context.path}
+        <span class="truncate">{context.path}</span>
       {/if}
-    </footer>
-  {/if}
+    {:else}
+      <span>Elegí un objeto del árbol para ver su detalle.</span>
+    {/if}
+
+    <div class="ml-auto flex shrink-0 items-center gap-3">
+      {#if connectedServers.length > 0}
+        <span class="flex items-center gap-1.5" title="Servidores conectados">
+          <span class="dot dot-on"></span>
+          {connectedServers.length}
+          {connectedServers.length === 1 ? "conectado" : "conectados"}
+        </span>
+      {/if}
+
+      {#if context?.version}
+        <span>{context.version}</span>
+      {/if}
+
+      {#if updates.release}
+        <!-- Aparece solo cuando hay algo más nuevo publicado. Es una pastilla y no un cartel: la
+             versión nueva no interrumpe lo que se estaba haciendo. -->
+        <button
+          class="tag-ok flex items-center gap-1"
+          title="pgforge {updates.release.version} está disponible"
+          onclick={() => (updates.showing = true)}
+        >
+          <Icon name="download" size={11} />
+          {updates.release.version}
+        </button>
+      {/if}
+
+      {#if info}
+        <!-- La ruta del registro cuelga de la versión: es lo que se pide junto con ella cuando algo
+             falla, y no merece un lugar propio. Hacer clic vuelve a preguntar por una versión nueva
+             sin esperar al próximo día. -->
+        <button
+          class="select-text"
+          title="{info.logDir ? `Registro en ${info.logDir}\n` : ''}Buscar una versión nueva"
+          onclick={() => updates.check(true)}
+        >
+          v{info.version}
+        </button>
+      {/if}
+    </div>
+  </footer>
 </div>
 
 {#if paletteOpen}
@@ -1021,6 +1038,8 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
     onnewquery={newQuery}
     onopensql={openSqlDialog}
     onnewserver={() => (dialog = { profile: null })}
+    onmonitor={showMonitor}
+    onconfig={showConfig}
     onconnect={connectById}
     onclose={() => (paletteOpen = false)}
   />
@@ -1054,6 +1073,10 @@ Con prefijo se acota al tipo — {PREFIX_HELP}"
 
 {#if updates.showing && info}
   <UpdateDialog current={info.version} onclose={() => (updates.showing = false)} />
+{/if}
+
+{#if preferences}
+  <Preferences onclose={() => (preferences = false)} />
 {/if}
 
 {#if importDialog}

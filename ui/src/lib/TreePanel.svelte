@@ -60,18 +60,25 @@
    * miles de tablas sigue dibujando solo lo que entra en pantalla.
    */
   const ROW_HEIGHT = 28;
-  const SERVER_HEIGHT = 42;
-  const SECTION_HEIGHT = 24;
+  const SERVER_HEIGHT = 50;
+  const SECTION_HEIGHT = 28;
   const OVERSCAN = 8;
 
-  /** Sangría por nivel y desde dónde arranca la primera, las dos en píxeles. */
-  const INDENT = 11;
+  /**
+   * Sangría por nivel y desde dónde arranca la primera, las dos en píxeles.
+   *
+   * Once píxeles alcanzaban para que la sangría existiera, no para que se leyera: con un servidor
+   * abierto, sus bases y la carpeta de roles quedaban a un pelo de distancia y no se veía qué
+   * colgaba de qué. Lo que cuesta el ancho extra lo devuelve la guía, que ahora se dibuja siempre.
+   */
+  const INDENT = 16;
   const INDENT_BASE = 6;
 
   /**
    * Si la fila agrupa en vez de nombrar algo: la carpeta de conexiones y las del catálogo («Tablas»,
    * «Índices»). Se dibujan como rótulo —versalita, sin ícono, con el contador a la derecha—, así que
-   * el ojo separa contenedor de objeto por la forma y no por el color de un ícono de carpeta.
+   * el ojo separa contenedor de objeto por la forma y no por el color de un ícono de carpeta. Sin
+   * ícono pero **con su columna**: el rótulo arranca donde arrancan los nombres de sus hermanos.
    */
   const isSection = (row: Row) =>
     row.kind === "group" || (row.node !== null && folderOf(row.node.kind) !== null);
@@ -813,16 +820,19 @@
         >
           <!--
             Guías de indentación: saber de qué esquema cuelga una tabla no debería requerir contar
-            sangrías con el dedo. Se dibuja solo la cadena de la fila elegida —dibujarlas todas deja
-            cinco rayas fijas por fila, que es ruido permanente por una pregunta ocasional—.
+            sangrías con el dedo. Se dibujan **todas**, tenues, y la cadena de la fila elegida
+            —`guideSpans`— encima con más contraste. Antes solo se dibujaba esa cadena, y sin ella
+            un servidor abierto era una lista plana en la que las bases, la carpeta de roles y los
+            esquemas de una base parecían todos hermanos: es la pregunta de siempre, no una
+            ocasional, así que la línea se paga y se deja fija.
           -->
           {#each { length: row.level }, depth (depth)}
-            {#if guideAt(guides, at, depth)}
-              <span
-                class="pointer-events-none absolute inset-y-0 w-px bg-zinc-300 dark:bg-zinc-600"
-                style="left: {INDENT_BASE + depth * INDENT + 8}px"
-              ></span>
-            {/if}
+            <span
+              class="pointer-events-none absolute inset-y-0 w-px {guideAt(guides, at, depth)
+                ? 'bg-zinc-400 dark:bg-zinc-500'
+                : 'bg-zinc-200 dark:bg-zinc-700'}"
+              style="left: {INDENT_BASE + depth * INDENT + 8}px"
+            ></span>
           {/each}
 
           <!--
@@ -886,12 +896,24 @@
             El punto de conexión va encima del ícono del servidor y no antes: como columna propia
             corría los íconos de las raíces media pulgada respecto de todo el resto del árbol.
           -->
-          {#if !section}
-            <span class="relative grid shrink-0 place-items-center">
-              <Icon name={look.icon} class={look.tone} />
+          {#if section}
+            <!--
+              La sección sigue sin ícono, pero **ocupa su columna**: sin el hueco, el rótulo de
+              «Roles» arrancaba veinte píxeles a la izquierda del nombre de la base que tiene al
+              lado, y dos filas hermanas que empiezan en dos columnas distintas se leen como si una
+              colgara de la otra.
+            -->
+            <span class="w-3.5 shrink-0"></span>
+          {:else}
+            <span
+              class="relative grid shrink-0 place-items-center {isServer
+                ? 'size-6 rounded-md bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400'
+                : ''}"
+            >
+              <Icon name={look.icon} class={isServer ? "" : look.tone} size={14} />
               {#if isServer}
                 <span
-                  class="dot absolute -right-1 -bottom-0.5 ring-2 ring-zinc-50 dark:ring-zinc-900
+                  class="dot absolute -right-1 -bottom-1 ring-2 ring-zinc-50 dark:ring-zinc-900
                          {row.down ? 'dot-down' : row.connected ? 'dot-on' : 'dot-off'}"
                   title={row.down
                     ? "El servidor dejó de responder"
@@ -912,7 +934,7 @@
           <span class="flex min-w-0 flex-1 flex-col justify-center gap-px">
             <span class="flex min-w-0 items-center gap-1.5">
               <span
-                class="min-w-0 truncate {isServer ? 'font-medium' : ''}
+                class="min-w-0 truncate {isServer ? 'text-[13px] font-semibold' : ''}
                        {section ? 'text-[11px] font-semibold tracking-wide uppercase' : ''}
                        {section && !isSelected ? 'muted' : ''}"
                 title={row.comment ?? row.label}

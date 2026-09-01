@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ago, bytes, count, decimal, duration, oneLine, percent } from "./format";
+import { ago, boolText, bytes, count, decimal, duration, isBoolType, oneLine, percent } from "./format";
 
 /**
  * Los formatos del dashboard se leen de un vistazo, y el caso que importa es el borde: un cero, un
@@ -75,5 +75,34 @@ describe("oneLine", () => {
   it("corta con puntos suspensivos y no a la mitad de la celda", () => {
     expect(oneLine("abcdefghij", 4)).toBe("abcd…");
     expect(oneLine("abcd", 4)).toBe("abcd");
+  });
+});
+
+describe("boolText", () => {
+  it("traduce lo que manda el servidor", () => {
+    expect(boolText("t")).toBe("true");
+    expect(boolText("f")).toBe("false");
+  });
+
+  it("acepta también la forma larga y no distingue mayúsculas", () => {
+    expect(boolText("TRUE")).toBe("true");
+    expect(boolText(" false ")).toBe("false");
+  });
+
+  it("lo que no es booleano se muestra tal cual", () => {
+    expect(boolText("otra cosa")).toBe("otra cosa");
+  });
+});
+
+describe("isBoolType", () => {
+  it("reconoce los dos nombres del tipo", () => {
+    expect(isBoolType("bool")).toBe(true);
+    expect(isBoolType("BOOLEAN")).toBe(true);
+  });
+
+  it("no confunde otros tipos ni la ausencia de tipo", () => {
+    expect(isBoolType("text")).toBe(false);
+    expect(isBoolType(null)).toBe(false);
+    expect(isBoolType(undefined)).toBe(false);
   });
 });

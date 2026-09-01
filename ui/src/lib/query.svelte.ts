@@ -162,10 +162,12 @@ export class QueryTab extends Tab {
    * Los tipos de las columnas del resultado, cuando se piden.
    *
    * No vienen con las filas: el resultado viaja como texto y el protocolo simple no trae los tipos
-   * (ver `sql::exec`). Saberlos cuesta preparar la sentencia de nuevo en el servidor, así que se
-   * pide solo con el interruptor encendido y no en cada ejecución.
+   * (ver `sql::exec`). Saberlos cuesta preparar la sentencia de nuevo en el servidor —una vuelta
+   * más, sin ejecutar nada—, y aun así viene **encendido**: al leer un resultado, si esa columna es
+   * un `numeric` o un `text` cambia lo que dice, y averiguarlo con el interruptor apagado obligaba
+   * a acordarse de que existía. El interruptor queda para apagarlo, no para prenderlo.
    */
-  showTypes = $state(false);
+  showTypes = $state(true);
   columnTypes = $state.raw<string[] | null>(null);
   /** Cuál de los resultados se está mirando, cuando el script devolvió más de uno. */
   shown = $state(0);

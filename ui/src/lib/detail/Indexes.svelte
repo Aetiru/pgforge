@@ -39,47 +39,49 @@
   {/snippet}
 
   {#if indexes}
-    <table class="list-table">
-      <thead>
-        <tr>
-          <th class="w-px whitespace-nowrap">Nombre</th>
-          <th class="w-full">Definición</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each indexes as index (index.oid)}
-          <tr class="group">
-            <td class="w-px font-medium whitespace-nowrap">
-              {index.name}
-              {#if index.primary}
-                <span class="tag tag-info ml-1">primario</span>
-              {:else if index.unique}
-                <span class="tag tag-info ml-1">único</span>
-              {/if}
-              {#if !index.valid}
-                <span class="tag tag-bad ml-1">inválido</span>
-              {/if}
-            </td>
-            <td class="max-w-0 truncate font-mono text-xs muted" title={index.definition}>
-              {index.definition}
-            </td>
-            <td class="w-16">
-              <div class="row-actions">
-                <button
-                  class="btn btn-danger-ghost btn-icon size-6"
-                  title="Eliminar el índice"
-                  aria-label="Eliminar el índice"
-                  {...blocked}
-                  onclick={() => ondrop(index.name)}
-                >
-                  <Icon name="trash" size={12} />
-                </button>
-              </div>
-            </td>
+    <div class="table-scroll">
+      <table class="list-table">
+        <thead>
+          <tr>
+            <th class="w-px whitespace-nowrap">Nombre</th>
+            <th class="w-full">Definición</th>
+            <th></th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each indexes as index (index.oid)}
+            <tr class="group">
+              <td class="w-px font-medium whitespace-nowrap">
+                {index.name}
+                {#if index.primary}
+                  <span class="tag tag-info ml-1">primario</span>
+                {:else if index.unique}
+                  <span class="tag tag-info ml-1">único</span>
+                {/if}
+                {#if !index.valid}
+                  <span class="tag tag-bad ml-1">inválido</span>
+                {/if}
+              </td>
+              <td class="max-w-0 truncate font-mono text-xs muted" title={index.definition}>
+                {index.definition}
+              </td>
+              <td class="w-16">
+                <div class="row-actions">
+                  <button
+                    class="btn btn-danger-ghost btn-icon size-6"
+                    title="Eliminar el índice"
+                    aria-label="Eliminar el índice"
+                    {...blocked}
+                    onclick={() => ondrop(index.name)}
+                  >
+                    <Icon name="trash" size={12} />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
   {/if}
 </Card>

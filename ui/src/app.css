@@ -35,6 +35,11 @@ body {
   /* La ventana es una aplicación, no una página: nada de rebote ni de selección accidental. */
   overscroll-behavior: none;
   user-select: none;
+  /* Y tampoco barras de desplazamiento del documento: todo lo que desborda lo resuelve el panel
+     que lo contiene. Sin esto, un contenido más ancho que su panel —la tira de secciones del
+     inspector, una tabla de privilegios— corría la ventana entera de costado y se llevaba puestas
+     la barra de estado y la pestaña activa. */
+  overflow: hidden;
 }
 
 /* Lo que sí se puede seleccionar (SQL, DDL, valores) lo pide explícitamente con `select-text`. */
@@ -189,6 +194,17 @@ body {
     dark:bg-transparent dark:hover:bg-zinc-700 dark:hover:text-zinc-100;
 }
 
+/* Interruptor de una barra: el estado encendido se ve por el fondo y el color, no por una casilla
+   con su rótulo al lado. Dos casillas con texto en una barra de doce acciones pesaban más que todo
+   lo que tenían alrededor; el nombre pasó al `title`, que es donde ya estaba la explicación.
+   `aria-selected` va junto a `aria-pressed`: una solapa elegida y un interruptor encendido se ven
+   igual, aunque para el lector de pantalla no sean lo mismo. */
+.btn-toggle[aria-pressed="true"],
+.btn-toggle[aria-selected="true"] {
+  @apply bg-blue-100 text-blue-700 hover:bg-blue-200 hover:text-blue-800
+    dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900 dark:hover:text-blue-200;
+}
+
 .btn-icon {
   @apply grid size-7 place-items-center rounded-md p-0;
 }
@@ -223,6 +239,32 @@ input[type="password"]::-ms-clear {
 /* Etiqueta de campo en los formularios de los diálogos. */
 .label {
   @apply text-xs font-medium text-zinc-600 dark:text-zinc-400;
+}
+
+/* Riel de la izquierda: un botón por panel lateral, siempre a la vista. La marca del elegido va
+   además como barra en el borde de afuera: con solo el fondo, el panel abierto y el que uno está
+   por abrir se distinguían por un tono de gris. */
+.rail-item {
+  @apply relative flex size-9 items-center justify-center rounded-lg text-zinc-500
+    transition-colors hover:bg-zinc-200/70 hover:text-zinc-900 dark:text-zinc-400
+    dark:hover:bg-zinc-700 dark:hover:text-zinc-100;
+}
+
+.rail-item[aria-selected="true"] {
+  @apply bg-white text-blue-600 shadow-sm dark:bg-zinc-700 dark:text-blue-400;
+}
+
+.rail-item[aria-selected="true"]::before {
+  @apply absolute -left-[7px] h-5 w-0.5 rounded-full bg-blue-600 dark:bg-blue-400;
+  content: "";
+}
+
+/* Un contador encima de un ícono: cuántos procesos corren, cuántos errores tiene el script. Va
+   encima y no al lado porque el ícono ya no tiene rótulo con el que compartir la línea; el botón
+   que lo lleva tiene que ser `relative`. */
+.badge-count {
+  @apply absolute -top-1 -right-1 min-w-4 rounded-full bg-blue-600 px-1 text-center text-[9px]
+    leading-4 font-semibold text-white;
 }
 
 /* Control segmentado: la forma más compacta de mostrar unas pocas vistas excluyentes. */
@@ -404,6 +446,25 @@ input[type="password"]::-ms-clear {
    -------------------------------------------------------------------------- */
 
 /* Tabla de una tarjeta: encabezado tenue, filas separadas y acciones que aparecen al pasar. */
+/* La tarjeta de una sección recorta lo que se le sale —es lo que le redondea las esquinas—, así
+   que una tabla más ancha que ella perdía sus últimas columnas por el borde derecho en vez de
+   desplazarse. Se nota recién con el panel angosto, que es la medida normal del inspector. */
+.table-scroll {
+  @apply w-full overflow-x-auto;
+}
+
+/* La fila y la celda de la grilla.
+   Lo que no cambia nunca sale de la plantilla y se escribe una sola vez acá. No es prolijidad sino
+   velocidad: al desplazar, la grilla rearma la cadena de clases de cada celda dibujada en cada
+   cuadro, y de los ocho pedazos que tenía esa cadena, siete eran siempre los mismos. */
+.grid-row {
+  @apply flex hover:bg-blue-50 dark:hover:bg-zinc-700;
+}
+
+.grid-cell {
+  @apply shrink-0 truncate border-r border-zinc-200/70 px-2 py-0.5 dark:border-zinc-700/70;
+}
+
 .list-table {
   @apply w-full text-left text-sm;
 }
@@ -497,7 +558,11 @@ input[type="password"]::-ms-clear {
   --cm-caret: var(--color-blue-400);
   --cm-selection: color-mix(in srgb, var(--color-blue-400) 28%, transparent);
   --cm-active-line: color-mix(in srgb, var(--color-zinc-400) 8%, transparent);
-  --cm-active-statement: color-mix(in srgb, var(--color-blue-400) 10%, transparent);
+  --cm-active-statement: color-mix(
+    in srgb,
+    var(--color-blue-400) 10%,
+    transparent
+  );
   --cm-error: var(--color-rose-400);
   --cm-tooltip-bg: var(--color-zinc-800);
   --cm-tooltip-border: var(--color-zinc-600);

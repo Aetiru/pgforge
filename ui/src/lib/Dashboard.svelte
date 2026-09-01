@@ -6,7 +6,7 @@
   import Confirm from "./Confirm.svelte";
   import DataGrid, { type Column } from "./DataGrid.svelte";
   import Empty from "./Empty.svelte";
-  import Icon from "./Icon.svelte";
+  import Icon, { type IconName } from "./Icon.svelte";
   import MaintenanceDialog from "./MaintenanceDialog.svelte";
   import { ago, bytes, count, decimal, duration, oneLine, percent } from "./format";
   import {
@@ -35,7 +35,6 @@
   import { monitor } from "./monitor.svelte";
   import { confirmMutation } from "./access.svelte";
   import { openQuery } from "./query.svelte";
-  import { view } from "./view.svelte";
   import { explorer } from "./explorer.svelte";
   import { untrack } from "svelte";
 
@@ -147,31 +146,42 @@
     return [
       {
         label: "Conexiones",
+        icon: "plug" as const,
         value: `${metrics.totalConnections} / ${metrics.maxConnections}`,
         tone: nearLimit ? "bad" : null,
         hint: nearLimit ? "cerca del máximo configurado" : null,
       },
-      { label: "Activas", value: String(metrics.activeConnections), tone: null, hint: null },
+      {
+        label: "Activas",
+        icon: "play" as const,
+        value: String(metrics.activeConnections),
+        tone: null,
+        hint: null,
+      },
       {
         label: "Inactivas en transacción",
+        icon: "pin" as const,
         value: String(metrics.idleInTransaction),
         tone: metrics.idleInTransaction > 0 ? "warn" : null,
         hint: metrics.idleInTransaction > 0 ? "retienen candados sin trabajar" : null,
       },
       {
         label: "Esperando",
+        icon: "lock" as const,
         value: String(metrics.waitingConnections),
         tone: metrics.waitingConnections > 0 ? "bad" : null,
         hint: metrics.waitingConnections > 0 ? "bloqueadas por otra sesión" : null,
       },
       {
         label: "Transacciones/s",
+        icon: "gauge" as const,
         value: decimal(metrics.transactionsPerSecond),
         tone: null,
         hint: null,
       },
       {
         label: "Transacción más vieja",
+        icon: "clock" as const,
         value: duration(metrics.longestTransactionSeconds),
         tone: null,
         hint: null,
@@ -187,6 +197,11 @@
   const TILE_EDGE: Record<string, string> = {
     bad: "border-l-rose-500",
     warn: "border-l-amber-500",
+  };
+
+  const TILE_ICON_TONE: Record<string, string> = {
+    bad: "bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400",
+    warn: "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400",
   };
 
   const times = $derived(monitor.history.map((sample) => sample.time));
@@ -535,7 +550,6 @@
     try {
       const tab = await openQuery(profileId, target ?? database ?? "", "Consulta");
       tab.sql = sql;
-      view.show("explorer");
     } catch (error) {
       actionMessage = describeError(error);
     }
@@ -585,14 +599,14 @@
     },
   ];
 
-  const TABS: { value: Tab; label: string }[] = [
-    { value: "sesiones", label: "Sesiones" },
-    { value: "bloqueos", label: "Bloqueos" },
-    { value: "tablas", label: "Tablas" },
-    { value: "indices", label: "Índices" },
-    { value: "duplicados", label: "Índices de más" },
-    { value: "bloat", label: "Bloat" },
-    { value: "consultas", label: "Consultas lentas" },
+  const TABS: { value: Tab; label: string; icon: IconName }[] = [
+    { value: "sesiones", label: "Sesiones", icon: "gauge" },
+    { value: "bloqueos", label: "Bloqueos", icon: "lock" },
+    { value: "tablas", label: "Tablas", icon: "table" },
+    { value: "indices", label: "Índices", icon: "index" },
+    { value: "duplicados", label: "Índices de más", icon: "compare" },
+    { value: "bloat", label: "Bloat", icon: "warn" },
+    { value: "consultas", label: "Consultas lentas", icon: "sql" },
   ];
 
   const bloatColumns: Column<TableBloat>[] = [
@@ -639,7 +653,7 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <div class="divider-b flex flex-wrap items-center gap-3 px-3 py-2">
+  <div class="toolbar">
     <div class="seg" role="tablist">
       {#each TABS as item (item.value)}
         <button
@@ -648,6 +662,7 @@
           aria-selected={tab === item.value}
           onclick={() => (tab = item.value)}
         >
+          <Icon name={item.icon} size={12} />
           {item.label}
           {#if item.value === "bloqueos" && blocked > 0}
             <span class="tag tag-bad px-1 py-0 text-[10px]">{blocked}</span>
@@ -655,6 +670,10 @@
         </button>
       {/each}
     </div>
+
+    {#if databases.length > 1 || database}
+      <span class="toolbar-sep"></span>
+    {/if}
 
     {#if databases.length > 1}
       <label class="check" title="Base cuyas tablas, índices y sentencias se muestran">
@@ -677,11 +696,14 @@
         title={`VACUUM, ANALYZE o REINDEX sobre toda la base ${database}`}
         onclick={() => (maintenanceTarget = { kind: "database", name: database! })}
       >
+        <Icon name="gauge" size={12} />
         Mantenimiento de la base
       </button>
     {/if}
 
-    <label class="check ml-auto">
+    <span class="ml-auto"></span>
+
+    <label class="check">
       <input
         type="checkbox"
         checked={monitor.filter.includeIdle}
@@ -700,6 +722,8 @@
       />
       Procesos internos
     </label>
+
+    <span class="toolbar-sep"></span>
 
     <label class="check">
       <Icon name="refresh" size={11} />
@@ -731,83 +755,149 @@
     </Alert>
   {/if}
 
-  {#if metrics}
-    <div class="grid grid-cols-2 gap-2 px-3 py-3 md:grid-cols-3 xl:grid-cols-6">
-      {#each tiles as tile (tile.label)}
-        <div class="card border-l-4 px-3 py-2 {tile.tone ? TILE_EDGE[tile.tone] : 'border-l-transparent'}">
-          <div class="truncate text-xs muted" title={tile.label}>{tile.label}</div>
-          <div class="font-mono text-xl tabular-nums {tile.tone ? TILE_TONE[tile.tone] : ''}">
-            {tile.value}
-          </div>
-          {#if tile.hint}
-            <div class="truncate text-[11px] {tile.tone ? TILE_TONE[tile.tone] : ''}" title={tile.hint}>
-              {tile.hint}
+  <div class="bg-zinc-50/70 dark:bg-black/15">
+    {#if metrics}
+      <div
+        class="grid gap-3 px-4 py-4"
+        style="grid-template-columns: repeat(auto-fit, minmax(178px, 1fr))"
+      >
+        {#each tiles as tile (tile.label)}
+          <div
+            class="card flex items-start gap-3 overflow-hidden rounded-xl px-3.5 py-3
+              shadow-sm transition-shadow hover:shadow-md {tile.tone
+              ? TILE_EDGE[tile.tone]
+              : 'border-l-4 border-l-transparent'}"
+          >
+            <span
+              class="grid size-8 shrink-0 place-items-center rounded-lg ring-4 {tile.tone
+                ? `${TILE_ICON_TONE[tile.tone]} ring-current/10`
+                : 'bg-blue-50 text-blue-600 ring-blue-500/10 dark:bg-blue-950/50 dark:text-blue-400'}"
+            >
+              <Icon name={tile.icon} size={15} />
+            </span>
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-[11px] font-medium tracking-wide muted" title={tile.label}>
+                {tile.label}
+              </div>
+              <div
+                class="font-mono text-xl leading-tight font-semibold tabular-nums {tile.tone
+                  ? TILE_TONE[tile.tone]
+                  : ''}"
+              >
+                {tile.value}
+              </div>
+              {#if tile.hint}
+                <div
+                  class="mt-0.5 truncate text-[10.5px] {tile.tone ? TILE_TONE[tile.tone] : 'muted'}"
+                  title={tile.hint}
+                >
+                  {tile.hint}
+                </div>
+              {/if}
             </div>
-          {/if}
+          </div>
+        {/each}
+      </div>
+    {:else}
+      <div class="flex items-center gap-2 px-4 py-4 text-sm muted">
+        <span class="spinner"></span> Tomando la primera muestra…
+      </div>
+    {/if}
+
+    {#if tab === "sesiones"}
+      <div class="px-4 pb-4">
+        <div class="card overflow-hidden rounded-xl shadow-sm">
+          <div class="card-head justify-between">
+            <span class="card-title flex items-center gap-1.5">
+              <span class="relative flex size-1.5">
+                <span
+                  class="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75"
+                ></span>
+                <span class="relative inline-flex size-1.5 rounded-full bg-emerald-500"></span>
+              </span>
+              Actividad en vivo
+            </span>
+            <span class="text-[11px] muted">muestra cada {monitor.intervalMs / 1000}s</span>
+          </div>
+          <div class="grid grid-cols-2 divide-x divide-zinc-200 xl:grid-cols-4 dark:divide-zinc-700">
+            <Chart label="Conexiones" data={connectionsSeries} />
+            <Chart label="Activas" data={activeSeries} color="#f59e0b" />
+            <Chart
+              label="Transacciones/s"
+              data={tpsSeries}
+              color="#10b981"
+              formatValue={oneDecimal}
+            />
+            <Chart
+              label="Aciertos de caché"
+              data={cacheSeries}
+              color="#8b5cf6"
+              formatValue={asPercent}
+              formatTick={oneDecimal}
+            />
+          </div>
         </div>
-      {/each}
-    </div>
-  {:else}
-    <div class="flex items-center gap-2 px-3 py-3 text-sm muted">
-      <span class="spinner"></span> Tomando la primera muestra…
-    </div>
-  {/if}
+      </div>
+    {/if}
+  </div>
 
   {#if tab === "sesiones"}
-    <div class="grid grid-cols-2 gap-2 px-3 pb-2 xl:grid-cols-4">
-      <Chart label="Conexiones" data={connectionsSeries} />
-      <Chart label="Activas" data={activeSeries} color="#f59e0b" />
-      <Chart label="Transacciones/s" data={tpsSeries} color="#10b981" formatValue={oneDecimal} />
-      <Chart
-        label="Aciertos de caché"
-        data={cacheSeries}
-        color="#8b5cf6"
-        formatValue={asPercent}
-        formatTick={oneDecimal}
-      />
-    </div>
-
     {#if selected}
-      <div class="divider-t divider-b flex flex-wrap items-center gap-2 bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-800/60">
-        <span class="tag tag-neutral font-mono">PID {selected.pid}</span>
-        <span class="truncate text-xs muted">
-          {selected.user ?? "?"}@{selected.database ?? "?"}
-          {#if selected.state}· {selected.state}{/if}
-        </span>
-
-        {#if locks.length > 0}
-          <span class="truncate text-xs muted" title="Candados que tiene o espera esta sesión">
-            candados: {locks
-              .map((lock) => `${lock.mode}${lock.granted ? "" : " (esperando)"}`)
-              .join(", ")}
+      <div class="px-4 pb-3">
+        <div
+          class="card flex flex-wrap items-center gap-3 rounded-xl border-blue-200 bg-blue-50/70 px-3.5
+            py-2.5 text-sm shadow-sm dark:border-blue-900/60 dark:bg-blue-950/30"
+        >
+          <span
+            class="grid size-8 shrink-0 place-items-center rounded-full bg-blue-600 font-mono text-[11px]
+              font-bold text-white shadow-sm shadow-blue-600/30"
+          >
+            {selected.pid.toString().slice(-3)}
           </span>
-        {/if}
+          <div class="min-w-0">
+            <div class="flex items-center gap-1.5 font-mono text-xs font-medium">
+              PID {selected.pid}
+            </div>
+            <div class="truncate text-xs muted">
+              {selected.user ?? "?"}@{selected.database ?? "?"}
+              {#if selected.state}· {selected.state}{/if}
+            </div>
+          </div>
 
-        {#if selected.isMonitor}
-          <span class="tag tag-info ml-auto">es la sesión del propio monitor</span>
-        {:else}
-          <span class="ml-auto flex gap-1.5">
-            <!-- Mirar qué está corriendo y poder explicarlo son el mismo movimiento; hasta ahora
-                 había que copiar el texto a mano de la celda. -->
-            {#if selected.query}
-              <button class="btn btn-sm" onclick={() => openInQuery(selected.query ?? "", selected.database)}>
-                Abrir en una consulta
+          {#if locks.length > 0}
+            <span class="truncate text-xs muted" title="Candados que tiene o espera esta sesión">
+              candados: {locks
+                .map((lock) => `${lock.mode}${lock.granted ? "" : " (esperando)"}`)
+                .join(", ")}
+            </span>
+          {/if}
+
+          {#if selected.isMonitor}
+            <span class="tag tag-neutral ml-auto">es la sesión del propio monitor</span>
+          {:else}
+            <span class="ml-auto flex gap-1.5">
+              <!-- Mirar qué está corriendo y poder explicarlo son el mismo movimiento; hasta ahora
+                   había que copiar el texto a mano de la celda. -->
+              {#if selected.query}
+                <button class="btn btn-sm" onclick={() => openInQuery(selected.query ?? "", selected.database)}>
+                  Abrir en una consulta
+                </button>
+              {/if}
+              <button
+                class="btn btn-sm"
+                onclick={() => (confirming = { pid: selected.pid, kind: "cancel" })}
+              >
+                Cancelar consulta
               </button>
-            {/if}
-            <button
-              class="btn btn-sm"
-              onclick={() => (confirming = { pid: selected.pid, kind: "cancel" })}
-            >
-              Cancelar consulta
-            </button>
-            <button
-              class="btn btn-sm btn-danger-ghost"
-              onclick={() => (confirming = { pid: selected.pid, kind: "terminate" })}
-            >
-              Terminar sesión
-            </button>
-          </span>
-        {/if}
+              <button
+                class="btn btn-sm btn-danger-ghost"
+                onclick={() => (confirming = { pid: selected.pid, kind: "terminate" })}
+              >
+                Terminar sesión
+              </button>
+            </span>
+          {/if}
+        </div>
       </div>
     {/if}
 
@@ -853,194 +943,254 @@
       {/if}
     </div>
   {:else if tab === "tablas"}
-    <div class="divider-t divider-b flex items-center gap-2 px-3 py-2">
-      <span class="text-xs muted">
-        La proporción de tuplas muertas es una estimación sobre los contadores de estadísticas, no
-        una medición del espacio desperdiciado.
-      </span>
-      <button
-        class="btn ml-auto"
-        disabled={!selectedTable}
-        title={selectedTable
-          ? `VACUUM, ANALYZE o REINDEX sobre ${selectedTable.schema}.${selectedTable.table}`
-          : "Elegí una tabla de la lista"}
-        onclick={() =>
-          selectedTable &&
-          (maintenanceTarget = {
-            kind: "table",
-            schema: selectedTable.schema,
-            name: selectedTable.table,
-          })}
-      >
-        Mantenimiento
-      </button>
-    </div>
-    <div class="min-h-0 flex-1">
-      <DataGrid
-        columns={tableColumns}
-        rows={tables}
-        rowKey={(table) => `${table.schema}.${table.table}`}
-        selectedKey={selectedTable ? `${selectedTable.schema}.${selectedTable.table}` : null}
-        onselect={(table) => (selectedTable = table)}
-        sortable
-        empty="No hay estadísticas de tablas en esta base."
-      />
+    <div class="flex min-h-0 flex-1 flex-col bg-zinc-50/70 px-4 py-4 dark:bg-black/15">
+      <div class="card flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl shadow-sm">
+        <div class="card-head justify-between">
+          <span class="card-title flex items-center gap-1.5">
+            <Icon name="table" size={13} />
+            Estadísticas de tablas
+          </span>
+          <span class="tag tag-neutral font-mono">{count(tables.length)}</span>
+        </div>
+        <div class="toolbar divider-b">
+          <span class="text-xs muted">
+            La proporción de tuplas muertas es una estimación sobre los contadores de estadísticas,
+            no una medición del espacio desperdiciado.
+          </span>
+          <button
+            class="btn btn-sm ml-auto"
+            disabled={!selectedTable}
+            title={selectedTable
+              ? `VACUUM, ANALYZE o REINDEX sobre ${selectedTable.schema}.${selectedTable.table}`
+              : "Elegí una tabla de la lista"}
+            onclick={() =>
+              selectedTable &&
+              (maintenanceTarget = {
+                kind: "table",
+                schema: selectedTable.schema,
+                name: selectedTable.table,
+              })}
+          >
+            <Icon name="gauge" size={12} />
+            Mantenimiento
+          </button>
+        </div>
+        <div class="min-h-0 flex-1">
+          <DataGrid
+            columns={tableColumns}
+            rows={tables}
+            rowKey={(table) => `${table.schema}.${table.table}`}
+            selectedKey={selectedTable ? `${selectedTable.schema}.${selectedTable.table}` : null}
+            onselect={(table) => (selectedTable = table)}
+            sortable
+            empty="No hay estadísticas de tablas en esta base."
+          />
+        </div>
+      </div>
     </div>
   {:else if tab === "indices"}
-    <div class="divider-t divider-b flex items-center gap-2 px-3 py-2">
-      <span class="text-xs muted">
-        Un índice que nunca se usó o que quedó inválido se reconstruye con REINDEX.
-      </span>
-      <button
-        class="btn ml-auto"
-        disabled={!selectedIndex}
-        title={selectedIndex
-          ? `REINDEX sobre ${selectedIndex.schema}.${selectedIndex.index}`
-          : "Elegí un índice de la lista"}
-        onclick={() =>
-          selectedIndex &&
-          (maintenanceTarget = {
-            kind: "index",
-            schema: selectedIndex.schema,
-            name: selectedIndex.index,
-          })}
-      >
-        Mantenimiento
-      </button>
-    </div>
-    <div class="min-h-0 flex-1">
-      <DataGrid
-        columns={indexColumns}
-        rows={indexes}
-        rowKey={(index) => `${index.schema}.${index.index}`}
-        selectedKey={selectedIndex ? `${selectedIndex.schema}.${selectedIndex.index}` : null}
-        onselect={(index) => (selectedIndex = index)}
-        sortable
-        empty="No hay estadísticas de índices en esta base."
-      />
+    <div class="flex min-h-0 flex-1 flex-col bg-zinc-50/70 px-4 py-4 dark:bg-black/15">
+      <div class="card flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl shadow-sm">
+        <div class="card-head justify-between">
+          <span class="card-title flex items-center gap-1.5">
+            <Icon name="index" size={13} />
+            Estadísticas de índices
+          </span>
+          <span class="tag tag-neutral font-mono">{count(indexes.length)}</span>
+        </div>
+        <div class="toolbar divider-b">
+          <span class="text-xs muted">
+            Un índice que nunca se usó o que quedó inválido se reconstruye con REINDEX.
+          </span>
+          <button
+            class="btn btn-sm ml-auto"
+            disabled={!selectedIndex}
+            title={selectedIndex
+              ? `REINDEX sobre ${selectedIndex.schema}.${selectedIndex.index}`
+              : "Elegí un índice de la lista"}
+            onclick={() =>
+              selectedIndex &&
+              (maintenanceTarget = {
+                kind: "index",
+                schema: selectedIndex.schema,
+                name: selectedIndex.index,
+              })}
+          >
+            <Icon name="gauge" size={12} />
+            Mantenimiento
+          </button>
+        </div>
+        <div class="min-h-0 flex-1">
+          <DataGrid
+            columns={indexColumns}
+            rows={indexes}
+            rowKey={(index) => `${index.schema}.${index.index}`}
+            selectedKey={selectedIndex ? `${selectedIndex.schema}.${selectedIndex.index}` : null}
+            onselect={(index) => (selectedIndex = index)}
+            sortable
+            empty="No hay estadísticas de índices en esta base."
+          />
+        </div>
+      </div>
     </div>
   {:else if tab === "duplicados"}
-    <div class="divider-t divider-b flex items-center gap-2 px-3 py-2">
-      <span class="text-xs muted">
-        Un índice que otro ya cubre ocupa disco y hace más lenta cada escritura sin acelerar ninguna
-        lectura. Lo que sostiene algo —una restricción, una clave foránea, la identidad de réplica,
-        el orden de un CLUSTER— nunca aparece acá.
-      </span>
-      <button
-        class="btn btn-danger ml-auto"
-        disabled={!selectedRedundant}
-        title={selectedRedundant
-          ? `DROP INDEX sobre ${selectedRedundant.schema}.${selectedRedundant.index}`
-          : "Elegí un índice de la lista"}
-        onclick={() => (droppingIndex = selectedRedundant)}
-      >
-        Borrar el índice…
-      </button>
-    </div>
-    {#if dropError}
-      <Alert tone="bad">{dropError}</Alert>
-    {/if}
-    <div class="min-h-0 flex-1">
-      {#if redundantError}
-        <Alert tone="bad">{redundantError}</Alert>
-      {:else}
-        <DataGrid
-          columns={redundantColumns}
-          rows={redundant}
-          rowKey={keyOf}
-          selectedKey={selectedRedundant ? keyOf(selectedRedundant) : null}
-          onselect={(item) => (selectedRedundant = item)}
-          sortable
-          empty="Ningún índice de esta base está cubierto por otro."
-        />
-      {/if}
+    <div class="flex min-h-0 flex-1 flex-col bg-zinc-50/70 px-4 py-4 dark:bg-black/15">
+      <div class="card flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl shadow-sm">
+        <div class="card-head justify-between">
+          <span class="card-title flex items-center gap-1.5">
+            <Icon name="compare" size={13} />
+            Índices que sobran
+          </span>
+          <span class="tag tag-neutral font-mono">{count(redundant.length)}</span>
+        </div>
+        <div class="toolbar divider-b">
+          <span class="text-xs muted">
+            Un índice que otro ya cubre ocupa disco y hace más lenta cada escritura sin acelerar
+            ninguna lectura. Lo que sostiene algo —una restricción, una clave foránea, la identidad
+            de réplica, el orden de un CLUSTER— nunca aparece acá.
+          </span>
+          <button
+            class="btn btn-sm btn-danger ml-auto"
+            disabled={!selectedRedundant}
+            title={selectedRedundant
+              ? `DROP INDEX sobre ${selectedRedundant.schema}.${selectedRedundant.index}`
+              : "Elegí un índice de la lista"}
+            onclick={() => (droppingIndex = selectedRedundant)}
+          >
+            <Icon name="trash" size={12} />
+            Borrar el índice…
+          </button>
+        </div>
+        {#if dropError}
+          <Alert tone="bad">{dropError}</Alert>
+        {/if}
+        <div class="min-h-0 flex-1">
+          {#if redundantError}
+            <Alert tone="bad">{redundantError}</Alert>
+          {:else}
+            <DataGrid
+              columns={redundantColumns}
+              rows={redundant}
+              rowKey={keyOf}
+              selectedKey={selectedRedundant ? keyOf(selectedRedundant) : null}
+              onselect={(item) => (selectedRedundant = item)}
+              sortable
+              empty="Ningún índice de esta base está cubierto por otro."
+            />
+          {/if}
+        </div>
+      </div>
     </div>
   {:else if tab === "bloat"}
-    <div class="divider-t divider-b flex items-center gap-2 px-3 py-2">
-      <span class="text-xs muted">
-        Medición aproximada con pgstattuple: el espacio libre se recupera con VACUUM FULL, que
-        bloquea la tabla mientras corre.
-      </span>
-      <button
-        class="btn ml-auto"
-        disabled={!selectedBloat}
-        title={selectedBloat
-          ? `VACUUM sobre ${selectedBloat.schema}.${selectedBloat.table}`
-          : "Elegí una tabla de la lista"}
-        onclick={() =>
-          selectedBloat &&
-          (maintenanceTarget = {
-            kind: "table",
-            schema: selectedBloat.schema,
-            name: selectedBloat.table,
-          })}
-      >
-        Mantenimiento
-      </button>
-    </div>
-    <div class="min-h-0 flex-1">
-      {#if bloatError}
-        <Alert tone="bad">{bloatError}</Alert>
-      {:else if bloatAvailable === false}
-        <Empty
-          icon="info"
-          title="Falta la extensión pgstattuple"
-          hint="Ejecutá CREATE EXTENSION pgstattuple; en esta base para estimar el bloat de las tablas."
-        />
-      {:else}
-        <DataGrid
-          columns={bloatColumns}
-          rows={bloat}
-          rowKey={(table) => `${table.schema}.${table.table}`}
-          selectedKey={selectedBloat ? `${selectedBloat.schema}.${selectedBloat.table}` : null}
-          onselect={(table) => (selectedBloat = table)}
-          sortable
-          empty="No hay tablas con bloat que estimar en esta base."
-        />
-      {/if}
+    <div class="flex min-h-0 flex-1 flex-col bg-zinc-50/70 px-4 py-4 dark:bg-black/15">
+      <div class="card flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl shadow-sm">
+        <div class="card-head justify-between">
+          <span class="card-title flex items-center gap-1.5">
+            <Icon name="warn" size={13} />
+            Bloat estimado
+          </span>
+          <span class="tag tag-neutral font-mono">{count(bloat.length)}</span>
+        </div>
+        <div class="toolbar divider-b">
+          <span class="text-xs muted">
+            Medición aproximada con pgstattuple: el espacio libre se recupera con VACUUM FULL, que
+            bloquea la tabla mientras corre.
+          </span>
+          <button
+            class="btn btn-sm ml-auto"
+            disabled={!selectedBloat}
+            title={selectedBloat
+              ? `VACUUM sobre ${selectedBloat.schema}.${selectedBloat.table}`
+              : "Elegí una tabla de la lista"}
+            onclick={() =>
+              selectedBloat &&
+              (maintenanceTarget = {
+                kind: "table",
+                schema: selectedBloat.schema,
+                name: selectedBloat.table,
+              })}
+          >
+            <Icon name="gauge" size={12} />
+            Mantenimiento
+          </button>
+        </div>
+        <div class="min-h-0 flex-1">
+          {#if bloatError}
+            <Alert tone="bad">{bloatError}</Alert>
+          {:else if bloatAvailable === false}
+            <Empty
+              icon="info"
+              title="Falta la extensión pgstattuple"
+              hint="Ejecutá CREATE EXTENSION pgstattuple; en esta base para estimar el bloat de las tablas."
+            />
+          {:else}
+            <DataGrid
+              columns={bloatColumns}
+              rows={bloat}
+              rowKey={(table) => `${table.schema}.${table.table}`}
+              selectedKey={selectedBloat ? `${selectedBloat.schema}.${selectedBloat.table}` : null}
+              onselect={(table) => (selectedBloat = table)}
+              sortable
+              empty="No hay tablas con bloat que estimar en esta base."
+            />
+          {/if}
+        </div>
+      </div>
     </div>
   {:else}
-    <div class="divider-t divider-b flex items-center gap-2 px-3 py-2">
-      <span class="text-xs muted">
-        El texto viene normalizado: los valores aparecen como $1, $2. Al abrirlo en una consulta hay
-        que completarlos antes de explicar.
-      </span>
-      <button
-        class="btn ml-auto"
-        disabled={!selectedStatement?.query}
-        title={selectedStatement?.query
-          ? "Abre una pestaña de consulta con este texto"
-          : "Elegí una consulta de la lista"}
-        onclick={() =>
-          selectedStatement?.query &&
-          openInQuery(selectedStatement.query, selectedStatement.database)}
-      >
-        Abrir en una consulta
-      </button>
-    </div>
-    <div class="min-h-0 flex-1">
-      {#if statementsError}
-        <Alert tone="bad">{statementsError}</Alert>
-      {:else if statementsAvailable === false}
-        <Empty
-          icon="info"
-          title="Falta la extensión pg_stat_statements"
-          hint="Agregala a shared_preload_libraries, reiniciá el servidor y ejecutá CREATE EXTENSION pg_stat_statements; en esta base."
-        />
-      {:else}
-        <DataGrid
-          columns={statementColumns}
-          rows={statements}
-          rowKey={(statement) =>
-            `${statement.database}/${statement.user}/${statement.queryId ?? statement.query}`}
-          selectedKey={selectedStatement
-            ? `${selectedStatement.database}/${selectedStatement.user}/${selectedStatement.queryId ?? selectedStatement.query}`
-            : null}
-          onselect={(statement) => (selectedStatement = statement)}
-          sortable
-          empty="Todavía no hay consultas registradas."
-        />
-      {/if}
+    <div class="flex min-h-0 flex-1 flex-col bg-zinc-50/70 px-4 py-4 dark:bg-black/15">
+      <div class="card flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl shadow-sm">
+        <div class="card-head justify-between">
+          <span class="card-title flex items-center gap-1.5">
+            <Icon name="sql" size={13} />
+            Consultas más lentas
+          </span>
+          <span class="tag tag-neutral font-mono">{count(statements.length)}</span>
+        </div>
+        <div class="toolbar divider-b">
+          <span class="text-xs muted">
+            El texto viene normalizado: los valores aparecen como $1, $2. Al abrirlo en una consulta
+            hay que completarlos antes de explicar.
+          </span>
+          <button
+            class="btn btn-sm ml-auto"
+            disabled={!selectedStatement?.query}
+            title={selectedStatement?.query
+              ? "Abre una pestaña de consulta con este texto"
+              : "Elegí una consulta de la lista"}
+            onclick={() =>
+              selectedStatement?.query &&
+              openInQuery(selectedStatement.query, selectedStatement.database)}
+          >
+            <Icon name="play" size={12} />
+            Abrir en una consulta
+          </button>
+        </div>
+        <div class="min-h-0 flex-1">
+          {#if statementsError}
+            <Alert tone="bad">{statementsError}</Alert>
+          {:else if statementsAvailable === false}
+            <Empty
+              icon="info"
+              title="Falta la extensión pg_stat_statements"
+              hint="Agregala a shared_preload_libraries, reiniciá el servidor y ejecutá CREATE EXTENSION pg_stat_statements; en esta base."
+            />
+          {:else}
+            <DataGrid
+              columns={statementColumns}
+              rows={statements}
+              rowKey={(statement) =>
+                `${statement.database}/${statement.user}/${statement.queryId ?? statement.query}`}
+              selectedKey={selectedStatement
+                ? `${selectedStatement.database}/${selectedStatement.user}/${selectedStatement.queryId ?? selectedStatement.query}`
+                : null}
+              onselect={(statement) => (selectedStatement = statement)}
+              sortable
+              empty="Todavía no hay consultas registradas."
+            />
+          {/if}
+        </div>
+      </div>
     </div>
   {/if}
 </div>

@@ -5,6 +5,8 @@
   import Alert from "./Alert.svelte";
   import DataGrid, { type Column } from "./DataGrid.svelte";
   import { explorer } from "./explorer.svelte";
+  import { boolText, isBoolType } from "./format";
+  import { columnWidth } from "./grid-width";
   import { DEFAULT_GRID_FONT, gridZoom } from "./grid.svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
@@ -17,7 +19,6 @@
   const NULL = "[null]";
 
   const SAMPLE = 50;
-  const CHAR_WIDTH = 7.3;
   const MIN_WIDTH = 72;
   const MAX_WIDTH = 340;
 
@@ -47,16 +48,14 @@
   const shape = $derived(tab.shape);
   const readOnlyProfile = $derived(readOnlyReason(tab.profileId));
 
-  // La letra de la grilla es una preferencia (`gridZoom`, compartida con el resultado de consultas y
-  // el dashboard): con la letra más grande, la misma cantidad de caracteres ocupa más ancho.
-  const scale = $derived(gridZoom.size / DEFAULT_GRID_FONT);
-
   const definitions = $derived.by<Column<Row>[]>(() => {
     if (!shape) return [];
 
     const sample = tab.rows.slice(0, SAMPLE);
 
     const cells: Column<Row>[] = shape.columns.map((column, index) => {
+      // Acá el tipo lo dice el catálogo, así que no hace falta ningún interruptor encendido.
+      const bool = isBoolType(column.typeName);
       const longest = sample.reduce(
         (max, row) => Math.max(max, (tab.value(row, index) ?? NULL).length),
         column.name.length,
@@ -67,15 +66,22 @@
         header: column.name,
         // El tipo va como texto secundario: al editar es lo que dice qué se puede escribir en la celda.
         caption: column.typeName,
-        width: Math.min(
-          MAX_WIDTH * scale,
-          Math.max(MIN_WIDTH * scale, Math.round(longest * CHAR_WIDTH * scale) + 24),
-        ),
+        width: columnWidth({
+          longest,
+          fontSize: gridZoom.size,
+          min: MIN_WIDTH,
+          max: MAX_WIDTH,
+          padding: 24,
+        }),
         // Acá el tipo lo dice el catálogo, así que la alineación no hay que adivinarla del valor.
         align: NUMERIC.has(column.typeName.toLowerCase()) ? "right" : "left",
         // Con este nombre la ordena el servidor.
         orderBy: column.name,
-        value: (row) => oneLine(tab.value(row, index)),
+        value: (row) => {
+          const value = tab.value(row, index);
+          if (value === null) return NULL;
+          return bool ? boolText(value) : oneLine(value);
+        },
         edit: (row) => tab.value(row, index),
         title: (row) => tab.value(row, index) ?? undefined,
         tone: (row) => {
@@ -89,7 +95,11 @@
       {
         key: "#",
         header: "",
-        width: 44 * scale,
+        // La marca de la fila (editada, nueva, borrada) más el aire: no lleva número, así que no
+        // crece con la cantidad de filas.
+        // La letra de la grilla es una preferencia (`gridZoom`, compartida con el resultado de
+        // consultas y el dashboard): la marca crece con ella igual que el texto de al lado.
+        width: Math.round(44 * (gridZoom.size / DEFAULT_GRID_FONT)),
         align: "right",
         value: (row) => marca(row),
         tone: (row) => {
@@ -112,7 +122,11 @@
   }
 
   function oneLine(value: string | null): string {
-    return value === null ? NULL : value.replace(/\s*\n\s*/g, " ↵ ");
+    if (value === null) return NULL;
+    // El `includes` antes de la expresión regular no es una manía: `value()` se llama por cada
+    // celda dibujada y en cada cuadro del desplazamiento, y la enorme mayoría de los valores no
+    // tiene ningún salto de línea que aplastar.
+    return value.includes("\n") ? value.replace(/\s*\n\s*/g, " ↵ ") : value;
   }
 
   /** La clave de la columna arranca con su posición; la del marcador no es un número. */
@@ -167,7 +181,7 @@
 
     <!-- Llegar desde la grilla hasta dónde vive la tabla eran cinco niveles a mano cada vez. -->
     <button
-      class="btn btn-icon"
+      class="btn btn-ghost btn-icon"
       disabled={tab.shape === null}
       title="Revelar la tabla en el árbol"
       aria-label="Revelar en el árbol"

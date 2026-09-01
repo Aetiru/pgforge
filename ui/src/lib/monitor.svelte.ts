@@ -8,6 +8,7 @@ import {
   type MonitorEvent,
   type Snapshot,
 } from "./ipc";
+import { Tab, tabs } from "./tabs.svelte";
 
 /** Un punto de las series temporales del dashboard. */
 export interface Sample {
@@ -146,3 +147,44 @@ class MonitorStore {
 }
 
 export const monitor = new MonitorStore();
+
+/**
+ * La pestaña del dashboard.
+ *
+ * Era una vista que reemplazaba la pantalla entera, incluidos el árbol y las pestañas: mirar cómo
+ * va el servidor mientras corre una consulta costaba irse, mirar y volver a buscar dónde estaba
+ * uno. Como pestaña convive con lo demás, y el servidor que se está mirando viaja adentro en vez
+ * de en un `<select>` aparte de la barra de arriba, que era un segundo «dónde estoy parado».
+ *
+ * No toma nada del lado de Rust —`MonitorStore` arranca y para el sondeo con el montaje de
+ * `Dashboard`—, así que hereda el `dispose()` vacío.
+ */
+export class MonitorTab extends Tab {
+  readonly kind = "monitor" as const;
+
+  constructor(profileId: string) {
+    super(profileId, "", "Monitoreo");
+  }
+}
+
+/**
+ * Abre el dashboard de un servidor.
+ *
+ * Hay **una sola** pestaña de monitoreo a la vez, y no es una decisión de diseño sino de qué
+ * sostiene abajo: el sondeo vive en `monitor`, que es una instancia única con un `profileId`
+ * adentro. Dos dashboards montados a la vez —uno activo y otro en el panel de al lado— se pisarían
+ * el mismo estado. Pedir el de otro servidor mueve la que hay en vez de abrir otra.
+ */
+export function openMonitor(profileId: string): MonitorTab {
+  const open = tabs.all.find(
+    (tab): tab is MonitorTab => tab instanceof MonitorTab,
+  );
+  if (open) {
+    if (open.profileId === profileId) {
+      tabs.activate(open.key);
+      return open;
+    }
+    void tabs.close(open.key);
+  }
+  return tabs.add(new MonitorTab(profileId));
+}

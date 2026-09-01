@@ -98,8 +98,16 @@
   // El alto de fila es la misma preferencia en toda la aplicación (ver `grid.svelte.ts`): agrandar
   // la letra de una grilla agranda las tres.
   const rowHeight = $derived(gridZoom.rowHeight);
-  const OVERSCAN = 24;
-  const COLUMN_OVERSCAN = 2;
+  /**
+   * Cuántas filas de más se dibujan arriba y abajo de la ventana.
+   *
+   * Eran 24 de cada lado. Con la ventana mostrando unas 25 filas, eso es dibujar tres pantallas
+   * para mirar una, y cada fila de más se paga en cada cuadro del desplazamiento multiplicada por
+   * las columnas que estén a la vista. Diez alcanzan para tapar el hueco que deja el compositor
+   * cuando la rueda va rápido, que es lo único que este margen tiene que resolver.
+   */
+  const OVERSCAN = 12;
+  const COLUMN_OVERSCAN = 3;
   /** Cuántas filas antes del final disparan la carga de la página siguiente. */
   const NEAR_END = 40;
   const MIN_COLUMN = 48;
@@ -202,6 +210,13 @@
     );
   });
 
+  /**
+   * Un comparador reusado en vez de `String.localeCompare` en cada comparación: crear la tabla de
+   * intercalación del idioma es lo caro de comparar dos textos, y hacerlo una sola vez es la
+   * diferencia entre ordenar una tabla grande y esperarla.
+   */
+  const COLLATOR = new Intl.Collator("es", { numeric: true });
+
   const ordered = $derived.by(() => {
     // Con el orden delegado, las filas ya llegan ordenadas: reordenarlas acá las mezclaría con las
     // de la tanda siguiente.
@@ -212,27 +227,42 @@
     const value = (row: T) => (column.sort ? column.sort(row) : column.value(row));
     const direction = sort.descending ? -1 : 1;
 
-    return [...matched].sort((left, right) => {
-      const a = value(left);
-      const b = value(right);
-      if (typeof a === "number" && typeof b === "number") return (a - b) * direction;
-      return String(a).localeCompare(String(b), "es", { numeric: true }) * direction;
+    // El valor de cada fila se calcula **una vez** y no dos por comparación: ordenar cincuenta mil
+    // filas son unas ochocientas mil comparaciones, y `value()` de una columna de resultado arma
+    // una cadena cada vez. Con la clave calculada de antemano son cincuenta mil llamadas.
+    const keyed = matched.map((row) => ({ row, key: value(row) }));
+
+    keyed.sort((left, right) => {
+      if (typeof left.key === "number" && typeof right.key === "number") {
+        return (left.key - right.key) * direction;
+      }
+      return COLLATOR.compare(String(left.key), String(right.key)) * direction;
     });
+
+    return keyed.map((item) => item.row);
   });
 
   const start = $derived(Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN));
   const visible = $derived(
     ordered.slice(start, start + Math.ceil(viewportHeight / rowHeight) + OVERSCAN * 2),
   );
-  const totalWidth = $derived(active.reduce((sum, column) => sum + widthOf(column), 0));
+  /**
+   * El ancho de cada columna, una sola vez. Lo piden el total, las posiciones y la ventana
+   * horizontal: calculado en cada uno, se recorrían las columnas tres veces por cuadro de
+   * desplazamiento para llegar siempre al mismo resultado, que solo cambia cuando alguien arrastra
+   * un borde o esconde una columna.
+   */
+  const widthList = $derived(active.map(widthOf));
+
+  const totalWidth = $derived(widthList.reduce((sum, width) => sum + width, 0));
 
   /** Dónde empieza cada columna: lo usan la ventana horizontal, las fijas y el foco de celda. */
   const columnOffsets = $derived.by(() => {
     const out: number[] = [];
     let left = 0;
-    for (const column of active) {
+    for (const width of widthList) {
       out.push(left);
-      left += widthOf(column);
+      left += width;
     }
     return out;
   });
@@ -242,22 +272,37 @@
     active.slice(0, pinned).map((column, index) => ({ column, index })),
   );
 
+  /**
+   * La última ventana horizontal entregada. Se conserva para poder devolver **el mismo objeto**
+   * cuando la ventana no cambió: `scrollLeft` se mueve píxel a píxel, pero qué columnas se dibujan
+   * cambia recién al cruzar el borde de una. Sin esto, cada cuadro del desplazamiento lateral
+   * entregaba un objeto nuevo y equivalente, y eso volvía a armar la lista de columnas dibujadas y
+   * a reconciliar sus celdas en cada una de las filas a la vista para dejar todo como estaba.
+   */
+  let lastColumnWindow = { first: 0, last: -1, pad: 0 };
+
   /** Qué columnas se dibujan y cuánto espacio hay que dejar por las que quedaron a la izquierda. */
   const columnWindow = $derived.by(() => {
     const range = columnRange(
       columnOffsets,
-      active.map(widthOf),
+      widthList,
       scrollLeft,
       viewportWidth,
       COLUMN_OVERSCAN,
     );
     // Nunca antes de las fijas: esas ya están dibujadas y repetirlas las mostraría dos veces.
     const first = Math.max(range.first, pinned);
-    return {
-      first,
-      last: range.last,
-      pad: Math.max(0, (columnOffsets[first] ?? 0) - (columnOffsets[pinned] ?? 0)),
-    };
+    const pad = Math.max(0, (columnOffsets[first] ?? 0) - (columnOffsets[pinned] ?? 0));
+
+    if (
+      first === lastColumnWindow.first &&
+      range.last === lastColumnWindow.last &&
+      pad === lastColumnWindow.pad
+    ) {
+      return lastColumnWindow;
+    }
+    lastColumnWindow = { first, last: range.last, pad };
+    return lastColumnWindow;
   });
 
   /** Las columnas dibujadas, cada una con su posición real: el resto del componente usa esa. */
@@ -395,34 +440,29 @@
     viewport?.focus();
   }
 
-  let frame = 0;
-
   /**
-   * El desplazamiento se lee una vez por cuadro. `scroll` llega varias veces entre dos dibujos —con
-   * una rueda de precisión, decenas—, y atender cada uno rehacía la ventana entera para un
-   * desplazamiento que la pantalla nunca llegó a mostrar.
+   * El desplazamiento se lee **en el evento**, no adentro de un `requestAnimationFrame`.
+   *
+   * Estaba al revés, con el argumento de que `scroll` llega muchas veces entre dos dibujos. El
+   * navegador no los entrega así: los junta y dispara uno por cuadro, justo antes de dibujar. Lo
+   * que hacía el `rAF`, entonces, no era ahorrar trabajo sino correrlo al cuadro **siguiente**, así
+   * que la grilla dibujaba siempre la posición anterior y el contenido entraba un cuadro tarde.
+   * Eso es exactamente lo que se ve como un desplazamiento que no llega a los 60 cuadros por
+   * segundo, y se nota más de costado y hacia arriba, donde lo que entra es una columna o una fila
+   * entera y no el borde de una.
    */
   function onScroll(event: Event & { currentTarget: HTMLDivElement }) {
     const element = event.currentTarget;
-    if (frame) return;
+    scrollTop = element.scrollTop;
+    scrollLeft = element.scrollLeft;
+    // Un menú abierto se queda donde estaba la celda: se cierra en vez de quedar flotando.
+    if (menu) menu = null;
 
-    frame = requestAnimationFrame(() => {
-      frame = 0;
-      scrollTop = element.scrollTop;
-      scrollLeft = element.scrollLeft;
-      // Un menú abierto se queda donde estaba la celda: se cierra en vez de quedar flotando.
-      menu = null;
-
-      const lastVisible = Math.ceil((scrollTop + viewportHeight) / rowHeight);
-      if (onnearend && ordered.length - lastVisible < NEAR_END) {
-        onnearend();
-      }
-    });
+    const lastVisible = Math.ceil((scrollTop + viewportHeight) / rowHeight);
+    if (onnearend && ordered.length - lastVisible < NEAR_END) {
+      onnearend();
+    }
   }
-
-  $effect(() => () => {
-    if (frame) cancelAnimationFrame(frame);
-  });
 
   /** Una columna que no existe del lado del servidor no se puede ordenar allá. */
   const canSort = (column: Column<T>) =>
@@ -792,7 +832,7 @@
     oncontextmenu={(event) => onHeaderMenu(event, index)}
   >
     <button
-      class="w-full truncate px-2 py-1 text-left {column.align === 'right'
+      class="w-full px-2 py-1 text-left {column.align === 'right'
         ? 'text-right'
         : ''} {canSort(column) ? 'hover:text-zinc-900 dark:hover:text-zinc-100' : 'cursor-default'}
         {sorted ? 'text-zinc-900 dark:text-zinc-100' : ''}
@@ -825,19 +865,31 @@
         dragOverKey = null;
       }}
     >
-      {#if sticky}
-        <Icon name="lock" size={9} class="mr-0.5 inline-block opacity-60" />
-      {/if}
-      {column.header}
+      <!--
+        El tipo va **debajo** del nombre y no al lado. Al lado competía con él por el mismo ancho:
+        en una columna que ya venía justa, «fechamodif timestamptz» dejaba cortadas las dos cosas, y
+        lo que uno busca al recorrer el encabezado es el nombre. Abajo, en gris y más chico, se lee
+        cuando se lo mira y no estorba cuando no.
+      -->
+      <span
+        class="flex items-center gap-0.5 truncate {column.align === 'right' ? 'justify-end' : ''}"
+      >
+        {#if sticky}
+          <Icon name="lock" size={9} class="shrink-0 opacity-60" />
+        {/if}
+        <span class="truncate">{column.header}</span>
+        {#if sorted}
+          <Icon
+            name="chevron"
+            size={9}
+            class="shrink-0 {sort?.descending ? '-rotate-90' : 'rotate-90'}"
+          />
+        {/if}
+      </span>
       {#if column.caption}
-        <span class="ml-1 font-normal text-zinc-400 dark:text-zinc-500">{column.caption}</span>
-      {/if}
-      {#if sorted}
-        <Icon
-          name="chevron"
-          size={9}
-          class="ml-0.5 inline-block {sort?.descending ? '-rotate-90' : 'rotate-90'}"
-        />
+        <span class="block truncate text-[0.85em] font-normal text-zinc-400 dark:text-zinc-500">
+          {column.caption}
+        </span>
       {/if}
     </button>
 
@@ -914,7 +966,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       data-cell
-      class="shrink-0 truncate border-r border-zinc-200/70 px-2 py-0.5 dark:border-zinc-700/70
+      class="grid-cell
         {column.align === 'right' ? 'text-right tabular-nums' : ''} {column.tone?.(row) ?? ''}
         {editable?.(row, column) ? 'cursor-text' : ''}
         {sticky ? 'sticky z-10 bg-inherit' : ''}
@@ -1027,13 +1079,23 @@
                 `bg-inherit`, y con un fondo a medio pintar se les vería por debajo lo que pasa de
                 largo al desplazar.
               -->
+              <!--
+                Tres capas, de la más fuerte a la más débil: la fila elegida, la fila donde está el
+                cursor y el rayado. El rayado estaba en `zinc-50` sobre blanco —un 1% de diferencia,
+                que a quince columnas de ancho no alcanza para seguir una fila con la vista hasta el
+                otro extremo—; y la fila del cursor no se marcaba de ninguna manera, así que en una
+                grilla ancha uno perdía de vista cuál era la celda que estaba mirando apenas
+                desplazaba de costado.
+              -->
               <div
-                class="flex
+                class="grid-row
                    {selected
                   ? 'bg-blue-100 text-blue-950 dark:bg-blue-950 dark:text-blue-100'
-                  : at % 2 === 1
-                    ? 'bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-800 dark:hover:bg-zinc-700'
-                    : 'bg-white hover:bg-zinc-100 dark:bg-zinc-900 dark:hover:bg-zinc-700'}
+                  : cursor?.row === at
+                    ? 'bg-blue-50/70 dark:bg-blue-950/40'
+                    : at % 2 === 1
+                      ? 'bg-zinc-100/70 dark:bg-zinc-800'
+                      : 'bg-white dark:bg-zinc-900'}
                    {rowClass?.(row) ?? ''}"
                 style="height: {rowHeight}px; width: {totalWidth}px;
                        font-size: var(--grid-font-size, 0.875rem)"
