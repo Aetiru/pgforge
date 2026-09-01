@@ -99,15 +99,24 @@ pub async fn workspace_open(
     }
 
     let url = WebviewUrl::App(format!("index.html?workspace={id}").into());
-    WebviewWindowBuilder::new(&app, &label, url)
+    let builder = WebviewWindowBuilder::new(&app, &label, url)
         .title(&workspace.name)
         .inner_size(1280.0, 820.0)
-        .min_inner_size(940.0, 600.0)
-        // Mismo valor que la ventana principal (`"dragDropEnabled": false` en `tauri.conf.json`;
-        // el método del builder se llama distinto): en Windows el manejador nativo de drag&drop se
-        // come los eventos HTML5 que usa el árbol para mover servidores entre carpetas
-        // (`TreePanel.svelte`), y esta ventana también muestra ese árbol.
-        .drag_and_drop(false)
+        .min_inner_size(940.0, 600.0);
+
+    // Mismo valor que la ventana principal (`"dragDropEnabled": false` en `tauri.conf.json`; el
+    // método del builder se llama distinto): en Windows el manejador nativo de drag&drop se come
+    // los eventos HTML5 que usa el árbol para mover servidores entre carpetas
+    // (`TreePanel.svelte`), y esta ventana también muestra ese árbol.
+    //
+    // Va detrás de `cfg` porque el método **solo existe en Windows**, que es donde está el problema
+    // que resuelve: en macOS y en Linux la compilación ni siquiera encuentra el nombre. Es la clase
+    // de error que no aparece desarrollando en Windows y que solo atrapa el job de escritorio de
+    // CI, que compila en las tres plataformas.
+    #[cfg(windows)]
+    let builder = builder.drag_and_drop(false);
+
+    builder
         .build()
         .map_err(|e| Error::Config(format!("no se pudo abrir la ventana del workspace: {e}")))?;
 
