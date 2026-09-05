@@ -42,6 +42,77 @@ _Avoid_: capacidad de versión, capacidad a secas.
 > implementación, no unidad conceptual — los dos términos de arriba siguen siendo distintos en
 > el dominio aunque compartan struct.
 
+## Armazón de la ventana
+
+El armazón tiene tres regiones. El **riel**, a la izquierda, elige de forma excluyente qué
+**panel** se ve (Explorador, Biblioteca o Procesos). El panel principal aloja las **pestañas**,
+que sí conviven varias a la vez —y hasta dos en pantalla con el panel dividido—. El
+**inspector**, a la derecha, convive con cualquiera de las dos anteriores sin ser parte de
+ninguna. Aparte de las tres, **Anclados** es una sección fija al pie del panel lateral, ajena a
+cuál de los tres paneles esté elegido.
+
+**Riel**:
+Barra vertical angosta y siempre visible a la izquierda. Alterna qué panel muestra el lateral
+—Explorador, Biblioteca, Procesos—, exclusivos entre sí. No decide qué hay en el panel principal
+ni en el inspector: cambiar de panel no toca ninguna pestaña abierta.
+_Avoid_: barra de navegación — la barra de arriba que reemplazó sí tapaba todo al cambiar; el
+riel no.
+
+**Panel**:
+Lo que el riel elige. Tres, mutuamente excluyentes: Explorador (árbol de servidores y catálogo),
+Biblioteca (historial y consultas guardadas) y Procesos (lo que corre en segundo plano). Ver
+[ADR-0007](docs/adr/0007-navegacion-unica.md).
+_No confundir con_: Inspector — no es panel: convive con cualquiera de los tres en vez de competir
+por el mismo lugar, y lo controla su propio atajo, no el riel.
+
+**Pestaña**:
+Instancia de la clase `Tab` (`tabs.svelte.ts`), vive en el panel principal, atada a un servidor y
+una base. Seis tipos: consulta, datos, ERD, comparación, monitoreo, configuración. El panel
+dividido permite ver dos a la vez. Regla que decide si algo nuevo es pestaña o panel: **lo que
+corre contra un servidor es pestaña; lo que no, es panel.** Ver
+[ADR-0007](docs/adr/0007-navegacion-unica.md).
+_No confundir con_: un control con `role="tab"`/`role="tablist"` que no sea instancia de `Tab` —
+el segmento Historial/Guardadas de Biblioteca, los botones del riel. Es accesibilidad, no
+vocabulario del dominio.
+
+**Inspector**:
+Región a la derecha que convive con cualquier panel y cualquier pestaña — no es exclusiva con
+nada, y la controla su propio atajo (`Ctrl+I`), no el riel. Muestra el detalle del objeto elegido
+en el árbol. Antes era una pestaña más ("Detalle"); dejó de competir por el mismo lugar que el
+editor al pasar a inspector. Ver [ADR-0008](docs/adr/0008-inspector-region-que-convive.md).
+_No confundir con_: Panel — comparte la clase CSS `.panel` (presentación, no vocabulario), pero no
+es una de las tres cosas que el riel alterna.
+
+**Grilla**:
+El componente que dibuja filas y columnas (`DataGrid.svelte`), virtualizado en las dos
+direcciones. No es dueña de la edición ni del paginado — los recibe de qué la aloja: en una
+pestaña de datos llegan de `data::edit`/`data::page`; en el resultado de una pestaña de consulta
+no hay edición ni paginado por servidor, solo lo que trajo la corrida.
+_No confundir con_: Pestaña de datos — la grilla es el widget; la pestaña de datos es el contexto
+que le agrega edición y paginado por servidor.
+
+**Biblioteca**:
+Panel del riel con Historial y Consultas guardadas. Se elige desde el riel y desplaza a Explorador
+y Procesos.
+_No confundir con_: Anclados — el eje que los separa es la permanencia: Biblioteca hay que
+elegirla, Anclados está siempre.
+
+**Anclados**:
+Sección fija al pie del panel lateral, con Marcadores y Scripts. Visible con cualquier panel
+elegido en el riel — no compite por el mismo lugar que Explorador, Biblioteca o Procesos, ni es
+panel en el sentido de arriba.
+> **Deuda conocida**: en código, `dock.libraryOpen`/`dock.libraryHeight` y el componente
+> `PinnedLibrary` llevan "library" en el nombre por herencia — se refieren a Anclados, no a
+> Biblioteca. Renombre pendiente (`dock.pinnedOpen`/`pinnedHeight`, `Pinned` a secas); hasta que
+> se haga, no deducir la relación al revés por el nombre.
+_No confundir con_: Biblioteca — ver ahí el eje que los separa.
+
+**Workspace**:
+Ventana propia (proceso de Tauri aparte) acotada a un subconjunto de servidores o a una carpeta de
+conexiones. Es otro eje, no el armazón de una ventana: riel, panel, pestaña e inspector describen
+el adentro de una ventana; workspace decide qué ventana.
+_Avoid_: perfil, servidor — esos son de adentro de una ventana, workspace es afuera.
+
 ## Cuatro formas de guardar algo
 
 Los cuatro guardan algo, pero ninguno es sinónimo de otro. Cada entrada fija quién lo crea, a qué
@@ -54,6 +125,8 @@ qué base como dato, no como restricción — no exige que el perfil siga existi
 él. Vive en `history.db` (SQLite).
 _No confundir con_: Consulta guardada — el historial es lo que pasó, crece sin techo y se vacía
 entero sin que duela; una guardada es lo que el usuario decidió conservar, con nombre.
+Se lista y se elige desde el panel Biblioteca (riel) — dejó de vivir encerrado dentro de una
+pestaña de consulta abierta.
 
 **Consulta guardada**:
 SQL que el usuario decidió conservar a mano, con nombre obligatorio y único (sin distinguir
@@ -62,6 +135,7 @@ servidor y base de origen se guardan como dato, igual que en el historial. Vive 
 (SQLite), archivo aparte del historial.
 _No confundir con_: Marcador — la guardada es texto portable entre bases; el marcador apunta a
 un objeto concreto de un servidor concreto y no tiene sentido en otro. Ver [ADR-0004](docs/adr/0004-clave-del-marcador-ata-a-servidor.md).
+Se lista y se elige desde el panel Biblioteca (riel), igual que el historial.
 
 **Marcador**:
 Objeto del catálogo que el usuario marcó con la estrella del árbol. Se crea a mano; `add` es
@@ -70,6 +144,8 @@ idempotente — apretar la estrella de nuevo no duplica ni falla. Está atado a 
 objetos distintos. Vive en su propio archivo SQLite, aparte de historial y guardadas. Ver
 [ADR-0004](docs/adr/0004-clave-del-marcador-ata-a-servidor.md).
 _No confundir con_: Consulta guardada — esa es texto portable; el marcador no.
+Se lista desde Anclados, fijo al pie del panel lateral — a diferencia de Biblioteca, ahí está pase
+lo que pase en el riel.
 
 **Script**:
 Archivo `.sql` que el usuario escribe o importa, guardado en una carpeta por conexión. Se crea a
@@ -79,6 +155,7 @@ bajo una raíz que el núcleo recibe y no resuelve (decisión de la aplicación 
 crate).
 _No confundir con_: Marcador — el script no apunta a un objeto del catálogo, y sigue existiendo
 aunque el servidor de esa conexión ya no esté.
+Se lista desde Anclados, junto con los marcadores.
 
 ## Procesos en segundo plano
 
