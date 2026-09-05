@@ -146,6 +146,7 @@ fn type_kind(definition: &TypeDef) -> ObjectKind {
         TypeKind::Composite => ObjectKind::Composite,
         TypeKind::Domain => ObjectKind::Domain,
         TypeKind::Range => ObjectKind::Range,
+        TypeKind::Other => unreachable!("snapshot solo trae enum, compuesto, dominio y rango"),
     }
 }
 
@@ -203,6 +204,7 @@ fn types(builder: &mut Builder, source: &SchemaSnapshot, target: &SchemaSnapshot
                     ));
                 }
             }
+            TypeKind::Other => unreachable!("snapshot solo trae enum, compuesto, dominio y rango"),
         }
     }
 }
@@ -257,7 +259,7 @@ fn composite_attributes(builder: &mut Builder, name: &str, source: &TypeDef, tar
                 format!(
                     "ALTER TYPE {qualified_name} ADD ATTRIBUTE {} {};",
                     quote_ident(&field),
-                    builder.sql(&left.type_name)
+                    builder.sql(&left.data_type)
                 ),
                 None,
             ),
@@ -272,7 +274,7 @@ fn composite_attributes(builder: &mut Builder, name: &str, source: &TypeDef, tar
                 ),
                 Some("el campo desaparece del tipo y de todas las columnas que lo usan"),
             ),
-            (Some(left), Some(right)) if left.type_name != right.type_name => builder.push(
+            (Some(left), Some(right)) if left.data_type != right.data_type => builder.push(
                 ObjectKind::Composite,
                 name,
                 Action::Alter,
@@ -280,7 +282,7 @@ fn composite_attributes(builder: &mut Builder, name: &str, source: &TypeDef, tar
                 format!(
                     "ALTER TYPE {qualified_name} ALTER ATTRIBUTE {} TYPE {};",
                     quote_ident(&field),
-                    builder.sql(&left.type_name)
+                    builder.sql(&left.data_type)
                 ),
                 Some("falla si algún valor guardado no se puede convertir al tipo nuevo"),
             ),
@@ -1154,17 +1156,20 @@ mod tests {
         source.types.push(composite(vec![
             Field {
                 name: "calle".to_owned(),
-                type_name: "text".to_owned(),
+                data_type: "text".to_owned(),
+                collation: None,
             },
             Field {
                 name: "numero".to_owned(),
-                type_name: "integer".to_owned(),
+                data_type: "integer".to_owned(),
+                collation: None,
             },
         ]));
         let mut target = snapshot("public");
         target.types.push(composite(vec![Field {
             name: "calle".to_owned(),
-            type_name: "text".to_owned(),
+            data_type: "text".to_owned(),
+            collation: None,
         }]));
 
         let plan = plan(&source, &target);

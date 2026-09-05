@@ -371,111 +371,50 @@ async fn sequence_ddl(handle: &ServerHandle, node: &TreeNode) -> Result<Ddl> {
 
 async fn type_ddl(handle: &ServerHandle, node: &TreeNode) -> Result<Ddl> {
     let oid = require_oid(node)?;
-    let client = handle.client(&node.database).await?;
-    let row = client
-        .query_one(
-            "SELECT t.typtype::text,
-                    pg_catalog.format_type(t.typbasetype, t.typtypmod),
-                    t.typnotnull,
-                    t.typdefault
-               FROM pg_catalog.pg_type t
-              WHERE t.oid = $1",
-            &[&oid],
-        )
-        .await?;
-
-    let typtype: String = row.get(0);
     let name = qualified(node.schema.as_deref().unwrap_or("public"), &node.label);
+    let shape = types::shape_of(handle, &node.database, oid).await?;
 
-    let sql = match typtype.as_str() {
-        "e" => {
-            let rows = client
-                .query(
-                    "SELECT e.enumlabel::text
-                       FROM pg_catalog.pg_enum e
-                      WHERE e.enumtypid = $1
-                      ORDER BY e.enumsortorder",
-                    &[&oid],
-                )
-                .await?;
-            let labels = rows
+    let sql = match shape.kind {
+        types::ShapeKind::Enum => {
+            let labels = shape
+                .labels
                 .iter()
-                .map(|row| format!("    '{}'", row.get::<_, String>(0).replace('\'', "''")))
+                .map(|label| format!("    '{}'", label.replace('\'', "''")))
                 .collect::<Vec<_>>()
                 .join(",\n");
             format!("CREATE TYPE {name} AS ENUM (\n{labels}\n);")
         }
-        "c" => {
-            let rows = client
-                .query(
-                    "SELECT a.attname::text,
-                            pg_catalog.format_type(a.atttypid, a.atttypmod)
-                       FROM pg_catalog.pg_attribute a
-                       JOIN pg_catalog.pg_type t ON t.typrelid = a.attrelid
-                      WHERE t.oid = $1 AND a.attnum > 0 AND NOT a.attisdropped
-                      ORDER BY a.attnum",
-                    &[&oid],
-                )
-                .await?;
-            let fields = rows
+        types::ShapeKind::Composite => {
+            let fields = shape
+                .fields
                 .iter()
-                .map(|row| {
-                    format!(
-                        "    {} {}",
-                        quote_ident(&row.get::<_, String>(0)),
-                        row.get::<_, String>(1)
-                    )
-                })
+                .map(|field| format!("    {} {}", quote_ident(&field.name), field.data_type))
                 .collect::<Vec<_>>()
                 .join(",\n");
             format!("CREATE TYPE {name} AS (\n{fields}\n);")
         }
-        "d" => {
-            let base: String = row.get(1);
-            let not_null: bool = row.get(2);
-            let default: Option<String> = row.get(3);
-
-            let mut sql = format!("CREATE DOMAIN {name} AS {base}");
-            if let Some(default) = default {
+        types::ShapeKind::Domain => {
+            let mut sql = format!("CREATE DOMAIN {name} AS {}", shape.base.unwrap_or_default());
+            if let Some(default) = shape.default {
                 sql.push_str(&format!("\n    DEFAULT {default}"));
             }
-            if not_null {
+            if shape.not_null {
                 sql.push_str("\n    NOT NULL");
             }
-
-            let checks = client
-                .query(
-                    "SELECT pg_catalog.pg_get_constraintdef(con.oid, true)
-                       FROM pg_catalog.pg_constraint con
-                      WHERE con.contypid = $1
-                      ORDER BY con.conname",
-                    &[&oid],
-                )
-                .await?;
-            for check in &checks {
-                sql.push_str(&format!("\n    {}", check.get::<_, String>(0)));
+            for check in &shape.checks {
+                sql.push_str(&format!("\n    {check}"));
             }
             sql.push(';');
             sql
         }
-        "r" | "m" => {
-            let subtype = client
-                .query_one(
-                    "SELECT pg_catalog.format_type(r.rngsubtype, NULL)
-                       FROM pg_catalog.pg_range r
-                      WHERE r.rngtypid = $1",
-                    &[&oid],
-                )
-                .await?;
-            format!(
-                "CREATE TYPE {name} AS RANGE (\n    subtype = {}\n);",
-                subtype.get::<_, String>(0)
-            )
-        }
-        other => {
-            return Err(Error::Config(format!(
-                "todavía no se genera el DDL de los tipos de categoría '{other}'"
-            )))
+        types::ShapeKind::Range => format!(
+            "CREATE TYPE {name} AS RANGE (\n    subtype = {}\n);",
+            shape.base.unwrap_or_default()
+        ),
+        types::ShapeKind::Other => {
+            return Err(Error::Config(
+                "todavía no se genera el DDL de este tipo de dato".to_owned(),
+            ))
         }
     };
 

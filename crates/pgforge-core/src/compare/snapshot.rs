@@ -18,6 +18,10 @@ use std::collections::HashMap;
 
 use crate::conn::ServerHandle;
 use crate::ddl::table::Identity;
+// `TypeKind` es el mismo `ddl::types::ShapeKind` con otro nombre en este módulo: acá compara
+// esquemas y no cruza el IPC, así que no hace falta el nombre que ve la interfaz.
+pub use crate::ddl::types::ShapeKind as TypeKind;
+pub use crate::ddl::types::Field;
 use crate::error::{Error, Result};
 use crate::ServerVersion;
 
@@ -101,20 +105,6 @@ pub struct Sequence {
     pub max_value: i64,
     pub cache: i64,
     pub cycle: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TypeKind {
-    Enum,
-    Composite,
-    Domain,
-    Range,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Field {
-    pub name: String,
-    pub type_name: String,
 }
 
 #[derive(Debug, Clone)]
@@ -509,7 +499,10 @@ async fn composite_fields(
     for row in &rows {
         map.entry(row.get(0)).or_default().push(Field {
             name: row.get(1),
-            type_name: row.get(2),
+            data_type: row.get(2),
+            // La comparación no distingue por intercalado: no se lee acá, mismo comportamiento
+            // que antes de compartir `Field` con `ddl::types`.
+            collation: None,
         });
     }
     Ok(map)

@@ -131,7 +131,7 @@ pub fn create_type(schema: &str, definition: &TypeDef) -> String {
             let fields = definition
                 .fields
                 .iter()
-                .map(|field| format!("    {} {}", quote_ident(&field.name), field.type_name))
+                .map(|field| format!("    {} {}", quote_ident(&field.name), field.data_type))
                 .collect::<Vec<_>>()
                 .join(",\n");
             format!("CREATE TYPE {name} AS (\n{fields}\n);")
@@ -161,6 +161,7 @@ pub fn create_type(schema: &str, definition: &TypeDef) -> String {
             "CREATE TYPE {name} AS RANGE (\n    subtype = {}\n);",
             definition.base.as_deref().unwrap_or("text")
         ),
+        TypeKind::Other => unreachable!("snapshot solo trae enum, compuesto, dominio y rango"),
     }
 }
 
@@ -266,11 +267,13 @@ mod tests {
             fields: vec![
                 Field {
                     name: "calle".to_owned(),
-                    type_name: "text".to_owned(),
+                    data_type: "text".to_owned(),
+                    collation: None,
                 },
                 Field {
                     name: "numero".to_owned(),
-                    type_name: "integer".to_owned(),
+                    data_type: "integer".to_owned(),
+                    collation: None,
                 },
             ],
             base: None,

@@ -398,33 +398,71 @@ pub struct TypeInfo {
     pub comment: Option<String>,
 }
 
-/// Lee la definición de un tipo.
-pub async fn info(handle: &ServerHandle, database: &str, oid: u32) -> Result<TypeInfo> {
+/// Categoría de tipo que puede necesitar su forma completa —enumeración, compuesto, dominio o
+/// rango—, sin cruzar el IPC: la interfaz solo distingue estas cuatro para [`TypeKind`] (`info()`
+/// agrupa rango en `Other`, porque [`crate::ddl::domain`] no edita rangos), pero [`type_ddl`] y
+/// [`crate::compare::snapshot`] sí necesitan la categoría propia para reconstruir el `CREATE TYPE`.
+///
+/// [`type_ddl`]: super::type_ddl
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShapeKind {
+    Enum,
+    Composite,
+    Domain,
+    Range,
+    /// Base o pseudotipo: [`shape_of`] no falla, pero tampoco tiene nada que ofrecer más que la
+    /// categoría — que quien llame decida si eso alcanza o no.
+    Other,
+}
+
+/// La forma de un tipo definido por el usuario, sin su identidad (nombre, esquema, dueño): lo que
+/// `info()` (edición) y [`type_ddl`] (visor de DDL) preguntaban cada uno con su propia consulta al
+/// catálogo, repitiendo la misma reconstrucción.
+///
+/// [`type_ddl`]: super::type_ddl
+#[derive(Debug, Clone)]
+pub struct TypeShape {
+    pub kind: ShapeKind,
+    /// Valores de una enumeración, en su orden.
+    pub labels: Vec<String>,
+    /// Campos de un tipo compuesto, con su intercalado si lo tienen.
+    pub fields: Vec<Field>,
+    /// Tipo base de un dominio, o subtipo de un rango.
+    pub base: Option<String>,
+    pub not_null: bool,
+    pub default: Option<String>,
+    /// Definición de cada `CHECK` del dominio, en el orden en que se declararon.
+    pub checks: Vec<String>,
+}
+
+/// Lee la forma completa de un tipo por su `oid`: una consulta fija (categoría, y lo que dominio y
+/// rango comparten en `pg_type`) y una segunda condicional según la categoría —valores si es
+/// enumeración, campos si es compuesto, los `CHECK` si es dominio, subtipo si es rango—.
+pub async fn shape_of(handle: &ServerHandle, database: &str, oid: u32) -> Result<TypeShape> {
     let client = handle.client(database).await?;
 
     let row = client
         .query_one(
-            "SELECT n.nspname::text,
-                    t.typname::text,
-                    pg_catalog.pg_get_userbyid(t.typowner)::text,
-                    t.typtype::text,
-                    pg_catalog.obj_description(t.oid, 'pg_type')
+            "SELECT t.typtype::text,
+                    pg_catalog.format_type(t.typbasetype, t.typtypmod),
+                    t.typnotnull,
+                    t.typdefault
                FROM pg_catalog.pg_type t
-               JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
               WHERE t.oid = $1",
             &[&oid],
         )
         .await?;
 
-    let typtype: String = row.get(3);
+    let typtype: String = row.get(0);
     let kind = match typtype.as_str() {
-        "e" => TypeKind::Enum,
-        "c" => TypeKind::Composite,
-        "d" => TypeKind::Domain,
-        _ => TypeKind::Other,
+        "e" => ShapeKind::Enum,
+        "c" => ShapeKind::Composite,
+        "d" => ShapeKind::Domain,
+        "r" | "m" => ShapeKind::Range,
+        _ => ShapeKind::Other,
     };
 
-    let labels = if kind == TypeKind::Enum {
+    let labels = if kind == ShapeKind::Enum {
         client
             .query(
                 "SELECT e.enumlabel::text
@@ -441,7 +479,7 @@ pub async fn info(handle: &ServerHandle, database: &str, oid: u32) -> Result<Typ
         Vec::new()
     };
 
-    let fields = if kind == TypeKind::Composite {
+    let fields = if kind == ShapeKind::Composite {
         client
             .query(
                 "SELECT a.attname::text,
@@ -466,14 +504,84 @@ pub async fn info(handle: &ServerHandle, database: &str, oid: u32) -> Result<Typ
         Vec::new()
     };
 
+    let (base, not_null, default, checks) = match kind {
+        ShapeKind::Domain => {
+            let checks = client
+                .query(
+                    "SELECT pg_catalog.pg_get_constraintdef(con.oid, true)
+                       FROM pg_catalog.pg_constraint con
+                      WHERE con.contypid = $1
+                      ORDER BY con.conname",
+                    &[&oid],
+                )
+                .await?
+                .into_iter()
+                .map(|row| row.get(0))
+                .collect();
+            (row.get(1), row.get(2), row.get(3), checks)
+        }
+        ShapeKind::Range => {
+            let subtype = client
+                .query_one(
+                    "SELECT pg_catalog.format_type(r.rngsubtype, NULL)
+                       FROM pg_catalog.pg_range r
+                      WHERE r.rngtypid = $1",
+                    &[&oid],
+                )
+                .await?
+                .get(0);
+            (Some(subtype), false, None, Vec::new())
+        }
+        ShapeKind::Enum | ShapeKind::Composite | ShapeKind::Other => {
+            (None, false, None, Vec::new())
+        }
+    };
+
+    Ok(TypeShape {
+        kind,
+        labels,
+        fields,
+        base,
+        not_null,
+        default,
+        checks,
+    })
+}
+
+/// Lee la definición de un tipo, para el diálogo de edición.
+pub async fn info(handle: &ServerHandle, database: &str, oid: u32) -> Result<TypeInfo> {
+    let client = handle.client(database).await?;
+
+    let row = client
+        .query_one(
+            "SELECT n.nspname::text,
+                    t.typname::text,
+                    pg_catalog.pg_get_userbyid(t.typowner)::text,
+                    pg_catalog.obj_description(t.oid, 'pg_type')
+               FROM pg_catalog.pg_type t
+               JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+              WHERE t.oid = $1",
+            &[&oid],
+        )
+        .await?;
+
+    let shape = shape_of(handle, database, oid).await?;
+    let kind = match shape.kind {
+        ShapeKind::Enum => TypeKind::Enum,
+        ShapeKind::Composite => TypeKind::Composite,
+        ShapeKind::Domain => TypeKind::Domain,
+        // Se agrupa en `Other` igual que antes: este módulo no edita rangos, eso vive aparte.
+        ShapeKind::Range | ShapeKind::Other => TypeKind::Other,
+    };
+
     Ok(TypeInfo {
         schema: row.get(0),
         name: row.get(1),
         owner: row.get(2),
         kind,
-        labels,
-        fields,
-        comment: row.get(4),
+        labels: shape.labels,
+        fields: shape.fields,
+        comment: row.get(3),
     })
 }
 

@@ -328,6 +328,8 @@ fn type_label(kind: TypeKind) -> &'static str {
         TypeKind::Composite => "tipo compuesto",
         TypeKind::Domain => "dominio",
         TypeKind::Range => "rango",
+        // `snapshot::types()` ya filtra a estas cuatro categorías: no llega ninguna otra acá.
+        TypeKind::Other => unreachable!("snapshot solo trae enum, compuesto, dominio y rango"),
     }
 }
 
@@ -650,6 +652,7 @@ fn type_kind(definition: &TypeDef) -> ObjectKind {
         TypeKind::Composite => ObjectKind::Composite,
         TypeKind::Domain => ObjectKind::Domain,
         TypeKind::Range => ObjectKind::Range,
+        TypeKind::Other => unreachable!("snapshot solo trae enum, compuesto, dominio y rango"),
     }
 }
 
@@ -696,7 +699,7 @@ fn type_entry(
                             pair(&left.fields, &right.fields, |f| f.name.as_str())
                         {
                             let text = |field: Option<&super::snapshot::Field>| {
-                                field.map(|f| f.type_name.clone())
+                                field.map(|f| f.data_type.clone())
                             };
                             let (source_text, target_text) =
                                 (text(source_field), text(target_field));
@@ -751,6 +754,9 @@ fn type_entry(
                             source,
                             target,
                         );
+                    }
+                    TypeKind::Other => {
+                        unreachable!("snapshot solo trae enum, compuesto, dominio y rango")
                     }
                 }
             }
@@ -997,7 +1003,8 @@ mod tests {
             labels: Vec::new(),
             fields: vec![Field {
                 name: "numero".to_owned(),
-                type_name: type_name.to_owned(),
+                data_type: type_name.to_owned(),
+                collation: None,
             }],
             base: None,
             not_null: false,
