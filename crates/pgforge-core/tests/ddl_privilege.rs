@@ -51,6 +51,12 @@ fn owner_role_name() -> String {
     format!("pgforge_privilege_owner_{}", std::process::id())
 }
 
+/// Miembro de `role_name`, sin ningún `GRANT` propio: es lo que prueba que un permiso calculado
+/// llega por membresía y no por otro camino.
+fn heir_role_name() -> String {
+    format!("pgforge_privilege_heredero_{}", std::process::id())
+}
+
 async fn setup(handle: &ServerHandle, schema: &str) {
     let client = handle.client(handle.default_database()).await.unwrap();
     client
@@ -136,8 +142,9 @@ async fn otorga_y_revoca_privilegios_contra_servidores_reales() {
         let schema = schema_name();
         let role = role_name();
         let owner = owner_role_name();
+        let heir = heir_role_name();
 
-        teardown(&handle, &schema, &[&role, &owner]).await; // por si quedó algo de una corrida anterior
+        teardown(&handle, &schema, &[&role, &owner, &heir]).await; // por si quedó algo de una corrida anterior
         setup(&handle, &schema).await;
 
         let outcome = {
@@ -145,6 +152,7 @@ async fn otorga_y_revoca_privilegios_contra_servidores_reales() {
             let schema = schema.clone();
             let role = role.clone();
             let owner = owner.clone();
+            let heir = heir.clone();
             tokio::spawn(async move {
                 prepara(&handle, &schema, &role).await;
                 privilegios_de_tabla(&handle, &schema, &role).await;
@@ -156,12 +164,13 @@ async fn otorga_y_revoca_privilegios_contra_servidores_reales() {
                 privilegios_de_base(&handle, &role).await;
                 privilegios_por_omision(&handle, &schema, &role).await;
                 privilegio_a_public(&handle, &schema).await;
+                permisos_calculados_por_esquema(&handle, &schema, &role, &heir).await;
                 reasigna_lo_que_el_rol_posee(&handle, &schema, &owner).await;
             })
             .await
         };
 
-        teardown(&handle, &schema, &[&role, &owner]).await;
+        teardown(&handle, &schema, &[&role, &owner, &heir]).await;
 
         if let Err(join) = outcome {
             std::panic::resume_unwind(join.into_panic());
@@ -641,6 +650,95 @@ async fn privilegio_a_public(handle: &ServerHandle, schema: &str) {
             .iter()
             .any(|g| g.grantee == "PUBLIC" && g.privilege == "SELECT"),
         "PUBLIC tiene que aparecer tal cual, no como un rol citado: {grants:?}"
+    );
+}
+
+/// Lo que prueba que "heredado por membresía" no necesita código propio: `heir` nunca recibe un
+/// `GRANT` directo, solo se hace miembro de `role_name` (`INHERIT` es el valor por omisión del
+/// rol), y `has_table_privilege` ya lo resuelve del lado del servidor.
+async fn permisos_calculados_por_esquema(
+    handle: &ServerHandle,
+    schema: &str,
+    role_name: &str,
+    heir: &str,
+) {
+    let database = handle.default_database().to_owned();
+
+    role::apply(
+        handle,
+        &database,
+        &[
+            RoleChange::CreateRole {
+                name: heir.to_owned(),
+                attributes: RoleAttributes::default(),
+                member_of: vec![],
+            },
+            RoleChange::GrantMembership {
+                role: role_name.to_owned(),
+                member: heir.to_owned(),
+                admin_option: false,
+            },
+        ],
+    )
+    .await
+    .expect("tenía que crear el rol heredero y hacerlo miembro");
+
+    let roles = vec![role_name.to_owned(), heir.to_owned()];
+
+    let tables = privilege::schema_table_privileges(handle, &database, schema, &roles)
+        .await
+        .unwrap();
+    let direct = tables
+        .iter()
+        .find(|p| p.object == "clientes" && p.role == role_name && p.privilege == "SELECT")
+        .expect("el SELECT directo tenía que aparecer calculado");
+    assert!(
+        direct.granted,
+        "el rol con el GRANT directo tiene que dar SELECT = true"
+    );
+
+    let inherited = tables
+        .iter()
+        .find(|p| p.object == "clientes" && p.role == heir && p.privilege == "SELECT")
+        .expect("el heredero tenía que aparecer en la lista aunque no tenga GRANT propio");
+    assert!(
+        inherited.granted,
+        "el heredero tiene que ver SELECT = true por membresía, sin GRANT propio"
+    );
+
+    let no_insert = tables
+        .iter()
+        .find(|p| p.object == "clientes" && p.role == heir && p.privilege == "INSERT")
+        .expect("INSERT tiene que aparecer igual, en false");
+    assert!(
+        !no_insert.granted,
+        "el INSERT ya revocado no se puede heredar"
+    );
+
+    let sequences = privilege::schema_sequence_privileges(handle, &database, schema, &roles)
+        .await
+        .unwrap();
+    assert!(
+        sequences
+            .iter()
+            .any(|p| p.object == "numeros"
+                && p.role == role_name
+                && p.privilege == "USAGE"
+                && p.granted),
+        "USAGE de la secuencia tenía que calcularse: {sequences:?}"
+    );
+
+    let functions = privilege::schema_function_privileges(handle, &database, schema, &roles)
+        .await
+        .unwrap();
+    assert!(
+        functions
+            .iter()
+            .any(|p| p.object == "doble"
+                && p.role == role_name
+                && p.privilege == "EXECUTE"
+                && p.granted),
+        "EXECUTE de la función tenía que calcularse: {functions:?}"
     );
 }
 

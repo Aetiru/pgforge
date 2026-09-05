@@ -13,7 +13,7 @@ use pgforge_core::ddl::index::{self, IndexDef, IndexInfo};
 use pgforge_core::ddl::partition::{self, PartitionChange, PartitioningInfo};
 use pgforge_core::ddl::policy::{self, PolicyChange, TableSecurity};
 use pgforge_core::ddl::privilege::{
-    self, ColumnGrant, DefaultGrant, PrivilegeChange, PrivilegeGrant,
+    self, ColumnGrant, DefaultGrant, EffectivePrivilege, PrivilegeChange, PrivilegeGrant,
 };
 use pgforge_core::ddl::role::{self, RoleChange, RoleInfo};
 use pgforge_core::ddl::schema::{self, SchemaChange};
@@ -455,6 +455,53 @@ pub async fn schema_privileges(
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
     privilege::schema_privileges(&handle, &database, oid).await
+}
+
+/// Los permisos de cada rol de `roles` sobre cada tabla/vista/tabla externa de `schema`: la matriz
+/// de permisos y "qué puede hacer este rol" son la misma pregunta, pedida para uno o para muchos
+/// roles a la vez.
+#[tauri::command]
+pub async fn schema_table_privileges(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    schema: String,
+    roles: Vec<String>,
+) -> Result<Vec<EffectivePrivilege>> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    privilege::schema_table_privileges(&handle, &database, &schema, &roles).await
+}
+
+/// Los permisos de cada rol de `roles` sobre cada secuencia de `schema`.
+#[tauri::command]
+pub async fn schema_sequence_privileges(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    schema: String,
+    roles: Vec<String>,
+) -> Result<Vec<EffectivePrivilege>> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    privilege::schema_sequence_privileges(&handle, &database, &schema, &roles).await
+}
+
+/// Los permisos de cada rol de `roles` sobre cada función o procedimiento de `schema`.
+#[tauri::command]
+pub async fn schema_function_privileges(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    schema: String,
+    roles: Vec<String>,
+) -> Result<Vec<EffectivePrivilege>> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    privilege::schema_function_privileges(&handle, &database, &schema, &roles).await
 }
 
 /// El SQL que se ejecutaría, sin ejecutar nada.

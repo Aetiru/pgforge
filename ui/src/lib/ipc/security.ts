@@ -157,6 +157,55 @@ export const defaultPrivileges = (id: string, database?: string) =>
 export const schemaPrivileges = (id: string, oid: number, database?: string) =>
   invoke<PrivilegeGrant[]>("schema_privileges", { id, oid, database: database ?? null });
 
+/**
+ * Un permiso **calculado**, no leído de un ACL: sale de `has_table_privilege` y compañía, que ya
+ * resuelven la membresía de rol y el `INHERIT` del lado del servidor. La matriz de permisos y "qué
+ * puede hacer este rol" son la misma pregunta, pedida para uno o para muchos roles a la vez.
+ */
+export interface EffectivePrivilege {
+  object: string;
+  role: string;
+  privilege: string;
+  granted: boolean;
+}
+
+/** Los permisos de `roles` sobre cada tabla/vista/tabla externa de `schema`. */
+export const schemaTablePrivileges = (id: string, schema: string, roles: string[], database?: string) =>
+  invoke<EffectivePrivilege[]>("schema_table_privileges", {
+    id,
+    schema,
+    roles,
+    database: database ?? null,
+  });
+
+/** Los permisos de `roles` sobre cada secuencia de `schema`. */
+export const schemaSequencePrivileges = (
+  id: string,
+  schema: string,
+  roles: string[],
+  database?: string,
+) =>
+  invoke<EffectivePrivilege[]>("schema_sequence_privileges", {
+    id,
+    schema,
+    roles,
+    database: database ?? null,
+  });
+
+/** Los permisos de `roles` sobre cada función o procedimiento de `schema`. */
+export const schemaFunctionPrivileges = (
+  id: string,
+  schema: string,
+  roles: string[],
+  database?: string,
+) =>
+  invoke<EffectivePrivilege[]>("schema_function_privileges", {
+    id,
+    schema,
+    roles,
+    database: database ?? null,
+  });
+
 // ---------------------------------------------------------------------------
 // Seguridad por fila (RLS)
 // ---------------------------------------------------------------------------

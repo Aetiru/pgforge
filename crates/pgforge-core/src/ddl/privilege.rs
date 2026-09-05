@@ -774,6 +774,115 @@ pub async fn default_privileges(
         .collect())
 }
 
+/// Un privilegio **calculado**, no leído de un ACL: sale de `has_table_privilege` y compañía, que
+/// ya resuelven la membresía de rol y el `INHERIT` del lado del servidor. No hay grafo de roles que
+/// mantener acá — la matriz de permisos y "qué puede hacer este rol" son la misma pregunta
+/// (¿el rol `role` tiene `privilege` sobre `object`?), pedida para uno o para muchos roles a la vez.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectivePrivilege {
+    pub object: String,
+    pub role: String,
+    pub privilege: String,
+    pub granted: bool,
+}
+
+fn rows_to_effective(rows: Vec<tokio_postgres::Row>) -> Vec<EffectivePrivilege> {
+    rows.into_iter()
+        .map(|row| EffectivePrivilege {
+            object: row.get(0),
+            role: row.get(1),
+            privilege: row.get(2),
+            granted: row.get(3),
+        })
+        .collect()
+}
+
+/// Los permisos de cada rol de `roles` sobre cada tabla/vista/tabla externa de `schema`. Uno de los
+/// tres lectores por esquema entero de la matriz de permisos: a diferencia de `relation_privileges`
+/// (un objeto por vez), acá el filtro es el esquema, mismo salto que dio `introspect::search` al ir
+/// de un objeto a toda la base — nunca "toda la base sin acotar".
+pub async fn schema_table_privileges(
+    handle: &ServerHandle,
+    database: &str,
+    schema: &str,
+    roles: &[String],
+) -> Result<Vec<EffectivePrivilege>> {
+    let client = handle.client(database).await?;
+    let rows = client
+        .query(
+            "SELECT c.relname::text, r.rolname::text, priv,
+                    pg_catalog.has_table_privilege(r.oid, c.oid, priv)
+               FROM pg_catalog.pg_class c
+               JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+              CROSS JOIN pg_catalog.pg_roles r
+              CROSS JOIN unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE',
+                                       'REFERENCES', 'TRIGGER']) AS priv
+              WHERE n.nspname = $1
+                AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+                AND r.rolname = ANY($2)
+              ORDER BY c.relname, r.rolname, priv",
+            &[&schema, &roles],
+        )
+        .await?;
+    Ok(rows_to_effective(rows))
+}
+
+/// Los permisos de cada rol de `roles` sobre cada secuencia de `schema`. Mismo molde que
+/// [`schema_table_privileges`].
+pub async fn schema_sequence_privileges(
+    handle: &ServerHandle,
+    database: &str,
+    schema: &str,
+    roles: &[String],
+) -> Result<Vec<EffectivePrivilege>> {
+    let client = handle.client(database).await?;
+    let rows = client
+        .query(
+            "SELECT c.relname::text, r.rolname::text, priv,
+                    pg_catalog.has_sequence_privilege(r.oid, c.oid, priv)
+               FROM pg_catalog.pg_class c
+               JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+              CROSS JOIN pg_catalog.pg_roles r
+              CROSS JOIN unnest(ARRAY['USAGE', 'SELECT', 'UPDATE']) AS priv
+              WHERE n.nspname = $1
+                AND c.relkind = 'S'
+                AND r.rolname = ANY($2)
+              ORDER BY c.relname, r.rolname, priv",
+            &[&schema, &roles],
+        )
+        .await?;
+    Ok(rows_to_effective(rows))
+}
+
+/// Los permisos de cada rol de `roles` sobre cada función o procedimiento de `schema`. Mismo molde
+/// que [`schema_table_privileges`]; `prokind` deja afuera agregados y funciones de ventana, que no
+/// son lo que `Grantable::Function` ya distingue (función vs. procedimiento).
+pub async fn schema_function_privileges(
+    handle: &ServerHandle,
+    database: &str,
+    schema: &str,
+    roles: &[String],
+) -> Result<Vec<EffectivePrivilege>> {
+    let client = handle.client(database).await?;
+    let rows = client
+        .query(
+            "SELECT p.proname::text, r.rolname::text, priv,
+                    pg_catalog.has_function_privilege(r.oid, p.oid, priv)
+               FROM pg_catalog.pg_proc p
+               JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+              CROSS JOIN pg_catalog.pg_roles r
+              CROSS JOIN unnest(ARRAY['EXECUTE']) AS priv
+              WHERE n.nspname = $1
+                AND p.prokind IN ('f', 'p')
+                AND r.rolname = ANY($2)
+              ORDER BY p.proname, r.rolname, priv",
+            &[&schema, &roles],
+        )
+        .await?;
+    Ok(rows_to_effective(rows))
+}
+
 fn rows_to_grants(rows: Vec<tokio_postgres::Row>) -> Vec<PrivilegeGrant> {
     rows.into_iter()
         .map(|row| PrivilegeGrant {
