@@ -774,10 +774,17 @@ pub async fn default_privileges(
         .collect())
 }
 
-/// Un privilegio **calculado**, no leído de un ACL: sale de `has_table_privilege` y compañía, que
-/// ya resuelven la membresía de rol y el `INHERIT` del lado del servidor. No hay grafo de roles que
-/// mantener acá — la matriz de permisos y "qué puede hacer este rol" son la misma pregunta
-/// (¿el rol `role` tiene `privilege` sobre `object`?), pedida para uno o para muchos roles a la vez.
+/// Un privilegio **calculado**, no leído de un ACL: `granted` sale de `has_table_privilege` y
+/// compañía, que ya resuelven la membresía de rol y el `INHERIT` del lado del servidor. No hay
+/// grafo de roles que mantener acá — la matriz de permisos y "qué puede hacer este rol" son la
+/// misma pregunta (¿el rol `role` tiene `privilege` sobre `object`?), pedida para uno o para muchos
+/// roles a la vez.
+///
+/// `direct` distingue de dónde sale ese `true`: si el rol (o `PUBLIC`) aparece tal cual en el ACL
+/// del objeto para ese privilegio, o si lo tiene solo porque es miembro de otro rol que sí aparece
+/// ahí. `aclexplode` nunca expande membresías —lista los `grantee` tal como están escritos en el
+/// ACL—, así que buscar al rol o a `PUBLIC` (`grantee = 0`) entre esas filas alcanza para saber si
+/// el privilegio es propio o prestado, sin tocar `pg_auth_members`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EffectivePrivilege {
@@ -785,6 +792,7 @@ pub struct EffectivePrivilege {
     pub role: String,
     pub privilege: String,
     pub granted: bool,
+    pub direct: bool,
 }
 
 fn rows_to_effective(rows: Vec<tokio_postgres::Row>) -> Vec<EffectivePrivilege> {
@@ -794,6 +802,7 @@ fn rows_to_effective(rows: Vec<tokio_postgres::Row>) -> Vec<EffectivePrivilege> 
             role: row.get(1),
             privilege: row.get(2),
             granted: row.get(3),
+            direct: row.get(4),
         })
         .collect()
 }
@@ -812,7 +821,14 @@ pub async fn schema_table_privileges(
     let rows = client
         .query(
             "SELECT c.relname::text, r.rolname::text, priv,
-                    pg_catalog.has_table_privilege(r.oid, c.oid, priv)
+                    pg_catalog.has_table_privilege(r.oid, c.oid, priv),
+                    EXISTS (
+                        SELECT 1
+                          FROM pg_catalog.aclexplode(coalesce(c.relacl, pg_catalog.acldefault(
+                                   (CASE c.relkind WHEN 'S' THEN 's' ELSE 'r' END)::\"char\",
+                                   c.relowner))) g
+                         WHERE g.privilege_type = priv AND (g.grantee = r.oid OR g.grantee = 0)
+                    )
                FROM pg_catalog.pg_class c
                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
               CROSS JOIN pg_catalog.pg_roles r
@@ -840,7 +856,13 @@ pub async fn schema_sequence_privileges(
     let rows = client
         .query(
             "SELECT c.relname::text, r.rolname::text, priv,
-                    pg_catalog.has_sequence_privilege(r.oid, c.oid, priv)
+                    pg_catalog.has_sequence_privilege(r.oid, c.oid, priv),
+                    EXISTS (
+                        SELECT 1
+                          FROM pg_catalog.aclexplode(
+                                   coalesce(c.relacl, pg_catalog.acldefault('s', c.relowner))) g
+                         WHERE g.privilege_type = priv AND (g.grantee = r.oid OR g.grantee = 0)
+                    )
                FROM pg_catalog.pg_class c
                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
               CROSS JOIN pg_catalog.pg_roles r
@@ -868,7 +890,13 @@ pub async fn schema_function_privileges(
     let rows = client
         .query(
             "SELECT p.proname::text, r.rolname::text, priv,
-                    pg_catalog.has_function_privilege(r.oid, p.oid, priv)
+                    pg_catalog.has_function_privilege(r.oid, p.oid, priv),
+                    EXISTS (
+                        SELECT 1
+                          FROM pg_catalog.aclexplode(
+                                   coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))) g
+                         WHERE g.privilege_type = priv AND (g.grantee = r.oid OR g.grantee = 0)
+                    )
                FROM pg_catalog.pg_proc p
                JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
               CROSS JOIN pg_catalog.pg_roles r

@@ -158,15 +158,20 @@ export const schemaPrivileges = (id: string, oid: number, database?: string) =>
   invoke<PrivilegeGrant[]>("schema_privileges", { id, oid, database: database ?? null });
 
 /**
- * Un permiso **calculado**, no leído de un ACL: sale de `has_table_privilege` y compañía, que ya
- * resuelven la membresía de rol y el `INHERIT` del lado del servidor. La matriz de permisos y "qué
- * puede hacer este rol" son la misma pregunta, pedida para uno o para muchos roles a la vez.
+ * Un permiso **calculado**, no leído de un ACL: `granted` sale de `has_table_privilege` y
+ * compañía, que ya resuelven la membresía de rol y el `INHERIT` del lado del servidor. La matriz de
+ * permisos y "qué puede hacer este rol" son la misma pregunta, pedida para uno o para muchos roles
+ * a la vez.
+ *
+ * `direct` distingue si el rol (o `PUBLIC`) aparece tal cual en el ACL del objeto, o si el permiso
+ * le llega solo por ser miembro de otro rol.
  */
 export interface EffectivePrivilege {
   object: string;
   role: string;
   privilege: string;
   granted: boolean;
+  direct: boolean;
 }
 
 /** Los permisos de `roles` sobre cada tabla/vista/tabla externa de `schema`. */

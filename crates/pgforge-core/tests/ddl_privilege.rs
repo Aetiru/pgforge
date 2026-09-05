@@ -163,8 +163,8 @@ async fn otorga_y_revoca_privilegios_contra_servidores_reales() {
                 privilegios_sobre_todo_un_esquema(&handle, &schema, &role).await;
                 privilegios_de_base(&handle, &role).await;
                 privilegios_por_omision(&handle, &schema, &role).await;
-                privilegio_a_public(&handle, &schema).await;
                 permisos_calculados_por_esquema(&handle, &schema, &role, &heir).await;
+                privilegio_a_public(&handle, &schema).await;
                 reasigna_lo_que_el_rol_posee(&handle, &schema, &owner).await;
             })
             .await
@@ -693,8 +693,8 @@ async fn permisos_calculados_por_esquema(
         .find(|p| p.object == "clientes" && p.role == role_name && p.privilege == "SELECT")
         .expect("el SELECT directo tenía que aparecer calculado");
     assert!(
-        direct.granted,
-        "el rol con el GRANT directo tiene que dar SELECT = true"
+        direct.granted && direct.direct,
+        "el rol con el GRANT directo tiene que dar SELECT = true y direct = true"
     );
 
     let inherited = tables
@@ -702,8 +702,8 @@ async fn permisos_calculados_por_esquema(
         .find(|p| p.object == "clientes" && p.role == heir && p.privilege == "SELECT")
         .expect("el heredero tenía que aparecer en la lista aunque no tenga GRANT propio");
     assert!(
-        inherited.granted,
-        "el heredero tiene que ver SELECT = true por membresía, sin GRANT propio"
+        inherited.granted && !inherited.direct,
+        "el heredero tiene que ver SELECT = true por membresía, pero direct = false: {inherited:?}"
     );
 
     let no_insert = tables
