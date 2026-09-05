@@ -27,6 +27,8 @@ function context(current: TreeNode | null, extra: Partial<ActionContext> = {}): 
     dataTarget: null,
     queryTarget: null,
     hasCommentTarget: false,
+    bookmarkTarget: null,
+    bookmarked: false,
     ...extra,
   };
 }
@@ -89,6 +91,24 @@ describe("headerActions", () => {
 
   it("una carpeta de conexiones solo se renombra", () => {
     expect(kinds(context(null, { isGroup: true, label: "Producción" }))).toEqual(["renameGroup"]);
+  });
+
+  it("marcar dice «agregar» o «quitar» según ya esté marcado, y no aparece sin objetivo", () => {
+    const table = node("table", { schema: "public", oid: 42 });
+    expect(kinds(context(table))).not.toContain("bookmark");
+
+    const target = {
+      profileId: "p1",
+      database: "app",
+      schema: "public",
+      name: "clientes",
+      kind: "table" as const,
+    };
+    const off = headerActions(context(table, { bookmarkTarget: target, bookmarked: false }));
+    expect(off.find((action) => action.kind === "bookmark")?.label).toBe("Agregar a marcadores");
+
+    const on = headerActions(context(table, { bookmarkTarget: target, bookmarked: true }));
+    expect(on.find((action) => action.kind === "bookmark")?.label).toBe("Quitar de marcadores");
   });
 
   it("la partición se ofrece solo en una tabla particionada ya leída", () => {

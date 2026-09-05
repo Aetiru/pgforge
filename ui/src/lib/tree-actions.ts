@@ -6,7 +6,7 @@
  * consulta cada fila tiene que ser una sola. Es pura, así que se prueba sin montar nada.
  */
 
-import type { ConnectionProfile, FolderKind, NodeKind, TreeNode } from "./ipc";
+import type { BookmarkKind, BookmarkTarget, ConnectionProfile, FolderKind, NodeKind, TreeNode } from "./ipc";
 import type { Row } from "./explorer.svelte";
 
 /** Contra qué base abriría una consulta o una grilla lo que está seleccionado. */
@@ -94,4 +94,37 @@ export function connectionUrl(profile: ConnectionProfile): string {
 export function qualifiedNameOf(node: TreeNode | null): string | null {
   if (!node) return null;
   return node.schema ? `${node.schema}.${node.label}` : node.label;
+}
+
+/**
+ * Qué tipo de nodo del árbol corresponde a cada clase de marcador. Vocabulario cerrado: son los
+ * cinco que `pgforge_core::bookmarks::BookmarkKind` acepta, ni uno más.
+ */
+const BOOKMARK_KIND_OF: Partial<Record<string, BookmarkKind>> = {
+  table: "table",
+  // Una tabla particionada se marca igual que cualquier otra tabla: el marcador no distingue las
+  // dos, así que revelarlo (`revealBookmark`, en `bookmarks.svelte.ts`) tampoco tiene por qué.
+  partitionedTable: "table",
+  view: "view",
+  materializedView: "materializedView",
+  function: "function",
+  procedure: "procedure",
+};
+
+/**
+ * El objetivo de marcador que representa esta fila, o `null` si no es de las que se pueden marcar
+ * —tabla, vista, vista materializada, función o procedimiento— o le falta el esquema.
+ */
+export function bookmarkTargetOf(row: Row | null): BookmarkTarget | null {
+  const node = row?.node;
+  if (!row || !node || !node.schema || typeof node.kind !== "string") return null;
+  const kind = BOOKMARK_KIND_OF[node.kind];
+  if (!kind) return null;
+  return {
+    profileId: row.profileId,
+    database: node.database,
+    schema: node.schema,
+    name: node.label,
+    kind,
+  };
 }

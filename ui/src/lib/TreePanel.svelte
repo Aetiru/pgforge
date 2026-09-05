@@ -5,9 +5,11 @@
   import Icon from "./Icon.svelte";
   import { environmentOf, isReadOnly } from "./access.svelte";
   import { envLook, lookOf, READ_ONLY_LOOK, serverColorLook, tagLook } from "./badges";
+  import { bookmarks } from "./bookmarks.svelte";
   import { explorer, visibleRows, type Row } from "./explorer.svelte";
   import { describeError, folderOf, type CompareSide } from "./ipc";
   import {
+    bookmarkTargetOf,
     connectionUrl,
     dataTargetOf,
     schemaTargetOf,
@@ -233,6 +235,7 @@
   const menuData = $derived(menu ? dataTargetOf(menu.row.node) : null);
   const menuSchema = $derived(menu ? schemaTargetOf(menu.row.node) : null);
   const menuName = $derived(menu ? qualifiedNameOf(menu.row.node) : null);
+  const menuBookmark = $derived(menu ? bookmarkTargetOf(menu.row) : null);
   const menuIsServer = $derived(menu?.row.kind === "server");
 
   function openMenu(event: MouseEvent, row: Row) {
@@ -344,6 +347,12 @@
     const name = menuName;
     menu = null;
     if (name) await navigator.clipboard.writeText(name).catch(() => {});
+  }
+
+  function toggleBookmark() {
+    const target = menuBookmark;
+    menu = null;
+    if (target) void bookmarks.toggle(target);
   }
 
   /** Deja la fila `index` dentro de la ventana visible, sin moverla si ya se ve. */
@@ -1179,6 +1188,15 @@
     {#if menuName}
       <button class="row-menu" onclick={copyName}>
         <span class="flex items-center gap-2"><Icon name="copy" size={13} /> Copiar el nombre</span>
+      </button>
+    {/if}
+
+    {#if menuBookmark}
+      <button class="row-menu" onclick={toggleBookmark}>
+        <span class="flex items-center gap-2">
+          <Icon name="star" size={13} />
+          {bookmarks.has(menuBookmark) ? "Quitar de marcadores" : "Agregar a marcadores"}
+        </span>
       </button>
     {/if}
 

@@ -6,6 +6,7 @@ import { explorer } from "./explorer.svelte";
 import { oneLine } from "./format";
 import { notify } from "./notify.svelte";
 import { paging } from "./paging.svelte";
+import { renamedScriptPath } from "./script-name";
 import { Tab, tabs } from "./tabs.svelte";
 import {
   Channel,
@@ -22,6 +23,10 @@ import {
   queryRun,
   queryTxStatus,
   schemaSnapshot,
+  scriptNewName,
+  scriptRead,
+  scriptRename,
+  scriptWrite,
   sqlFormat,
   sqlReadFile,
   sqlWriteFile,
@@ -193,6 +198,26 @@ export class QueryTab extends Tab {
   savedName = $state<string | null>(null);
 
   /**
+   * Su script en la biblioteca fija, si tiene uno.
+   *
+   * Independiente de `filePath`, con la misma lógica que ya separa a `filePath` de `savedId`:
+   * `filePath` es «guardé esto en otro lado con Ctrl+S», y esto es el `.sql` que la aplicación
+   * mantiene sola en `<config>/scripts/<conexión>/`, con su propio ciclo de autoguardado y de
+   * renombre. Una pestaña abierta con `openSqlFiles` no tiene `scriptPath` —ya tiene su `filePath`,
+   * que es justo el archivo que el usuario eligió—; una abierta con `openQuery` sí, reservado desde
+   * el arranque; y una abierta con `openScript` también, apuntando al script que se vino a editar.
+   */
+  scriptPath = $state<string | null>(null);
+  /**
+   * Si `scriptPath` ya existe en disco. El nombre se reserva al abrir la pestaña, pero el archivo
+   * recién se crea con el primer contenido no vacío (ver `flushScript`): sin esta bandera, cada
+   * pestaña que se abre y se cierra sin escribir nada dejaría un `.sql` vacío en la biblioteca.
+   * `openScript` la enciende de entrada: ahí el archivo ya existe, es el que se vino a abrir.
+   */
+  scriptCreated = false;
+  private scriptSaveTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /**
    * Se incrementa para pedirle a la pestaña que formatee, desde un lugar que no tiene el editor de
    * CodeMirror a mano —la paleta de comandos—. `QueryPanel` lo mira y dispara el mismo camino que
    * el botón y el atajo.
@@ -325,7 +350,44 @@ export class QueryTab extends Tab {
   }
 
   override async dispose() {
+    // Cerrar la pestaña guarda y no borra el script: que sobreviva es todo el punto de tenerlo.
+    await this.flushScript();
     if (this.tabId) await queryClose(this.tabId);
+  }
+
+  override async flush() {
+    await this.flushScript();
+  }
+
+  /**
+   * Vuelca `sql` al script pendiente, si hay uno y tiene algo escrito.
+   *
+   * Sin contenido no escribe nada: es lo que evita que una pestaña abierta y cerrada sin tocar el
+   * editor deje un `.sql` vacío en la biblioteca. Que falle no es un error del usuario —el mismo
+   * texto sigue en el editor, y el próximo disparador lo vuelve a intentar—, así que se anota en el
+   * registro de la pestaña y no interrumpe nada.
+   */
+  async flushScript() {
+    clearTimeout(this.scriptSaveTimer);
+    this.scriptSaveTimer = undefined;
+    if (!this.scriptPath || this.sql.trim() === "") return;
+    try {
+      await scriptWrite(this.scriptPath, this.sql);
+      this.scriptCreated = true;
+    } catch (error) {
+      this.log("error", `No se pudo guardar el script: ${describeError(error)}`);
+    }
+  }
+
+  /**
+   * Debounce de ~1 s sin cambios, uno de los tres disparadores del autoguardado (los otros dos son
+   * perder el foco de la ventana y cambiar de pestaña activa, ver `App.svelte` y `Tabs.activate`).
+   * `QueryPanel` lo llama en un `$effect` que mira `sql`.
+   */
+  scheduleScriptSave() {
+    if (!this.scriptPath) return;
+    clearTimeout(this.scriptSaveTimer);
+    this.scriptSaveTimer = setTimeout(() => void this.flushScript(), 1000);
   }
 
   /**
@@ -636,7 +698,9 @@ export async function openSqlFiles(
 
   for (const path of paths) {
     const name = path.split(/[\\/]/).pop() ?? "consulta.sql";
-    const tab = await openQuery(profileId, database, name);
+    // Sin reservar script: la pestaña ya tiene su archivo, que es justo el que se está abriendo.
+    // `filePath` es el camino de «guardé esto en otro lado con Ctrl+S», y sigue siéndolo acá.
+    const tab = await openQuery(profileId, database, name, false);
     last = tab;
     try {
       tab.sql = await sqlReadFile(path);
@@ -651,11 +715,46 @@ export async function openSqlFiles(
   return last;
 }
 
-/** Abre una pestaña de consulta contra una base y la deja seleccionada. */
+/**
+ * Abre un script de la biblioteca fija en una pestaña nueva.
+ *
+ * A diferencia de `openSqlFiles`, la ruta queda en `scriptPath` y no en `filePath`: sigue el ciclo
+ * propio de la biblioteca —autoguardado, renombre desde la pestaña—, no el de «guardar como» manual.
+ * `scriptCreated` arranca en `true`: el archivo ya existe, es el que se vino a abrir.
+ */
+export async function openScript(
+  path: string,
+  profileId: string,
+  database: string,
+): Promise<QueryTab> {
+  const name = path.split(/[\\/]/).pop() ?? "script.sql";
+  const tab = await openQuery(profileId, database, name.replace(/\.sql$/i, ""), false);
+  tab.scriptPath = path;
+  tab.scriptCreated = true;
+  try {
+    tab.sql = await scriptRead(path);
+  } catch (error) {
+    tab.log("error", `No se pudo abrir ${path}: ${describeError(error)}`);
+    tab.view = "messages";
+  }
+  return tab;
+}
+
+/**
+ * Abre una pestaña de consulta contra una base y la deja seleccionada.
+ *
+ * `reserveScript` reserva de entrada el nombre del script de la biblioteca fija que le va a
+ * corresponder (`script_new_name`, que arma la ruta completa del lado de Rust: ver
+ * `commands/scripts.rs`). El archivo recién se crea en disco con el primer contenido no vacío —ver
+ * `QueryTab.flushScript`—, así que reservarlo acá no escribe nada todavía. Va en `true` por omisión
+ * porque es lo que corresponde a una pestaña nueva y en blanco; `openSqlFiles` y `openScript` lo
+ * apagan porque ya tienen su propia ruta (`filePath` o `scriptPath`, según el caso).
+ */
 export async function openQuery(
   profileId: string,
   database: string,
   title: string,
+  reserveScript = true,
 ): Promise<QueryTab> {
   const tab = tabs.add(new QueryTab(profileId, database, title));
 
@@ -678,5 +777,56 @@ export async function openQuery(
   // Sin `await`: la pestaña ya sirve para escribir y ejecutar mientras el catálogo se consulta.
   void tab.loadSchema();
 
+  if (reserveScript) {
+    // Tampoco `await`: reservar el nombre no bloquea la pestaña, y si falla —perfil desconocido,
+    // error de disco— simplemente no queda script asociado, que es degradar bien.
+    scriptNewName(profileId)
+      .then((path) => (tab.scriptPath = path))
+      .catch(() => {});
+  }
+
   return tab;
+}
+
+/**
+ * Renombra la pestaña, y con ella su script si tiene uno.
+ *
+ * Doble clic sobre el título (y `F2` con la pestaña activa, ver `App.svelte`) son el único gesto
+ * para esto: antes no había forma de ponerle nombre a una pestaña, solo de renombrar el archivo que
+ * ya se había guardado con «Guardar como».
+ *
+ * Sin `scriptPath` no hay nada que tocar en disco: el título es un rótulo nada más. Con `scriptPath`
+ * pero sin `scriptCreated` —la pestaña nunca escribió nada—, tampoco: `script_rename` fallaría
+ * contra un archivo que no existe, así que alcanza con mover la reserva del nombre.
+ */
+export async function renameQueryTab(tab: QueryTab, title: string) {
+  const trimmed = title.trim();
+  if (!trimmed || trimmed === tab.title) return;
+
+  if (!tab.scriptPath) {
+    tab.title = trimmed;
+    return;
+  }
+
+  const newPath = renamedScriptPath(tab.scriptPath, trimmed);
+  if (newPath === tab.scriptPath) {
+    tab.title = trimmed;
+    return;
+  }
+
+  if (!tab.scriptCreated) {
+    tab.scriptPath = newPath;
+    tab.title = trimmed;
+    return;
+  }
+
+  try {
+    await scriptRename(tab.scriptPath, newPath);
+    tab.scriptPath = newPath;
+    tab.title = trimmed;
+  } catch (error) {
+    // Nombre repetido, permiso, lo que sea: se avisa en el registro de la pestaña y el título no se
+    // toca, para no dejar la pestaña diciendo un nombre que el archivo no tiene.
+    tab.log("error", `No se pudo renombrar el script: ${describeError(error)}`);
+  }
 }

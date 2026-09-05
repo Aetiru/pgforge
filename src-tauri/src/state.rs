@@ -109,11 +109,23 @@ pub struct AppState {
     /// Los workspaces (ventanas acotadas a una carpeta de servidores). Archivo aparte de
     /// `connections.json`: un workspace no es un perfil, es una vista sobre perfiles ya guardados.
     pub workspaces: Mutex<WorkspaceStore>,
+    /// Los marcadores del árbol: objetos del catálogo que el usuario decidió tener siempre a mano.
+    /// Archivo aparte (`bookmarks.db`), mismo motivo que `saved`: el `user_version` del esquema es
+    /// del archivo.
+    pub bookmarks: Mutex<pgforge_core::BookmarkStore>,
+    /// Directorio de configuración de la aplicación. Se guarda entero (no solo lo que ya se usó
+    /// para abrir los stores de arriba) porque `scripts_root` cuelga de acá.
+    pub config_dir: PathBuf,
+    /// Raíz del árbol de scripts, una carpeta por conexión. A diferencia de los stores de arriba,
+    /// no se crea en `new()`: que no exista todavía es el estado normal antes de guardar el primer
+    /// script, y `pgforge_core::scripts` ya sabe leer una raíz ausente como árbol vacío.
+    pub scripts_root: PathBuf,
 }
 
 impl AppState {
     pub fn new(config_dir: PathBuf) -> pgforge_core::Result<Self> {
         std::fs::create_dir_all(&config_dir)?;
+        let scripts_root = config_dir.join("scripts");
         Ok(Self {
             manager: ConnectionManager::new(),
             store: Mutex::new(ProfileStore::load(config_dir.join("connections.json"))?),
@@ -121,10 +133,15 @@ impl AppState {
             saved: Mutex::new(SavedStore::open(config_dir.join("saved.db"))?),
             snippets: Mutex::new(SnippetStore::load(config_dir.join("snippets.json"))?),
             workspaces: Mutex::new(WorkspaceStore::load(config_dir.join("workspaces.json"))?),
+            bookmarks: Mutex::new(pgforge_core::BookmarkStore::open(
+                config_dir.join("bookmarks.db"),
+            )?),
             monitors: Mutex::new(HashMap::new()),
             processes: Processes::default(),
             queries: Mutex::new(HashMap::new()),
             reads: Mutex::new(HashMap::new()),
+            config_dir,
+            scripts_root,
         })
     }
 }

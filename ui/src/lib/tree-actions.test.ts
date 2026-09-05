@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  bookmarkTargetOf,
   connectionUrl,
   dataTargetOf,
   schemaTargetOf,
@@ -129,6 +130,42 @@ describe("connectionUrl", () => {
     expect(connectionUrl(profile({ user: "admin@casa", database: "mi base" }))).toBe(
       "postgres://admin%40casa@db.local:5432/mi%20base",
     );
+  });
+});
+
+describe("bookmarkTargetOf", () => {
+  it("arma el objetivo para lo que se puede marcar", () => {
+    expect(bookmarkTargetOf(row())).toEqual({
+      profileId: "p1",
+      database: "app",
+      schema: "public",
+      name: "clientes",
+      kind: "table",
+    });
+  });
+
+  it("una tabla particionada se marca como tabla: el marcador no distingue las dos", () => {
+    const partitioned = row({ node: node("partitionedTable", { schema: "public" }) });
+    expect(bookmarkTargetOf(partitioned)?.kind).toBe("table");
+  });
+
+  it("vistas, materializadas, funciones y procedimientos también se pueden marcar", () => {
+    for (const [kind, expected] of [
+      ["view", "view"],
+      ["materializedView", "materializedView"],
+      ["function", "function"],
+      ["procedure", "procedure"],
+    ] as const) {
+      const r = row({ node: node(kind, { schema: "public" }) });
+      expect(bookmarkTargetOf(r)?.kind).toBe(expected);
+    }
+  });
+
+  it("lo que no cuelga de un esquema, o no tiene uno, no se puede marcar", () => {
+    expect(bookmarkTargetOf(row({ node: node("index", { schema: "public" }) }))).toBeNull();
+    expect(bookmarkTargetOf(row({ node: node("schema", { schema: undefined }) }))).toBeNull();
+    expect(bookmarkTargetOf(row({ node: node("table", { schema: undefined }) }))).toBeNull();
+    expect(bookmarkTargetOf(null)).toBeNull();
   });
 });
 

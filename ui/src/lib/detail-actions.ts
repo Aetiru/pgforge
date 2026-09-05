@@ -25,6 +25,7 @@ import {
   triggerApply,
   typeApply,
   viewApply,
+  type BookmarkTarget,
   type RoleChange,
   type TableShape,
   type TreeNode,
@@ -74,6 +75,7 @@ export type DetailActionKind =
   | "editDatabase"
   | "newDatabase"
   | "comment"
+  | "bookmark"
   | "renameGroup"
   | "connect"
   | "disconnect"
@@ -120,6 +122,10 @@ export interface ActionContext {
   dataTarget: number | null;
   queryTarget: QueryTarget | null;
   hasCommentTarget: boolean;
+  /** El objetivo de marcador de este nodo, o `null` si no es de las que se pueden marcar. */
+  bookmarkTarget: BookmarkTarget | null;
+  /** Si `bookmarkTarget` ya está marcado, para que el botón diga «Quitar» en vez de «Agregar». */
+  bookmarked: boolean;
 }
 
 /**
@@ -236,6 +242,19 @@ export function headerActions(context: ActionContext): DetailAction[] {
       icon: "compare",
       label: "Comparar",
       title: `Compara ${node.label} contra el esquema de otro servidor conectado`,
+    });
+  }
+
+  // --- Marcar ---
+
+  if (context.bookmarkTarget) {
+    actions.push({
+      kind: "bookmark",
+      icon: "star",
+      label: context.bookmarked ? "Quitar de marcadores" : "Agregar a marcadores",
+      title: context.bookmarked
+        ? "Sacar de la sección fija de marcadores"
+        : "Tenerlo siempre a mano en la sección fija de marcadores",
     });
   }
 

@@ -34,7 +34,7 @@
   import { openErd, ErdTab } from "./lib/erd.svelte";
   import { environmentOf, guard } from "./lib/access.svelte";
   import { explorer } from "./lib/explorer.svelte";
-  import { openQuery, openSqlFiles, saveQueryTab, QueryTab } from "./lib/query.svelte";
+  import { openQuery, openSqlFiles, renameQueryTab, saveQueryTab, QueryTab } from "./lib/query.svelte";
   import { queryTargetOf } from "./lib/tree-actions";
   import { parseQuery, PREFIX_HELP } from "./lib/tree-query";
   import { splitView } from "./lib/split-view.svelte";
@@ -43,6 +43,9 @@
   import { view } from "./lib/view.svelte";
   import { updates } from "./lib/update.svelte";
   import { snippets } from "./lib/snippets.svelte";
+  import { bookmarks } from "./lib/bookmarks.svelte";
+  import { scripts } from "./lib/scripts.svelte";
+  import PinnedLibrary from "./lib/PinnedLibrary.svelte";
   import {
     appInfo,
     deleteProfile,
@@ -70,6 +73,48 @@
    * `QueryTab.dispose()`, que corre cuando la pestaña ya se cerró y no puede preguntar nada.
    */
   let closingTab = $state<QueryTab | null>(null);
+
+  /**
+   * La pestaña que se está renombrando in-place, con doble clic sobre el título o `F2`. Es la única
+   * clase de pestaña que se puede: el nombre de una de datos o de un diagrama lo pone el objeto que
+   * la abrió, y renombrarla ahí confundiría con «esto pasó a llamarse así en el servidor».
+   */
+  let renamingTab = $state<string | null>(null);
+  let renameValue = $state("");
+  let renameInput = $state<HTMLInputElement | null>(null);
+  /**
+   * `Escape` cierra la edición sacando el campo del DOM, y eso por sí solo dispara su `blur` —que si
+   * no se distinguiera confirmaría el renombre a medio cancelar—. Se prende antes de sacarlo y el
+   * `onblur` lo consulta para saber que este cierre no cuenta.
+   */
+  let cancelingRename = false;
+
+  function startRenameTab(tab: Tab) {
+    if (!(tab instanceof QueryTab)) return;
+    renamingTab = tab.key;
+    renameValue = tab.title;
+  }
+
+  function cancelRenameTab() {
+    cancelingRename = true;
+    renamingTab = null;
+  }
+
+  // Mismo patrón que `Palette`: el campo recién existe cuando `renamingTab` deja de ser `null`, así
+  // que enfocarlo va en un efecto y no en el momento de crearlo.
+  $effect(() => {
+    if (renamingTab !== null) renameInput?.select();
+  });
+
+  async function confirmRenameTab(tab: QueryTab) {
+    if (cancelingRename) {
+      cancelingRename = false;
+      return;
+    }
+    const value = renameValue;
+    renamingTab = null;
+    if (value.trim() && value.trim() !== tab.title) await renameQueryTab(tab, value);
+  }
 
   /** Cerrar es inmediato, salvo que se pierdan cambios sin confirmar. */
   function closeTab(tab: Tab) {
@@ -138,6 +183,10 @@
     // Igual que la comprobación de versión: sin `await` y sin cartel. Que falten las abreviaturas es
     // peor que tenerlas, pero mucho mejor que un error rojo al abrir la ventana.
     snippets.load();
+    // Mismo criterio que las abreviaturas: la sección fija del pie se llena en cuanto responde, sin
+    // bloquear ni mostrar un error propio — el suyo, si lo hay, lo muestra `PinnedLibrary`.
+    bookmarks.load();
+    scripts.load();
   });
 
   const connectedServers = $derived(explorer.servers.filter((row) => row.connected));
@@ -406,6 +455,18 @@
   }
 
   function onKeydown(event: KeyboardEvent) {
+    // `F2` no lleva `Ctrl`, así que se atiende aparte y antes de la guarda de abajo. Si algo con el
+    // foco ya lo atendió —el árbol renombra la carpeta o el servidor elegido, ver `TreePanel`—, ese
+    // manejador corrió primero en la fase de burbuja y ya llamó a `preventDefault()`: se respeta y
+    // no se abren las dos cosas a la vez.
+    if (event.key === "F2" && !event.defaultPrevented) {
+      if (tabs.current instanceof QueryTab && renamingTab === null) {
+        event.preventDefault();
+        startRenameTab(tabs.current);
+      }
+      return;
+    }
+
     if (!(event.ctrlKey || event.metaKey)) return;
 
     switch (event.key.toLowerCase()) {
@@ -475,7 +536,15 @@
   });
 </script>
 
-<svelte:window onkeydown={onKeydown} onclick={() => (treeMenu = false)} />
+<svelte:window
+  onkeydown={onKeydown}
+  onclick={() => (treeMenu = false)}
+  onblur={() => {
+    // La ventana entera perdió el foco —se fue a otra aplicación—, uno de los tres momentos en que
+    // se vuelca el script pendiente (los otros dos: cambiar de pestaña activa y cerrarla).
+    if (tabs.current instanceof QueryTab) void tabs.current.flushScript();
+  }}
+/>
 
 <!--
   La carcasa: riel, panel lateral, pestañas e inspector.
@@ -677,6 +746,13 @@
         {:else}
           <ProcessPanel />
         {/if}
+
+        <!--
+          Fija al pie, hermana del bloque de arriba y no adentro de él: se ve con cualquier panel que
+          elija el riel —explorador, biblioteca de historial/guardadas, procesos—, y no solo con el
+          árbol. `dock.libraryOpen` la pliega sin afectar el resto del panel lateral.
+        -->
+        <PinnedLibrary onconnect={connectById} />
       </aside>
 
       <!--
@@ -713,67 +789,106 @@
         >
           {#each tabs.all as tab (tab.key)}
             <div class="tab-wrap">
-              <button
-                class="tab pr-1"
-                role="tab"
-                aria-selected={tabs.active === tab.key}
-                title={`${tab.title} · ${serverName(tab.profileId)}${tab.database ? ` / ${tab.database}` : ""}`}
-                onclick={() => tabs.activate(tab.key)}
-                onauxclick={(event) => {
-                  // Botón del medio: cerrar, como en cualquier navegador.
-                  if (event.button === 1) closeTab(tab);
-                }}
-              >
-                {#if tab instanceof QueryTab && tab.running}
-                  <span class="spinner"></span>
-                {:else}
-                  <!-- El ícono de la pestaña toma el color del entorno: la pestaña activa tapa el
-                       árbol, y sin esto no queda nada en pantalla diciendo que es producción. -->
-                  <Icon
-                    name={TAB_ICON[tab.kind]}
-                    size={12}
-                    class={TAB_TONE[environmentOf(tab.profileId) ?? "none"]}
-                  />
-                {/if}
+              {#if renamingTab === tab.key && tab instanceof QueryTab}
+                {@const renaming = tab}
                 <!--
-                  El servidor va en la pestaña y no solo en el `title`: con cuatro consultas
-                  abiertas, «Consulta 1» contra desarrollo y «Consulta 1» contra producción eran la
-                  misma pestaña a la vista, y averiguar cuál era cuál pedía pasar el mouse por
-                  encima de cada una. Se recorta antes que el nombre de la pestaña porque es el
-                  contexto, no lo que se está mirando.
+                  Afuera de cualquier `<button>`: adentro, la barra espaciadora del título nuevo
+                  activaría el botón en vez de escribirse, que es justo el atajo con el que un
+                  `<button>` responde a la barra espaciadora.
                 -->
-                {#if serverName(tab.profileId)}
-                  <span class="max-w-24 shrink truncate text-[11px] muted">
-                    {serverName(tab.profileId)}
+                <input
+                  bind:this={renameInput}
+                  bind:value={renameValue}
+                  class="field my-auto h-full max-w-40 rounded-none border-none bg-transparent px-2
+                         text-sm shadow-none"
+                  onblur={() => confirmRenameTab(renaming)}
+                  onkeydown={(event) => {
+                    if (event.key === "Enter") event.currentTarget.blur();
+                    else if (event.key === "Escape") {
+                      event.preventDefault();
+                      cancelRenameTab();
+                    }
+                  }}
+                />
+              {:else}
+                <button
+                  class="tab pr-1"
+                  role="tab"
+                  aria-selected={tabs.active === tab.key}
+                  title={`${tab.title} · ${serverName(tab.profileId)}${tab.database ? ` / ${tab.database}` : ""}`}
+                  onclick={() => tabs.activate(tab.key)}
+                  onauxclick={(event) => {
+                    // Botón del medio: cerrar, como en cualquier navegador.
+                    if (event.button === 1) closeTab(tab);
+                  }}
+                >
+                  {#if tab instanceof QueryTab && tab.running}
+                    <span class="spinner"></span>
+                  {:else}
+                    <!-- El ícono de la pestaña toma el color del entorno: la pestaña activa tapa el
+                         árbol, y sin esto no queda nada en pantalla diciendo que es producción. -->
+                    <Icon
+                      name={TAB_ICON[tab.kind]}
+                      size={12}
+                      class={TAB_TONE[environmentOf(tab.profileId) ?? "none"]}
+                    />
+                  {/if}
+                  <!--
+                    El servidor va en la pestaña y no solo en el `title`: con cuatro consultas
+                    abiertas, «Consulta 1» contra desarrollo y «Consulta 1» contra producción eran la
+                    misma pestaña a la vista, y averiguar cuál era cuál pedía pasar el mouse por
+                    encima de cada una. Se recorta antes que el nombre de la pestaña porque es el
+                    contexto, no lo que se está mirando.
+                  -->
+                  {#if serverName(tab.profileId)}
+                    <span class="max-w-24 shrink truncate text-[11px] muted">
+                      {serverName(tab.profileId)}
+                    </span>
+                    <span class="shrink-0 text-[11px] muted">/</span>
+                  {/if}
+                  <!--
+                    Doble clic sobre el título edita el nombre en el lugar; ver `startRenameTab`.
+                    Solo una pestaña de consulta lo admite —la de datos o la de un diagrama llevan el
+                    nombre del objeto que las abrió, y renombrarlas ahí confundiría con «esto pasó a
+                    llamarse así en el servidor»—.
+                  -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <span
+                    class="truncate"
+                    ondblclick={(event) => {
+                      if (!(tab instanceof QueryTab)) return;
+                      event.stopPropagation();
+                      startRenameTab(tab);
+                    }}
+                  >
+                    {tab.title}
                   </span>
-                  <span class="shrink-0 text-[11px] muted">/</span>
-                {/if}
-                <span class="truncate">{tab.title}</span>
-              </button>
-              <!-- Manda esta pestaña al panel de al lado, o la saca si ya estaba ahí. Deshabilitado
-                   sobre la pestaña principal: partirla contra sí misma no significa nada. -->
-              <button
-                class="tab-close {tabs.split === tab.key ? 'text-blue-600 dark:text-blue-400' : ''}"
-                aria-label={tabs.split === tab.key ? "Sacar del panel dividido" : "Abrir al lado"}
-                aria-pressed={tabs.split === tab.key}
-                disabled={tab.key === tabs.active}
-                title={tab.key === tabs.active
-                  ? "Ya es la pestaña principal"
-                  : tabs.split === tab.key
-                    ? "Vuelve a mostrar una sola pestaña"
-                    : "Abre esta pestaña en un panel al lado, sin dejar de ver la actual"}
-                onclick={() => tabs.toggleSplit(tab.key)}
-              >
-                <Icon name="columns" size={10} />
-              </button>
-              <button
-                class="tab-close"
-                aria-label="Cerrar la pestaña"
-                title="Cerrar la pestaña"
-                onclick={() => closeTab(tab)}
-              >
-                <Icon name="close" size={10} />
-              </button>
+                </button>
+                <!-- Manda esta pestaña al panel de al lado, o la saca si ya estaba ahí. Deshabilitado
+                     sobre la pestaña principal: partirla contra sí misma no significa nada. -->
+                <button
+                  class="tab-close {tabs.split === tab.key ? 'text-blue-600 dark:text-blue-400' : ''}"
+                  aria-label={tabs.split === tab.key ? "Sacar del panel dividido" : "Abrir al lado"}
+                  aria-pressed={tabs.split === tab.key}
+                  disabled={tab.key === tabs.active}
+                  title={tab.key === tabs.active
+                    ? "Ya es la pestaña principal"
+                    : tabs.split === tab.key
+                      ? "Vuelve a mostrar una sola pestaña"
+                      : "Abre esta pestaña en un panel al lado, sin dejar de ver la actual"}
+                  onclick={() => tabs.toggleSplit(tab.key)}
+                >
+                  <Icon name="columns" size={10} />
+                </button>
+                <button
+                  class="tab-close"
+                  aria-label="Cerrar la pestaña"
+                  title="Cerrar la pestaña"
+                  onclick={() => closeTab(tab)}
+                >
+                  <Icon name="close" size={10} />
+                </button>
+              {/if}
             </div>
           {/each}
         </div>

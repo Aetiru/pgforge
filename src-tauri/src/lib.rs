@@ -136,6 +136,11 @@ pub fn run() {
             commands::query::snippet_save,
             commands::query::snippet_delete,
             commands::query::snippets_reset,
+            commands::bookmarks::bookmarks_list,
+            commands::bookmarks::bookmark_add,
+            commands::bookmarks::bookmark_remove,
+            commands::bookmarks::bookmark_remove_target,
+            commands::bookmarks::bookmark_label,
             commands::data::data_open,
             commands::data::data_shape_named,
             commands::data::data_page,
@@ -220,6 +225,15 @@ pub fn run() {
             commands::backup::restore_run,
             commands::update::update_check,
             commands::update::update_open,
+            commands::scripts::scripts_tree,
+            commands::scripts::scripts_root_path,
+            commands::scripts::script_new_name,
+            commands::scripts::script_read,
+            commands::scripts::script_write,
+            commands::scripts::script_rename,
+            commands::scripts::script_delete,
+            commands::scripts::script_create_folder,
+            commands::scripts::scripts_import_folder,
         ])
         .run(tauri::generate_context!())
         .expect("no se pudo iniciar la aplicación");

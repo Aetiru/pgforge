@@ -8,7 +8,7 @@
 #![allow(clippy::disallowed_macros)]
 
 use std::io::Read as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -22,9 +22,13 @@ use pgforge_core::conn::{
 use pgforge_core::data;
 use pgforge_core::ddl::RefAction;
 use pgforge_core::introspect::{self, NodeKind, TreeNode, TreeOptions};
+use pgforge_core::scripts;
 use pgforge_core::sql::{self, ExplainOptions, Limits, Outcome, QuerySession};
 use pgforge_core::update;
-use pgforge_core::{caps::MIN_SUPPORTED_VERSION_NUM, ddl, Error, Result, ServerVersion};
+use pgforge_core::{
+    caps::MIN_SUPPORTED_VERSION_NUM, ddl, BookmarkKind, BookmarkStore, Error, Result, ScriptFolder,
+    ServerVersion,
+};
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Parser)]
@@ -328,6 +332,43 @@ enum Command {
         #[arg(long)]
         test: bool,
     },
+
+    /// Los scripts .sql guardados en disco, agrupados por conexión. No abre ningún directorio de
+    /// configuración de la aplicación: la raíz la indica quien invoca.
+    Scripts {
+        #[command(subcommand)]
+        action: ScriptsAction,
+    },
+
+    /// Los marcadores del árbol de conexiones, guardados en un archivo bookmarks.db.
+    Bookmarks {
+        #[command(subcommand)]
+        action: BookmarksAction,
+    },
+}
+
+/// Subcomandos de `pgforge scripts`.
+#[derive(Subcommand)]
+enum ScriptsAction {
+    /// Lista los scripts .sql guardados bajo una carpeta raíz, agrupados por conexión.
+    List {
+        /// Carpeta raíz donde vive una carpeta por conexión. Si no existe, no es error: es que
+        /// todavía no se guardó ningún script.
+        #[arg(long)]
+        root: PathBuf,
+    },
+}
+
+/// Subcomandos de `pgforge bookmarks`.
+#[derive(Subcommand)]
+enum BookmarksAction {
+    /// Lista los marcadores guardados en un archivo bookmarks.db. Si el archivo no existe,
+    /// `BookmarkStore::open` lo crea vacío.
+    List {
+        /// Archivo SQLite de marcadores.
+        #[arg(long)]
+        db: PathBuf,
+    },
 }
 
 /// Los formatos de `COPY` que la CLI expone.
@@ -564,6 +605,12 @@ async fn main() -> ExitCode {
             )
             .await
         }
+        Command::Scripts { action } => match action {
+            ScriptsAction::List { root } => run_scripts_list(&root),
+        },
+        Command::Bookmarks { action } => match action {
+            BookmarksAction::List { db } => run_bookmarks_list(&db),
+        },
     };
 
     match result {
@@ -831,6 +878,67 @@ fn run_format(file: Option<PathBuf>) -> Result<()> {
 
     println!("{}", sql::format(&sql));
     Ok(())
+}
+
+/// Imprime el árbol de scripts guardados bajo `root`: una conexión por bloque, con sus `.sql`
+/// debajo y las subcarpetas anidadas con más sangría. Sin servidor: ejercita `scripts::tree`
+/// igual que la interfaz, que le pasa la carpeta de configuración como raíz.
+fn run_scripts_list(root: &Path) -> Result<()> {
+    let connections = scripts::tree(root)?;
+    if connections.is_empty() {
+        println!("(sin scripts guardados)");
+        return Ok(());
+    }
+
+    for connection in &connections {
+        println!("{}", connection.name);
+        print_script_folder(connection, 1);
+    }
+    Ok(())
+}
+
+fn print_script_folder(folder: &ScriptFolder, level: usize) {
+    let sangria = "  ".repeat(level);
+    for file in &folder.files {
+        println!("{sangria}{}", file.name);
+    }
+    for sub in &folder.folders {
+        println!("{sangria}{}/", sub.name);
+        print_script_folder(sub, level + 1);
+    }
+}
+
+/// Abre el archivo de marcadores y los imprime en una tabla simple: servidor, esquema.nombre,
+/// tipo y alias si tiene.
+fn run_bookmarks_list(db: &Path) -> Result<()> {
+    let store = BookmarkStore::open(db)?;
+    let bookmarks = store.list()?;
+
+    if bookmarks.is_empty() {
+        println!("(sin marcadores)");
+        return Ok(());
+    }
+
+    for bookmark in &bookmarks {
+        println!(
+            "{:<20} {:<30} {:<20} {}",
+            bookmark.profile_id,
+            format!("{}.{}", bookmark.schema, bookmark.name),
+            bookmark_kind_label(bookmark.kind),
+            bookmark.label.as_deref().unwrap_or(""),
+        );
+    }
+    Ok(())
+}
+
+fn bookmark_kind_label(kind: BookmarkKind) -> &'static str {
+    match kind {
+        BookmarkKind::Table => "tabla",
+        BookmarkKind::View => "vista",
+        BookmarkKind::MaterializedView => "vista materializada",
+        BookmarkKind::Function => "función",
+        BookmarkKind::Procedure => "procedimiento",
+    }
 }
 
 /// Parte «esquema.tabla» en sus dos mitades. Sin punto, el esquema es `public`, como en psql.

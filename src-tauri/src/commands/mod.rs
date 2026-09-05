@@ -5,12 +5,14 @@
 //! sin necesidad de una ventana.
 
 pub mod backup;
+pub mod bookmarks;
 pub mod compare;
 pub mod data;
 pub mod ddl;
 pub mod monitoring;
 pub mod query;
 pub mod schema;
+pub mod scripts;
 pub mod servers;
 pub mod settings;
 pub mod tasks;

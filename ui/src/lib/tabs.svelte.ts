@@ -38,6 +38,13 @@ export abstract class Tab {
 
   /** Se llama al cerrar la pestaña. Por omisión no hay nada que soltar. */
   async dispose(): Promise<void> {}
+
+  /**
+   * Se llama cuando la pestaña deja de ser la activa —se cambia a otra, o se abre una nueva—. Por
+   * omisión no hace nada; `QueryTab` la usa para volcar a disco el script pendiente (ver
+   * `query.svelte.ts`), que es la única clase con algo que perder al dejar de mirarla.
+   */
+  async flush(): Promise<void> {}
 }
 
 class Tabs {
@@ -66,10 +73,16 @@ class Tabs {
    * Activa una pestaña (o el panel de Detalle, con `null`). Las dos mitades del panel dividido no
    * pueden mostrar la misma pestaña, así que activar la que está al lado la trae de vuelta a
    * pantalla completa en vez de dejar la otra mitad sin nada que mostrar.
+   *
+   * La que se deja de mirar recibe `flush()` antes de soltarla: es uno de los tres momentos en que
+   * una pestaña de consulta vuelca su script pendiente a disco (ver `QueryTab.flush`), junto con
+   * perder el foco de la ventana y cerrarse.
    */
   activate(key: string | null) {
+    const previous = this.current;
     this.active = key;
     if (key !== null && key === this.split) this.split = null;
+    if (previous && previous.key !== key) void previous.flush();
   }
 
   /** Manda una pestaña al panel de al lado, o la saca si ya estaba ahí. */

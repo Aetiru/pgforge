@@ -41,6 +41,15 @@
 
   let { tab }: { tab: QueryTab } = $props();
 
+  // Tercer disparador del autoguardado del script: ~1 s sin cambios (los otros dos son perder el
+  // foco de la ventana y cambiar de pestaña activa, ver `App.svelte` y `Tabs.activate`). Depende de
+  // `tab.sql` sin usarlo directo —`scheduleScriptSave` lee `this.sql` cuando el temporizador
+  // vence— para no reiniciar el rebote con cada letra desde afuera de la pestaña.
+  $effect(() => {
+    void tab.sql;
+    tab.scheduleScriptSave();
+  });
+
   /** Qué se acaba de copiar del plan, para el «Copiado» del botón. */
   let planCopied = $state<"text" | "json" | null>(null);
 

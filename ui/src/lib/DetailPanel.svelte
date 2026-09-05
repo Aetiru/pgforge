@@ -50,6 +50,7 @@
   import Triggers from "./detail/Triggers.svelte";
   import { confirmMutation, isReadOnly, readOnlyReason } from "./access.svelte";
   import { GROUP_LOOK, kindLabel, lookOf } from "./badges";
+  import { bookmarks } from "./bookmarks.svelte";
   import {
     headerActions,
     dropQuestion,
@@ -69,7 +70,7 @@
     type PrivilegeGroup,
   } from "./detail-node";
   import { explorer, type Row } from "./explorer.svelte";
-  import { dataTargetOf, queryTargetOf } from "./tree-actions";
+  import { bookmarkTargetOf, dataTargetOf, queryTargetOf } from "./tree-actions";
   import {
     dataOpen,
     databasePrivileges,
@@ -241,6 +242,8 @@
   const queryTarget = $derived(queryTargetOf(selected, profile));
   const dataTarget = $derived(dataTargetOf(node));
   const commentTarget = $derived(commentTargetOf(node));
+  const bookmarkTarget = $derived(bookmarkTargetOf(selected));
+  const bookmarked = $derived(bookmarkTarget ? bookmarks.has(bookmarkTarget) : false);
 
   // -------------------------------------------------------------------------
   // Estructura: lo que cada sección le pide al servidor
@@ -613,6 +616,8 @@
           dataTarget,
           queryTarget,
           hasCommentTarget: commentTarget !== null,
+          bookmarkTarget,
+          bookmarked,
         })
       : [],
   );
@@ -748,6 +753,9 @@
           label: selected.label,
           current: current?.comment ?? null,
         };
+        break;
+      case "bookmark":
+        if (bookmarkTarget) void bookmarks.toggle(bookmarkTarget);
         break;
       case "renameGroup":
         ongroup(selected.group!);

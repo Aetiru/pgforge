@@ -14,9 +14,12 @@ const SIDEBAR_OPEN = "pgforge.dock.sidebarOpen";
 const SIDEBAR_WIDTH = "pgforge.dock.sidebarWidth";
 const INSPECTOR_OPEN = "pgforge.dock.inspectorOpen";
 const INSPECTOR_WIDTH = "pgforge.dock.inspectorWidth";
+const LIBRARY_OPEN = "pgforge.dock.libraryOpen";
+const LIBRARY_HEIGHT = "pgforge.dock.libraryHeight";
 
 export const SIDEBAR_DEFAULT = 300;
 export const INSPECTOR_DEFAULT = 400;
+export const LIBRARY_DEFAULT = 220;
 
 const SIDEBAR_MIN = 220;
 const SIDEBAR_MAX = 560;
@@ -27,6 +30,12 @@ const SIDEBAR_MAX = 560;
  */
 const INSPECTOR_MIN = 300;
 const INSPECTOR_MAX = 900;
+/**
+ * La biblioteca fija es una sección chica al pie del panel lateral, no otro panel entero: el mínimo
+ * deja ver un puñado de filas, y el máximo no le puede ganar el lugar al árbol que tiene arriba.
+ */
+const LIBRARY_MIN = 120;
+const LIBRARY_MAX = 500;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -56,6 +65,9 @@ class Dock {
       INSPECTOR_MAX,
     ),
   );
+  /** La sección fija de marcadores y scripts arranca abierta: es la que la hace útil todos los días. */
+  libraryOpen = $state(storedOpen(LIBRARY_OPEN));
+  libraryHeight = $state(storedWidth(LIBRARY_HEIGHT, LIBRARY_DEFAULT, LIBRARY_MIN, LIBRARY_MAX));
 
   setSidebar(open: boolean) {
     this.sidebarOpen = open;
@@ -83,6 +95,20 @@ class Dock {
   setInspectorWidth(width: number) {
     this.inspectorWidth = clamp(width, INSPECTOR_MIN, INSPECTOR_MAX);
     wSet(INSPECTOR_WIDTH, String(this.inspectorWidth));
+  }
+
+  setLibrary(open: boolean) {
+    this.libraryOpen = open;
+    wSet(LIBRARY_OPEN, open ? "1" : "0");
+  }
+
+  toggleLibrary() {
+    this.setLibrary(!this.libraryOpen);
+  }
+
+  setLibraryHeight(height: number) {
+    this.libraryHeight = clamp(height, LIBRARY_MIN, LIBRARY_MAX);
+    wSet(LIBRARY_HEIGHT, String(this.libraryHeight));
   }
 }
 
