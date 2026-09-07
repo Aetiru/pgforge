@@ -260,3 +260,10 @@ pub async fn disconnect(state: State<'_, AppState>, id: ProfileId) -> Result<()>
 pub async fn connected_servers(state: State<'_, AppState>) -> Result<Vec<ProfileId>> {
     Ok(state.manager.connected().await)
 }
+
+/// Cuánto tarda un viaje de ida y vuelta contra el servidor, en milisegundos: lo que "conectado" no
+/// distingue. El árbol lo pinta junto al punto de conexión, sondeando cada tanto.
+#[tauri::command]
+pub async fn server_ping(state: State<'_, AppState>, id: ProfileId) -> Result<u64> {
+    state.manager.require(id).await?.ping().await
+}

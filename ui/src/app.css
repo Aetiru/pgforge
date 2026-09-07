@@ -154,6 +154,13 @@ body {
   @apply mx-1 h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700;
 }
 
+/* Agrupa los botones de una misma familia (ejecutar, transacción, explicar, …) bajo un mismo
+   fondo: con doce controles del mismo peso visual, una línea de un píxel entre grupos no alcanza
+   para que el ojo los separe sin leer los `title` uno por uno. */
+.toolbar-group {
+  @apply flex items-center gap-0.5 rounded-md bg-zinc-100/70 p-0.5 dark:bg-zinc-800/60;
+}
+
 /* --------------------------------------------------------------------------
    Controles
    -------------------------------------------------------------------------- */

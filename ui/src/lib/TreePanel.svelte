@@ -4,7 +4,7 @@
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
   import { environmentOf, isReadOnly } from "./access.svelte";
-  import { envLook, lookOf, READ_ONLY_LOOK, serverColorLook, tagLook } from "./badges";
+  import { envLook, envWash, lookOf, READ_ONLY_LOOK, serverColorLook, tagLook } from "./badges";
   import { bookmarks } from "./bookmarks.svelte";
   import { explorer, visibleRows, type Row } from "./explorer.svelte";
   import { describeError, folderOf, type CompareSide } from "./ipc";
@@ -13,11 +13,13 @@
     connectionUrl,
     dataTargetOf,
     schemaTargetOf,
+    roleTargetOf,
     qualifiedNameOf,
     queryTargetOf,
   } from "./tree-actions";
   import { guideAt, guideSpans } from "./tree-guides";
   import { parseQuery } from "./tree-query";
+  import { recents } from "./recents.svelte";
   import { stickyIndex } from "./tree-sticky";
 
   let {
@@ -31,6 +33,8 @@
     ondata,
     onerd,
     oncompare,
+    onmatrix,
+    onrolecapabilities,
   }: {
     onconnect: (profileId: string) => void;
     /** Abre el diálogo de servidor nuevo desde el estado vacío. */
@@ -48,6 +52,10 @@
     onerd: (profileId: string, database: string, schema: string) => void;
     /** Pide comparar este esquema contra otro; el otro lado lo elige un diálogo de `App`. */
     oncompare: (source: CompareSide) => void;
+    /** Abre la matriz de permisos de un esquema. */
+    onmatrix: (profileId: string, database: string, schema: string) => void;
+    /** Abre "qué puede hacer" un rol. */
+    onrolecapabilities: (profileId: string, database: string, role: string) => void;
   } = $props();
 
   /**
@@ -97,7 +105,49 @@
   let dropGroup = $state<string | null | undefined>(undefined);
   let moveError = $state<string | null>(null);
 
+  /**
+   * Cada cuánto se vuelve a medir la latencia de los servidores conectados. Es un sondeo de fondo,
+   * no algo que el usuario pida: cada quince segundos alcanza para notar un servidor lento sin
+   * convertir el árbol en tráfico constante contra veinte conexiones abiertas.
+   *
+   * Va en `untrack`, como el efecto que revela la selección: no depende de qué fila esté elegida ni
+   * de cuánto se desplazó la lista, solo de que el panel siga montado.
+   */
+  const LATENCY_POLL_MS = 15_000;
+
+  $effect(() => {
+    const tick = () => {
+      for (const row of explorer.servers) {
+        if (row.connected) void explorer.pingLatency(row.profileId);
+      }
+    };
+    untrack(tick);
+    const interval = setInterval(() => untrack(tick), LATENCY_POLL_MS);
+    return () => clearInterval(interval);
+  });
+
+  /** A partir de qué latencia la pastilla deja de ser verde: bien por encima de lo que tarda
+   * cualquier conexión local o de la misma nube, y bien por debajo de lo que se nota al escribir. */
+  const LATENCY_WARN_MS = 150;
+
   const rows = $derived(visibleRows(explorer.roots, explorer.search, explorer.onlyConnected));
+
+  /**
+   * Atajo a los servidores usados hace poco, para no bajar hasta su carpeta. Solo mientras se ve el
+   * árbol de verdad: durante una búsqueda —local o contra el servidor— la lista ya está acotada a lo
+   * que se busca, y encima de eso este atajo no pintaría nada.
+   */
+  const recentRows = $derived.by(() => {
+    if (explorer.workspaceError || explorer.hits !== null || explorer.search.trim() !== "") {
+      return [];
+    }
+    const out: Row[] = [];
+    for (const id of recents.list) {
+      const row = explorer.rowFor(id);
+      if (row) out.push(row);
+    }
+    return out;
+  });
 
   /** Dónde arranca cada fila, más la altura total al final. */
   const offsets = $derived.by(() => {
@@ -234,6 +284,7 @@
   const menuQuery = $derived(menu ? queryTargetOf(menu.row, menuProfile) : null);
   const menuData = $derived(menu ? dataTargetOf(menu.row.node) : null);
   const menuSchema = $derived(menu ? schemaTargetOf(menu.row.node) : null);
+  const menuRole = $derived(menu ? roleTargetOf(menu.row.node) : null);
   const menuName = $derived(menu ? qualifiedNameOf(menu.row.node) : null);
   const menuBookmark = $derived(menu ? bookmarkTargetOf(menu.row) : null);
   const menuIsServer = $derived(menu?.row.kind === "server");
@@ -258,6 +309,18 @@
     for (const row of rows) {
       explorer.disconnect(row.profileId).catch((error) => (moveError = describeError(error)));
     }
+  }
+
+  /**
+   * El menú de «mover a carpeta» de la barra flotante. Antes de esto, mover un bloque marcado solo
+   * se podía arrastrando: útil con la carpeta a la vista, inservible si está más abajo de lo que
+   * entra en pantalla o todavía no existe ninguna.
+   */
+  let moveMenuOpen = $state(false);
+
+  function moveMarked(group: string | null) {
+    moveMenuOpen = false;
+    explorer.moveMarkedToGroup(group).catch((error) => (moveError = describeError(error)));
   }
 
   /**
@@ -297,6 +360,20 @@
     if (row && target) {
       oncompare({ id: row.profileId, database: target.database, schema: target.schema });
     }
+  }
+
+  function openMatrix() {
+    const row = menu?.row;
+    const target = menuSchema;
+    menu = null;
+    if (row && target) onmatrix(row.profileId, target.database, target.schema);
+  }
+
+  function openRoleCapabilities() {
+    const row = menu?.row;
+    const target = menuRole;
+    menu = null;
+    if (row && target) onrolecapabilities(row.profileId, target.database, target.role);
   }
 
   function connect() {
@@ -609,7 +686,12 @@
   }
 </script>
 
-<svelte:window onclick={() => (menu = null)} />
+<svelte:window
+  onclick={() => {
+    menu = null;
+    moveMenuOpen = false;
+  }}
+/>
 
 <!-- El contenedor recibe lo que se suelta fuera de toda carpeta: ahí es donde el servidor queda
      suelto. Las filas que sí tienen carpeta cortan la propagación antes de llegar acá. -->
@@ -736,6 +818,78 @@
       {/if}
     </Empty>
   {:else}
+    {#if recentRows.length > 0}
+      <!--
+        Atajo a lo usado hace poco: encontrar un servidor no debería depender de acordarse en qué
+        carpeta vive. No reemplaza nada del árbol de abajo, que sigue mostrando todo —es un acceso
+        directo, no una segunda fuente de verdad—.
+      -->
+      <div class="border-b border-zinc-200/80 pb-1.5 dark:border-zinc-700">
+        <p class="px-3 pt-1.5 pb-1 text-[11px] font-semibold tracking-wide uppercase muted">
+          Recientes
+        </p>
+        {#each recentRows as row (row.key)}
+          {@const environment = environmentOf(row.profileId)}
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <div
+            class="group/recent relative flex w-full items-center gap-1.5 rounded-md py-1 pr-1
+                   pl-3 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700/70"
+            role="button"
+            tabindex="0"
+            onclick={() => {
+              if (explorer.needsConnection(row)) {
+                onconnect(row.profileId);
+                return;
+              }
+              explorer.select(row);
+              const at = rows.findIndex((item) => item.key === row.key);
+              if (at >= 0) reveal(at);
+            }}
+          >
+            {#if environment}
+              {@const badge = envLook(environment)}
+              <span
+                class="pointer-events-none absolute inset-y-0 left-0 w-0.5 rounded-r {badge.spine}"
+              ></span>
+            {/if}
+            <span
+              class="relative grid size-5 shrink-0 place-items-center rounded bg-blue-50
+                     text-blue-600 dark:bg-blue-500/10 dark:text-blue-400"
+            >
+              <Icon name="server" size={12} />
+              <span
+                class="dot absolute -right-1 -bottom-1 ring-2 ring-zinc-50 dark:ring-zinc-900
+                       {row.down ? 'dot-down' : row.connected ? 'dot-on' : 'dot-off'}"
+              ></span>
+            </span>
+            <span class="min-w-0 flex-1 truncate font-medium" title={row.label}>{row.label}</span>
+            {#if row.group}
+              <span
+                class="max-w-24 shrink-0 truncate rounded bg-zinc-100 px-1.5 py-0.5 text-[10px]
+                       muted dark:bg-zinc-700/60"
+                title={row.group}
+              >
+                {row.group}
+              </span>
+            {/if}
+            <button
+              class="btn btn-ghost btn-icon size-5 shrink-0 opacity-0 group-hover/recent:opacity-100
+                     focus-visible:opacity-100"
+              title="Quitar de recientes"
+              aria-label="Quitar de recientes"
+              tabindex="-1"
+              onclick={(event) => {
+                event.stopPropagation();
+                recents.forget(row.profileId);
+              }}
+            >
+              <Icon name="close" size={10} />
+            </button>
+          </div>
+        {/each}
+      </div>
+    {/if}
+
     {#if needle !== ""}
       <p class="px-3 py-1.5 text-[11px] muted">
         {rows.length}
@@ -779,6 +933,10 @@
         {@const isMarked = explorer.isMarked(row)}
         {@const isDropTarget = dragging !== null && dropGroup === dropTargetOf(row)}
         {@const environment = environmentOf(row.profileId)}
+        {@const rowProfile = isServer
+          ? explorer.profiles.find((profile) => profile.id === row.profileId)
+          : undefined}
+        {@const rowQuery = isServer ? queryTargetOf(row, rowProfile) : null}
         <!-- El teclado lo maneja el contenedor: las filas fuera de la ventana no están en el DOM. -->
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <div
@@ -786,7 +944,7 @@
           class="group absolute left-0 flex w-full items-center gap-1.5 rounded-md pr-1 text-sm
                  {isSelected || isMarked
             ? 'bg-blue-50 text-blue-900 dark:bg-blue-950/60 dark:text-blue-100'
-            : 'hover:bg-zinc-100 dark:hover:bg-zinc-700/70'}
+            : `${isServer ? envWash(environment) : ''} hover:bg-zinc-100 dark:hover:bg-zinc-700/70`}
                  {separated(at) ? 'border-t border-zinc-200/80 dark:border-zinc-700' : ''}
                  {isDropTarget && dropGroup !== null ? 'bg-blue-100/70 dark:bg-blue-900/40' : ''}
                  {dragging === row.profileId ? 'opacity-40' : ''}"
@@ -1004,6 +1162,24 @@
                   <span class="min-w-0 shrink truncate" title={row.detail}>{row.detail}</span>
                 {/if}
 
+                <!--
+                  Latencia contra el servidor: "conectado" no distingue uno sano de uno que tarda
+                  cada viaje de ida y vuelta. Solo se muestra con un número en mano —nada mientras
+                  el primer sondeo está en camino, ni tras uno que falló— y el color hace la
+                  primera lectura antes que el número.
+                -->
+                {#if isServer && row.connected && explorer.latencies[row.profileId] !== undefined}
+                  {@const latencyMs = explorer.latencies[row.profileId]}
+                  <span
+                    class="shrink-0 font-mono tabular-nums {latencyMs < LATENCY_WARN_MS
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-amber-600 dark:text-amber-400'}"
+                    title="Ida y vuelta contra el servidor: {latencyMs} ms"
+                  >
+                    {latencyMs}&nbsp;ms
+                  </span>
+                {/if}
+
                 <!-- Solo lectura, sin la palabra: el candado dice lo mismo y el texto se comía el
                      host. El entorno tampoco se repite acá —ya lo dice la línea del borde, y
                      producción además la pastilla de arriba—. -->
@@ -1055,6 +1231,43 @@
                 }}
               >
                 <Icon name="refresh" size={11} />
+              </button>
+            {/if}
+
+            <!--
+              Las dos acciones de todo servidor conectado, en la fila: antes solo se llegaba por el
+              clic derecho, que para lo más frecuente —abrir una consulta, cortar la conexión— es un
+              paso de más cada vez. Mismo patrón que «Conectar»: ícono que aparece al pasar por
+              encima, sin ocupar lugar el resto del tiempo.
+            -->
+            {#if isServer && row.connected && !row.down}
+              {#if rowQuery}
+                <button
+                  class="btn btn-ghost btn-icon size-6 opacity-0 focus-visible:opacity-100
+                         group-hover:opacity-100"
+                  title="Nueva consulta"
+                  aria-label="Nueva consulta"
+                  tabindex="-1"
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    onquery(row.profileId, rowQuery.database, rowQuery.title);
+                  }}
+                >
+                  <Icon name="sql" size={12} />
+                </button>
+              {/if}
+              <button
+                class="btn btn-ghost btn-icon size-6 opacity-0 focus-visible:opacity-100
+                       group-hover:opacity-100"
+                title="Desconectar"
+                aria-label="Desconectar"
+                tabindex="-1"
+                onclick={(event) => {
+                  event.stopPropagation();
+                  explorer.disconnect(row.profileId).catch((error) => (moveError = describeError(error)));
+                }}
+              >
+                <Icon name="unplug" size={12} />
               </button>
             {/if}
 
@@ -1111,6 +1324,72 @@
         </div>
       {/each}
     </div>
+
+    <!--
+      Barra para lo marcado, pegada al pie de lo que se ve: antes, actuar sobre el bloque
+      —desconectarlo, moverlo a una carpeta— solo se descubría abriendo el clic derecho. `sticky` y
+      no una fila más de la lista: si fuera parte del flujo, se iría scrolleando con las últimas
+      filas y dejaría de estar a la vista justo cuando hace falta apretarla.
+    -->
+    {#if markedCount > 0}
+      <div
+        class="sticky bottom-0 z-20 flex items-center gap-1.5 border-t border-zinc-200/80 bg-zinc-50
+               p-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+      >
+        <span class="min-w-0 truncate pl-1 text-[12px]">
+          <b class="tabular-nums">{markedCount}</b> marcado{markedCount === 1 ? "" : "s"}
+        </span>
+        <span class="divider-r h-4"></span>
+        <button
+          class="btn btn-ghost btn-icon size-7"
+          title="Desconectar los {markedCount}"
+          aria-label="Desconectar los marcados"
+          onclick={disconnectMarked}
+        >
+          <Icon name="unplug" size={13} />
+        </button>
+        <button
+          class="btn btn-ghost btn-icon size-7"
+          title="Mover a una carpeta"
+          aria-label="Mover a una carpeta"
+          aria-expanded={moveMenuOpen}
+          onclick={(event) => {
+            event.stopPropagation();
+            moveMenuOpen = !moveMenuOpen;
+          }}
+        >
+          <Icon name="folder" size={13} />
+        </button>
+        <button
+          class="btn btn-ghost btn-icon ml-auto size-7"
+          title="Quitar las marcas"
+          aria-label="Quitar las marcas"
+          onclick={() => explorer.clearMarks()}
+        >
+          <Icon name="close" size={12} />
+        </button>
+
+        {#if moveMenuOpen}
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            class="card absolute bottom-full left-1.5 z-40 mb-1 max-h-52 min-w-40 overflow-auto p-1
+                   text-sm shadow-lg"
+            role="menu"
+            tabindex="-1"
+            onclick={(event) => event.stopPropagation()}
+          >
+            <button class="row-menu" onclick={() => moveMarked(null)}>Sin carpeta</button>
+            {#if explorer.groups.length > 0}
+              <div class="divider-t my-1"></div>
+              {#each explorer.groups as group (group)}
+                <button class="row-menu" onclick={() => moveMarked(group)}>{group}</button>
+              {/each}
+            {/if}
+          </div>
+        {/if}
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -1181,6 +1460,19 @@
       <button class="row-menu" onclick={compare}>
         <span class="flex items-center gap-2">
           <Icon name="compare" size={13} /> Comparar con otro servidor
+        </span>
+      </button>
+      <button class="row-menu" onclick={openMatrix}>
+        <span class="flex items-center gap-2">
+          <Icon name="role" size={13} /> Matriz de permisos
+        </span>
+      </button>
+    {/if}
+
+    {#if menuRole}
+      <button class="row-menu" onclick={openRoleCapabilities}>
+        <span class="flex items-center gap-2">
+          <Icon name="role" size={13} /> Qué puede hacer
         </span>
       </button>
     {/if}

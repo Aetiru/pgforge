@@ -141,3 +141,7 @@ export const sshTest = (profile: ConnectionProfile, sshPassword?: string, trustH
 export const disconnect = (id: string) => invoke<void>("disconnect", { id });
 
 export const connectedServers = () => invoke<string[]>("connected_servers");
+
+/** Milisegundos de ida y vuelta contra el servidor: adquiere una conexión del pool y cronometra un
+ * `SELECT 1`, sin contar el tiempo de conseguir la conexión. */
+export const pingServer = (id: string) => invoke<number>("server_ping", { id });

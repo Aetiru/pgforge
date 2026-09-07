@@ -143,13 +143,14 @@ export function tagLook(tag: NodeTag) {
  */
 const ENVIRONMENTS: Record<
   Environment,
-  { label: string; tone: string; spine: string; bar: string; title: string }
+  { label: string; tone: string; spine: string; bar: string; wash: string; title: string }
 > = {
   dev: {
     label: "dev",
     tone: "tag-ok",
     spine: "bg-emerald-500/70",
     bar: "border-l-[3px] border-l-emerald-500/70 bg-emerald-500/[0.06]",
+    wash: "bg-emerald-500/[0.06]",
     title: "Servidor de desarrollo",
   },
   test: {
@@ -157,6 +158,7 @@ const ENVIRONMENTS: Record<
     tone: "tag-info",
     spine: "bg-blue-500/70",
     bar: "border-l-[3px] border-l-blue-500/70 bg-blue-500/[0.06]",
+    wash: "bg-blue-500/[0.06]",
     title: "Servidor de pruebas",
   },
   prod: {
@@ -166,9 +168,22 @@ const ENVIRONMENTS: Record<
     // no se le puede confiar a la única distinción que importa de verdad.
     spine: "bg-rose-500/80",
     bar: "border-l-[3px] border-l-rose-500/80 bg-rose-500/[0.10]",
+    wash: "bg-rose-500/[0.10]",
     title: "Servidor de producción: cada modificación pide una confirmación de más",
   },
 };
+
+/**
+ * El tinte de fondo de la fila de un servidor, o cadena vacía sin entorno marcado.
+ *
+ * `spine` avisa a quien ya está mirando esa fila; en una lista de veinte conexiones hay que enfocar
+ * cada una para leerlo. El tinte se ve sin enfocar, así que producción salta al bajar por la lista
+ * con la vista corrida. Comparte el mismo valor que la mitad de fondo de `bar` a propósito: es el
+ * mismo tinte en dos lugares y no dos decisiones de color por entorno.
+ */
+export function envWash(environment: Environment | null): string {
+  return environment === null ? "" : ENVIRONMENTS[environment].wash;
+}
 
 export function envLook(environment: Environment) {
   return ENVIRONMENTS[environment];

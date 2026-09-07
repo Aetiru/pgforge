@@ -6,6 +6,7 @@ import {
   isCanceled,
   listProfiles,
   onServerDown,
+  pingServer,
   readCancel,
   renameGroup as ipcRenameGroup,
   saveProfile,
@@ -22,6 +23,7 @@ import {
   type Workspace,
 } from "./ipc";
 import { folders, LOOSE_GROUP, normalizeGroup } from "./folders.svelte";
+import { recents } from "./recents.svelte";
 import { compareServers, reorderDrop } from "./server-order";
 import { folderForKind } from "./tree-actions";
 import { filterHits, matchesKind, parseQuery } from "./tree-query";
@@ -318,6 +320,30 @@ class Explorer {
     return serversUnder(this.roots);
   }
 
+  /**
+   * Última latencia medida contra cada servidor conectado, en milisegundos. `TreePanel` la sondea
+   * cada tanto para todos los que estén conectados; acá solo se guarda el último valor.
+   */
+  latencies = $state<Record<string, number>>({});
+
+  /**
+   * Vuelve a medir la latencia de un servidor. Un error se descarta en vez de mostrarse: es un
+   * sondeo de fondo que se repite solo, y molestar por uno que falló —el servidor se cayó justo
+   * entre sondeos— no aporta nada que `row.down` no diga ya. Si falla, se saca del mapa: mostrar el
+   * último número bueno de un servidor que dejó de responder sería mentir.
+   */
+  async pingLatency(profileId: string) {
+    try {
+      const millis = await pingServer(profileId);
+      this.latencies = { ...this.latencies, [profileId]: millis };
+    } catch {
+      if (profileId in this.latencies) {
+        const { [profileId]: _discarded, ...rest } = this.latencies;
+        this.latencies = rest;
+      }
+    }
+  }
+
   /** Las filas de carpeta, de cualquier nivel, en el orden en que se muestran. */
   private get groupRows(): Row[] {
     const out: Row[] = [];
@@ -542,6 +568,7 @@ class Explorer {
   async connect(profile: ConnectionProfile, password?: string, trustHostKey?: boolean) {
     const result = await ipcConnect(profile.id, password, undefined, trustHostKey);
     this.caps[profile.id] = result.caps;
+    recents.touch(profile.id);
 
     const row = this.rowFor(profile.id);
     if (row) {
@@ -567,6 +594,10 @@ class Explorer {
       this.refreshGroupDetail(row);
     }
     delete this.caps[profileId];
+    if (profileId in this.latencies) {
+      const { [profileId]: _discarded, ...rest } = this.latencies;
+      this.latencies = rest;
+    }
     if (this.selected?.profileId === profileId) {
       this.selected = null;
     }

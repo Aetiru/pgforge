@@ -416,134 +416,151 @@
         la caja sino el color y el nombre: en una barra de doce acciones, la única con fondo sólido
         pesa más que todo lo que tiene al lado, y el atajo escrito repetía lo que ya dice el `title`.
       -->
-      <button
-        class="btn btn-ghost font-medium text-emerald-600 dark:text-emerald-400"
-        disabled={tab.tabId === null}
-        title="Ejecuta la selección, o la sentencia donde está el cursor (Ctrl+Enter)"
-        onclick={() => {
-          const { text, cursor } = here();
-          run(text, cursor);
-        }}
-      >
-        <Icon name="play" size={13} />
-        Ejecutar
-      </button>
-      <button
-        class="btn btn-ghost btn-icon"
-        disabled={tab.tabId === null}
-        aria-label="Ejecutar el script entero"
-        title="Ejecuta todas las sentencias del editor (Ctrl+Mayús+Enter)"
-        onclick={runWholeScript}
-      >
-        <Icon name="play-all" size={14} />
-      </button>
+      <div class="toolbar-group">
+        <button
+          class="btn btn-ghost font-medium text-emerald-600 dark:text-emerald-400"
+          disabled={tab.tabId === null}
+          title="Ejecuta la selección, o la sentencia donde está el cursor (Ctrl+Enter)"
+          onclick={() => {
+            const { text, cursor } = here();
+            run(text, cursor);
+          }}
+        >
+          <Icon name="play" size={13} />
+          Ejecutar
+        </button>
+        <button
+          class="btn btn-ghost btn-icon"
+          disabled={tab.tabId === null}
+          aria-label="Ejecutar el script entero"
+          title="Ejecuta todas las sentencias del editor (Ctrl+Mayús+Enter)"
+          onclick={runWholeScript}
+        >
+          <Icon name="play-all" size={14} />
+        </button>
+      </div>
     {/if}
 
     <span class="toolbar-sep"></span>
 
     <!--
       El interruptor y los dos botones van juntos: apagar el autocommit sin tener a la vista con qué
-      confirmar deja al usuario con una transacción abierta y sin dónde cerrarla.
+      confirmar deja al usuario con una transacción abierta y sin dónde cerrarla. Van agrupados bajo
+      un mismo fondo, no solo separados por una línea: son la única familia de la barra que puede
+      dejar un cambio sin confirmar si se toca sin querer.
     -->
-    <button
-      class="btn btn-ghost btn-icon btn-toggle"
-      aria-pressed={tab.autocommit}
-      aria-label="Autocommit"
-      disabled={tab.tabId === null || tab.running}
-      title={tab.autocommit
-        ? "Autocommit encendido: cada ejecución se confirma sola. Apagalo para trabajar dentro de una transacción"
-        : "Autocommit apagado: cada ejecución abre una transacción que hay que confirmar con el tilde de al lado"}
-      onclick={() => tab.setAutocommit(!tab.autocommit)}
-    >
-      <Icon name="autocommit" size={14} />
-    </button>
+    <div class="toolbar-group">
+      <button
+        class="btn btn-ghost btn-icon btn-toggle"
+        aria-pressed={tab.autocommit}
+        aria-label="Autocommit"
+        disabled={tab.tabId === null || tab.running}
+        title={tab.autocommit
+          ? "Autocommit encendido: cada ejecución se confirma sola. Apagalo para trabajar dentro de una transacción"
+          : "Autocommit apagado: cada ejecución abre una transacción que hay que confirmar con el tilde de al lado"}
+        onclick={() => tab.setAutocommit(!tab.autocommit)}
+      >
+        <Icon name="autocommit" size={14} />
+      </button>
 
-    <!-- El par va con los dos colores puestos: el rollback en rojo y el commit sin nada era una
-         advertencia sin su contraparte, y de un vistazo no se sabía cuál de los dos confirmaba. -->
-    <button
-      class="btn btn-ghost btn-icon text-emerald-600 dark:text-emerald-400"
-      disabled={tab.tabId === null || tab.running || tab.txStatus === "idle"}
-      aria-label="Commit"
-      title="Confirma la transacción abierta en esta pestaña"
-      onclick={() => tab.commit()}
-    >
-      <Icon name="check" size={14} />
-    </button>
-    <button
-      class="btn btn-danger-ghost btn-icon"
-      disabled={tab.tabId === null || tab.running || tab.txStatus === "idle"}
-      aria-label="Rollback"
-      title="Descarta todo lo hecho desde que se abrió la transacción"
-      onclick={() => tab.rollback()}
-    >
-      <Icon name="undo" size={14} />
-    </button>
-
-    <span class="toolbar-sep"></span>
-
-    <button
-      class="btn btn-ghost btn-icon"
-      disabled={tab.tabId === null || tab.running}
-      aria-label="Explicar"
-      title="Muestra el plan estimado sin ejecutar la consulta"
-      onclick={() => {
-        const { text, cursor } = here();
-        explain(text, cursor, estimate);
-      }}
-    >
-      <Icon name="plan" size={14} />
-    </button>
-    <button
-      class="btn btn-ghost btn-icon"
-      disabled={tab.tabId === null || tab.running}
-      aria-label="Explicar y medir"
-      title="Ejecuta la consulta y muestra los tiempos reales"
-      onclick={() => {
-        const { text, cursor } = here();
-        explain(text, cursor, analyze);
-      }}
-    >
-      <Icon name="gauge" size={14} />
-    </button>
+      <!-- El par va con los dos colores puestos: el rollback en rojo y el commit sin nada era una
+           advertencia sin su contraparte, y de un vistazo no se sabía cuál de los dos confirmaba. -->
+      <button
+        class="btn btn-ghost btn-icon text-emerald-600 dark:text-emerald-400"
+        disabled={tab.tabId === null || tab.running || tab.txStatus === "idle"}
+        aria-label="Commit"
+        title="Confirma la transacción abierta en esta pestaña"
+        onclick={() => tab.commit()}
+      >
+        <Icon name="check" size={14} />
+      </button>
+      <button
+        class="btn btn-danger-ghost btn-icon"
+        disabled={tab.tabId === null || tab.running || tab.txStatus === "idle"}
+        aria-label="Rollback"
+        title="Descarta todo lo hecho desde que se abrió la transacción"
+        onclick={() => tab.rollback()}
+      >
+        <Icon name="undo" size={14} />
+      </button>
+    </div>
 
     <span class="toolbar-sep"></span>
 
-    <button
-      class="btn btn-ghost btn-icon"
-      aria-label="Guardar como archivo .sql"
-      title={tab.filePath
-        ? `Guarda en ${tab.filePath} (Ctrl+S; Ctrl+Mayús+S para elegir otro archivo)`
-        : "Guarda el texto como archivo .sql (Ctrl+S)"}
-      onclick={() => saveQueryTab(tab, false)}
-    >
-      <Icon name="save" size={14} />
-    </button>
+    <!--
+      El árbol del plan y la aguja del medidor se parecen entre sí a ese tamaño, y ninguno de los
+      dos dice si mide tiempos reales: llevan además una leyenda de dos letras, que es lo que
+      distingue «estimado» de «medido» sin tener que pasar el mouse.
+    -->
+    <div class="toolbar-group">
+      <button
+        class="btn btn-ghost flex-col gap-0"
+        disabled={tab.tabId === null || tab.running}
+        aria-label="Explicar"
+        title="Muestra el plan estimado sin ejecutar la consulta"
+        onclick={() => {
+          const { text, cursor } = here();
+          explain(text, cursor, estimate);
+        }}
+      >
+        <Icon name="plan" size={14} />
+        <span class="text-[8px] leading-none font-bold tracking-wide">PLAN</span>
+      </button>
+      <button
+        class="btn btn-ghost flex-col gap-0"
+        disabled={tab.tabId === null || tab.running}
+        aria-label="Explicar y medir"
+        title="Ejecuta la consulta y muestra los tiempos reales"
+        onclick={() => {
+          const { text, cursor } = here();
+          explain(text, cursor, analyze);
+        }}
+      >
+        <Icon name="gauge" size={14} />
+        <span class="text-[8px] leading-none font-bold tracking-wide">REAL</span>
+      </button>
+    </div>
 
-    <!-- Guardar con nombre no es guardar en un archivo: queda adentro de la aplicación, en la
-         pestaña «Guardadas», y no depende de acordarse dónde se dejó el .sql. -->
-    <button
-      class="btn btn-ghost btn-icon"
-      aria-label="Guardar la consulta con un nombre"
-      title={tab.savedName
-        ? `Guarda los cambios en «${tab.savedName}»`
-        : "Guarda la consulta con un nombre para volver a abrirla"}
-      onclick={() => (saveOpen = true)}
-    >
-      <Icon name="star" size={14} />
-    </button>
+    <span class="toolbar-sep"></span>
 
-    <!-- Con selección, formatea solo eso; sin selección, el documento entero. -->
-    <button
-      class="btn btn-ghost btn-icon"
-      aria-label="Formatear el SQL"
-      title="Ordena el SQL: la selección si hay una, si no el documento entero (Ctrl+Mayús+F)"
-      onclick={() => {
-        const { text, cursor } = here();
-        doFormat(text, cursor);
-      }}
-    >
-      <Icon name="format" size={14} />
-    </button>
+    <div class="toolbar-group">
+      <button
+        class="btn btn-ghost btn-icon"
+        aria-label="Guardar como archivo .sql"
+        title={tab.filePath
+          ? `Guarda en ${tab.filePath} (Ctrl+S; Ctrl+Mayús+S para elegir otro archivo)`
+          : "Guarda el texto como archivo .sql (Ctrl+S)"}
+        onclick={() => saveQueryTab(tab, false)}
+      >
+        <Icon name="save" size={14} />
+      </button>
+
+      <!-- Guardar con nombre no es guardar en un archivo: queda adentro de la aplicación, en la
+           pestaña «Guardadas», y no depende de acordarse dónde se dejó el .sql. -->
+      <button
+        class="btn btn-ghost btn-icon"
+        aria-label="Guardar la consulta con un nombre"
+        title={tab.savedName
+          ? `Guarda los cambios en «${tab.savedName}»`
+          : "Guarda la consulta con un nombre para volver a abrirla"}
+        onclick={() => (saveOpen = true)}
+      >
+        <Icon name="star" size={14} />
+      </button>
+
+      <!-- Con selección, formatea solo eso; sin selección, el documento entero. -->
+      <button
+        class="btn btn-ghost btn-icon"
+        aria-label="Formatear el SQL"
+        title="Ordena el SQL: la selección si hay una, si no el documento entero (Ctrl+Mayús+F)"
+        onclick={() => {
+          const { text, cursor } = here();
+          doFormat(text, cursor);
+        }}
+      >
+        <Icon name="format" size={14} />
+      </button>
+    </div>
 
     <span class="toolbar-sep"></span>
 
@@ -560,20 +577,22 @@
 
     <span class="toolbar-sep"></span>
 
-    <FontSize />
+    <div class="toolbar-group">
+      <FontSize />
 
-    <!-- Al lado de la letra: es la barra donde uno está cuando se pregunta por este interruptor. -->
-    <button
-      class="btn btn-ghost btn-icon btn-toggle"
-      aria-pressed={autoFormat.enabled}
-      aria-label="Autoformatear"
-      title={autoFormat.enabled
-        ? "Autoformatear encendido: el SQL se ordena solo antes de guardar y antes de ejecutar el script entero"
-        : "Autoformatear apagado: el SQL se ordena solo cuando apretás el botón de formatear"}
-      onclick={() => autoFormat.set(!autoFormat.enabled)}
-    >
-      <Icon name="format-auto" size={14} />
-    </button>
+      <!-- Al lado de la letra: es la barra donde uno está cuando se pregunta por este interruptor. -->
+      <button
+        class="btn btn-ghost btn-icon btn-toggle"
+        aria-pressed={autoFormat.enabled}
+        aria-label="Autoformatear"
+        title={autoFormat.enabled
+          ? "Autoformatear encendido: el SQL se ordena solo antes de guardar y antes de ejecutar el script entero"
+          : "Autoformatear apagado: el SQL se ordena solo cuando apretás el botón de formatear"}
+        onclick={() => autoFormat.set(!autoFormat.enabled)}
+      >
+        <Icon name="format-auto" size={14} />
+      </button>
+    </div>
 
     <span class="ml-auto flex items-center gap-2 text-xs muted">
       {#if tab.running}

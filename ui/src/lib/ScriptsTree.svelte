@@ -306,8 +306,15 @@
     />
   {:else}
     <div class="min-h-0 flex-1 overflow-auto py-1">
-      {#each scripts.tree as folder (folder.path)}
-        <ScriptFolderRow {folder} depth={0} isConnection onopenfile={openFile} onmenu={openMenu} />
+      {#each scripts.tree as folder, index (folder.path)}
+        <ScriptFolderRow
+          {folder}
+          depth={0}
+          isConnection
+          separated={index > 0}
+          onopenfile={openFile}
+          onmenu={openMenu}
+        />
       {/each}
     </div>
   {/if}

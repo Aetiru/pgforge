@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use deadpool_postgres::{Manager, ManagerConfig, Object, Pool, PoolError, RecyclingMethod};
 use futures_util::{stream, StreamExt};
@@ -423,6 +423,19 @@ impl ServerHandle {
             None => token.cancel_query(NoTls).await?,
         }
         Ok(())
+    }
+
+    /// Cuánto tarda un viaje de ida y vuelta contra este servidor, en milisegundos.
+    ///
+    /// Toma una conexión del pool de la base por omisión y cronometra un `SELECT 1` **después** de
+    /// tenerla: adquirirla ya es casi siempre instantáneo con el pool abierto, pero cuando no lo es
+    /// —la primera vez, o si el pool está al tope— ese tiempo no es la red, y sumarlo mezclaría dos
+    /// cosas distintas bajo el mismo número.
+    pub async fn ping(&self) -> Result<u64> {
+        let client = self.client(self.default_database()).await?;
+        let start = Instant::now();
+        client.simple_query("SELECT 1").await?;
+        Ok(start.elapsed().as_millis() as u64)
     }
 
     /// Bases del servidor a las que el usuario puede conectarse.

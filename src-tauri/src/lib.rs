@@ -77,6 +77,7 @@ pub fn run() {
             commands::servers::ssh_test,
             commands::servers::disconnect,
             commands::servers::connected_servers,
+            commands::servers::server_ping,
             commands::workspaces::workspace_list,
             commands::workspaces::workspace_get,
             commands::workspaces::workspace_create,
