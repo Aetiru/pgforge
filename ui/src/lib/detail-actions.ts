@@ -57,6 +57,8 @@ export type DetailActionKind =
   | "openQuery"
   | "openErd"
   | "openCompare"
+  | "openPermissionMatrix"
+  | "openRoleCapabilities"
   | "export"
   | "import"
   | "backup"
@@ -242,6 +244,20 @@ export function headerActions(context: ActionContext): DetailAction[] {
       icon: "compare",
       label: "Comparar",
       title: `Compara ${node.label} contra el esquema de otro servidor conectado`,
+    });
+    actions.push({
+      kind: "openPermissionMatrix",
+      icon: "role",
+      label: "Matriz de permisos",
+      title: `Quién puede hacer qué sobre los objetos de ${node.label}`,
+    });
+  }
+  if (flags.isRole && node) {
+    actions.push({
+      kind: "openRoleCapabilities",
+      icon: "role",
+      label: "Qué puede hacer",
+      title: `Los permisos calculados de ${node.label} sobre un esquema elegido`,
     });
   }
 

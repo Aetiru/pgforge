@@ -1,20 +1,31 @@
 /**
  * Las pestañas del panel principal.
  *
- * Hay seis clases de pestaña —una consulta, los datos de una tabla, el diagrama de un esquema, la
- * comparación de dos, el dashboard de un servidor y su configuración— y conviven en la misma barra, así que la lista vive acá y no dentro de
- * ninguna de ellas. Lo único que comparten es qué son y contra qué base corren; todo lo demás lo
- * pone cada una.
+ * Hay ocho clases de pestaña —una consulta, los datos de una tabla, el diagrama de un esquema, la
+ * comparación de dos, el dashboard de un servidor, su configuración, la matriz de permisos de un
+ * esquema y lo que puede hacer un rol— y conviven en la misma barra, así que la lista vive acá y no
+ * dentro de ninguna de ellas. Lo único que comparten es qué son y contra qué base corren; todo lo
+ * demás lo pone cada una.
  */
 
 let sequence = 0;
 
 /**
  * `monitor` y `config` entraron acá cuando dejaron de ser vistas que tapaban la pantalla: lo que
- * tienen en común con las otras cuatro es justo lo que define una pestaña —contra qué servidor
- * corren y con qué nombre aparecen—, y lo que las hacía distintas era solo dónde se dibujaban.
+ * tienen en común con las otras es justo lo que define una pestaña —contra qué servidor corren y
+ * con qué nombre aparecen—, y lo que las hacía distintas era solo dónde se dibujaban. La matriz de
+ * permisos y las capacidades de un rol son de solo lectura, como el diagrama y la comparación: no
+ * hay sesión que soltar, `dispose()` queda como está en `Tab`.
  */
-export type TabKind = "query" | "data" | "erd" | "compare" | "monitor" | "config";
+export type TabKind =
+  | "query"
+  | "data"
+  | "erd"
+  | "compare"
+  | "monitor"
+  | "config"
+  | "permissionMatrix"
+  | "roleCapabilities";
 
 export abstract class Tab {
   /** Identificador local. Existe desde antes que cualquier conexión, que puede tardar o fallar. */

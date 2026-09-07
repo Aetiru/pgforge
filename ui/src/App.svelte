@@ -14,6 +14,8 @@
   import DataPanel from "./lib/DataPanel.svelte";
   import DetailPanel from "./lib/DetailPanel.svelte";
   import ErdPanel from "./lib/ErdPanel.svelte";
+  import PermissionMatrixPanel from "./lib/PermissionMatrixPanel.svelte";
+  import RoleCapabilitiesPanel from "./lib/RoleCapabilitiesPanel.svelte";
   import Empty from "./lib/Empty.svelte";
   import Icon, { type IconName } from "./lib/Icon.svelte";
   import Modal from "./lib/Modal.svelte";
@@ -32,6 +34,8 @@
   import { openMonitor, MonitorTab } from "./lib/monitor.svelte";
   import { openData, DataTab } from "./lib/data.svelte";
   import { openErd, ErdTab } from "./lib/erd.svelte";
+  import { openPermissionMatrix, PermissionMatrixTab } from "./lib/permission-matrix.svelte";
+  import { openRoleCapabilities, RoleCapabilitiesTab } from "./lib/role-capabilities.svelte";
   import { environmentOf, guard } from "./lib/access.svelte";
   import { explorer } from "./lib/explorer.svelte";
   import { openQuery, openSqlFiles, renameQueryTab, saveQueryTab, QueryTab } from "./lib/query.svelte";
@@ -160,6 +164,8 @@
     compare: "compare",
     monitor: "chart",
     config: "sliders",
+    permissionMatrix: "role",
+    roleCapabilities: "role",
   };
 
   /** Los mismos colores que las pastillas de entorno, aplicados al ícono de la pestaña. */
@@ -735,6 +741,8 @@
                 ondata={openData}
                 onerd={openErd}
                 oncompare={(source) => (compareSource = source)}
+                onmatrix={openPermissionMatrix}
+                onrolecapabilities={openRoleCapabilities}
               />
             </div>
         {:else if view.pane === "library"}
@@ -976,6 +984,10 @@
           <ErdPanel {tab} />
         {:else if tab instanceof CompareTab}
           <ComparePanel {tab} />
+        {:else if tab instanceof PermissionMatrixTab}
+          <PermissionMatrixPanel {tab} />
+        {:else if tab instanceof RoleCapabilitiesTab}
+          <RoleCapabilitiesPanel {tab} />
         {:else if tab instanceof MonitorTab}
           <Dashboard profileId={tab.profileId} />
         {:else if tab instanceof ConfigTab}
@@ -1083,6 +1095,8 @@
             ondata={openData}
             onerd={openErd}
             oncompare={(source) => (compareSource = source)}
+            onmatrix={openPermissionMatrix}
+            onrolecapabilities={openRoleCapabilities}
           />
         </div>
       </aside>

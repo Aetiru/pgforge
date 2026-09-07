@@ -130,6 +130,8 @@
     ondata,
     onerd,
     oncompare,
+    onmatrix,
+    onrolecapabilities,
   }: {
     onedit: (profileId: string) => void;
     ondelete: (profileId: string) => void;
@@ -142,6 +144,10 @@
     onerd: (profileId: string, database: string, schema: string) => void;
     /** Pide comparar este esquema contra otro; el otro lado lo elige un diálogo de `App`. */
     oncompare: (source: CompareSide) => void;
+    /** Abre la matriz de permisos de un esquema. */
+    onmatrix: (profileId: string, database: string, schema: string) => void;
+    /** Abre "qué puede hacer" un rol, contra el esquema por omisión. */
+    onrolecapabilities: (profileId: string, database: string, role: string) => void;
   } = $props();
 
   let ddl = $state<Ddl | null>(null);
@@ -692,6 +698,12 @@
           database: current!.database,
           schema: current!.label,
         });
+        break;
+      case "openPermissionMatrix":
+        onmatrix(selected.profileId, current!.database, current!.label);
+        break;
+      case "openRoleCapabilities":
+        onrolecapabilities(selected.profileId, current!.database, current!.label);
         break;
       case "export":
         exportDialog = true;

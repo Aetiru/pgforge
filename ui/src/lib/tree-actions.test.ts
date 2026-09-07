@@ -4,6 +4,7 @@ import {
   connectionUrl,
   dataTargetOf,
   schemaTargetOf,
+  roleTargetOf,
   folderForKind,
   qualifiedNameOf,
   queryTargetOf,
@@ -98,6 +99,17 @@ describe("schemaTargetOf", () => {
     });
     expect(schemaTargetOf(node("table"))).toBeNull();
     expect(schemaTargetOf(null)).toBeNull();
+  });
+});
+
+describe("roleTargetOf", () => {
+  it("solo un rol tiene capacidades para mostrar", () => {
+    expect(roleTargetOf(node("role", { label: "reportes" }))).toEqual({
+      database: "app",
+      role: "reportes",
+    });
+    expect(roleTargetOf(node("table"))).toBeNull();
+    expect(roleTargetOf(null)).toBeNull();
   });
 });
 

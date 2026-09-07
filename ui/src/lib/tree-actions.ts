@@ -54,6 +54,12 @@ export function schemaTargetOf(node: TreeNode | null): { database: string; schem
   return { database: node.database, schema: node.label };
 }
 
+/** El rol sobre el que trabaja "qué puede hacer este rol". `null` para cualquier otra fila. */
+export function roleTargetOf(node: TreeNode | null): { database: string; role: string } | null {
+  if (!node || node.kind !== "role") return null;
+  return { database: node.database, role: node.label };
+}
+
 /**
  * En qué carpeta del árbol vive cada tipo de objeto.
  *
