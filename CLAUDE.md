@@ -2,7 +2,9 @@
 
 Guía para Claude Code (claude.ai/code) en este repositorio.
 
+
 ## Idioma
+Las skills están en inglés y por defecto el agente te va a generar los documentos en inglés.
 
 Todo proyecto en español: comentarios, doc-comments, nombres de tests, mensajes de error, textos de interfaz, mensajes de commit. Mantener así. Identificadores de código (tipos, funciones, campos) en inglés — salvo nombres de tests, que son frases en español describiendo qué se verifica (`crea_cambia_y_borra_una_tabla_contra_servidores_reales`).
 

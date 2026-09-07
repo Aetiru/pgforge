@@ -719,12 +719,10 @@ async fn permisos_calculados_por_esquema(
         .await
         .unwrap();
     assert!(
-        sequences
-            .iter()
-            .any(|p| p.object == "numeros"
-                && p.role == role_name
-                && p.privilege == "USAGE"
-                && p.granted),
+        sequences.iter().any(|p| p.object == "numeros"
+            && p.role == role_name
+            && p.privilege == "USAGE"
+            && p.granted),
         "USAGE de la secuencia tenía que calcularse: {sequences:?}"
     );
 
@@ -732,12 +730,10 @@ async fn permisos_calculados_por_esquema(
         .await
         .unwrap();
     assert!(
-        functions
-            .iter()
-            .any(|p| p.object == "doble"
-                && p.role == role_name
-                && p.privilege == "EXECUTE"
-                && p.granted),
+        functions.iter().any(|p| p.object == "doble"
+            && p.role == role_name
+            && p.privilege == "EXECUTE"
+            && p.granted),
         "EXECUTE de la función tenía que calcularse: {functions:?}"
     );
 }

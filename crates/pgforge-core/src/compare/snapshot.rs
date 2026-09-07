@@ -20,8 +20,8 @@ use crate::conn::ServerHandle;
 use crate::ddl::table::Identity;
 // `TypeKind` es el mismo `ddl::types::ShapeKind` con otro nombre en este módulo: acá compara
 // esquemas y no cruza el IPC, así que no hace falta el nombre que ve la interfaz.
-pub use crate::ddl::types::ShapeKind as TypeKind;
 pub use crate::ddl::types::Field;
+pub use crate::ddl::types::ShapeKind as TypeKind;
 use crate::error::{Error, Result};
 use crate::ServerVersion;
 
