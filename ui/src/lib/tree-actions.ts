@@ -17,7 +17,7 @@ export interface QueryTarget {
 }
 
 /** Las relaciones que tienen filas para mostrar. */
-const WITH_ROWS = ["table", "partitionedTable", "view", "materializedView", "foreignTable"];
+export const WITH_ROWS = ["table", "partitionedTable", "view", "materializedView", "foreignTable"];
 
 /**
  * Los objetos llevan la base encima; la fila del servidor recién conectado usa la del perfil.

@@ -21,6 +21,7 @@
   import Modal from "./lib/Modal.svelte";
   import Palette from "./lib/Palette.svelte";
   import Preferences from "./lib/Preferences.svelte";
+  import SearchModal from "./lib/SearchModal.svelte";
   import Rail from "./lib/Rail.svelte";
   import LibraryPanel from "./lib/LibraryPanel.svelte";
   import ProcessPanel from "./lib/ProcessPanel.svelte";
@@ -153,6 +154,8 @@
   let workspaceReload = $state(0);
   /** La paleta de comandos (Ctrl+K). */
   let paletteOpen = $state(false);
+  /** La búsqueda rápida contra el servidor (Ctrl+Mayús+P). */
+  let searchOpen = $state(false);
   /** El menú con lo que no se usa todos los días del árbol. */
   let treeMenu = $state(false);
   let banner = $state<string | null>(null);
@@ -490,6 +493,14 @@
         // La misma tecla abre y cierra: es lo que uno intenta cuando se abrió sin querer.
         event.preventDefault();
         paletteOpen = !paletteOpen;
+        break;
+      case "p":
+        // A diferencia de Ctrl+K, esta pregunta al servidor —no solo lo que el árbol ya trajo—, así
+        // que hace falta contra qué base preguntar: la misma que usaría "Nueva consulta".
+        if (!event.shiftKey) return;
+        event.preventDefault();
+        if (searchOpen) searchOpen = false;
+        else if (explorer.selected && queryTarget) searchOpen = true;
         break;
       case "q":
         event.preventDefault();
@@ -1171,6 +1182,14 @@
     onconfig={showConfig}
     onconnect={connectById}
     onclose={() => (paletteOpen = false)}
+  />
+{/if}
+
+{#if searchOpen && explorer.selected && queryTarget}
+  <SearchModal
+    profileId={explorer.selected.profileId}
+    database={queryTarget.database}
+    onclose={() => (searchOpen = false)}
   />
 {/if}
 
