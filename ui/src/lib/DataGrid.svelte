@@ -583,8 +583,13 @@
     if (editing) return;
 
     const extend = event.shiftKey;
+    // Las letras van en minúscula: `Ctrl+Shift+C` manda `event.key === "C"` por el `Shift` —y con
+    // Bloq Mayús puesto, hasta `Ctrl+C` solo llega en mayúscula—, y ninguno de los dos matchea contra
+    // `case "c"`. Las teclas con nombre (`ArrowDown`, `Escape`, `F2`, …) no llevan letra suelta y
+    // quedan igual.
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
 
-    switch (event.key) {
+    switch (key) {
       case "ArrowDown":
         event.preventDefault();
         moveCursor(1, 0, extend);
