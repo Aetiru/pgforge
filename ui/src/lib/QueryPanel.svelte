@@ -663,6 +663,8 @@
       relations={tab.relations}
       errorMark={tab.errorMark}
       {activeRange}
+      initialSelection={tab.editorSelection}
+      initialTopPos={tab.editorTopPos}
       onrun={(selection, cursor) => run(selection, cursor)}
       onrunScript={runWholeScript}
       oncancel={() => tab.cancel()}
@@ -671,6 +673,10 @@
       oncursor={onCursorMove}
       onreveal={(relation) =>
         relation && explorer.revealRelation(tab.profileId, tab.database, relation.schema, relation.oid)}
+      onposition={(state) => {
+        tab.editorSelection = { anchor: state.anchor, head: state.head };
+        tab.editorTopPos = state.topPos;
+      }}
     />
   </div>
 

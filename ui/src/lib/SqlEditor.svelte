@@ -31,6 +31,8 @@
     errorMark = null,
     activeRange = null,
     readonly = false,
+    initialSelection = null,
+    initialTopPos = null,
     onrun,
     onrunScript,
     oncancel,
@@ -38,6 +40,7 @@
     onformat,
     oncursor,
     onreveal,
+    onposition,
   }: {
     value?: string;
     schema?: SQLNamespace;
@@ -47,6 +50,14 @@
     /** La sentencia que `Ctrl+Enter` va a correr, ya resuelta por `QueryPanel`. */
     activeRange?: ActiveRange | null;
     readonly?: boolean;
+    /** Cursor y scroll con los que nace el editor —lo que dejó `ondetach` la vez anterior. */
+    initialSelection?: { anchor: number; head: number } | null;
+    /** Posición del documento que quedaba arriba del todo. Guardar el `scrollTop` en píxeles no
+     *  alcanza: CodeMirror virtualiza y recién mide el alto real de cada línea cuando la dibuja, así
+     *  que un píxel fijo asignado antes de esa medición queda pisado. Una posición del documento no
+     *  depende de esa medición —CodeMirror la resuelve sola, cuando esté lista, vía
+     *  `scrollIntoView`—. */
+    initialTopPos?: number | null;
     /** Ctrl+Enter: la selección, o la sentencia donde está el cursor. */
     onrun?: (selection: string, cursor: number) => void;
     /** Ctrl+Shift+Enter: el script entero. */
@@ -62,6 +73,18 @@
     /** `Ctrl`+clic sobre una tabla del `FROM`/`JOIN`: la relación resuelta, para revelarla en el
      *  árbol. `null` cuando el clic no cayó sobre nada reconocible. */
     onreveal?: (relation: SchemaRelation | null) => void;
+    /**
+     * Cursor y scroll, cada vez que cambian —no solo al desmontar—, para que `QueryPanel` los guarde
+     * en la pestaña y este mismo editor nazca donde se había quedado la próxima vez que se abra.
+     *
+     * Capturarlos recién en el `return` del `$effect` de creación parecía alcanzar, pero para cuando
+     * ese cleanup corre —Svelte ya está desarmando el árbol viejo del `{#key}` de `App.svelte`— el
+     * contenedor puede haber perdido su tamaño de layout, y ahí `scrollDOM.scrollTop` lee `0` aunque
+     * un instante antes valiera miles de píxeles. Iistoría corriente en cada cambio evita depender de
+     * ese orden de desmontaje. Guardar en cada cambio —scroll o selección— deja siempre un valor
+     * reciente y bueno, sin importar en qué momento se desarme el editor.
+     */
+    onposition?: (state: { anchor: number; head: number; topPos: number }) => void;
   } = $props();
 
   let element: HTMLDivElement;
@@ -289,13 +312,33 @@
     };
   });
 
+  /** Posición de arriba del todo, en documento y no en píxeles —ver el comentario de `onposition`. */
+  function reportPosition(editorView: EditorView) {
+    const { anchor, head } = editorView.state.selection.main;
+    const topPos = editorView.lineBlockAtHeight(editorView.scrollDOM.scrollTop).from;
+    onposition?.({ anchor, head, topPos });
+  }
+
   // El editor se crea una sola vez: leer `value` acá sin `untrack` lo reconstruiría en cada tecla,
   // perdiendo el cursor, el historial de deshacer y el foco.
   $effect(() => {
+    const startDoc = untrack(() => value);
+    const startSelection = untrack(() => initialSelection);
+    // El documento guardado puede ser más corto que cuando se anotó la selección —se restauró
+    // desde el historial, o cambió de base y perdió lo escrito—, y CodeMirror tira si el cursor cae
+    // más allá del final.
+    const selection = startSelection
+      ? {
+          anchor: Math.min(startSelection.anchor, startDoc.length),
+          head: Math.min(startSelection.head, startDoc.length),
+        }
+      : undefined;
+
     view = new EditorView({
       parent: element,
       state: EditorState.create({
-        doc: untrack(() => value),
+        doc: startDoc,
+        selection,
         extensions: [
           shortcuts,
           basicSetup,
@@ -309,6 +352,11 @@
           theme,
           EditorView.lineWrapping,
           EditorState.readOnly.of(untrack(() => readonly)),
+          // El scroll no dispara `update`, así que se escucha aparte; es lo único que hace que
+          // `onposition` quede al día mientras se lee sin tocar el cursor.
+          EditorView.domEventHandlers({
+            scroll: (_event, editorView) => reportPosition(editorView),
+          }),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) value = update.state.doc.toString();
             // `QueryPanel` decide con esto si hay que volver a preguntar cuál es la sentencia
@@ -318,10 +366,32 @@
               const text = update.state.doc.toString();
               oncursor?.(text.slice(from, to), toCharOffset(text, from));
             }
+            if (update.selectionSet) reportPosition(update.view);
           }),
         ],
       }),
     });
+
+    // Vía `scrollIntoView` y no asignando `scrollDOM.scrollTop` a mano: CodeMirror todavía no midió
+    // el alto real de las líneas fuera de vista en este primer render, y un píxel fijo puesto antes
+    // de esa medición queda pisado apenas termina. Una posición del documento no tiene ese problema
+    // —CodeMirror la resuelve cuando le toca, sea cual sea el orden—.
+    //
+    // Aun así, un salto lejano —a la línea 200 de una función larga, recién montado el editor— pide
+    // dos pasadas. La primera renderiza alrededor de una altura estimada, todavía sin medir esa zona
+    // del documento; recién ahí CodeMirror mide las líneas reales que acaba de dibujar, y esa medida
+    // puede correr bastante el resultado si hay líneas envueltas de alto disparejo de por medio. La
+    // segunda pasada, ya con esa medida hecha, cae en el lugar justo.
+    const startTopPos = untrack(() => initialTopPos);
+    if (startTopPos !== null) {
+      const target = Math.min(startTopPos, view.state.doc.length);
+      const scrollTo = EditorView.scrollIntoView(target, { y: "start" });
+      view.dispatch({ effects: scrollTo });
+      const restored = view;
+      requestAnimationFrame(() => {
+        if (view === restored) view.dispatch({ effects: scrollTo });
+      });
+    }
 
     return () => {
       view?.destroy();

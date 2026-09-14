@@ -224,6 +224,19 @@ export class QueryTab extends Tab {
    */
   formatRequest = $state(0);
 
+  /**
+   * Cursor y scroll del editor al salir de la pestaña.
+   *
+   * `{#key}` en `App.svelte` destruye y vuelve a montar el panel entero al cambiar de pestaña, así
+   * que el `EditorView` de CodeMirror nace de cero cada vez; sin guardar esto acá, volver a una
+   * consulta que ya se había abierto dejaba siempre el cursor en cero y el scroll arriba del todo.
+   * No es `$state`: nadie dibuja con esto, solo lo lee `SqlEditor` al nacer.
+   */
+  editorSelection: { anchor: number; head: number } | null = null;
+  /** Posición del documento que quedaba arriba del todo, no el `scrollTop` en píxeles —ver `ondetach`
+   *  de `SqlEditor`. */
+  editorTopPos: number | null = null;
+
   requestFormat() {
     this.formatRequest += 1;
   }
