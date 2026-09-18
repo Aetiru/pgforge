@@ -60,8 +60,8 @@
 <div
   class="relative flex items-center gap-1.5 px-1 hover:bg-zinc-100 dark:hover:bg-zinc-700/70
          {isConnection
-    ? 'h-[26px] text-[11px] font-semibold tracking-wide uppercase muted'
-    : 'h-6 rounded text-sm'}
+    ? 'h-[22px] text-[10px] font-semibold tracking-wide uppercase muted'
+    : 'h-[22px] rounded text-[13px]'}
          {isConnection && separated ? 'border-t border-zinc-200/80 dark:border-zinc-700' : ''}"
   style="padding-left: {indent}px"
   onclick={() => scripts.setOpen(folder.path, !open)}
@@ -107,7 +107,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="relative flex h-6 items-center gap-1.5 rounded px-1 text-sm hover:bg-zinc-100
+      class="relative flex h-[22px] items-center gap-1.5 rounded px-1 text-sm hover:bg-zinc-100
              dark:hover:bg-zinc-700/70"
       style="padding-left: {indent + 18}px"
       oncontextmenu={(event) => onmenu(event, { kind: "file", file, folder })}
@@ -124,7 +124,7 @@
         onclick={() => onopenfile(file)}
       >
         <Icon name="sql" size={13} class="shrink-0 text-violet-600 dark:text-violet-400" />
-        <span class="min-w-0 flex-1 truncate text-[12px]">{file.name}</span>
+        <span class="min-w-0 flex-1 truncate text-[11px]">{file.name}</span>
       </button>
     </div>
   {/each}

@@ -93,13 +93,13 @@
   {:else}
     <ul class="min-h-0 flex-1 overflow-auto">
       {#each groups as group (group.profileId)}
-        <li class="divider-b px-3 py-1 text-[11px] font-semibold tracking-wide uppercase muted">
+        <li class="divider-b px-3 py-1 text-[10px] font-semibold tracking-wide uppercase muted">
           {group.server}
         </li>
         {#each group.items as entry (entry.id)}
           {@const look = lookOf(entry.kind)}
           <li
-            class="group flex items-center gap-2 px-3 py-1.5 hover:bg-zinc-100
+            class="group flex items-center gap-2 px-3 py-1 hover:bg-zinc-100
                    dark:hover:bg-zinc-700/70"
           >
             <button
@@ -108,8 +108,8 @@
               onclick={() => onopen(entry)}
             >
               <Icon name={look.icon} size={13} class={look.tone} />
-              <span class="min-w-0 flex-1 truncate text-sm">{entry.label ?? entry.name}</span>
-              <span class="min-w-0 shrink-[100] truncate text-xs muted">{entry.schema}</span>
+              <span class="min-w-0 flex-1 truncate text-[13px]">{entry.label ?? entry.name}</span>
+              <span class="min-w-0 shrink-[100] truncate text-[11px] muted">{entry.schema}</span>
             </button>
 
             <div class="row-actions shrink-0">
