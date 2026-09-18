@@ -69,9 +69,9 @@
    * acumulan los desplazamientos una vez por lista y se busca en ellos por bisección. Un esquema con
    * miles de tablas sigue dibujando solo lo que entra en pantalla.
    */
-  const ROW_HEIGHT = 28;
-  const SERVER_HEIGHT = 50;
-  const SECTION_HEIGHT = 28;
+  const ROW_HEIGHT = 24;
+  const SERVER_HEIGHT = 44;
+  const SECTION_HEIGHT = 24;
   const OVERSCAN = 8;
 
   /**
@@ -99,6 +99,12 @@
   let scrollTop = $state(0);
   let viewportHeight = $state(600);
   let viewport = $state<HTMLDivElement | null>(null);
+
+  /** Lo que scrollea por encima de la lista, medido en dos tramos porque la alerta del movimiento
+   * fallido queda fuera de la cadena `{#if}` donde viven «Recientes» y el contador. */
+  let alertH = $state(0);
+  let aboveRowsH = $state(0);
+  const headerH = $derived(alertH + aboveRowsH);
 
   /** El servidor que se está arrastrando y la carpeta sobre la que caería si se soltara ahora. */
   let dragging = $state<string | null>(null);
@@ -161,6 +167,14 @@
     return out;
   });
 
+  /**
+   * El desplazamiento en coordenadas de las filas. `offsets` mide desde el borde de la lista y
+   * `scrollTop` desde el del viewport, y entre los dos hay contenido que también scrollea: sin
+   * restarle su alto, el rótulo anclado se dibuja tapando filas y se ancla una carpeta que todavía
+   * se está viendo entera.
+   */
+  const rowsScroll = $derived(Math.max(0, scrollTop - headerH));
+
   /** La última fila que empieza en `top` o antes. */
   function indexAt(top: number): number {
     let low = 0;
@@ -178,22 +192,22 @@
     return found;
   }
 
-  const start = $derived(Math.max(0, indexAt(scrollTop) - OVERSCAN));
+  const start = $derived(Math.max(0, indexAt(rowsScroll) - OVERSCAN));
   const visible = $derived(
-    rows.slice(start, Math.min(rows.length, indexAt(scrollTop + viewportHeight) + 1 + OVERSCAN)),
+    rows.slice(start, Math.min(rows.length, indexAt(rowsScroll + viewportHeight) + 1 + OVERSCAN)),
   );
 
   // El resaltado marca el texto buscado, no el prefijo que lo acota: `t:factura` resalta «factura».
   const needle = $derived(parseQuery(explorer.search).text.toLowerCase());
 
   /**
-   * El rótulo que queda anclado arriba: la carpeta de la que cuelga lo que se está viendo. Se dibuja
-   * a la altura del desplazamiento en vez de con `position: sticky` porque las filas son absolutas
-   * —la ventana deslizante las posiciona a mano— y ahí `sticky` no tiene flujo al que pegarse.
+   * El rótulo que queda anclado arriba: la carpeta de la que cuelga lo que se está viendo. Acá solo
+   * se decide **cuál** es; de pegarlo arriba se encarga `position: sticky` en el marcado, porque
+   * calcular su posición con el `scrollTop` lo dejaba un cuadro atrás del desplazamiento.
    */
   const sticky = $derived.by(() => {
     if (rows.length === 0) return null;
-    const first = indexAt(scrollTop);
+    const first = indexAt(rowsScroll);
     const at = stickyIndex(
       rows.map((row) => ({
         level: row.level,
@@ -203,7 +217,7 @@
       first,
       // Cortada por arriba: si empieza justo en el borde todavía está entera, y entonces no hay
       // nada que anclar (ver `tree-sticky`).
-      offsets[first] < scrollTop,
+      offsets[first] < rowsScroll,
     );
     return at === null ? null : rows[at];
   });
@@ -272,11 +286,13 @@
   let menu = $state<{ x: number; y: number; row: Row } | null>(null);
 
   /**
-   * Cuánto alto reservarle al menú para que no se abra pasando el borde de abajo. Es el caso más
-   * largo —un servidor conectado, con todo lo del perfil— y no el promedio: quedarse corto acá se
-   * paga con un menú recortado justo en «Eliminar».
+   * Lo que mide el menú ya dibujado. Su alto depende de cuántos ítems habilite la fila —una carpeta
+   * son un puñado, un servidor conectado más del triple—, así que reservar el peor caso lo
+   * despegaba del cursor en los dos tercios de abajo del árbol aunque entrara de sobra donde se
+   * hizo clic.
    */
-  const MENU_HEIGHT = 340;
+  let menuW = $state(0);
+  let menuH = $state(0);
 
   const menuProfile = $derived(
     menu ? explorer.profiles.find((profile) => profile.id === menu?.row.profileId) : undefined,
@@ -437,9 +453,9 @@
     if (!viewport) return;
     const top = offsets[index];
     const height = heightOf(rows[index]);
-    if (top < scrollTop) viewport.scrollTop = top;
-    else if (top + height > scrollTop + viewportHeight) {
-      viewport.scrollTop = top + height - viewportHeight;
+    if (top < rowsScroll) viewport.scrollTop = top + headerH;
+    else if (top + height > rowsScroll + viewportHeight) {
+      viewport.scrollTop = top + height - viewportHeight + headerH;
     }
   }
 
@@ -718,9 +734,11 @@
   aria-label="Servidores y objetos"
   aria-activedescendant={explorer.selected ? `tree-${explorer.selected.key}` : undefined}
 >
-  {#if moveError}
-    <Alert tone="bad" onclose={() => (moveError = null)}>{moveError}</Alert>
-  {/if}
+  <div bind:clientHeight={alertH}>
+    {#if moveError}
+      <Alert tone="bad" onclose={() => (moveError = null)}>{moveError}</Alert>
+    {/if}
+  </div>
 
   {#if explorer.workspaceError}
     <!--
@@ -740,7 +758,7 @@
       las filas: lo que se encontró puede estar en esquemas que el árbol nunca abrió, y meterlo
       adentro obligaría a inventar ramas para poder colgarlo.
     -->
-    <div class="flex items-center gap-2 px-3 py-1.5 text-[11px] muted">
+    <div class="flex items-center gap-2 px-3 py-1.5 text-[10px] muted">
       {#if explorer.searching}
         <span class="spinner"></span>
         <span>Buscando en el servidor…</span>
@@ -767,16 +785,16 @@
       {#each explorer.hits as hit (`${hit.schema}.${hit.oid}`)}
         {@const look = lookOf(hit.kind)}
         <button
-          class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 pl-3 text-left text-sm
+          class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 pl-3 text-left text-[13px]
                  hover:bg-zinc-100 dark:hover:bg-zinc-700/70"
           title="Revelar en el árbol"
           onclick={() => explorer.revealHit(hit)}
         >
           <Icon name={look.icon} class={look.tone} />
           <span class="min-w-0 truncate">{hit.label}</span>
-          <span class="min-w-0 shrink-[100] truncate text-xs muted">{hit.schema}</span>
+          <span class="min-w-0 shrink-[100] truncate text-[11px] muted">{hit.schema}</span>
           {#if hit.detail}
-            <span class="ml-auto shrink-0 pl-1 text-xs muted">{hit.detail}</span>
+            <span class="ml-auto shrink-0 pl-1 text-[11px] muted">{hit.detail}</span>
           {/if}
         </button>
       {/each}
@@ -818,96 +836,104 @@
       {/if}
     </Empty>
   {:else}
-    {#if recentRows.length > 0}
-      <!--
-        Atajo a lo usado hace poco: encontrar un servidor no debería depender de acordarse en qué
-        carpeta vive. No reemplaza nada del árbol de abajo, que sigue mostrando todo —es un acceso
-        directo, no una segunda fuente de verdad—.
-      -->
-      <div class="border-b border-zinc-200/80 pb-1.5 dark:border-zinc-700">
-        <p class="px-3 pt-1.5 pb-1 text-[11px] font-semibold tracking-wide uppercase muted">
-          Recientes
-        </p>
-        {#each recentRows as row (row.key)}
-          {@const environment = environmentOf(row.profileId)}
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <div
-            class="group/recent relative flex w-full items-center gap-1.5 rounded-md py-1 pr-1
-                   pl-3 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700/70"
-            role="button"
-            tabindex="0"
-            onclick={() => {
-              if (explorer.needsConnection(row)) {
-                onconnect(row.profileId);
-                return;
-              }
-              explorer.select(row);
-              const at = rows.findIndex((item) => item.key === row.key);
-              if (at >= 0) reveal(at);
-            }}
-          >
-            {#if environment}
-              {@const badge = envLook(environment)}
-              <span
-                class="pointer-events-none absolute inset-y-0 left-0 w-0.5 rounded-r {badge.spine}"
-              ></span>
-            {/if}
-            <span
-              class="relative grid size-5 shrink-0 place-items-center rounded bg-blue-50
-                     text-blue-600 dark:bg-blue-500/10 dark:text-blue-400"
-            >
-              <Icon name="server" size={12} />
-              <span
-                class="dot absolute -right-1 -bottom-1 ring-2 ring-zinc-50 dark:ring-zinc-900
-                       {row.down ? 'dot-down' : row.connected ? 'dot-on' : 'dot-off'}"
-              ></span>
-            </span>
-            <span class="min-w-0 flex-1 truncate font-medium" title={row.label}>{row.label}</span>
-            {#if row.group}
-              <span
-                class="max-w-24 shrink-0 truncate rounded bg-zinc-100 px-1.5 py-0.5 text-[10px]
-                       muted dark:bg-zinc-700/60"
-                title={row.group}
-              >
-                {row.group}
-              </span>
-            {/if}
-            <button
-              class="btn btn-ghost btn-icon size-5 shrink-0 opacity-0 group-hover/recent:opacity-100
-                     focus-visible:opacity-100"
-              title="Quitar de recientes"
-              aria-label="Quitar de recientes"
-              tabindex="-1"
-              onclick={(event) => {
-                event.stopPropagation();
-                recents.forget(row.profileId);
+    <div bind:clientHeight={aboveRowsH}>
+      {#if recentRows.length > 0}
+        <!--
+          Atajo a lo usado hace poco: encontrar un servidor no debería depender de acordarse en qué
+          carpeta vive. No reemplaza nada del árbol de abajo, que sigue mostrando todo —es un acceso
+          directo, no una segunda fuente de verdad—.
+        -->
+        <div class="border-b border-zinc-200/80 pb-1.5 dark:border-zinc-700">
+          <p class="px-3 pt-1.5 pb-1 text-[10px] font-semibold tracking-wide uppercase muted">
+            Recientes
+          </p>
+          {#each recentRows as row (row.key)}
+            {@const environment = environmentOf(row.profileId)}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <div
+              class="group/recent relative flex w-full items-center gap-1.5 rounded-md py-1 pr-1
+                     pl-3 text-[13px] hover:bg-zinc-100 dark:hover:bg-zinc-700/70"
+              role="button"
+              tabindex="0"
+              onclick={() => {
+                if (explorer.needsConnection(row)) {
+                  onconnect(row.profileId);
+                  return;
+                }
+                explorer.select(row);
+                const at = rows.findIndex((item) => item.key === row.key);
+                if (at >= 0) reveal(at);
               }}
             >
-              <Icon name="close" size={10} />
-            </button>
-          </div>
-        {/each}
-      </div>
-    {/if}
+              {#if environment}
+                {@const badge = envLook(environment)}
+                <span
+                  class="pointer-events-none absolute inset-y-0 left-0 w-0.5 rounded-r {badge.spine}"
+                ></span>
+              {/if}
+              <span
+                class="relative grid size-5 shrink-0 place-items-center rounded bg-blue-50
+                       text-blue-600 dark:bg-blue-500/10 dark:text-blue-400"
+              >
+                <Icon name="server" size={12} />
+                <span
+                  class="dot absolute -right-1 -bottom-1 ring-2 ring-zinc-50 dark:ring-zinc-900
+                         {row.down ? 'dot-down' : row.connected ? 'dot-on' : 'dot-off'}"
+                ></span>
+              </span>
+              <span class="min-w-0 flex-1 truncate font-medium" title={row.label}>{row.label}</span>
+              {#if row.group}
+                <span
+                  class="max-w-24 shrink-0 truncate rounded bg-zinc-100 px-1.5 py-0.5 text-[10px]
+                         muted dark:bg-zinc-700/60"
+                  title={row.group}
+                >
+                  {row.group}
+                </span>
+              {/if}
+              <button
+                class="btn btn-ghost btn-icon size-5 shrink-0 opacity-0 group-hover/recent:opacity-100
+                       focus-visible:opacity-100"
+                title="Quitar de recientes"
+                aria-label="Quitar de recientes"
+                tabindex="-1"
+                onclick={(event) => {
+                  event.stopPropagation();
+                  recents.forget(row.profileId);
+                }}
+              >
+                <Icon name="close" size={10} />
+              </button>
+            </div>
+          {/each}
+        </div>
+      {/if}
 
-    {#if needle !== ""}
-      <p class="px-3 py-1.5 text-[11px] muted">
-        {rows.length}
-        {rows.length === 1 ? "coincidencia" : "coincidencias"} entre lo ya cargado
-      </p>
-    {/if}
+      {#if needle !== ""}
+        <p class="px-3 py-1.5 text-[10px] muted">
+          {rows.length}
+          {rows.length === 1 ? "coincidencia" : "coincidencias"} entre lo ya cargado
+        </p>
+      {/if}
+    </div>
 
     <div class="relative" style="height: {offsets[rows.length]}px">
       <!--
-        El rótulo anclado. Va detrás de las filas en el orden del marcado pero por encima en `z`, y
-        con fondo opaco: lo que pasa por abajo tiene que desaparecer debajo de él y no transparentar.
-        Un clic lleva a la fila de verdad, que es lo que uno quiere cuando se perdió y mira el rótulo.
+        El rótulo anclado. Va por encima de las filas en `z` y con fondo opaco: lo que pasa por
+        abajo tiene que desaparecer debajo de él y no transparentar. Un clic lleva a la fila de
+        verdad, que es lo que uno quiere cuando se perdió y mira el rótulo.
+
+        Es `sticky` y no una posición calculada con el `scrollTop`: ese valor llega en el evento
+        `scroll`, cuando el navegador ya desplazó el contenido, así que un rótulo puesto a mano va un
+        cuadro atrasado y salta al scrollear. Con `sticky` lo pega el propio navegador, sin esperar
+        a este código. Las filas son absolutas, pero el rótulo no lo es: su bloque contenedor es la
+        lista entera, y eso alcanza para que se quede pegado arriba mientras la lista se ve.
       -->
       {#if sticky}
         <button
-          class="absolute left-0 z-10 flex w-full items-center gap-1.5 bg-zinc-50 pr-2 text-left
-                 text-[11px] font-semibold tracking-wide uppercase muted dark:bg-zinc-800"
-          style="top: {scrollTop}px; height: {SECTION_HEIGHT}px; padding-left: {INDENT_BASE +
+          class="sticky top-0 z-10 flex w-full items-center gap-1.5 bg-zinc-50 pr-2 text-left
+                 text-[10px] font-semibold tracking-wide uppercase muted dark:bg-zinc-800"
+          style="height: {SECTION_HEIGHT}px; padding-left: {INDENT_BASE +
             sticky.level * INDENT + 22}px"
           title="Ir a {sticky.label}"
           tabindex="-1"
@@ -941,7 +967,7 @@
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <div
           id="tree-{row.key}"
-          class="group absolute left-0 flex w-full items-center gap-1.5 rounded-md pr-1 text-sm
+          class="group absolute left-0 flex w-full items-center gap-1.5 rounded-md pr-1 text-[13px]
                  {isSelected || isMarked
             ? 'bg-blue-50 text-blue-900 dark:bg-blue-950/60 dark:text-blue-100'
             : `${isServer ? envWash(environment) : ''} hover:bg-zinc-100 dark:hover:bg-zinc-700/70`}
@@ -1101,8 +1127,8 @@
           <span class="flex min-w-0 flex-1 flex-col justify-center gap-px">
             <span class="flex min-w-0 items-center gap-1.5">
               <span
-                class="min-w-0 truncate {isServer ? 'text-[13px] font-semibold' : ''}
-                       {section ? 'text-[11px] font-semibold tracking-wide uppercase' : ''}
+                class="min-w-0 truncate {isServer ? 'text-[12px] font-semibold' : ''}
+                       {section ? 'text-[10px] font-semibold tracking-wide uppercase' : ''}
                        {section && !isSelected ? 'muted' : ''}"
                 title={row.comment ?? row.label}
               >
@@ -1146,7 +1172,7 @@
 
               {#if !isServer && row.error}
                 <span
-                  class="min-w-0 shrink-[100] truncate text-xs text-rose-600 dark:text-rose-400"
+                  class="min-w-0 shrink-[100] truncate text-[11px] text-rose-600 dark:text-rose-400"
                   title={row.error}
                 >
                   {row.error}
@@ -1157,7 +1183,7 @@
             <!-- Segunda línea: todo lo que describe al servidor sin identificarlo. Se lee cuando se
                  duda entre dos conexiones parecidas, no en cada pasada por el árbol. -->
             {#if isServer}
-              <span class="flex min-w-0 items-center gap-1.5 text-[11px] leading-none muted">
+              <span class="flex min-w-0 items-center gap-1.5 text-[10px] leading-none muted">
                 {#if row.detail}
                   <span class="min-w-0 shrink truncate" title={row.detail}>{row.detail}</span>
                 {/if}
@@ -1318,7 +1344,7 @@
             {#if row.detail && section}
               <span class="seg-count tabular-nums">{row.detail}</span>
             {:else if row.detail && !isServer}
-              <span class="max-w-28 truncate text-xs muted" title={row.detail}>{row.detail}</span>
+              <span class="max-w-28 truncate text-[11px] muted" title={row.detail}>{row.detail}</span>
             {/if}
           </span>
         </div>
@@ -1334,9 +1360,9 @@
     {#if markedCount > 0}
       <div
         class="sticky bottom-0 z-20 flex items-center gap-1.5 border-t border-zinc-200/80 bg-zinc-50
-               p-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+               p-1.5 text-[13px] dark:border-zinc-700 dark:bg-zinc-800"
       >
-        <span class="min-w-0 truncate pl-1 text-[12px]">
+        <span class="min-w-0 truncate pl-1 text-[11px]">
           <b class="tabular-nums">{markedCount}</b> marcado{markedCount === 1 ? "" : "s"}
         </span>
         <span class="divider-r h-4"></span>
@@ -1401,9 +1427,11 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="card fixed z-40 min-w-52 p-1 text-sm shadow-lg"
-    style="left: {Math.min(menu.x, window.innerWidth - 250)}px;
-           top: {Math.min(menu.y, window.innerHeight - MENU_HEIGHT)}px"
+    class="card fixed z-40 min-w-52 p-1 text-[13px] shadow-lg"
+    bind:clientWidth={menuW}
+    bind:clientHeight={menuH}
+    style="left: {Math.max(8, Math.min(menu.x, window.innerWidth - menuW - 8))}px;
+           top: {Math.max(8, Math.min(menu.y, window.innerHeight - menuH - 8))}px"
     role="menu"
     tabindex="-1"
     onclick={(event) => event.stopPropagation()}
@@ -1420,7 +1448,7 @@
           <Icon name="unplug" size={13} /> Desconectar los {markedCount}
         </span>
       </button>
-      <p class="px-2 py-1 text-[11px] muted">
+      <p class="px-2 py-1 text-[10px] muted">
         Arrastralos a una carpeta para moverlos todos juntos.
       </p>
       <div class="divider-t my-1"></div>

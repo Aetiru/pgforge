@@ -272,7 +272,7 @@
 
 <div class="flex h-full flex-col">
   <div class="divider-b flex items-center gap-1 px-2 py-1.5">
-    <span class="text-xs font-medium muted">Scripts de cada conexión</span>
+    <span class="text-[11px] font-medium muted">Scripts de cada conexión</span>
     <button
       class="btn btn-ghost btn-icon ml-auto"
       title="Volver a leer el árbol de scripts"
@@ -324,7 +324,7 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="card fixed z-40 min-w-48 p-1 text-sm shadow-lg"
+    class="card fixed z-40 min-w-48 p-1 text-[13px] shadow-lg"
     style="left: {Math.min(menu.x, window.innerWidth - 220)}px; top: {Math.min(menu.y, window.innerHeight - 200)}px"
     role="menu"
     tabindex="-1"
