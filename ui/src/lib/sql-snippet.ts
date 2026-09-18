@@ -72,10 +72,11 @@ export function preview(body: string): string {
 /**
  * El atajo del tabulador.
  *
- * Devuelve `false` —y deja que lo atienda quien sigue— en los tres casos en que no le toca: con un
- * hueco de otra expansión abierto, sin palabra donde está el cursor, y con una palabra que no es
- * ninguna abreviatura. Es la misma disciplina que ya pedía el `Escape` de este editor: el keymap va
- * en `Prec.highest` y se come lo que no devuelva `false`.
+ * Devuelve `false` —y deja que lo atienda quien sigue: el salto entre los huecos de una expansión
+ * abierta o, si no hay ninguno, el tabulador que indenta— en los cuatro casos en que no le toca: con
+ * un hueco de otra expansión abierto, con algo seleccionado, sin palabra donde está el cursor, y con
+ * una palabra que no es ninguna abreviatura. Es la misma disciplina que ya pedía el `Escape` de este
+ * editor: el keymap va en `Prec.highest` y se come lo que no devuelva `false`.
  *
  * Lo primero no es una precaución teórica: recién expandido, el cursor queda **adentro** de un hueco
  * cuyo texto por omisión es una palabra (`${tabla}`), así que sin esa guarda un hueco que se llame
