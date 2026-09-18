@@ -18,7 +18,6 @@
   import GridSize from "./GridSize.svelte";
   import SnippetDialog from "./SnippetDialog.svelte";
   import SqlEditor from "./SqlEditor.svelte";
-  import type { ActiveRange } from "./sql-active-mark";
   import { autoFormat, editorSplit } from "./editor.svelte";
   import { offsetOfStatement } from "./format-cursor";
   import { PAGE_SIZES, paging } from "./paging.svelte";
@@ -176,38 +175,6 @@
   async function run(selection: string, cursor: number) {
     const target = await resolve(selection, cursor);
     if (target) await tab.run(target.sql, target.base);
-  }
-
-  /** La sentencia que `Ctrl+Enter` va a correr ahora mismo, para pintarle el fondo en el editor. */
-  let activeRange = $state<ActiveRange | null>(null);
-  let cursorTimer: ReturnType<typeof setTimeout> | undefined;
-  let cursorToken = 0;
-
-  /**
-   * Con selección hecha no hay nada que marcar —ya se ve resaltada, y es eso lo que se va a
-   * ejecutar—; sin selección, se le pregunta al núcleo cuál es la sentencia del cursor, la misma
-   * pregunta que hace `resolve()` al ejecutar.
-   *
-   * Con rebote: preguntarle al núcleo en cada tecla es un viaje de más por cada letra escrita. Y
-   * con guarda de token: si dos pedidos quedan en vuelo, el que contesta primero no puede pisar al
-   * que se pidió después, o la marca terminaría mostrando la sentencia de un cursor que ya se movió.
-   */
-  function onCursorMove(selection: string, cursor: number) {
-    clearTimeout(cursorTimer);
-
-    if (selection.trim() !== "") {
-      activeRange = null;
-      return;
-    }
-
-    const token = ++cursorToken;
-    cursorTimer = setTimeout(async () => {
-      const statement = await statementAtCursor(tab.sql, cursor);
-      if (token !== cursorToken) return;
-      activeRange = statement
-        ? { at: statement.offset, length: [...statement.text].length }
-        : null;
-    }, 120);
   }
 
   /**
@@ -662,7 +629,6 @@
       schema={tab.schema}
       relations={tab.relations}
       errorMark={tab.errorMark}
-      {activeRange}
       initialSelection={tab.editorSelection}
       initialTopPos={tab.editorTopPos}
       onrun={(selection, cursor) => run(selection, cursor)}
@@ -670,7 +636,6 @@
       oncancel={() => tab.cancel()}
       onsave={(askPath) => saveQueryTab(tab, askPath)}
       onformat={(selection, cursor) => doFormat(selection, cursor)}
-      oncursor={onCursorMove}
       onreveal={(relation) =>
         relation && explorer.revealRelation(tab.profileId, tab.database, relation.schema, relation.oid)}
       onposition={(state) => {

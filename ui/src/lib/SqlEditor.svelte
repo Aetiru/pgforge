@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { completionStatus } from "@codemirror/autocomplete";
+  import {
+    acceptCompletion,
+    completionStatus,
+    hasNextSnippetField,
+    hasPrevSnippetField,
+  } from "@codemirror/autocomplete";
+  import { indentLess, indentMore } from "@codemirror/commands";
   import { syntaxHighlighting } from "@codemirror/language";
   import { searchPanelOpen } from "@codemirror/search";
   import { PostgreSQL, sql, type SQLNamespace } from "@codemirror/lang-sql";
@@ -9,7 +15,6 @@
   import { untrack } from "svelte";
   import { sqlHighlight } from "./sql-highlight";
   import { sqlNesting } from "./sql-nested";
-  import { activeMarkField, activeMarkOf, setActiveMark, type ActiveRange } from "./sql-active-mark";
   import { errorMarkField, markOf, setErrorMark } from "./sql-error-mark";
   import { expandBinding, snippetCompletions } from "./sql-snippet";
   import { snippets } from "./snippets.svelte";
@@ -29,7 +34,6 @@
     schema = undefined,
     relations = [],
     errorMark = null,
-    activeRange = null,
     readonly = false,
     initialSelection = null,
     initialTopPos = null,
@@ -38,7 +42,6 @@
     oncancel,
     onsave,
     onformat,
-    oncursor,
     onreveal,
     onposition,
   }: {
@@ -47,8 +50,6 @@
     /** Los mismos nombres en plano, para completar las columnas del `FROM` sin calificar. */
     relations?: SchemaRelation[];
     errorMark?: ErrorMark | null;
-    /** La sentencia que `Ctrl+Enter` va a correr, ya resuelta por `QueryPanel`. */
-    activeRange?: ActiveRange | null;
     readonly?: boolean;
     /** Cursor y scroll con los que nace el editor —lo que dejó `ondetach` la vez anterior. */
     initialSelection?: { anchor: number; head: number } | null;
@@ -67,9 +68,6 @@
     onsave?: (askPath: boolean) => void;
     /** Ctrl+Mayús+F: la selección si hay una, o el documento entero. */
     onformat?: (selection: string, cursor: number) => void;
-    /** El cursor se movió, o el documento cambió: `QueryPanel` decide con esto si hay que volver a
-     *  pedir cuál es la sentencia activa. */
-    oncursor?: (selection: string, cursor: number) => void;
     /** `Ctrl`+clic sobre una tabla del `FROM`/`JOIN`: la relación resuelta, para revelarla en el
      *  árbol. `null` cuando el clic no cayó sobre nada reconocible. */
     onreveal?: (relation: SchemaRelation | null) => void;
@@ -112,10 +110,9 @@
       borderColor: "var(--cm-tooltip-border)",
     },
     ".cm-panels input, .cm-panels button": { fontFamily: "var(--font-sans)", fontSize: "12px" },
-    ".cm-activeLine, .cm-activeLineGutter": { backgroundColor: "var(--cm-active-line)" },
-    // La sentencia que `Ctrl+Enter` va a correr. Va aparte de `.cm-activeLine`: una tapa la línea
-    // del cursor y la otra la sentencia entera, y las dos pueden estar a la vista a la vez.
-    ".cm-active-statement": { backgroundColor: "var(--cm-active-statement)" },
+    // `basicSetup` tiñe la línea del cursor con un color propio del tema base; se apaga en vez de
+    // sacar `highlightActiveLine`, que habría obligado a armar la lista de extensiones a mano.
+    ".cm-activeLine, .cm-activeLineGutter": { backgroundColor: "transparent" },
     ".cm-cursor": { borderLeftColor: "var(--cm-caret)" },
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
       backgroundColor: "var(--cm-selection)",
@@ -153,6 +150,25 @@
       // Primero de la lista, pero devuelve `false` cuando no le toca (ver `sql-snippet`): así el
       // tabulador sigue saltando entre los huecos de una expansión ya abierta.
       expandBinding(() => snippets.items),
+      // Sin esto nadie atiende el tabulador —`basicSetup` no trae `indentWithTab`— y el navegador
+      // se lo lleva al siguiente elemento enfocable, que es la grilla de resultados. Antes de
+      // indentar cede ante lo que el tabulador ya significaba donde el cursor está parado: adentro
+      // de una expansión abierta salta al hueco que sigue, y con la lista de sugerencias abierta
+      // acepta la elegida, que es lo que la mano espera de cualquier editor. El precio es que con
+      // el foco en el editor ya no se sale de él con el teclado, y se paga a propósito: esto es una
+      // ventana de escritorio y no un formulario que se recorre tabulando.
+      {
+        key: "Tab",
+        run: (target) => {
+          if (hasNextSnippetField(target.state)) return false;
+          if (acceptCompletion(target)) return true;
+          return indentMore(target);
+        },
+        shift: (target) => {
+          if (hasPrevSnippetField(target.state)) return false;
+          return indentLess(target);
+        },
+      },
       {
         key: "Mod-Enter",
         preventDefault: true,
@@ -344,7 +360,6 @@
           basicSetup,
           language.of(sqlExtension(untrack(() => schema))),
           errorMarkField,
-          activeMarkField,
           revealHandler,
           columnHover,
           syntaxHighlighting(sqlHighlight),
@@ -359,13 +374,6 @@
           }),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) value = update.state.doc.toString();
-            // `QueryPanel` decide con esto si hay que volver a preguntar cuál es la sentencia
-            // activa: tanto escribir como mover el cursor pueden cambiar la respuesta.
-            if (update.docChanged || update.selectionSet) {
-              const { from, to } = update.state.selection.main;
-              const text = update.state.doc.toString();
-              oncursor?.(text.slice(from, to), toCharOffset(text, from));
-            }
             if (update.selectionSet) reportPosition(update.view);
           }),
         ],
@@ -429,14 +437,6 @@
   $effect(() => {
     const text = view?.state.doc.toString() ?? "";
     view?.dispatch({ effects: setErrorMark.of(markOf(text, errorMark)) });
-  });
-
-  // Mismo motivo que el efecto del error: se manda como efecto y no como reconfiguración de un
-  // compartimento, para que el campo mapee la marca con cada cambio del documento en vez de
-  // quedar clavada en un desplazamiento que ya no es el mismo texto.
-  $effect(() => {
-    const text = view?.state.doc.toString() ?? "";
-    view?.dispatch({ effects: setActiveMark.of(activeMarkOf(text, activeRange)) });
   });
 
   // El texto puede cambiar desde afuera (al restaurar del historial); pisar el documento en cada
