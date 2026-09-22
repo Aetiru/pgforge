@@ -26,4 +26,4 @@ pub use format::format;
 pub use history::{HistoryStore, NewEntry};
 pub use saved::{NewQuery, SavedQuery, SavedStore};
 pub use snippet::{Snippet, SnippetId, SnippetStore};
-pub use split::{at_cursor, split, Statement};
+pub use split::{at_cursor, missing_separator, split, Statement};

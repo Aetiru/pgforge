@@ -60,6 +60,11 @@ pub enum QueryEvent {
         /// Dónde empieza la sentencia dentro del script, en caracteres. Sumado a la posición que
         /// trae el error, ubica el carácter exacto en el editor.
         offset: usize,
+        /// Si la sentencia parece traer otra pegada por falta de `;` (ver
+        /// [`sql::missing_separator`]), dónde arranca esa segunda sentencia dentro del texto de
+        /// esta, en caracteres. Es el punto que el usuario tiene que mirar, no el que señaló el
+        /// servidor: PostgreSQL se equivoca de token cuando le falta el separador.
+        separator_at: Option<usize>,
     },
     /// Cómo quedó la transacción de la pestaña. Se emite al terminar el script, haya fallado o no:
     /// una sentencia rota dentro de una transacción la deja abortada, y eso hay que mostrarlo.
@@ -221,10 +226,41 @@ pub async fn query_run(
                 });
             }
             Err(error) => {
+                // El error de sintaxis que da PostgreSQL cuando en realidad son dos sentencias sin
+                // `;` señala un token que no tiene nada que ver: avisarlo acá es el único momento en
+                // que importa, y solo cuesta cuando una sentencia ya falló por sintaxis.
+                let separator_at = match &error {
+                    Error::Database { code, .. } if code == "42601" => {
+                        sql::missing_separator(&statement.text)
+                    }
+                    _ => None,
+                };
+
+                if let Some(at) = separator_at {
+                    // `at` viene en caracteres (mismo criterio que `Token::start`), no en bytes: no
+                    // se puede indexar el `&str` directo si hay algo fuera de ASCII antes.
+                    let line = statement.line
+                        + statement
+                            .text
+                            .chars()
+                            .take(at)
+                            .filter(|c| *c == '\n')
+                            .count();
+                    let _ = channel.send(QueryEvent::Notice {
+                        severity: "WARNING".to_owned(),
+                        message: format!(
+                            "Se ejecutó todo como una sola sentencia: parece faltar un `;` en la \
+                             línea {line}. PostgreSQL toma la palabra que sigue como nombre de \
+                             columna, así que el error señala un token más adelante."
+                        ),
+                    });
+                }
+
                 let _ = channel.send(QueryEvent::Failed {
                     index,
                     error: ErrorPayload::from(&error),
                     offset: statement.offset,
+                    separator_at,
                 });
                 failure = Some(error.to_string());
                 break;

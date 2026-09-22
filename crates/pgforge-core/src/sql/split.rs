@@ -108,6 +108,75 @@ pub fn at_cursor(sql: &str, cursor: usize) -> Option<Statement> {
     }
 }
 
+/// Palabras que arrancan una sentencia nueva de SQL, para [`missing_separator`].
+const STATEMENT_STARTERS: &[&str] = &[
+    "SELECT", "INSERT", "UPDATE", "DELETE", "WITH", "CREATE", "ALTER", "DROP", "TRUNCATE", "GRANT",
+    "REVOKE", "COMMENT", "SET", "EXPLAIN", "VACUUM", "ANALYZE", "BEGIN", "COMMIT", "ROLLBACK",
+];
+
+/// Palabras que, inmediatamente antes de una de [`STATEMENT_STARTERS`], dicen que no es una
+/// sentencia pegada sino la continuación de la misma: un operador de conjunto o el cuerpo de un
+/// CTE o de una vista.
+const CONTINUES_PREVIOUS: &[&str] = &["UNION", "INTERSECT", "EXCEPT", "AS"];
+
+/// Dónde empieza la segunda sentencia de un texto que [`split`] entregó como una sola, si parece
+/// que le falta el `;` que las separaba.
+///
+/// PostgreSQL no rechaza `SELECT now() SELECT …` en el segundo `SELECT`: un alias sin `AS` es un
+/// `ColLabel` y acepta palabras reservadas, así que se lo traga como nombre de columna y el error
+/// cae sobre el token siguiente — el usuario ve señalado algo que no tiene nada que ver.
+///
+/// Deliberadamente conservadora: esto solo agrega un aviso, y un aviso equivocado es peor que
+/// ninguno. Solo mira palabras a profundidad de paréntesis 0 —una subconsulta nunca cuenta— y dos
+/// formas de sentencia compuesta quedan afuera a propósito: un operador de conjunto
+/// (`UNION`/`INTERSECT`/`EXCEPT`) y el `SELECT` que sigue al `AS` de un CTE o de una vista. La
+/// sentencia principal de un `WITH` y el `SELECT` fuente de un `INSERT … SELECT` se exceptúan una
+/// sola vez cada una: la segunda aparición sí cuenta.
+pub fn missing_separator(sql: &str) -> Option<usize> {
+    let mut depth = 0i32;
+    let mut prev_word: Option<String> = None;
+    let mut head: Option<String> = None;
+    let mut with_main_pending = false;
+    let mut insert_source_pending = false;
+
+    for token in lex(sql) {
+        match token.kind {
+            TokenKind::Whitespace | TokenKind::LineComment | TokenKind::BlockComment => continue,
+            TokenKind::Punct => match token.text.as_str() {
+                "(" => depth += 1,
+                ")" => depth = depth.saturating_sub(1),
+                _ => {}
+            },
+            TokenKind::Word if depth == 0 => {
+                let upper = token.text.to_uppercase();
+
+                if head.is_none() {
+                    head = Some(upper.clone());
+                    with_main_pending = upper == "WITH";
+                    insert_source_pending = upper == "INSERT";
+                } else if STATEMENT_STARTERS.contains(&upper.as_str()) {
+                    let continues = prev_word
+                        .as_deref()
+                        .is_some_and(|w| CONTINUES_PREVIOUS.contains(&w));
+
+                    if with_main_pending {
+                        with_main_pending = false;
+                    } else if upper == "SELECT" && insert_source_pending {
+                        insert_source_pending = false;
+                    } else if !continues {
+                        return Some(token.start);
+                    }
+                }
+
+                prev_word = Some(upper);
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
 /// Arma la sentencia recortando el espacio de los extremos y corrigiendo el desplazamiento.
 ///
 /// El recorte importa: `offset` tiene que apuntar al primer carácter de lo que efectivamente se le
@@ -310,5 +379,76 @@ SELECT f()";
     #[test]
     fn sin_sentencias_no_hay_nada_bajo_el_cursor() {
         assert!(at_cursor("-- vacío", 3).is_none());
+    }
+
+    #[test]
+    fn delata_el_punto_y_coma_que_falta_entre_dos_sentencias() {
+        let sql = "SELECT public.f(1, 2)\n\nSELECT array_agg(x) FROM (VALUES (1),(2)) t(x)";
+        let at = missing_separator(sql).expect("debería detectar la sentencia pegada");
+        assert_eq!(&sql[at..at + 6], "SELECT");
+    }
+
+    #[test]
+    fn un_union_no_es_una_sentencia_pegada() {
+        assert_eq!(missing_separator("SELECT 1 UNION SELECT 2"), None);
+        assert_eq!(missing_separator("SELECT 1 INTERSECT SELECT 2"), None);
+        assert_eq!(missing_separator("SELECT 1 EXCEPT SELECT 2"), None);
+    }
+
+    #[test]
+    fn un_cte_no_es_una_sentencia_pegada() {
+        assert_eq!(
+            missing_separator("WITH x AS (SELECT 1) SELECT * FROM x"),
+            None
+        );
+        assert_eq!(
+            missing_separator("WITH x AS (SELECT 1), y AS (SELECT 2) SELECT * FROM x JOIN y"),
+            None,
+            "varios CTE seguidos no confunden cuál es la sentencia principal"
+        );
+    }
+
+    #[test]
+    fn una_vista_no_es_una_sentencia_pegada() {
+        assert_eq!(missing_separator("CREATE VIEW v AS SELECT 1 FROM t"), None);
+    }
+
+    #[test]
+    fn un_insert_select_no_es_una_sentencia_pegada() {
+        assert_eq!(missing_separator("INSERT INTO t SELECT * FROM u"), None);
+        assert_eq!(
+            missing_separator("INSERT INTO t (a, b) SELECT x, y FROM u"),
+            None
+        );
+    }
+
+    #[test]
+    fn un_select_adentro_de_un_parentesis_no_cuenta() {
+        assert_eq!(
+            missing_separator("SELECT * FROM t WHERE EXISTS (SELECT 1 FROM u)"),
+            None
+        );
+    }
+
+    #[test]
+    fn un_select_adentro_de_una_cadena_o_de_un_cuerpo_no_cuenta() {
+        assert_eq!(
+            missing_separator("SELECT 'iría UNION SELECT si fuera código' FROM t"),
+            None,
+            "el SELECT de la cadena no es un token, así que no puede ser una sentencia pegada"
+        );
+        assert_eq!(
+            missing_separator(
+                "CREATE FUNCTION f() RETURNS void LANGUAGE plpgsql AS $$\nBEGIN\n SELECT 1;\nEND\n$$"
+            ),
+            None,
+            "el SELECT de adentro del cuerpo tampoco es un token propio"
+        );
+    }
+
+    #[test]
+    fn una_sentencia_sola_no_tiene_nada_pegado() {
+        assert_eq!(missing_separator("SELECT 1"), None);
+        assert_eq!(missing_separator(""), None);
     }
 }

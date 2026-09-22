@@ -37,7 +37,18 @@ export type QueryEvent =
   | { type: "started"; index: number; total: number; line: number; offset: number }
   | { type: "finished"; index: number; outcome: Outcome }
   | { type: "notice"; severity: string; message: string }
-  | { type: "failed"; index: number; error: CoreError; offset: number }
+  | {
+      type: "failed";
+      index: number;
+      error: CoreError;
+      offset: number;
+      /**
+       * Si el error es de sintaxis y parece que a la sentencia le falta un `;` antes de otra
+       * pegada, dónde arranca esa segunda sentencia (en caracteres, relativo al texto de esta).
+       * `null` si no aplica.
+       */
+      separatorAt: number | null;
+    }
   | { type: "transaction"; status: TxStatus }
   | { type: "completed"; seconds: number; executed: number };
 

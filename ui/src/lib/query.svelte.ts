@@ -532,10 +532,20 @@ export class QueryTab extends Tab {
           this.log("info", "Consulta cancelada.");
           break;
         }
-        this.log("error", describeError(event.error));
+        const description = describeError(event.error);
+        this.log("error", description);
         this.view = "messages";
-        // La posición del servidor viene con base 1 y relativa a su sentencia.
-        if (event.error.kind === "database" && event.error.position !== null) {
+        // Si el núcleo detectó que falta un `;`, la marca va sobre el arranque de la segunda
+        // sentencia y no sobre el token que señaló el servidor: ese token es inocente, PostgreSQL
+        // se confundió por leer las dos sentencias como una sola (ver `sql::missing_separator`).
+        // `separatorAt` ya viene en caracteres y con base 0, igual que `offset`.
+        if (event.separatorAt !== null) {
+          this.errorMark = {
+            at: base + event.offset + event.separatorAt,
+            message: description,
+          };
+        } else if (event.error.kind === "database" && event.error.position !== null) {
+          // La posición del servidor viene con base 1 y relativa a su sentencia.
           this.errorMark = {
             at: base + event.offset + event.error.position - 1,
             message: event.error.message,
