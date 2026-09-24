@@ -60,15 +60,15 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <div class="divider-b flex items-center gap-2 px-2 py-1.5">
+  <div class="library-compact divider-b flex items-center gap-2 px-2 py-1">
     <div class="relative flex-1">
       <Icon
         name="search"
-        size={13}
+        size={12}
         class="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-zinc-400"
       />
       <input
-        class="field w-full py-1 pl-7"
+        class="field w-full pl-7"
         placeholder="Filtrar marcadores"
         bind:value={filter}
         onkeydown={(event) => {

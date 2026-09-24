@@ -143,9 +143,14 @@ body {
   @apply text-zinc-500 dark:text-zinc-400;
 }
 
-/* Barra de herramientas: el patrón que repiten el editor, la grilla y el monitor. */
+/* Barra de herramientas: el patrón que repiten el editor, la grilla y el monitor. Alto fijo,
+   igual de fino que el `footer` de estado (`App.svelte`, `h-6`) pero un escalón más alto: lo pone
+   el botón más grande que puede tener adentro (`.btn-icon`, 28px), no el acolchado — de ahí `h-8`
+   con `items-center` centrando en vez de `py-*`. `flex-wrap` sigue de defensa para una ventana
+   angosta; con alto fijo, un grupo que caiga a una segunda línea quedaría recortado, pero con los
+   botones de hoy (todos íconos) no llega a pasar en un ancho normal de ventana. */
 .toolbar {
-  @apply flex flex-wrap items-center gap-1.5 border-b border-zinc-200 px-2 py-1.5
+  @apply flex h-8 flex-wrap items-center gap-1.5 border-b border-zinc-200 px-2
     dark:border-zinc-700;
 }
 
@@ -154,11 +159,76 @@ body {
   @apply mx-1 h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700;
 }
 
-/* Agrupa los botones de una misma familia (ejecutar, transacción, explicar, …) bajo un mismo
-   fondo: con doce controles del mismo peso visual, una línea de un píxel entre grupos no alcanza
-   para que el ojo los separe sin leer los `title` uno por uno. */
-.toolbar-group {
-  @apply flex items-center gap-0.5 rounded-md bg-zinc-100/70 p-0.5 dark:bg-zinc-800/60;
+/* Modificador de `.toolbar`, no reemplazo: las dos barras de `QueryPanel` (la de «Ejecutar» y la
+   de resultados) son las únicas de la aplicación con doce controles de solo ícono, así que
+   soportan bajar a 24px —el alto de la barra de estado— sin recortar nada. El resto de `.toolbar`
+   (`DataPanel`, mantenimiento, backup, monitor, …) lleva botones con texto que no entran ahí, así
+   que la clase base sigue en `h-8` y esto se aplica junto a `toolbar`, no en su lugar. */
+.toolbar-compact {
+  @apply h-6;
+}
+
+/* El botón llena la barra entera en vez de dejar aire alrededor del ícono: a 20px (`size-5`) con un
+   ícono de 12px sobraban 2-3px por lado y el trazo se perdía. A `size-6` el blanco de toque es la
+   fila completa —como un botón de ícono de VSCode—, sin recorte contra el borde de `h-6`. */
+.toolbar-compact .btn-icon {
+  @apply size-6;
+}
+
+/* El `<select>` de estas barras (base de datos, máximo de filas) trae el acolchado pensado para un
+   formulario, no para una fila de 24px al lado de botones de ícono: sin achicarlo queda como una
+   caja blanca más alta que todo lo demás. */
+.toolbar-compact .field {
+  @apply py-0 text-xs leading-5;
+}
+
+/* `.tag` (`py-px`, pensado para una lista o un detalle) casi no se lee como pastilla al lado de
+   botones que llenan 24px enteros: acá es lo único que dice el entorno, así que le hace falta
+   cuerpo de verdad —borde incluido, no solo más aire— para no perderse. */
+.toolbar-compact .tag {
+  @apply rounded-full border border-current/25 px-2 py-0.5;
+}
+
+/* Riel vertical al lado del editor de `QueryPanel`: lo que era la barra «Ejecutar» horizontal,
+   ahora de canto para devolverle esa fila de alto al editor. Ancho fijo de 32px —lo que entra un
+   botón de ícono lleno—, alto libre: lo da el `flex` de la fila que lo contiene (editor + riel), no
+   una altura propia. */
+.rail-compact {
+  @apply flex w-8 shrink-0 flex-col items-center border-l border-zinc-200 dark:border-zinc-700;
+}
+
+/* Mismo criterio que `.toolbar-compact .btn-icon`: el botón llena el ancho entero del riel, no un
+   cuadrado más chico con aire alrededor, o el trazo del ícono se pierde. */
+.rail-compact .btn-icon {
+  @apply size-8;
+}
+
+/* Separador horizontal angosto entre grupos del riel: la versión de canto de `.toolbar-sep`, que es
+   una línea vertical y no sirve girada. */
+.rail-sep {
+  @apply my-1 h-px w-4 bg-zinc-200 dark:bg-zinc-700;
+}
+
+/* Mismo criterio que `.toolbar-compact`, para la cabecera y el filtro de la biblioteca fija
+   (`PinnedLibrary`/`BookmarksList`/`ScriptsTree`): menos acolchado e íconos más chicos que un
+   `.seg`/`.field`/`.btn-icon` de formulario, que es lo que traen por omisión — están hechos para
+   una fila de treinta y tantos px, no para las dos angostas de este panel. Selector con ancestro y
+   no clase nueva en `.seg-item`/`.field`/`.btn-icon`: esas tres se repiten en más de diez lugares y
+   achicarlas ahí rompería todo lo demás. */
+.library-compact .seg {
+  @apply p-0;
+}
+
+.library-compact .seg-item {
+  @apply gap-1 px-2 py-0.5;
+}
+
+.library-compact .field {
+  @apply py-0.5 text-xs;
+}
+
+.library-compact .btn-icon {
+  @apply size-6;
 }
 
 /* --------------------------------------------------------------------------
@@ -166,7 +236,7 @@ body {
    -------------------------------------------------------------------------- */
 
 .btn {
-  @apply inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1
+  @apply inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-0.5
     text-sm whitespace-nowrap text-zinc-700 transition-colors
     hover:bg-zinc-100 active:bg-zinc-200 disabled:pointer-events-none disabled:opacity-40
     dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-600
@@ -329,9 +399,11 @@ input[type="password"]::-ms-clear {
 }
 
 /* El ancho máximo alcanza para el servidor y el nombre: con 56 el recorte se comía el título de
-   toda pestaña rotulada con las dos cosas. */
+   toda pestaña rotulada con las dos cosas. El mínimo evita el otro extremo: sin piso, con varias
+   pestañas abiertas flexbox las achica hasta dejar servidor y título en una sola letra; el
+   contenedor ya scrollea en horizontal, así que absorbe el sobrante en vez de la pestaña. */
 .tab {
-  @apply flex max-w-72 shrink items-center gap-1.5 px-3 py-1.5 text-xs font-medium
+  @apply flex max-w-72 min-w-40 shrink items-center gap-1.5 px-3 py-1.5 text-xs font-medium
     whitespace-nowrap text-zinc-500 transition-colors hover:text-zinc-900 dark:text-zinc-400
     dark:hover:text-zinc-100;
 }

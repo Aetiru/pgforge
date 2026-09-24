@@ -271,7 +271,7 @@
 <svelte:window onclick={() => (menu = null)} />
 
 <div class="flex h-full flex-col">
-  <div class="divider-b flex items-center gap-1 px-2 py-1.5">
+  <div class="library-compact divider-b flex items-center gap-1 px-2 py-1">
     <span class="text-[11px] font-medium muted">Scripts de cada conexión</span>
     <button
       class="btn btn-ghost btn-icon ml-auto"
