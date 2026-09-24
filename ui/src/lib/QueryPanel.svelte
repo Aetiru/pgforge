@@ -14,7 +14,6 @@
   import ResultGrid from "./ResultGrid.svelte";
   import SaveQueryDialog from "./SaveQueryDialog.svelte";
   import SavedPanel from "./SavedPanel.svelte";
-  import FontSize from "./FontSize.svelte";
   import GridSize from "./GridSize.svelte";
   import SnippetDialog from "./SnippetDialog.svelte";
   import SqlEditor from "./SqlEditor.svelte";
@@ -360,41 +359,76 @@
 
 <div class="flex h-full flex-col">
   <!--
-    Íconos y no palabras: la barra tenía nueve controles con texto y en una ventana angosta se
-    partía en dos líneas, comiéndose el alto del editor. «Ejecutar» conserva la etiqueta porque es
-    la acción que se busca sin mirar; el resto la lleva en el `title`.
-
-    El entorno pinta la barra entera y no solo su pastilla: lo que hay que mirar antes de apretar
-    «Ejecutar» es el botón, no el rótulo de la otra punta (ver `envBar`).
+    Plegado, el editor se queda con todo el alto: por eso crece en vez de llevar altura fija. Antes
+    esta era la barra «Ejecutar» horizontal, encima del editor; ahora es un riel angosto a la
+    derecha, para devolverle al editor la fila de alto que ocupaba. El editor y el riel comparten
+    esta fila `flex`: el primero se achica (`min-w-0`) para no empujar al segundo afuera.
   -->
-  <header class="toolbar {envBar(environment)}">
-    {#if tab.running}
-      <button
-        class="btn btn-danger-ghost font-medium"
-        title="Cancela la consulta en curso"
-        onclick={() => tab.cancel()}
-      >
-        <Icon name="close" size={13} />
-        Cancelar
-      </button>
-    {:else}
-      <!--
-        Ejecutar dejó de ser una pastilla azul con el atajo adentro. Lo que la hacía visible no era
-        la caja sino el color y el nombre: en una barra de doce acciones, la única con fondo sólido
-        pesa más que todo lo que tiene al lado, y el atajo escrito repetía lo que ya dice el `title`.
-      -->
-      <div class="toolbar-group">
+  <div
+    class="flex min-h-0 {editorSplit.resultsHidden
+      ? 'flex-1'
+      : editorSplit.editorHidden
+        ? 'hidden'
+        : 'shrink-0'}"
+    style={editorSplit.resultsHidden ? "" : `height: ${editorSplit.height}px`}
+  >
+    <div class="min-h-0 min-w-0 flex-1 overflow-hidden">
+      <SqlEditor
+        bind:this={editor}
+        bind:value={tab.sql}
+        schema={tab.schema}
+        relations={tab.relations}
+        errorMark={tab.errorMark}
+        initialSelection={tab.editorSelection}
+        initialTopPos={tab.editorTopPos}
+        onrun={(selection, cursor) => run(selection, cursor)}
+        onrunScript={runWholeScript}
+        oncancel={() => tab.cancel()}
+        onsave={(askPath) => saveQueryTab(tab, askPath)}
+        onformat={(selection, cursor) => doFormat(selection, cursor)}
+        onreveal={(relation) =>
+          relation &&
+          explorer.revealRelation(tab.profileId, tab.database, relation.schema, relation.oid)}
+        onposition={(state) => {
+          tab.editorSelection = { anchor: state.anchor, head: state.head };
+          tab.editorTopPos = state.topPos;
+        }}
+      />
+    </div>
+
+    <!--
+      El riel: la barra «Ejecutar» de canto. Íconos y no palabras, igual que antes —«Ejecutar»
+      conserva el `aria-label` sin texto visible porque acá no hay ancho para ninguno; el resto ya
+      llevaba solo el `title`. El entorno sigue pintando la barra entera (`envBar`), ahora en el
+      borde izquierdo del riel en vez del de arriba.
+
+      `rail-compact` fija el ancho en 32px y deja el alto librado al `flex` de la fila de arriba;
+      `.btn-icon` ahí llena esos 32px enteros, mismo criterio que `.toolbar-compact .btn-icon` en la
+      barra horizontal. Los íconos van a 16px: con más aire por control que en la barra de 24px, un
+      ícono de 12-13px se leía sin definición.
+    -->
+    <nav class="rail-compact {envBar(environment)}" aria-label="Ejecutar consulta">
+      {#if tab.running}
         <button
-          class="btn btn-ghost font-medium text-emerald-600 dark:text-emerald-400"
+          class="btn btn-danger-ghost btn-icon"
+          aria-label="Cancelar"
+          title="Cancela la consulta en curso"
+          onclick={() => tab.cancel()}
+        >
+          <Icon name="close" size={16} />
+        </button>
+      {:else}
+        <button
+          class="btn btn-ghost btn-icon text-emerald-600 dark:text-emerald-400"
           disabled={tab.tabId === null}
+          aria-label="Ejecutar"
           title="Ejecuta la selección, o la sentencia donde está el cursor (Ctrl+Enter)"
           onclick={() => {
             const { text, cursor } = here();
             run(text, cursor);
           }}
         >
-          <Icon name="play" size={13} />
-          Ejecutar
+          <Icon name="play" size={16} />
         </button>
         <button
           class="btn btn-ghost btn-icon"
@@ -403,20 +437,16 @@
           title="Ejecuta todas las sentencias del editor (Ctrl+Mayús+Enter)"
           onclick={runWholeScript}
         >
-          <Icon name="play-all" size={14} />
+          <Icon name="play-all" size={16} />
         </button>
-      </div>
-    {/if}
+      {/if}
 
-    <span class="toolbar-sep"></span>
+      <span class="rail-sep"></span>
 
-    <!--
-      El interruptor y los dos botones van juntos: apagar el autocommit sin tener a la vista con qué
-      confirmar deja al usuario con una transacción abierta y sin dónde cerrarla. Van agrupados bajo
-      un mismo fondo, no solo separados por una línea: son la única familia de la barra que puede
-      dejar un cambio sin confirmar si se toca sin querer.
-    -->
-    <div class="toolbar-group">
+      <!--
+        El interruptor y los dos botones van juntos: apagar el autocommit sin tener a la vista con
+        qué confirmar deja al usuario con una transacción abierta y sin dónde cerrarla.
+      -->
       <button
         class="btn btn-ghost btn-icon btn-toggle"
         aria-pressed={tab.autocommit}
@@ -427,7 +457,7 @@
           : "Autocommit apagado: cada ejecución abre una transacción que hay que confirmar con el tilde de al lado"}
         onclick={() => tab.setAutocommit(!tab.autocommit)}
       >
-        <Icon name="autocommit" size={14} />
+        <Icon name="autocommit" size={16} />
       </button>
 
       <!-- El par va con los dos colores puestos: el rollback en rojo y el commit sin nada era una
@@ -439,7 +469,7 @@
         title="Confirma la transacción abierta en esta pestaña"
         onclick={() => tab.commit()}
       >
-        <Icon name="check" size={14} />
+        <Icon name="check" size={16} />
       </button>
       <button
         class="btn btn-danger-ghost btn-icon"
@@ -448,20 +478,20 @@
         title="Descarta todo lo hecho desde que se abrió la transacción"
         onclick={() => tab.rollback()}
       >
-        <Icon name="undo" size={14} />
+        <Icon name="undo" size={16} />
       </button>
-    </div>
 
-    <span class="toolbar-sep"></span>
+      <span class="rail-sep"></span>
 
-    <!--
-      El árbol del plan y la aguja del medidor se parecen entre sí a ese tamaño, y ninguno de los
-      dos dice si mide tiempos reales: llevan además una leyenda de dos letras, que es lo que
-      distingue «estimado» de «medido» sin tener que pasar el mouse.
-    -->
-    <div class="toolbar-group">
+      <!--
+        La leyenda de dos letras («PLAN»/«REAL») que distinguía «estimado» de «medido» sin pasar el
+        mouse no entraba legible en el riel ni en horizontal ni apilada en vertical (ver historial:
+        rotada de costado con `text-orientation` inválido, derecha pero larga después). Acá se
+        pierde esa distinción a simple vista; queda en el ícono (árbol de plan vs. aguja de medidor)
+        y en el `title` de cada botón.
+      -->
       <button
-        class="btn btn-ghost flex-col gap-0"
+        class="btn btn-ghost btn-icon"
         disabled={tab.tabId === null || tab.running}
         aria-label="Explicar"
         title="Muestra el plan estimado sin ejecutar la consulta"
@@ -470,11 +500,10 @@
           explain(text, cursor, estimate);
         }}
       >
-        <Icon name="plan" size={14} />
-        <span class="text-[8px] leading-none font-bold tracking-wide">PLAN</span>
+        <Icon name="plan" size={16} />
       </button>
       <button
-        class="btn btn-ghost flex-col gap-0"
+        class="btn btn-ghost btn-icon"
         disabled={tab.tabId === null || tab.running}
         aria-label="Explicar y medir"
         title="Ejecuta la consulta y muestra los tiempos reales"
@@ -483,14 +512,11 @@
           explain(text, cursor, analyze);
         }}
       >
-        <Icon name="gauge" size={14} />
-        <span class="text-[8px] leading-none font-bold tracking-wide">REAL</span>
+        <Icon name="gauge" size={16} />
       </button>
-    </div>
 
-    <span class="toolbar-sep"></span>
+      <span class="rail-sep"></span>
 
-    <div class="toolbar-group">
       <button
         class="btn btn-ghost btn-icon"
         aria-label="Guardar como archivo .sql"
@@ -499,7 +525,7 @@
           : "Guarda el texto como archivo .sql (Ctrl+S)"}
         onclick={() => saveQueryTab(tab, false)}
       >
-        <Icon name="save" size={14} />
+        <Icon name="save" size={16} />
       </button>
 
       <!-- Guardar con nombre no es guardar en un archivo: queda adentro de la aplicación, en la
@@ -512,7 +538,7 @@
           : "Guarda la consulta con un nombre para volver a abrirla"}
         onclick={() => (saveOpen = true)}
       >
-        <Icon name="star" size={14} />
+        <Icon name="star" size={16} />
       </button>
 
       <!-- Con selección, formatea solo eso; sin selección, el documento entero. -->
@@ -525,29 +551,27 @@
           doFormat(text, cursor);
         }}
       >
-        <Icon name="format" size={14} />
+        <Icon name="format" size={16} />
       </button>
-    </div>
 
-    <span class="toolbar-sep"></span>
+      <span class="rail-sep"></span>
 
-    <!-- Se configuran acá y no en una pantalla de preferencias aparte: uno se acuerda de que quiere
-         una abreviatura mientras escribe la consulta que la pediría. -->
-    <button
-      class="btn btn-ghost btn-icon"
-      aria-label="Abreviaturas del editor"
-      title="Abreviaturas: escribí una y apretá Tab para expandirla"
-      onclick={() => (snippetsOpen = true)}
-    >
-      <Icon name="sql" size={14} />
-    </button>
+      <!-- Se configuran acá y no en una pantalla de preferencias aparte: uno se acuerda de que
+           quiere una abreviatura mientras escribe la consulta que la pediría. -->
+      <button
+        class="btn btn-ghost btn-icon"
+        aria-label="Abreviaturas del editor"
+        title="Abreviaturas: escribí una y apretá Tab para expandirla"
+        onclick={() => (snippetsOpen = true)}
+      >
+        <Icon name="sql" size={16} />
+      </button>
 
-    <span class="toolbar-sep"></span>
-
-    <div class="toolbar-group">
-      <FontSize />
-
-      <!-- Al lado de la letra: es la barra donde uno está cuando se pregunta por este interruptor. -->
+      <!-- El tamaño de letra se saca del riel (ocupaba tres filas verticales, "A−"/número/"A+",
+           demasiado para un control que ya tiene atajo: Ctrl +, Ctrl - y Ctrl 0 siguen andando
+           igual). Sigue con botón visible en `Sql.svelte` —el DDL no tiene foco de teclado propio
+           y ahí sí hace falta—, pero en el editor de consultas, donde el foco está siempre en el
+           texto, el atajo alcanza. -->
       <button
         class="btn btn-ghost btn-icon btn-toggle"
         aria-pressed={autoFormat.enabled}
@@ -557,92 +581,31 @@
           : "Autoformatear apagado: el SQL se ordena solo cuando apretás el botón de formatear"}
         onclick={() => autoFormat.set(!autoFormat.enabled)}
       >
-        <Icon name="format-auto" size={14} />
+        <Icon name="format-auto" size={16} />
       </button>
-    </div>
 
-    <span class="ml-auto flex items-center gap-2 text-xs muted">
+      <!-- Empuja lo que sigue al fondo del riel: misma idea que el `ml-auto` de la barra
+           horizontal, rotada. -->
+      <span class="mt-auto"></span>
+
       {#if tab.running}
-        <span class="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
-          <span class="spinner"></span>
-          ejecutando…
-        </span>
+        <span class="spinner my-1" title="Ejecutando…"></span>
       {/if}
       {#if tab.txStatus !== "idle"}
+        <!-- La pastilla de texto no entra legible en 32px: queda un ícono con el mismo `title`
+             completo que llevaba la pastilla. -->
         <span
-          class="tag {tab.txStatus === 'failed' ? 'tag-bad' : 'tag-warn'}"
+          class="my-1 {tab.txStatus === 'failed'
+            ? 'text-rose-600 dark:text-rose-400'
+            : 'text-amber-600 dark:text-amber-400'}"
           title={tab.txStatus === "failed"
-            ? "Una sentencia falló dentro de la transacción: el servidor rechaza el resto hasta el rollback"
-            : "Hay cambios sin confirmar en esta pestaña"}
+            ? "Transacción abortada: una sentencia falló dentro de la transacción, el servidor rechaza el resto hasta el rollback"
+            : "Transacción abierta: hay cambios sin confirmar en esta pestaña"}
         >
-          {tab.txStatus === "failed" ? "transacción abortada" : "transacción abierta"}
+          <Icon name={tab.txStatus === "failed" ? "warn" : "edit"} size={14} />
         </span>
       {/if}
-      <!-- Contra qué servidor corre lo que se está por ejecutar es justo lo que no se puede
-           adivinar mirando el editor. -->
-      {#if environment}
-        {@const badge = envLook(environment)}
-        <span class="tag {badge.tone}" title={badge.title}>{badge.label}</span>
-      {/if}
-      {#if isReadOnly(tab.profileId)}
-        <span class="tag tag-neutral" title={READ_ONLY_LOOK.title}>{READ_ONLY_LOOK.label}</span>
-      {/if}
-      <!-- Contra qué base corre se elige acá y no cerrando la pestaña para abrir otra: es la misma
-           consulta contra otra base, que es como se prueba algo entre desarrollo y producción. -->
-      <label class="flex items-center gap-1" title="Base sobre la que corre esta pestaña">
-        <Icon name="database" size={11} />
-        <select
-          class="field max-w-44 py-0.5 text-xs"
-          value={tab.database}
-          disabled={tab.running || tab.opening}
-          onchange={(event) => {
-            // El desplegable vuelve a lo que hay hasta que el cambio salga bien: si falla, o si la
-            // confirmación por la transacción abierta se cancela, mostraría una base que no es.
-            const chosen = event.currentTarget.value;
-            event.currentTarget.value = tab.database;
-            switchDatabase(chosen);
-          }}
-        >
-          {#if !databases.includes(tab.database)}
-            <option value={tab.database}>{tab.database}</option>
-          {/if}
-          {#each databases as name (name)}
-            <option value={name}>{name}</option>
-          {/each}
-        </select>
-      </label>
-    </span>
-  </header>
-
-  <!-- Plegado, el editor se queda con todo el alto: por eso crece en vez de llevar altura fija. -->
-  <div
-    class="min-h-0 overflow-hidden {editorSplit.resultsHidden
-      ? 'flex-1'
-      : editorSplit.editorHidden
-        ? 'hidden'
-        : 'shrink-0'}"
-    style={editorSplit.resultsHidden ? "" : `height: ${editorSplit.height}px`}
-  >
-    <SqlEditor
-      bind:this={editor}
-      bind:value={tab.sql}
-      schema={tab.schema}
-      relations={tab.relations}
-      errorMark={tab.errorMark}
-      initialSelection={tab.editorSelection}
-      initialTopPos={tab.editorTopPos}
-      onrun={(selection, cursor) => run(selection, cursor)}
-      onrunScript={runWholeScript}
-      oncancel={() => tab.cancel()}
-      onsave={(askPath) => saveQueryTab(tab, askPath)}
-      onformat={(selection, cursor) => doFormat(selection, cursor)}
-      onreveal={(relation) =>
-        relation && explorer.revealRelation(tab.profileId, tab.database, relation.schema, relation.oid)}
-      onposition={(state) => {
-        tab.editorSelection = { anchor: state.anchor, head: state.head };
-        tab.editorTopPos = state.topPos;
-      }}
-    />
+    </nav>
   </div>
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -662,7 +625,10 @@
   </div>
 
   <div class="flex min-h-0 flex-col {editorSplit.resultsHidden ? 'shrink-0' : 'flex-1'}">
-    <div class="divider-b flex flex-wrap items-center gap-2 px-2 py-1">
+    <!-- Mismo tratamiento que la barra de «Ejecutar»: 24px, sin fondo de grupo, ver `toolbar-compact`
+         en `app.css`. No usaba `.toolbar` antes de esta vuelta —era un `div` aparte con sus propias
+         clases—, así que se suma acá y no en un tercer lugar. -->
+    <div class="toolbar toolbar-compact">
       <!-- El botón queda del lado del panel que esconde, y sigue a la vista plegado: un panel que
            se esconde sin dejar de dónde agarrarlo no se vuelve a abrir. -->
       <button
@@ -708,7 +674,7 @@
             title="{item.label} — {item.hint}"
             onclick={() => (tab.view = item.value)}
           >
-            <Icon name={item.value === "messages" && errors > 0 ? "warn" : item.icon} size={14} />
+            <Icon name={item.value === "messages" && errors > 0 ? "warn" : item.icon} size={13} />
             {#if item.value === "messages" && errors > 0}
               <span class="badge-count bg-rose-600">{errors}</span>
             {/if}
@@ -728,7 +694,7 @@
             title="{item.label} — {item.hint}"
             onclick={() => (tab.view = item.value)}
           >
-            <Icon name={item.icon} size={14} />
+            <Icon name={item.icon} size={13} />
           </button>
         {/each}
       </div>
@@ -760,8 +726,52 @@
         </span>
       {/if}
 
+      <!--
+        Contra qué servidor y qué base corre esta pestaña: contexto de la pestaña, no del
+        resultado, así que va siempre —sin importar si se está mirando «Resultados», «Plan» o
+        «Mensajes»— y no adentro del `{#if tab.view === "rows"}` de abajo. Antes vivía en la barra
+        «Ejecutar»; movido acá porque ahora esa barra es el riel angosto de la derecha, sin lugar
+        para un `<select>` ni para pastillas de texto. Es el primer `ml-auto` de la fila —el que
+        empuja todo lo que sigue al borde derecho—, así que el bloque de después no lleva el suyo.
+      -->
+      <span class="ml-auto flex items-center gap-1.5 text-xs muted">
+        {#if isReadOnly(tab.profileId)}
+          <span class="tag tag-neutral" title={READ_ONLY_LOOK.title}>{READ_ONLY_LOOK.label}</span>
+        {/if}
+        {#if environment}
+          {@const badge = envLook(environment)}
+          <span class="tag {badge.tone}" title={badge.title}>{badge.label}</span>
+        {/if}
+        <!-- Contra qué base corre se elige acá y no cerrando la pestaña para abrir otra: es la
+             misma consulta contra otra base, que es como se prueba algo entre desarrollo y
+             producción. -->
+        <label class="flex items-center gap-1" title="Base sobre la que corre esta pestaña">
+          <Icon name="database" size={11} />
+          <select
+            class="field max-w-44 py-0.5 text-xs"
+            value={tab.database}
+            disabled={tab.running || tab.opening}
+            onchange={(event) => {
+              // El desplegable vuelve a lo que hay hasta que el cambio salga bien: si falla, o si
+              // la confirmación por la transacción abierta se cancela, mostraría una base que no
+              // es.
+              const chosen = event.currentTarget.value;
+              event.currentTarget.value = tab.database;
+              switchDatabase(chosen);
+            }}
+          >
+            {#if !databases.includes(tab.database)}
+              <option value={tab.database}>{tab.database}</option>
+            {/if}
+            {#each databases as name (name)}
+              <option value={name}>{name}</option>
+            {/each}
+          </select>
+        </label>
+      </span>
+
       {#if tab.view === "rows"}
-        <span class="ml-auto flex flex-wrap items-center gap-1.5">
+        <span class="flex flex-wrap items-center gap-1.5">
           <!--
             Estos actúan sobre el resultado en vivo —el techo de filas, sus tipos, exportarlo—, así
             que mirando una pestaña anclada no pintan nada: es una foto ya tomada, no algo que se
@@ -781,7 +791,7 @@
               title="Muestra el tipo de cada columna; se le pregunta al servidor sin ejecutar de nuevo"
               onclick={() => tab.setShowTypes(!tab.showTypes)}
             >
-              <Icon name="type" size={14} />
+              <Icon name="type" size={13} />
             </button>
 
             <label
@@ -812,7 +822,7 @@
               title="Ancla este resultado como una pestaña más, que no se pisa con la próxima ejecución"
               onclick={pinCurrent}
             >
-              <Icon name="pin" size={14} />
+              <Icon name="pin" size={13} />
             </button>
 
             <!--
@@ -831,7 +841,7 @@
                 title="Exporta todas las filas del resultado elegido, no solo las que se muestran"
                 onclick={openExport}
               >
-                <Icon name="download" size={14} />
+                <Icon name="download" size={13} />
               </button>
             {/if}
 

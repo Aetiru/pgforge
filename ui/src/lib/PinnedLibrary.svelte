@@ -110,7 +110,7 @@
     {/if}
   </div>
 
-  <div class="divider-b flex items-center gap-1.5 px-2 py-1.5">
+  <div class="library-compact divider-b flex items-center gap-1 px-2 py-1">
     <div class="seg" role="tablist">
       <button
         class="seg-item"
@@ -118,7 +118,7 @@
         aria-selected={mode === "bookmarks"}
         onclick={() => (mode = "bookmarks")}
       >
-        <Icon name="star" size={12} />
+        <Icon name="star" size={11} />
         Marcadores
         {#if bookmarks.entries.length > 0}
           <span class="seg-count">{bookmarks.entries.length}</span>
@@ -130,7 +130,7 @@
         aria-selected={mode === "scripts"}
         onclick={() => (mode = "scripts")}
       >
-        <Icon name="sql" size={12} />
+        <Icon name="sql" size={11} />
         Scripts
       </button>
     </div>
@@ -142,7 +142,7 @@
       title={dock.libraryOpen ? "Colapsar la biblioteca" : "Mostrar la biblioteca"}
       onclick={() => dock.toggleLibrary()}
     >
-      <Icon name="panel-bottom" size={12} />
+      <Icon name="panel-bottom" size={11} />
     </button>
   </div>
 

@@ -143,13 +143,22 @@ export function tagLook(tag: NodeTag) {
  */
 const ENVIRONMENTS: Record<
   Environment,
-  { label: string; tone: string; spine: string; bar: string; wash: string; title: string }
+  {
+    label: string;
+    tone: string;
+    spine: string;
+    bar: string;
+    accent: string;
+    wash: string;
+    title: string;
+  }
 > = {
   dev: {
     label: "dev",
     tone: "tag-ok",
     spine: "bg-emerald-500/70",
     bar: "border-l-[3px] border-l-emerald-500/70 bg-emerald-500/[0.06]",
+    accent: "border-t-2 border-t-emerald-500/70",
     wash: "bg-emerald-500/[0.06]",
     title: "Servidor de desarrollo",
   },
@@ -158,6 +167,7 @@ const ENVIRONMENTS: Record<
     tone: "tag-info",
     spine: "bg-blue-500/70",
     bar: "border-l-[3px] border-l-blue-500/70 bg-blue-500/[0.06]",
+    accent: "border-t-2 border-t-blue-500/70",
     wash: "bg-blue-500/[0.06]",
     title: "Servidor de pruebas",
   },
@@ -168,6 +178,7 @@ const ENVIRONMENTS: Record<
     // no se le puede confiar a la única distinción que importa de verdad.
     spine: "bg-rose-500/80",
     bar: "border-l-[3px] border-l-rose-500/80 bg-rose-500/[0.10]",
+    accent: "border-t-2 border-t-rose-500/80",
     wash: "bg-rose-500/[0.10]",
     title: "Servidor de producción: cada modificación pide una confirmación de más",
   },
@@ -196,6 +207,20 @@ export function envLook(environment: Environment) {
  */
 export function envBar(environment: Environment | null): string {
   return environment === null ? "border-l-[3px] border-l-transparent" : ENVIRONMENTS[environment].bar;
+}
+
+/**
+ * El filete de color del borde superior de una pestaña según el entorno de su servidor, o el hueco
+ * transparente del mismo ancho sin entorno marcado —mismo motivo que `envBar`: sin él, abrir una
+ * pestaña con entorno al lado de una sin marcar correría el contenido dos píxeles.
+ *
+ * Reemplaza a teñir el ícono de la pestaña: con el ícono ya ocupado por el tipo de pestaña
+ * (lupa, tabla, diagrama), sumarle además el color del entorno hacía dos preguntas a la vez sobre
+ * el mismo trazo. El filete es una franja aparte, mismo lenguaje que ya usa el borde izquierdo de
+ * las barras (`envBar`), solo que arriba porque a la pestaña no le sobra un borde izquierdo propio.
+ */
+export function tabAccent(environment: Environment | null): string {
+  return environment === null ? "border-t-2 border-t-transparent" : ENVIRONMENTS[environment].accent;
 }
 
 /**

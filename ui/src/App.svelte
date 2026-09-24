@@ -38,6 +38,7 @@
   import { openPermissionMatrix, PermissionMatrixTab } from "./lib/permission-matrix.svelte";
   import { openRoleCapabilities, RoleCapabilitiesTab } from "./lib/role-capabilities.svelte";
   import { environmentOf, guard } from "./lib/access.svelte";
+  import { tabAccent } from "./lib/badges";
   import { explorer } from "./lib/explorer.svelte";
   import { openQuery, openSqlFiles, renameQueryTab, saveQueryTab, QueryTab } from "./lib/query.svelte";
   import { queryTargetOf } from "./lib/tree-actions";
@@ -61,7 +62,6 @@
     type AppInfo,
     type CompareSide,
     type ConnectionProfile,
-    type Environment,
     type Workspace,
   } from "./lib/ipc";
 
@@ -169,14 +169,6 @@
     config: "sliders",
     permissionMatrix: "role",
     roleCapabilities: "role",
-  };
-
-  /** Los mismos colores que las pastillas de entorno, aplicados al ícono de la pestaña. */
-  const TAB_TONE: Record<Environment | "none", string> = {
-    none: "muted",
-    dev: "text-emerald-600 dark:text-emerald-400",
-    test: "text-blue-600 dark:text-blue-400",
-    prod: "text-rose-600 dark:text-rose-400",
   };
 
   $effect(() => {
@@ -807,7 +799,7 @@
           role="tablist"
         >
           {#each tabs.all as tab (tab.key)}
-            <div class="tab-wrap">
+            <div class="tab-wrap {tabAccent(environmentOf(tab.profileId))}">
               {#if renamingTab === tab.key && tab instanceof QueryTab}
                 {@const renaming = tab}
                 <!--
@@ -844,13 +836,10 @@
                   {#if tab instanceof QueryTab && tab.running}
                     <span class="spinner"></span>
                   {:else}
-                    <!-- El ícono de la pestaña toma el color del entorno: la pestaña activa tapa el
-                         árbol, y sin esto no queda nada en pantalla diciendo que es producción. -->
-                    <Icon
-                      name={TAB_ICON[tab.kind]}
-                      size={12}
-                      class={TAB_TONE[environmentOf(tab.profileId) ?? "none"]}
-                    />
+                    <!-- El ícono ya no toma color del entorno: queda del mismo tono que el resto de
+                         la pestaña (`.tab`), y el entorno se ve en el filete de arriba del `tab-wrap`
+                         (`tabAccent`). -->
+                    <Icon name={TAB_ICON[tab.kind]} size={12} />
                   {/if}
                   <!--
                     El servidor va en la pestaña y no solo en el `title`: con cuatro consultas
