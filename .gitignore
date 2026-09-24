@@ -29,3 +29,4 @@ Thumbs.db
 # Credenciales y perfiles de conexion locales (nunca versionar)
 *.pgpass
 connections.local.json
+.tgrep/

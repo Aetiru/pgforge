@@ -2,6 +2,12 @@
 
 Guía para Claude Code (claude.ai/code) en este repositorio.
 
+## Búsqueda de código: usar tgrep
+
+Este repo tiene un índice tgrep. Usa `tgrep` en vez de grep/ripgrep nativo
+para buscar en el código; es mucho más rápido en este árbol.
+
+@AGENTS.md
 
 ## Idioma
 Las skills están en inglés y por defecto el agente te va a generar los documentos en inglés.
