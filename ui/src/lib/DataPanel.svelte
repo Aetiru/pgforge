@@ -6,6 +6,7 @@
   import DataGrid, { type Column } from "./DataGrid.svelte";
   import { explorer } from "./explorer.svelte";
   import { boolText, isBoolType } from "./format";
+  import { geometryText, isGeometryType } from "./geometry";
   import { columnWidth } from "./grid-width";
   import { DEFAULT_GRID_FONT, gridZoom } from "./grid.svelte";
   import Icon from "./Icon.svelte";
@@ -56,6 +57,9 @@
     const cells: Column<Row>[] = shape.columns.map((column, index) => {
       // Acá el tipo lo dice el catálogo, así que no hace falta ningún interruptor encendido.
       const bool = isBoolType(column.typeName);
+      // Mismo caso que el booleano: el tipo viene con confianza, así que no hace falta el
+      // heurístico por valor que usa el resultado de una consulta (`ResultGrid`).
+      const geometry = isGeometryType(column.typeName);
       const longest = sample.reduce(
         (max, row) => Math.max(max, (tab.value(row, index) ?? NULL).length),
         column.name.length,
@@ -80,7 +84,9 @@
         value: (row) => {
           const value = tab.value(row, index);
           if (value === null) return NULL;
-          return bool ? boolText(value) : oneLine(value);
+          if (bool) return boolText(value);
+          if (geometry) return geometryText(value);
+          return oneLine(value);
         },
         edit: (row) => tab.value(row, index),
         title: (row) => tab.value(row, index) ?? undefined,

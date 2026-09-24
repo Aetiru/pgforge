@@ -1,6 +1,7 @@
 <script lang="ts">
   import DataGrid, { type Column } from "./DataGrid.svelte";
   import { boolText, isBoolType } from "./format";
+  import { geometryText, geometryTextOrNull, isGeometryType } from "./geometry";
   import { columnWidth, gutterWidth } from "./grid-width";
   import { gridZoom } from "./grid.svelte";
 
@@ -45,6 +46,11 @@
       // El tipo lo trae el interruptor «Tipos», que viene encendido. Sin él, una columna de textos
       // que dijeran «t» y «f» se traduciría sola, que es peor que no traducir ninguna.
       const bool = isBoolType(types?.[index]);
+      // Con el tipo conocido (interruptor «Tipos») se decide en la columna entera; sin él, cada
+      // valor se prueba solo — una consulta sin tipos puede mezclar una columna real de geometría
+      // con cualquier otro texto que por casualidad decodifique, así que no alcanza con mirar uno.
+      const columnType = types?.[index];
+      const geometryColumn = isGeometryType(columnType);
       const longest = sample.reduce(
         (max, row) => Math.max(max, (row[index] ?? NULL).length),
         name.length,
@@ -67,7 +73,16 @@
         value: (row) => {
           const value = row.cells[index];
           if (value === null) return NULL;
-          return bool ? boolText(value) : oneLine(value);
+          if (bool) return boolText(value);
+          if (geometryColumn) return geometryText(value);
+          if (columnType === undefined) {
+            // Un solo intento de decodificar sirve para las dos preguntas —¿es geometría? ¿qué
+            // texto muestro?—; separarlas en `isGeometryText` + `geometryText` decodificaría el
+            // mismo hex dos veces por celda dibujada, y `value()` corre en cada cuadro del scroll.
+            const decoded = geometryTextOrNull(value);
+            if (decoded !== null) return decoded;
+          }
+          return oneLine(value);
         },
         // Lo que se copia y lo que muestra el visor es el valor como vino, no el de una línea.
         raw: (row) => row.cells[index],
