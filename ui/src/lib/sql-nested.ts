@@ -19,6 +19,7 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
+import { Tree, TreeFragment, type ChangedRange } from "@lezer/common";
 import { highlightTree } from "@lezer/highlight";
 import { sqlInlineHighlighter, sqlInlineStyle } from "./sql-highlight";
 
@@ -109,39 +110,160 @@ export function dollarBlocks(text: string): DollarBlock[] {
   return out;
 }
 
-/**
- * Más allá de esto no se recolorea nada: un cuerpo así no se lee, y reparsearlo en cada tecla es lo
- * único de todo esto que se puede sentir al escribir.
- */
-const MAX_BODY = 40_000;
-
 /** Un documento más grande que esto es un volcado, no una consulta; se deja como está. */
 const MAX_DOC = 400_000;
 
-function decorate(view: EditorView): DecorationSet {
-  if (view.state.doc.length > MAX_DOC) return Decoration.none;
+/** Un cambio de texto, en las coordenadas que entrega `ChangeSet.iterChangedRanges`. */
+interface Change {
+  fromA: number;
+  toA: number;
+  fromB: number;
+  toB: number;
+}
 
-  const text = view.state.doc.toString();
+/**
+ * Lleva los cambios de un `docChanged` a coordenadas del cuerpo, para poder reparsearlo en forma
+ * incremental con `TreeFragment.applyChanges` en vez de tirar el árbol entero por una tecla.
+ *
+ * La garantía no es «todo cambio que toca el `$tag$` se detecta como cruce»: reemplazar el
+ * delimitador de apertura entero por otro igual, sin rozar un solo carácter del cuerpo, entra por la
+ * rama «antes» como cualquier edición ajena, y `null` sale recién del chequeo de largo del final —no
+ * de una detección de cruce—. Lo que de verdad sostiene el resultado son dos cosas juntas: que quien
+ * llama ya emparejó `old` y `next` por `mapPos(old.from, -1) === next.from` con la misma etiqueta
+ * (ver `pairBodies`), y ese chequeo de largo, que atrapa lo que la posición sola no ve —un cambio que
+ * cae entero «adentro» según sus coordenadas pero escribió un delimitador nuevo y cortó el cuerpo ahí
+ * mismo, antes de donde el cambio en sí terminaba—. Cuando el cambio sí se sale de `[old.from,
+ * old.to]` por un solo extremo, sin quedar enteramente afuera, se devuelve `null` directo, sin
+ * llegar al chequeo de largo.
+ *
+ * Devuelve `[]`, distinto de `null`, cuando ningún cambio tocó el cuerpo: no hay nada que reaplicar y
+ * el árbol de antes sigue valiendo tal cual.
+ */
+export function localChanges(
+  changes: readonly Change[],
+  old: DollarBlock,
+  next: DollarBlock,
+): ChangedRange[] | null {
+  const local: ChangedRange[] = [];
+  let delta = 0;
+
+  for (const change of changes) {
+    const { fromA, toA, fromB, toB } = change;
+
+    // Adentro, incluidos los dos bordes: un cambio de largo cero justo en `old.from` es typear al
+    // principio del cuerpo, y uno en `old.to` es typear justo antes del `$tag$` de cierre — los dos
+    // son parte del cuerpo y no del delimitador, que no ocupa ningún carácter de `[from, to)`.
+    if (fromA >= old.from && toA <= old.to) {
+      local.push({
+        fromA: fromA - old.from,
+        toA: toA - old.from,
+        fromB: fromB - next.from,
+        toB: toB - next.from,
+      });
+      delta += toB - fromB - (toA - fromA);
+      continue;
+    }
+
+    // Enteramente antes o enteramente después: no toca el cuerpo, solo corre sus posiciones —lo que
+    // ya hizo `mapPos` para encontrar `next`.
+    if (toA <= old.from || fromA >= old.to) continue;
+
+    // Lo que queda cruza un borde del cuerpo.
+    return null;
+  }
+
+  // El largo nuevo tiene que explicarse enteramente por lo que cambió adentro. Si no, el cuerpo que
+  // `next` reporta no es el viejo editado in situ — por ejemplo, un `$$` escrito adentro corta el
+  // cuerpo ahí mismo, antes de donde el cambio en sí mismo terminaba.
+  if (next.to - next.from !== old.to - old.from + delta) return null;
+
+  return local;
+}
+
+interface Body extends DollarBlock {
+  /** `null` = sin parsear todavía, o desactualizado por un cambio que cruzó un borde. */
+  tree: Tree | null;
+  /** Lo reusable del parseo anterior, para reparsear incremental en vez de completo. */
+  fragments: readonly TreeFragment[];
+}
+
+/**
+ * Empareja cada cuerpo nuevo con el viejo que podría ser el mismo, para decidir en `localChanges`
+ * si su árbol vale la pena reusarse. Puro y separado de `ViewUpdate` para poder probarlo sin armar
+ * un `ChangeSet` real: `mapOldFrom` es justo `(from) => update.changes.mapPos(from, -1)`.
+ *
+ * El emparejamiento es solo un candidato, no una prueba: si dos cuerpos viejos, por la razón que
+ * sea, mapean al mismo punto con la misma etiqueta, se prueba uno solo (el primero de `oldBodies`) y
+ * queda en manos de `localChanges` rechazarlo si no calza —el chequeo de largo es la red que evita
+ * reusar el árbol de un cuerpo que en realidad es otro.
+ */
+export function pairBodies<T extends DollarBlock>(
+  oldBodies: readonly T[],
+  next: readonly DollarBlock[],
+  mapOldFrom: (from: number) => number,
+): (T | null)[] {
+  const mapped = oldBodies.map((old) => ({ old, from: mapOldFrom(old.from) }));
+  return next.map((block) => {
+    const found = mapped.find((m) => m.old.tag === block.tag && m.from === block.from);
+    return found?.old ?? null;
+  });
+}
+
+/**
+ * El árbol de un cuerpo, parseado hasta `localTo` y ni un carácter más.
+ *
+ * Un cuerpo de seiscientas mil columnas se parsea entero en un cuarto de segundo, y nadie mira más
+ * que la pantalla: `startParse` + `stopAt(localTo)` acota el costo a lo que se va a pintar. El árbol
+ * que resulta es parcial (`TreeFragment.addTree(…, true)` le pone `openEnd`), y si después hace
+ * falta ver más allá de donde se paró —scroll adentro del mismo cuerpo enorme, sin que el documento
+ * haya cambiado, así que `update()` no tocó `bodies`— la llamada siguiente extiende desde ahí en vez
+ * de arrancar de cero: los fragmentos ya cubren el tramo que se había parseado. El texto del cuerpo
+ * solo se lee del documento (`sliceString`, que para un cuerpo grande no es gratis) cuando de verdad
+ * hace falta parsear algo más; con el árbol ya cubriendo `localTo`, ni se toca.
+ */
+function parsed(view: EditorView, body: Body, localTo: number): Tree {
+  if (body.tree && body.tree.length >= localTo) return body.tree;
+
+  const text = view.state.doc.sliceString(body.from, body.to);
+  const parse = PostgreSQL.language.parser.startParse(text, body.fragments);
+  parse.stopAt(localTo);
+  let tree = parse.advance();
+  while (tree === null) tree = parse.advance();
+
+  body.tree = tree;
+  body.fragments = TreeFragment.addTree(tree, body.fragments, true);
+  return tree;
+}
+
+function decorate(view: EditorView, bodies: readonly Body[]): DecorationSet {
   const { from: viewFrom, to: viewTo } = view.viewport;
   const ranges: Range<Decoration>[] = [];
 
-  for (const block of dollarBlocks(text)) {
-    if (block.to < viewFrom || block.from > viewTo) continue;
-    const length = block.to - block.from;
-    if (length === 0 || length > MAX_BODY) continue;
+  for (const body of bodies) {
+    if (body.to < viewFrom || body.from > viewTo) continue;
+    if (body.to === body.from) continue;
 
     // El cuerpo entero: adentro de la cadena que dibuja `lang-sql`, lo que ningún token pinte
     // seguiría saliendo del color de las cadenas, y un nombre de variable no es una cadena.
-    ranges.push(BODY.range(block.from, block.to));
+    ranges.push(BODY.range(body.from, body.to));
 
-    const tree = PostgreSQL.language.parser.parse(text.slice(block.from, block.to));
-    highlightTree(tree, sqlInlineHighlighter, (from, to, classes) => {
-      const style = sqlInlineStyle(classes);
-      if (!style) return;
-      ranges.push(
-        Decoration.mark({ attributes: { style } }).range(block.from + from, block.from + to),
-      );
-    });
+    const length = body.to - body.from;
+    const localFrom = Math.max(0, Math.min(length, viewFrom - body.from));
+    const localTo = Math.max(0, Math.min(length, viewTo - body.from));
+    const tree = parsed(view, body, localTo);
+    highlightTree(
+      tree,
+      sqlInlineHighlighter,
+      (from, to, classes) => {
+        const style = sqlInlineStyle(classes);
+        if (!style) return;
+        ranges.push(
+          Decoration.mark({ attributes: { style } }).range(body.from + from, body.from + to),
+        );
+      },
+      localFrom,
+      localTo,
+    );
   }
 
   // Ordena el conjunto en vez de armarlo con un `RangeSetBuilder`: la decoración del cuerpo entero
@@ -155,8 +277,17 @@ const BODY = Decoration.mark({ attributes: { style: "color: var(--cm-text)" } })
 /**
  * Colorea como SQL lo que hay adentro de cada `$$ … $$`.
  *
- * Se recalcula sobre lo que está a la vista y no sobre el documento entero: un archivo con veinte
- * funciones se reparsearía completo en cada tecla para dibujar las tres líneas que se ven.
+ * No hay techo por tamaño de cuerpo: una función de mil líneas se coloreaba entera del verde de
+ * cadena que pinta `lang-sql` en cuanto pasaba el límite de antes. Tres cosas lo permiten. Reparsear
+ * es incremental (`localChanges` lleva cada cambio del documento a coordenadas del cuerpo y
+ * `TreeFragment.applyChanges` reusa el árbol viejo fuera de ese tramo), así que lo que se paga por
+ * tecla es el tamaño de lo que cambió y no el del cuerpo entero. El primer parseo de un cuerpo —o
+ * cualquiera forzado de cero— está acotado a lo visible (`parsed`, con `stopAt`): sin eso, pegar una
+ * función de seiscientas mil columnas se siente, un cuarto de segundo de bloqueo por parsearla
+ * entera de una sola vez aunque solo se vean cuarenta líneas. Y se resalta solo lo que está a la
+ * vista (`highlightTree` recibe el viewport recortado a coordenadas del cuerpo): desplazarse no
+ * reparsea nada salvo que el cuerpo no llegue todavía hasta ahí, y un cuerpo que todavía no entró a
+ * la vista no se toca.
  *
  * Va en `Prec.highest` y eso **no es un detalle de orden**: con marcas superpuestas, CodeMirror
  * dibuja adentro las de mayor precedencia, y el color lo decide el `span` de más adentro. Con la
@@ -168,14 +299,59 @@ export const sqlNesting = Prec.highest(
   ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;
+      bodies: Body[];
 
       constructor(view: EditorView) {
-        this.decorations = decorate(view);
+        if (view.state.doc.length > MAX_DOC) {
+          this.bodies = [];
+          this.decorations = Decoration.none;
+          return;
+        }
+        this.bodies = dollarBlocks(view.state.doc.toString()).map((block) => ({
+          ...block,
+          tree: null,
+          fragments: [],
+        }));
+        this.decorations = decorate(view, this.bodies);
       }
 
       update(update: ViewUpdate) {
+        if (update.docChanged) {
+          if (update.state.doc.length > MAX_DOC) {
+            this.bodies = [];
+            this.decorations = Decoration.none;
+            return;
+          }
+
+          const changes: Change[] = [];
+          update.changes.iterChangedRanges((fromA, toA, fromB, toB) => {
+            changes.push({ fromA, toA, fromB, toB });
+          });
+
+          const next = dollarBlocks(update.state.doc.toString());
+          // `mapPos` traduce posiciones del documento viejo al nuevo. `-1`: lo que se inserta justo
+          // en el primer carácter del cuerpo es del cuerpo y no del `$tag$` de apertura que lo
+          // precede —con `+1` la posición mapeada saltaría detrás de lo insertado y typear ahí nunca
+          // encontraría su par de antes—.
+          const pairs = pairBodies(this.bodies, next, (from) => update.changes.mapPos(from, -1));
+          this.bodies = next.map((block, i) => {
+            const old = pairs[i];
+            if (!old) return { ...block, tree: null, fragments: [] };
+
+            const local = localChanges(changes, old, block);
+            if (local === null) return { ...block, tree: null, fragments: [] };
+            if (local.length === 0) return { ...block, tree: old.tree, fragments: old.fragments };
+
+            return {
+              ...block,
+              tree: null,
+              fragments: TreeFragment.applyChanges(old.fragments, local),
+            };
+          });
+        }
+
         if (update.docChanged || update.viewportChanged) {
-          this.decorations = decorate(update.view);
+          this.decorations = decorate(update.view, this.bodies);
         }
       }
     },
