@@ -1146,7 +1146,9 @@
     />
   {:else}
     <header class="divider-b px-3 py-2 @md/detail:px-5 @md/detail:py-3">
-      <div class="flex items-center gap-2.5">
+      <!-- Con el panel angosto los botones bajan a una segunda fila en vez de apretar el nombre: con
+           ocho acciones al lado, el de una tabla quedaba reducido a su primera letra. -->
+      <div class="flex flex-wrap items-center gap-x-2.5 gap-y-2">
         <div
           class="grid size-9 shrink-0 place-items-center rounded-lg bg-zinc-100 dark:bg-zinc-700
                  {look.tone}"
@@ -1154,9 +1156,9 @@
           <Icon name={look.icon} size={18} />
         </div>
 
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2">
-            <h2 class="truncate text-base font-medium">{selected.label}</h2>
+        <div class="min-w-0 flex-1 basis-44">
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <h2 class="max-w-full min-w-0 truncate text-base font-medium" title={selected.label}>{selected.label}</h2>
             <span class="tag tag-neutral shrink-0">
               {isGroup ? "Carpeta de conexiones" : kindLabel(node?.kind ?? null)}
             </span>

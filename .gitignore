@@ -30,3 +30,6 @@ Thumbs.db
 *.pgpass
 connections.local.json
 .tgrep/
+
+# Capturas de la interfaz (ui/scripts/capturas.mjs)
+ui/capturas/
