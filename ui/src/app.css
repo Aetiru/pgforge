@@ -257,7 +257,18 @@ body {
    (`DataPanel`, mantenimiento, backup, monitor, …) lleva botones con texto que no entran ahí, así
    que la clase base sigue en `h-8` y esto se aplica junto a `toolbar`, no en su lugar. */
 .toolbar-compact {
-  @apply h-6 min-h-0 py-0;
+  @apply h-6 min-h-0 flex-nowrap overflow-x-auto overflow-y-hidden py-0;
+  /* Una barra de 24px no puede envolver a una segunda línea sin recortarla: con la ventana angosta
+     se corta a la derecha, y el desplazamiento horizontal deja alcanzar lo que no entra. */
+  scrollbar-width: none;
+}
+
+.toolbar-compact::-webkit-scrollbar {
+  display: none;
+}
+
+.toolbar-compact > * {
+  @apply shrink-0;
 }
 
 /* El botón llena la barra entera en vez de dejar aire alrededor del ícono: a 20px (`size-5`) con un
@@ -286,7 +297,22 @@ body {
    botón de ícono lleno—, alto libre: lo da el `flex` de la fila que lo contiene (editor + riel), no
    una altura propia. */
 .rail-compact {
-  @apply flex w-8 shrink-0 flex-col items-center border-l border-zinc-200 dark:border-zinc-700;
+  @apply flex min-h-0 w-8 shrink-0 flex-col items-center overflow-x-hidden overflow-y-auto border-l
+    border-zinc-200 dark:border-zinc-700;
+  /* Con el editor bajo, los doce botones no entran: sin `overflow` los últimos se salían de la fila y
+     se dibujaban encima de la barra de resultados (tapaban su «A+»). Ahora el riel desplaza con la
+     rueda; la barra se esconde porque en 32px de ancho se comía los botones. */
+  scrollbar-width: none;
+}
+
+.rail-compact::-webkit-scrollbar {
+  display: none;
+}
+
+/* Los botones ceden espacio antes de desbordar —hasta 24px—, así con el editor bajo siguen entrando
+   todos y el desplazamiento queda para cuando de verdad no caben. */
+.rail-compact .btn-icon {
+  @apply min-h-6;
 }
 
 /* Mismo criterio que `.toolbar-compact .btn-icon`: el botón llena el ancho entero del riel, no un
