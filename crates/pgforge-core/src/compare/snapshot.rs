@@ -16,6 +16,8 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::conn::ServerHandle;
 use crate::ddl::table::Identity;
 // `TypeKind` es el mismo `ddl::types::ShapeKind` con otro nombre en este módulo: acá compara
@@ -26,7 +28,8 @@ use crate::error::{Error, Result};
 use crate::ServerVersion;
 
 /// Un esquema entero, tal como estaba cuando se leyó.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SchemaSnapshot {
     pub database: String,
     pub schema: String,
@@ -45,20 +48,23 @@ pub struct SchemaSnapshot {
 /// Se guarda la definición tal cual la devuelve `pg_get_constraintdef` / `pg_get_indexdef` en vez de
 /// desarmarla en campos: es la que el propio PostgreSQL considera correcta, y volver a armarla a
 /// mano solo agrega maneras de equivocarse.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NamedDef {
     pub name: String,
     pub definition: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum RelationKind {
     Ordinary,
     Partitioned,
     Foreign,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Column {
     pub name: String,
     /// Como lo escribe `format_type`, que es como se escribiría en un `CREATE TABLE`.
@@ -73,7 +79,8 @@ pub struct Column {
     pub collation: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Table {
     pub name: String,
     pub kind: RelationKind,
@@ -86,7 +93,8 @@ pub struct Table {
     pub indexes: Vec<NamedDef>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct View {
     pub name: String,
     pub materialized: bool,
@@ -95,7 +103,8 @@ pub struct View {
     pub indexes: Vec<NamedDef>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Sequence {
     pub name: String,
     pub type_name: String,
@@ -107,7 +116,8 @@ pub struct Sequence {
     pub cycle: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TypeDef {
     pub name: String,
     pub kind: TypeKind,

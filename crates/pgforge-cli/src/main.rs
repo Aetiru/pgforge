@@ -118,6 +118,40 @@ enum Command {
         sql: bool,
     },
 
+    /// Guarda un esquema en un archivo, para compararlo más adelante con `compare-file`.
+    Snapshot {
+        #[arg(long)]
+        url: String,
+        /// Esquema a guardar. Por omisión, public.
+        #[arg(long, default_value = "public")]
+        schema: String,
+        /// Base. Por omisión, la de la cadena de conexión.
+        #[arg(long)]
+        database: Option<String>,
+        /// Archivo donde se escribe.
+        #[arg(long)]
+        out: std::path::PathBuf,
+    },
+
+    /// Compara una instantánea guardada (origen) contra un esquema en vivo (destino).
+    CompareFile {
+        /// La instantánea que escribió `snapshot`.
+        #[arg(long)]
+        file: std::path::PathBuf,
+        /// Servidor de destino: el que habría que llevar de vuelta a la instantánea.
+        #[arg(long)]
+        url: String,
+        /// Esquema del destino. Por omisión, el mismo que el de la instantánea.
+        #[arg(long)]
+        schema: Option<String>,
+        /// Base del destino. Por omisión, la de la cadena de conexión.
+        #[arg(long)]
+        database: Option<String>,
+        /// Imprime el SQL de sincronización en vez del informe de diferencias.
+        #[arg(long)]
+        sql: bool,
+    },
+
     /// Imprime el DDL de un objeto, indicado como esquema.nombre
     Ddl {
         #[arg(long)]
@@ -453,6 +487,19 @@ async fn main() -> ExitCode {
             )
             .await
         }
+        Command::Snapshot {
+            url,
+            schema,
+            database,
+            out,
+        } => save_snapshot(&url, database.as_deref(), &schema, &out).await,
+        Command::CompareFile {
+            file,
+            url,
+            schema,
+            database,
+            sql,
+        } => compare_file(&file, &url, schema, database.as_deref(), sql).await,
         Command::Ddl { url, object } => show_ddl(&url, &object).await,
         Command::Query {
             url,
@@ -1132,6 +1179,46 @@ async fn compare_schemas(
     )
     .await?;
 
+    print_comparison(&comparison, print_sql);
+    Ok(())
+}
+
+async fn save_snapshot(
+    url: &str,
+    database: Option<&str>,
+    schema: &str,
+    out: &std::path::Path,
+) -> Result<()> {
+    let handle = connect(url).await?;
+    let database = database.unwrap_or_else(|| handle.default_database());
+    compare::file::save(&handle, database, schema, out).await?;
+    println!(
+        "instantánea de {database}.{schema} guardada en {}",
+        out.display()
+    );
+    Ok(())
+}
+
+/// Compara una instantánea guardada contra un esquema en vivo. El esquema del destino es, si no se
+/// dice otro, el mismo que el de la instantánea.
+async fn compare_file(
+    file: &std::path::Path,
+    url: &str,
+    schema: Option<String>,
+    database: Option<&str>,
+    print_sql: bool,
+) -> Result<()> {
+    let source = compare::file::load(file)?;
+    let handle = connect(url).await?;
+    let database = database.unwrap_or_else(|| handle.default_database());
+    let schema = schema.unwrap_or_else(|| source.snapshot.schema.clone());
+    let comparison = compare::compare_with_file(&source, &handle, database, &schema).await?;
+    print_comparison(&comparison, print_sql);
+    Ok(())
+}
+
+/// El informe de diferencias, o con `print_sql` el script que ofrece copiar la aplicación.
+fn print_comparison(comparison: &compare::Comparison, print_sql: bool) {
     if print_sql {
         if comparison.plan.statements.is_empty() {
             println!("-- no hay nada que sincronizar");
@@ -1141,7 +1228,7 @@ async fn compare_schemas(
         for warning in &comparison.plan.warnings {
             println!("\n-- aviso: {warning}");
         }
-        return Ok(());
+        return;
     }
 
     let diff = &comparison.diff;
@@ -1156,7 +1243,7 @@ async fn compare_schemas(
 
     if diff.entries.is_empty() {
         println!("sin diferencias ({} objetos iguales)", diff.equal);
-        return Ok(());
+        return;
     }
 
     for entry in &diff.entries {
@@ -1186,8 +1273,6 @@ async fn compare_schemas(
     for warning in &comparison.plan.warnings {
         println!("aviso: {warning}");
     }
-
-    Ok(())
 }
 
 /// `+` falta en el destino, `-` sobra en el destino, `~` está en los dos y difiere.

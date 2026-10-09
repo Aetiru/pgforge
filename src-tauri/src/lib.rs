@@ -90,6 +90,8 @@ pub fn run() {
             commands::schema::object_ddl,
             commands::schema::schema_graph,
             commands::compare::schema_compare,
+            commands::compare::schema_compare_file,
+            commands::compare::schema_snapshot_save,
             commands::compare::schema_names,
             commands::schema::erd_export_svg,
             commands::monitoring::monitor_start,

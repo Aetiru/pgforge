@@ -8,13 +8,27 @@
  */
 
 import { Tab, tabs } from "./tabs.svelte";
-import { describeError, schemaCompare, type CompareSide, type Comparison } from "./ipc";
+import {
+  describeError,
+  schemaCompare,
+  schemaCompareFile,
+  type CompareSide,
+  type Comparison,
+} from "./ipc";
 import { DEFAULT_RISKS, type RiskFilter } from "./compare-script";
+
+/** El origen: un esquema en vivo, o la ruta de una instantánea guardada. */
+export type CompareSource = CompareSide | string;
+
+/** El último tramo de una ruta, para el título de la pestaña. */
+function fileName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? path;
+}
 
 export class CompareTab extends Tab {
   readonly kind = "compare" as const;
 
-  readonly source: CompareSide;
+  readonly source: CompareSource;
   readonly target: CompareSide;
 
   result = $state.raw<Comparison | null>(null);
@@ -26,10 +40,13 @@ export class CompareTab extends Tab {
   /** Nombre del objeto cuyo detalle está abierto en el informe, o `null`. */
   opened = $state<string | null>(null);
 
-  constructor(source: CompareSide, target: CompareSide) {
+  constructor(source: CompareSource, target: CompareSide) {
     // La pestaña cuelga del origen: es el servidor cuyo estado se quiere copiar, y es el que decide
-    // qué se cierra si esa conexión se cae.
-    super(source.id, source.database, `Comparar · ${source.schema} → ${target.schema}`);
+    // qué se cierra si esa conexión se cae. Una instantánea no tiene servidor, así que ahí cuelga del
+    // destino, que es el único lado vivo.
+    const live = typeof source === "string" ? target : source;
+    const from = typeof source === "string" ? fileName(source) : source.schema;
+    super(live.id, live.database, `Comparar · ${from} → ${target.schema}`);
     this.source = source;
     this.target = target;
   }
@@ -38,7 +55,10 @@ export class CompareTab extends Tab {
     this.loading = true;
     this.error = null;
     try {
-      this.result = await schemaCompare(this.source, this.target);
+      this.result =
+        typeof this.source === "string"
+          ? await schemaCompareFile(this.source, this.target)
+          : await schemaCompare(this.source, this.target);
     } catch (error) {
       this.error = describeError(error);
       this.result = null;
@@ -50,7 +70,7 @@ export class CompareTab extends Tab {
 
 /** Abre la comparación de dos esquemas y la corre. */
 export async function openCompare(
-  source: CompareSide,
+  source: CompareSource,
   target: CompareSide,
 ): Promise<CompareTab> {
   const tab = tabs.add(new CompareTab(source, target));

@@ -1,4 +1,6 @@
-//! Comparación de esquemas entre dos servidores.
+//! Comparación de esquemas entre dos servidores, o entre uno y una instantánea guardada.
+
+use std::path::Path;
 
 use pgforge_core::compare::{self, Comparison};
 use pgforge_core::introspect;
@@ -39,6 +41,29 @@ pub async fn schema_compare(
         &target.schema,
     )
     .await
+}
+
+/// Guarda el esquema de un lado en un archivo, para compararlo más adelante contra lo que haya.
+#[tauri::command]
+pub async fn schema_snapshot_save(
+    state: State<'_, AppState>,
+    side: CompareSide,
+    path: String,
+) -> Result<()> {
+    let handle = state.manager.require(side.id).await?;
+    compare::file::save(&handle, &side.database, &side.schema, Path::new(&path)).await
+}
+
+/// Compara una instantánea guardada (origen) contra un esquema en vivo (destino).
+#[tauri::command]
+pub async fn schema_compare_file(
+    state: State<'_, AppState>,
+    path: String,
+    target: CompareSide,
+) -> Result<Comparison> {
+    let source = compare::file::load(Path::new(&path))?;
+    let handle = state.manager.require(target.id).await?;
+    compare::compare_with_file(&source, &handle, &target.database, &target.schema).await
 }
 
 /// Los esquemas de una base, para elegir contra cuál comparar.

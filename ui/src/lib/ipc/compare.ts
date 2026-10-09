@@ -106,6 +106,18 @@ export interface CompareSide {
 export const schemaCompare = (source: CompareSide, target: CompareSide) =>
   invoke<Comparison>("schema_compare", { source, target });
 
+/** Guarda el esquema de un lado en un archivo, para compararlo más adelante. */
+export const schemaSnapshotSave = (side: CompareSide, path: string) =>
+  invoke<void>("schema_snapshot_save", { side, path });
+
+/**
+ * Compara una instantánea guardada (origen) contra un esquema en vivo (destino). El script lleva el
+ * servidor de vuelta a como estaba al tomarla: un archivo no ejecuta nada, así que no puede ser el
+ * destino.
+ */
+export const schemaCompareFile = (path: string, target: CompareSide) =>
+  invoke<Comparison>("schema_compare_file", { path, target });
+
 /** Los esquemas de una base, para elegir contra cuál comparar sin desplegar el árbol. */
 export const schemaNames = (id: string, database: string) =>
   invoke<string[]>("schema_names", { id, database });

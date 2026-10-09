@@ -16,6 +16,7 @@
 //! También quedan afuera los datos: esto compara formas, no filas.
 
 pub mod diff;
+pub mod file;
 pub mod render;
 pub mod snapshot;
 pub mod sync;
@@ -61,15 +62,45 @@ pub async fn compare(
         snapshot::read(target, target_database, target_schema),
     )?;
 
-    Ok(Comparison {
-        diff: diff::diff(
-            &source_snapshot,
-            &source.profile.name,
-            &target_snapshot,
-            &target.profile.name,
-        ),
-        plan: sync::plan(&source_snapshot, &target_snapshot),
-    })
+    Ok(compare_snapshots(
+        &source_snapshot,
+        &source.profile.name,
+        &target_snapshot,
+        &target.profile.name,
+    ))
+}
+
+/// Compara una instantánea guardada contra un esquema en vivo.
+///
+/// La instantánea es el **origen**: el script resultante lleva el servidor de vuelta a como estaba
+/// cuando se la tomó, que es lo único que se puede ejecutar —un archivo no corre sentencias—. El
+/// informe responde igual la otra pregunta, qué cambió desde entonces, leído al revés.
+pub async fn compare_with_file(
+    source: &file::SnapshotFile,
+    target: &ServerHandle,
+    target_database: &str,
+    target_schema: &str,
+) -> Result<Comparison> {
+    let target_snapshot = snapshot::read(target, target_database, target_schema).await?;
+    Ok(compare_snapshots(
+        &source.snapshot,
+        &source.label(),
+        &target_snapshot,
+        &target.profile.name,
+    ))
+}
+
+/// La comparación entera sobre dos instantáneas ya leídas, sin servidor.
+pub fn compare_snapshots(
+    source: &SchemaSnapshot,
+    source_name: &str,
+    target: &SchemaSnapshot,
+    target_name: &str,
+) -> Comparison {
+    Comparison {
+        diff: diff::diff(source, source_name, target, target_name),
+        plan: sync::plan(source, target),
+    }
 }
 
 /// Empareja dos listas por nombre, en orden alfabético y sin repetir.

@@ -404,7 +404,8 @@ pub struct TypeInfo {
 /// [`crate::compare::snapshot`] sí necesitan la categoría propia para reconstruir el `CREATE TYPE`.
 ///
 /// [`type_ddl`]: super::type_ddl
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum ShapeKind {
     Enum,
     Composite,
