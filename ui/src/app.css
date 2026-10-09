@@ -447,7 +447,8 @@ input[type="password"]::-ms-clear {
     hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100;
 }
 
-.seg-item[aria-selected="true"] {
+.seg-item[aria-selected="true"],
+.seg-item[aria-pressed="true"] {
   @apply bg-white text-zinc-900 shadow-sm dark:bg-zinc-600 dark:text-zinc-50;
 }
 

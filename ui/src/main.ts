@@ -23,5 +23,6 @@ import App from "./App.svelte";
 // primera pintura ya sale definitiva y no hay destello con la anterior.
 import "./lib/theme.svelte";
 import "./lib/font.svelte";
+import "./lib/sql-theme.svelte";
 
 export default mount(App, { target: document.getElementById("app")! });

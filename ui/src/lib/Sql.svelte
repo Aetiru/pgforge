@@ -28,7 +28,7 @@
       color: "inherit",
       fontSize: "var(--sql-font-size)",
     },
-    ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "1.5" },
+    ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "1.6" },
     ".cm-content": { padding: "0" },
     ".cm-line": { padding: "0" },
   });
