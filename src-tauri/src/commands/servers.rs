@@ -48,6 +48,11 @@ pub async fn save_profile(
     password: Option<String>,
     ssh_password: Option<String>,
 ) -> Result<ConnectionProfile> {
+    // Antes de tocar el almacén de credenciales: un perfil rechazado no debe dejar secretos.
+    state
+        .paths
+        .check_profile(state.store.lock().await.get(profile.id), &profile)?;
+
     match (&password, profile.save_password) {
         (Some(password), true) => store::store_password(profile.id, &Password::new(password))?,
         (_, false) => store::delete_password(profile.id)?,
@@ -144,6 +149,7 @@ pub async fn import_apply(
 
     for candidate in &candidates {
         let mut profile = candidate.profile();
+        state.paths.check_profile(None, &profile)?;
         // La carpeta elegida manda; si no se eligió ninguna, se respeta la que el servidor tenía en
         // la otra herramienta. Veinte servidores sueltos en la raíz del árbol es peor que no
         // haberlos importado.
@@ -225,10 +231,15 @@ pub async fn connect(
 /// bastión no está verificada, para reusar el mismo flujo de confirmación.
 #[tauri::command]
 pub async fn ssh_test(
+    state: State<'_, AppState>,
     profile: ConnectionProfile,
     ssh_password: Option<String>,
     trust_host_key: Option<bool>,
 ) -> Result<()> {
+    state
+        .paths
+        .check_profile(state.store.lock().await.get(profile.id), &profile)?;
+
     let spec = profile
         .tunnel
         .as_ref()

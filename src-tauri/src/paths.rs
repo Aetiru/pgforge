@@ -11,7 +11,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 
 use pgforge_core::scripts::resolve;
-use pgforge_core::{Error, Result};
+use pgforge_core::{ConnectionProfile, Error, Result};
 
 #[derive(Default)]
 pub struct AllowedPaths {
@@ -51,6 +51,36 @@ impl AllowedPaths {
         } else {
             Err(denied())
         }
+    }
+
+    /// Exige que el certificado raíz y la clave SSH de un perfil que llega de la interfaz salgan de
+    /// un diálogo, **salvo los que ya tenía guardados**.
+    ///
+    /// Esas dos rutas no pasan por un comando de archivos: el núcleo las lee al conectar (la clave
+    /// para autenticarse ante el bastión, el certificado para validar o como `PGSSLROOTCERT` de
+    /// `pg_dump`). Un perfil con `host` ajeno y `~/.ssh/id_ed25519` como clave haría que el
+    /// webview, sin pedir permiso, firme un desafío ante un servidor que no es el del usuario. Lo
+    /// que ya estaba guardado se acepta tal cual: se eligió en una sesión anterior y exigirlo de
+    /// nuevo rompería cada perfil existente tras reiniciar.
+    pub fn check_profile(
+        &self,
+        previous: Option<&ConnectionProfile>,
+        profile: &ConnectionProfile,
+    ) -> Result<()> {
+        if let Some(cert) = &profile.root_cert {
+            if previous.and_then(|p| p.root_cert.as_ref()) != Some(cert) {
+                self.check(cert)?;
+            }
+        }
+        if let Some(key) = profile.tunnel.as_ref().and_then(|t| t.private_key.as_ref()) {
+            let old = previous
+                .and_then(|p| p.tunnel.as_ref())
+                .and_then(|t| t.private_key.as_ref());
+            if old != Some(key) {
+                self.check(key)?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -144,5 +174,63 @@ mod tests {
             .is_err());
         let _ = std::fs::remove_dir_all(&base);
         let _ = std::fs::remove_dir_all(&afuera);
+    }
+
+    fn profile_with(cert: Option<&Path>, key: Option<&Path>) -> ConnectionProfile {
+        let mut profile = ConnectionProfile::new("p", "h", "u");
+        profile.root_cert = cert.map(Path::to_path_buf);
+        if let Some(key) = key {
+            profile.tunnel = Some(pgforge_core::conn::SshTunnel {
+                host: "bastion".to_owned(),
+                port: 22,
+                user: "u".to_owned(),
+                private_key: Some(key.to_path_buf()),
+            });
+        }
+        profile
+    }
+
+    #[test]
+    fn un_perfil_con_rutas_nuevas_sin_dialogo_se_rechaza() {
+        let base = dir("perfil-nuevo");
+        let paths = AllowedPaths::default();
+        let cert = base.join("ca.pem");
+        let key = base.join("id_ed25519");
+        assert!(paths
+            .check_profile(None, &profile_with(Some(&cert), None))
+            .is_err());
+        assert!(paths
+            .check_profile(None, &profile_with(None, Some(&key)))
+            .is_err());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn las_rutas_elegidas_en_un_dialogo_se_aceptan() {
+        let base = dir("perfil-dialogo");
+        let paths = AllowedPaths::default();
+        let cert = base.join("ca.pem");
+        let key = base.join("id_ed25519");
+        paths.authorize(&cert).unwrap();
+        paths.authorize(&key).unwrap();
+        assert!(paths
+            .check_profile(None, &profile_with(Some(&cert), Some(&key)))
+            .is_ok());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn lo_que_el_perfil_ya_tenia_guardado_no_se_vuelve_a_exigir() {
+        let base = dir("perfil-guardado");
+        let paths = AllowedPaths::default();
+        let cert = base.join("ca.pem");
+        let key = base.join("id_ed25519");
+        let guardado = profile_with(Some(&cert), Some(&key));
+        assert!(paths.check_profile(Some(&guardado), &guardado).is_ok());
+        // Cambiar solo una de las dos sí exige diálogo para la que cambió.
+        let otra = base.join("otra");
+        let cambiado = profile_with(Some(&cert), Some(&otra));
+        assert!(paths.check_profile(Some(&guardado), &cambiado).is_err());
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
