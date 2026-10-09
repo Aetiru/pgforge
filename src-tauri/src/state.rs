@@ -120,6 +120,9 @@ pub struct AppState {
     /// no se crea en `new()`: que no exista todavía es el estado normal antes de guardar el primer
     /// script, y `pgforge_core::scripts` ya sabe leer una raíz ausente como árbol vacío.
     pub scripts_root: PathBuf,
+    /// Rutas que el usuario eligió en un diálogo nativo; los comandos que reciben una ruta del
+    /// webview la verifican contra esto (ver [`crate::paths`]).
+    pub paths: crate::paths::AllowedPaths,
 }
 
 impl AppState {
@@ -142,6 +145,7 @@ impl AppState {
             reads: Mutex::new(HashMap::new()),
             config_dir,
             scripts_root,
+            paths: crate::paths::AllowedPaths::default(),
         })
     }
 }

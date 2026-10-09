@@ -88,8 +88,11 @@ pub async fn import_scan(app: AppHandle) -> Result<Vec<Candidate>> {
 /// carpeta resultante en pgforge lleva el nombre del proyecto adelante, para que dos proyectos con
 /// una subcarpeta igual no se pisen al quedar como carpetas raíz hermanas.
 #[tauri::command]
-pub async fn import_scan_workspace(root: String) -> Result<Vec<Candidate>> {
-    let root = std::path::PathBuf::from(root);
+pub async fn import_scan_workspace(
+    state: State<'_, AppState>,
+    root: String,
+) -> Result<Vec<Candidate>> {
+    let root = state.paths.check(&root)?;
     let mut out: Vec<Candidate> = Vec::new();
 
     for path in import::dbeaver_workspace_sources(&root) {

@@ -102,7 +102,7 @@ pub fn next_name(existing: &[String]) -> String {
 /// canonicalizar el padre inmediato —también puede faltar—: se sube por los ancestros hasta
 /// encontrar el primero que sí exista, se canonicaliza ese, y se le vuelve a pegar el resto del
 /// camino tal como venía escrito.
-fn resolve(path: &Path) -> Result<PathBuf> {
+pub fn resolve(path: &Path) -> Result<PathBuf> {
     if let Ok(resolved) = std::fs::canonicalize(path) {
         return Ok(resolved);
     }

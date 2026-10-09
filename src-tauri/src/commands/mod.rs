@@ -9,6 +9,7 @@ pub mod bookmarks;
 pub mod compare;
 pub mod data;
 pub mod ddl;
+pub mod dialogs;
 pub mod monitoring;
 pub mod query;
 pub mod schema;

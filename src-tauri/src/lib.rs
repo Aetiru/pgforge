@@ -4,6 +4,7 @@
 // tocan la red— con la carga que manda la interfaz. Es la única forma de probar la traducción de
 // argumentos sin levantar la ventana.
 pub mod commands;
+pub mod paths;
 pub mod process;
 pub mod state;
 
@@ -127,6 +128,8 @@ pub fn run() {
             commands::query::query_explain,
             commands::query::statement_at_cursor,
             commands::query::sql_format,
+            commands::dialogs::dialog_open,
+            commands::dialogs::dialog_save,
             commands::query::sql_write_file,
             commands::query::sql_read_file,
             commands::query::schema_snapshot,

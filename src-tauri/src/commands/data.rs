@@ -4,7 +4,6 @@
 //! catálogo, no una conexión ni una transacción abierta, y así la interfaz puede mostrar la misma
 //! grilla después de un refresco sin que el backend tenga que recordar nada entre llamadas.
 
-use std::path::PathBuf;
 use std::time::Instant;
 
 use pgforge_core::data::{
@@ -141,7 +140,7 @@ pub async fn data_export_run(
 
     let (cancel, cancelled) = oneshot::channel();
     let (progress, mut bytes_rx) = mpsc::channel::<u64>(64);
-    let path = PathBuf::from(path);
+    let path = state.paths.check(&path)?;
 
     let task_id = state
         .processes
@@ -227,7 +226,7 @@ pub async fn data_import_run(
 
     let (cancel, cancelled) = oneshot::channel();
     let (progress, mut bytes_rx) = mpsc::channel::<u64>(64);
-    let path = PathBuf::from(path);
+    let path = state.paths.check(&path)?;
 
     let task_id = state
         .processes
