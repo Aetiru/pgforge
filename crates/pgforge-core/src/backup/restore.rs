@@ -267,6 +267,7 @@ pub async fn run(
     progress: mpsc::Sender<String>,
     cancel: oneshot::Receiver<()>,
 ) -> Result<RestoreOutcome> {
+    handle.profile.ensure_writable("restaurar un backup")?;
     let (binary, args) = prepare(handle, options).await?;
 
     let mut command = super::base_command(&binary, handle, &options.database);

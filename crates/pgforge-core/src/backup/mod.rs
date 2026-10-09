@@ -320,6 +320,11 @@ fn base_command(binary: &str, handle: &ServerHandle, database: &str) -> Command 
     if let Some(cert) = &handle.profile.root_cert {
         command.env("PGSSLROOTCERT", cert.as_os_str());
     }
+    // `pg_restore` abre su propia conexión y no pasa por las opciones de arranque del pool: sin
+    // esto, el modo solo lectura del perfil no valdría para el proceso externo.
+    if handle.profile.read_only {
+        command.env("PGOPTIONS", "-c default_transaction_read_only=on");
+    }
     if let Some(password) = handle.password() {
         command.env("PGPASSWORD", password.expose());
     }

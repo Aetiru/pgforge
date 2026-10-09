@@ -127,6 +127,7 @@ pub async fn restore_run(
     options: RestoreOptions,
 ) -> Result<String> {
     let handle = state.manager.require(id).await?;
+    handle.profile.ensure_writable("restaurar un backup")?;
 
     // El plan se pide antes de lanzar la tarea para que los errores que se pueden anticipar —una
     // combinación inválida, un pg_restore más viejo que el servidor— lleguen como el error de este

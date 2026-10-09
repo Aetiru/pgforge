@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { confirmMutation } from "./access.svelte";
+  import { confirmMutation, isReadOnly, readOnlyReason } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
   import { tasks } from "./tasks.svelte";
@@ -20,6 +20,11 @@
     database: string | null;
     onclose: () => void;
   } = $props();
+
+  /** Servidor de solo lectura: el botón se apaga con el motivo, y el núcleo lo rechaza igual. */
+  const blocked = $derived(
+    isReadOnly(profileId) ? { disabled: true, title: readOnlyReason(profileId) ?? "" } : {},
+  );
 
   type Kind = "vacuum" | "analyze" | "reindex";
 
@@ -164,6 +169,6 @@
 
   {#snippet footer()}
     <button class="btn ml-auto" onclick={onclose}>Cerrar</button>
-    <button class="btn btn-primary" onclick={run} disabled={!sql}>Ejecutar</button>
+    <button class="btn btn-primary" onclick={run} disabled={!sql} {...blocked}>Ejecutar</button>
   {/snippet}
 </Modal>

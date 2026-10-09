@@ -213,6 +213,22 @@ pub fn group_starts_with(name: &str, ancestor: &str) -> bool {
 }
 
 impl ConnectionProfile {
+    /// Rechaza `operation` si el perfil es de solo lectura.
+    ///
+    /// El servidor ya rechaza lo que escribe dentro de una transacción (`default_transaction_read_only`),
+    /// pero hay operaciones que no pasan por ahí: `VACUUM`, `REINDEX` y `CREATE INDEX CONCURRENTLY`
+    /// corren fuera de transacción, y `pg_restore` es un proceso aparte con su propia conexión. Esas
+    /// se frenan acá, antes de abrir nada, con un mensaje que dice qué perfil y por qué.
+    pub fn ensure_writable(&self, operation: &str) -> crate::error::Result<()> {
+        if self.read_only {
+            return Err(crate::error::Error::Permission(format!(
+                "el servidor «{}» está marcado como solo lectura: no se puede {operation}",
+                self.name
+            )));
+        }
+        Ok(())
+    }
+
     /// Perfil nuevo con los valores por omisión de PostgreSQL.
     pub fn new(name: impl Into<String>, host: impl Into<String>, user: impl Into<String>) -> Self {
         Self {
@@ -311,6 +327,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn un_perfil_de_solo_lectura_rechaza_las_operaciones_que_escriben() {
+        let mut profile = ConnectionProfile::new("producción", "db", "app");
+        assert!(profile.ensure_writable("restaurar un backup").is_ok());
+        profile.read_only = true;
+        let error = profile.ensure_writable("restaurar un backup").unwrap_err();
+        assert!(matches!(error, crate::error::Error::Permission(_)));
+        let texto = error.to_string();
+        assert!(
+            texto.contains("producción") && texto.contains("restaurar un backup"),
+            "{texto}"
+        );
+    }
+
+    #[test]
     fn el_perfil_serializado_no_contiene_la_contrasena() {
         let profile = ConnectionProfile::new("local", "localhost", "postgres");
         let json = serde_json::to_string(&profile).unwrap();
@@ -358,6 +388,7 @@ mod tests {
         assert!(profile.tunnel.is_none());
         assert!(profile.environment.is_none());
         assert!(!profile.read_only);
+        assert!(profile.ensure_writable("hacer algo").is_ok());
         // Un perfil sin el campo no puede quedar esperando un COMMIT que nunca escribió nadie.
         assert!(profile.autocommit);
         assert!(profile.color.is_none());
