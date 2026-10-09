@@ -39,6 +39,8 @@
   import { openRoleCapabilities, RoleCapabilitiesTab } from "./lib/role-capabilities.svelte";
   import { environmentOf, guard } from "./lib/access.svelte";
   import { tabAccent } from "./lib/badges";
+  import EnvFrame from "./lib/EnvFrame.svelte";
+  import Breadcrumb from "./lib/Breadcrumb.svelte";
   import { explorer } from "./lib/explorer.svelte";
   import { openQuery, openSqlFiles, renameQueryTab, saveQueryTab, QueryTab } from "./lib/query.svelte";
   import { queryTargetOf } from "./lib/tree-actions";
@@ -220,6 +222,32 @@
   function serverName(profileId: string): string {
     return profileOf(profileId)?.name ?? "";
   }
+
+  /**
+   * De qué servidor es el marco de color de la ventana: el de la pestaña a la vista y, sin
+   * pestañas, el del servidor en contexto (el que está elegido en el árbol).
+   */
+  const frameProfile = $derived(tabs.current?.profileId ?? contextServer);
+  const frameEnvironment = $derived(frameProfile ? environmentOf(frameProfile) : null);
+
+  /**
+   * Las pestañas agrupadas por servidor, en el orden en que cada servidor apareció por primera vez.
+   * Es solo cómo se dibujan: `tabs.all` conserva el orden en que se abrieron, que es el que cuenta
+   * para activar, cerrar y partir la vista. Con quince pestañas contra tres servidores, el nombre
+   * del servidor repetido en cada una comía el ancho que le hacía falta al título.
+   */
+  const tabGroups = $derived.by(() => {
+    const groups: { profileId: string; tabs: Tab[] }[] = [];
+    for (const tab of tabs.all) {
+      let group = groups.find((item) => item.profileId === tab.profileId);
+      if (!group) {
+        group = { profileId: tab.profileId, tabs: [] };
+        groups.push(group);
+      }
+      group.tabs.push(tab);
+    }
+    return groups;
+  });
 
   async function connect(profile: ConnectionProfile, password?: string, trustHostKey?: boolean) {
     banner = null;
@@ -566,6 +594,8 @@
   cambia qué muestra el panel de al lado.
 -->
 <div class="flex h-full flex-col">
+  <EnvFrame environment={frameEnvironment} server={serverName(frameProfile ?? "")} />
+
   {#if banner}
     <Alert tone="bad" onclose={() => (banner = null)}>{banner}</Alert>
   {/if}
@@ -798,7 +828,17 @@
                  pt-1"
           role="tablist"
         >
-          {#each tabs.all as tab (tab.key)}
+          {#each tabGroups as group (group.profileId)}
+            {#if tabGroups.length > 1}
+              <span
+                class="mr-0.5 ml-1 flex max-w-28 shrink-0 items-center self-center truncate
+                       text-[10px] font-semibold tracking-wide uppercase muted first:ml-0"
+                title={serverName(group.profileId)}
+              >
+                {serverName(group.profileId)}
+              </span>
+            {/if}
+          {#each group.tabs as tab (tab.key)}
             <div class="tab-wrap {tabAccent(environmentOf(tab.profileId))}">
               {#if renamingTab === tab.key && tab instanceof QueryTab}
                 {@const renaming = tab}
@@ -841,19 +881,8 @@
                          (`tabAccent`). -->
                     <Icon name={TAB_ICON[tab.kind]} size={12} />
                   {/if}
-                  <!--
-                    El servidor va en la pestaña y no solo en el `title`: con cuatro consultas
-                    abiertas, «Consulta 1» contra desarrollo y «Consulta 1» contra producción eran la
-                    misma pestaña a la vista, y averiguar cuál era cuál pedía pasar el mouse por
-                    encima de cada una. Se recorta antes que el nombre de la pestaña porque es el
-                    contexto, no lo que se está mirando.
-                  -->
-                  {#if serverName(tab.profileId)}
-                    <span class="max-w-24 shrink truncate text-[11px] muted">
-                      {serverName(tab.profileId)}
-                    </span>
-                    <span class="shrink-0 text-[11px] muted">/</span>
-                  {/if}
+                  <!-- El servidor ya no se repite en cada pestaña: las pestañas van agrupadas bajo
+                       su nombre (`tabGroups`) y la ruta completa está en `Breadcrumb`. -->
                   <!--
                     Doble clic sobre el título edita el nombre en el lugar; ver `startRenameTab`.
                     Solo una pestaña de consulta lo admite —la de datos o la de un diagrama llevan el
@@ -899,13 +928,14 @@
               {/if}
             </div>
           {/each}
+          {/each}
         </div>
 
         <div class="flex shrink-0 items-center gap-0.5 px-1">
           <!-- Abrir una consulta contra lo que ya se está mirando, sin volver al panel de detalle:
                era el camino de todos los días y son dos clics de más cada vez. -->
           <button
-            class="btn btn-ghost btn-icon"
+            class="btn btn-ghost h-7 px-1.5"
             disabled={queryTarget === null}
             aria-label="Nueva consulta"
             title={queryTarget
@@ -914,6 +944,7 @@
             onclick={newQuery}
           >
             <Icon name="plus" size={13} />
+            <span class="hidden pr-1 text-xs xl:inline">Consulta</span>
           </button>
 
           <!-- Guardar existía desde el principio; abrir, no. Un `.sql` que ya está en disco había
@@ -974,6 +1005,14 @@
           </button>
         </div>
       </div>
+
+      {#if tabs.current}
+        <Breadcrumb
+          server={serverName(tabs.current.profileId)}
+          database={tabs.current.database}
+          title={tabs.current.title}
+        />
+      {/if}
 
       {#snippet tabBody(tab: Tab)}
         {#if tab instanceof QueryTab}

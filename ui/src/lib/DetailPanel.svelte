@@ -1127,6 +1127,15 @@
       {#if selected.comment}
         <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-300">{selected.comment}</p>
       {/if}
+
+      <!-- El motivo ya viaja en el `title` de cada botón apagado, pero un botón gris no dice por
+           qué hasta que se pasa el mouse por encima: acá se dice sin pedirlo. -->
+      {#if blocked.disabled}
+        <p class="mt-2 flex items-center gap-1.5 text-xs muted">
+          <Icon name="lock" size={12} />
+          Conexión de solo lectura: las acciones que modifican están desactivadas.
+        </p>
+      {/if}
     </header>
 
     {#if isGroup}
