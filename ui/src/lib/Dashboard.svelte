@@ -7,6 +7,7 @@
   import DataGrid, { type Column } from "./DataGrid.svelte";
   import Empty from "./Empty.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
+  import SessionsPanel from "./SessionsPanel.svelte";
   import Spark from "./Spark.svelte";
   import { assessHealth, connectionLevel } from "./health";
   import MaintenanceDialog from "./MaintenanceDialog.svelte";
@@ -26,7 +27,6 @@
     tableStats,
     terminateBackend,
     treeChildren,
-    type Backend,
     type IndexStat,
     type Lock,
     type Redundancy,
@@ -88,7 +88,7 @@
   let locks = $state<Lock[]>([]);
   let actionMessage = $state<string | null>(null);
   let actionFailed = $state(false);
-  let confirming = $state<{ pid: number; kind: "cancel" | "terminate" } | null>(null);
+  let confirming = $state<{ pids: number[]; kind: "cancel" | "terminate" } | null>(null);
 
   let tables = $state<TableStat[]>([]);
   let indexes = $state<IndexStat[]>([]);
@@ -149,7 +149,6 @@
   const snapshot = $derived(monitor.snapshot);
   const metrics = $derived(snapshot?.metrics ?? null);
   const backends = $derived(snapshot?.backends ?? []);
-  const selected = $derived(backends.find((backend) => backend.pid === selectedPid) ?? null);
 
   /**
    * Los indicadores que se resaltan son los que piden una acción: conexiones cerca del techo,
@@ -212,6 +211,31 @@
     ];
   });
 
+  /**
+   * Los gráficos de actividad en vivo empiezan plegados: las lecturas de arriba ya dicen el valor
+   * actual con su tendencia, y los gráficos desplazaban la lista de sesiones fuera de la primera
+   * pantalla. Se recuerda lo que se elija.
+   */
+  const CHARTS_KEY = "pgforge.monitor.charts";
+  let showCharts = $state(
+    (() => {
+      try {
+        return localStorage.getItem(CHARTS_KEY) === "1";
+      } catch {
+        return false;
+      }
+    })(),
+  );
+
+  function toggleCharts() {
+    showCharts = !showCharts;
+    try {
+      localStorage.setItem(CHARTS_KEY, showCharts ? "1" : "0");
+    } catch {
+      // Sin `localStorage` no se recuerda esta vez.
+    }
+  }
+
   const health = $derived(metrics ? assessHealth(metrics) : { level: "ok" as const, issues: [] });
 
   const HEALTH_TITLE = { ok: "Todo en orden", warn: "Para revisar", bad: "Requiere atención" } as const;
@@ -224,16 +248,6 @@
   const TILE_TONE: Record<string, string> = {
     bad: "text-rose-600 dark:text-rose-400",
     warn: "text-amber-600 dark:text-amber-400",
-  };
-
-  const TILE_EDGE: Record<string, string> = {
-    bad: "border-l-rose-500",
-    warn: "border-l-amber-500",
-  };
-
-  const TILE_ICON_TONE: Record<string, string> = {
-    bad: "bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400",
-    warn: "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400",
   };
 
   const times = $derived(monitor.history.map((sample) => sample.time));
@@ -321,91 +335,38 @@
     }
   });
 
-  async function act(pid: number, kind: "cancel" | "terminate") {
+  async function act(pids: number[], kind: "cancel" | "terminate") {
     confirming = null;
-    try {
-      const done =
-        kind === "cancel"
-          ? await cancelBackend(profileId, pid)
-          : await terminateBackend(profileId, pid);
-      actionFailed = !done;
-      actionMessage = done
-        ? kind === "cancel"
-          ? `Se pidió cancelar la consulta del PID ${pid}.`
-          : `Se terminó la sesión ${pid}.`
-        : `El PID ${pid} ya no existe.`;
-    } catch (error) {
-      actionFailed = true;
-      actionMessage = describeError(error);
+    // De a una y en orden: el servidor decide por cada PID si todavía existe, y un fallo a la mitad
+    // no tiene que dejar sin contar lo que sí se hizo.
+    let done = 0;
+    let missing = 0;
+    let failure: string | null = null;
+    for (const pid of pids) {
+      try {
+        const ok =
+          kind === "cancel"
+            ? await cancelBackend(profileId, pid)
+            : await terminateBackend(profileId, pid);
+        if (ok) done += 1;
+        else missing += 1;
+      } catch (error) {
+        failure = describeError(error);
+        break;
+      }
     }
+    const verb = kind === "cancel" ? "cancelar la consulta de" : "terminar";
+    actionFailed = failure !== null || (done === 0 && missing > 0);
+    actionMessage =
+      failure ??
+      (pids.length === 1
+        ? done === 1
+          ? kind === "cancel"
+            ? `Se pidió cancelar la consulta del PID ${pids[0]}.`
+            : `Se terminó la sesión ${pids[0]}.`
+          : `El PID ${pids[0]} ya no existe.`
+        : `Se pidió ${verb} ${done} de ${pids.length} sesiones${missing > 0 ? `; ${missing} ya no existían` : ""}.`);
   }
-
-  const backendColumns: Column<Backend>[] = [
-    {
-      key: "pid",
-      header: "PID",
-      width: 64,
-      align: "right",
-      value: (b) => String(b.pid),
-      sort: (b) => b.pid,
-    },
-    {
-      key: "state",
-      header: "Estado",
-      width: 130,
-      value: (b) => b.state ?? "—",
-      tone: (b) =>
-        b.state?.startsWith("idle in transaction")
-          ? "text-amber-600 dark:text-amber-400"
-          : undefined,
-    },
-    {
-      key: "duration",
-      header: "Consulta",
-      width: 90,
-      align: "right",
-      value: (b) => duration(b.querySeconds),
-      sort: (b) => b.querySeconds ?? -1,
-    },
-    {
-      key: "xact",
-      header: "Transacción",
-      width: 100,
-      align: "right",
-      value: (b) => duration(b.transactionSeconds),
-      sort: (b) => b.transactionSeconds ?? -1,
-    },
-    {
-      key: "blocked",
-      header: "Bloqueada por",
-      width: 110,
-      value: (b) => (b.blockedBy.length ? b.blockedBy.join(", ") : "—"),
-      tone: (b) => (b.blockedBy.length ? "text-rose-600 dark:text-rose-400" : undefined),
-      sort: (b) => -b.blockedBy.length,
-    },
-    {
-      key: "wait",
-      header: "Espera",
-      width: 150,
-      value: (b) => (b.waitEventType ? `${b.waitEventType}: ${b.waitEvent ?? ""}` : "—"),
-    },
-    { key: "database", header: "Base", width: 110, value: (b) => b.database ?? "—" },
-    { key: "user", header: "Usuario", width: 110, value: (b) => b.user ?? "—" },
-    {
-      key: "app",
-      header: "Aplicación",
-      width: 140,
-      value: (b) => b.applicationName || "—",
-    },
-    { key: "client", header: "Cliente", width: 120, value: (b) => b.clientAddr ?? "local" },
-    {
-      key: "query",
-      header: "Sentencia",
-      width: 700,
-      value: (b) => oneLine(b.query, 400),
-      title: (b) => b.query ?? undefined,
-    },
-  ];
 
   const tableColumns: Column<TableStat>[] = [
     { key: "schema", header: "Esquema", width: 130, value: (t) => t.schema },
@@ -844,48 +805,36 @@
         {#each health.issues as issue, index (index)}
           <span class="text-xs">{index === 0 ? "" : "· "}{issue.text}</span>
         {/each}
+        <button
+          class="btn btn-sm btn-ghost ml-auto"
+          aria-pressed={showCharts}
+          title="Muestra u oculta los gráficos de actividad en vivo"
+          onclick={toggleCharts}
+        >
+          <Icon name="chart" size={12} />
+          Gráficos
+        </button>
       </div>
-      <div
-        class="grid gap-3 px-4 py-4"
-        style="grid-template-columns: repeat(auto-fit, minmax(178px, 1fr))"
-      >
+      <!-- Una sola tira de seis lecturas, con tendencia donde hay muestras. Las fichas de antes
+           ocupaban casi 250 px de alto antes de llegar a la primera sesión. El motivo de un color
+           viaja en el `title`: el veredicto de arriba ya lo dice con palabras. -->
+      <div class="mx-4 mt-3 mb-3 flex flex-wrap overflow-hidden rounded-md border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
         {#each tiles as tile (tile.label)}
           <div
-            class="card flex items-start gap-3 overflow-hidden rounded-xl px-3.5 py-3
-              shadow-sm transition-shadow hover:shadow-md {tile.tone
-              ? TILE_EDGE[tile.tone]
-              : 'border-l-4 border-l-transparent'}"
+            class="flex min-w-32 flex-1 basis-32 flex-col gap-0.5 border-r border-zinc-200 px-3 py-1.5 last:border-r-0 dark:border-zinc-700"
+            title={tile.hint ?? tile.label}
           >
+            <span class="truncate text-[11px] muted">{tile.label}</span>
             <span
-              class="grid size-8 shrink-0 place-items-center rounded-lg ring-4 {tile.tone
-                ? `${TILE_ICON_TONE[tile.tone]} ring-current/10`
-                : 'bg-blue-50 text-blue-600 ring-blue-500/10 dark:bg-blue-950/50 dark:text-blue-400'}"
+              class="font-mono text-lg leading-tight font-semibold tabular-nums {tile.tone
+                ? TILE_TONE[tile.tone]
+                : ''}"
             >
-              <Icon name={tile.icon} size={15} />
+              {tile.value}
             </span>
-            <div class="min-w-0 flex-1">
-              <div class="truncate text-[11px] font-medium tracking-wide muted" title={tile.label}>
-                {tile.label}
-              </div>
-              <div
-                class="font-mono text-xl leading-tight font-semibold tabular-nums {tile.tone
-                  ? TILE_TONE[tile.tone]
-                  : ''}"
-              >
-                {tile.value}
-              </div>
-              {#if tile.series}
-                <div class="mt-1"><Spark values={tile.series} width={96} height={20} /></div>
-              {/if}
-              {#if tile.hint}
-                <div
-                  class="mt-0.5 truncate text-[10.5px] {tile.tone ? TILE_TONE[tile.tone] : 'muted'}"
-                  title={tile.hint}
-                >
-                  {tile.hint}
-                </div>
-              {/if}
-            </div>
+            {#if tile.series}
+              <Spark values={tile.series} width={96} height={14} />
+            {/if}
           </div>
         {/each}
       </div>
@@ -895,7 +844,7 @@
       </div>
     {/if}
 
-    {#if tab === "sesiones"}
+    {#if tab === "sesiones" && showCharts}
       <div class="px-4 pb-4">
         <div class="card overflow-hidden rounded-xl shadow-sm">
           <div class="card-head justify-between">
@@ -933,82 +882,21 @@
   </div>
 
   {#if tab === "sesiones"}
-    {#if selected}
-      <div class="px-4 pb-3">
-        <div
-          class="card flex flex-wrap items-center gap-3 rounded-xl border-blue-200 bg-blue-50/70 px-3.5
-            py-2.5 text-sm shadow-sm dark:border-blue-900/60 dark:bg-blue-950/30"
-        >
-          <span
-            class="grid size-8 shrink-0 place-items-center rounded-full bg-blue-600 font-mono text-[11px]
-              font-bold text-white shadow-sm shadow-blue-600/30"
-          >
-            {selected.pid.toString().slice(-3)}
-          </span>
-          <div class="min-w-0">
-            <div class="flex items-center gap-1.5 font-mono text-xs font-medium">
-              PID {selected.pid}
-            </div>
-            <div class="truncate text-xs muted">
-              {selected.user ?? "?"}@{selected.database ?? "?"}
-              {#if selected.state}· {selected.state}{/if}
-            </div>
-          </div>
-
-          {#if locks.length > 0}
-            <span class="truncate text-xs muted" title="Candados que tiene o espera esta sesión">
-              candados: {locks
-                .map((lock) => `${lock.mode}${lock.granted ? "" : " (esperando)"}`)
-                .join(", ")}
-            </span>
-          {/if}
-
-          {#if selected.isMonitor}
-            <span class="tag tag-neutral ml-auto">es la sesión del propio monitor</span>
-          {:else}
-            <span class="ml-auto flex gap-1.5">
-              <!-- Mirar qué está corriendo y poder explicarlo son el mismo movimiento; hasta ahora
-                   había que copiar el texto a mano de la celda. -->
-              {#if selected.query}
-                <button class="btn btn-sm" onclick={() => openInQuery(selected.query ?? "", selected.database)}>
-                  Abrir en una consulta
-                </button>
-              {/if}
-              <button
-                class="btn btn-sm"
-                onclick={() => (confirming = { pid: selected.pid, kind: "cancel" })}
-              >
-                Cancelar consulta
-              </button>
-              <button
-                class="btn btn-sm btn-danger-ghost"
-                onclick={() => (confirming = { pid: selected.pid, kind: "terminate" })}
-              >
-                Terminar sesión
-              </button>
-            </span>
-          {/if}
-        </div>
-      </div>
-    {/if}
-
     {#if actionMessage}
       <Alert tone={actionFailed ? "bad" : "ok"} onclose={() => (actionMessage = null)}>
         {actionMessage}
       </Alert>
     {/if}
 
-    <div class="min-h-0 flex-1">
-      <DataGrid
-        columns={backendColumns}
-        rows={backends}
-        rowKey={(backend) => backend.pid}
-        selectedKey={selectedPid}
-        onselect={(backend) => (selectedPid = backend.pid)}
-        sortable
-        empty="No hay sesiones que cumplan el filtro."
-      />
-    </div>
+    <SessionsPanel
+      {backends}
+      blocking={snapshot?.blocking ?? []}
+      bind:selectedPid
+      {locks}
+      oncancel={(pids) => (confirming = { pids, kind: "cancel" })}
+      onterminate={(pids) => (confirming = { pids, kind: "terminate" })}
+      onopen={(sql, db) => openInQuery(sql, db)}
+    />
   {:else if tab === "bloqueos"}
     <div class="min-h-0 flex-1 overflow-auto px-3 py-2">
       {#if !snapshot || snapshot.blocking.length === 0}
@@ -1028,7 +916,7 @@
             onterminate={(pid) => {
               selectedPid = pid;
               tab = "sesiones";
-              confirming = { pid, kind: "terminate" };
+              confirming = { pids: [pid], kind: "terminate" };
             }}
             onselect={(pid) => {
               selectedPid = pid;
@@ -1314,13 +1202,22 @@
 </div>
 
 {#if confirming}
+  {@const many = confirming.pids.length > 1}
   <Confirm
-    title={confirming.kind === "cancel" ? "Cancelar la consulta" : "Terminar la sesión"}
+    title={confirming.kind === "cancel"
+      ? many ? "Cancelar las consultas" : "Cancelar la consulta"
+      : many ? "Terminar las sesiones" : "Terminar la sesión"}
     message={confirming.kind === "cancel"
-      ? `Se le pide al servidor que aborte la consulta del PID ${confirming.pid}. La sesión sigue conectada y su transacción queda abierta pero abortada.`
-      : `Se cierra la sesión ${confirming.pid} por completo: su transacción se revierte y el cliente pierde la conexión sin aviso.`}
-    confirmLabel={confirming.kind === "cancel" ? "Cancelar la consulta" : "Terminar la sesión"}
-    onconfirm={() => confirming && act(confirming.pid, confirming.kind)}
+      ? many
+        ? `Se le pide al servidor que aborte la consulta de ${confirming.pids.length} sesiones (PID ${confirming.pids.join(", ")}). Las sesiones siguen conectadas y sus transacciones quedan abiertas pero abortadas.`
+        : `Se le pide al servidor que aborte la consulta del PID ${confirming.pids[0]}. La sesión sigue conectada y su transacción queda abierta pero abortada.`
+      : many
+        ? `Se cierran ${confirming.pids.length} sesiones por completo (PID ${confirming.pids.join(", ")}): sus transacciones se revierten y los clientes pierden la conexión sin aviso.`
+        : `Se cierra la sesión ${confirming.pids[0]} por completo: su transacción se revierte y el cliente pierde la conexión sin aviso.`}
+    confirmLabel={confirming.kind === "cancel"
+      ? many ? "Cancelar las consultas" : "Cancelar la consulta"
+      : many ? "Terminar las sesiones" : "Terminar la sesión"}
+    onconfirm={() => confirming && act(confirming.pids, confirming.kind)}
     onclose={() => (confirming = null)}
   />
 {/if}
