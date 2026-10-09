@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { envLook, GROUP_LOOK, kindLabel, lookOf, tagLook } from "./badges";
+import { envFrame, envLook, GROUP_LOOK, kindLabel, lookOf, tagLook } from "./badges";
 import type { Environment, FolderKind, NodeKind, NodeTag } from "./ipc";
 
 /**
@@ -111,5 +111,17 @@ describe("tagLook", () => {
       // El título es lo que explica la pastilla: sin él, un color no dice nada.
       expect(look.title.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("envFrame", () => {
+  it("no dibuja marco sin entorno marcado", () => {
+    expect(envFrame(null)).toBeNull();
+  });
+
+  it("producción lleva el marco más grueso de los tres", () => {
+    expect(envFrame("prod")?.frame).toContain("3px");
+    expect(envFrame("dev")?.frame).not.toContain("3px");
+    expect(envFrame("test")?.frame).not.toContain("3px");
   });
 });

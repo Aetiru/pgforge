@@ -7,10 +7,12 @@
 //! El árbol se arma por niveles. Un servidor con miles de tablas no puede resolverse de una vez,
 //! así que cada expansión es una consulta acotada al nodo que se abrió.
 
+mod dependencies;
 mod graph;
 mod node;
 mod search;
 
+pub use dependencies::{dependencies, Dependency, Direction};
 pub use graph::{schema_graph, GraphColumn, GraphEdge, GraphTable, SchemaGraph};
 pub use node::{Folder, NodeKind, NodeTag, TreeNode};
 pub use search::{search, SearchHit};

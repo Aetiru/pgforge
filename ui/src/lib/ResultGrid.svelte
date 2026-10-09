@@ -19,7 +19,7 @@
   } = $props();
 
   /** Lo que se muestra en lugar de un NULL, que no es lo mismo que una celda vacía. */
-  const NULL = "[null]";
+  const NULL = "NULL";
 
   /**
    * `DataGrid` no mide el contenido a propósito: sus columnas son parte de la definición. Acá la
@@ -88,7 +88,7 @@
         raw: (row) => row.cells[index],
         title: (row) => row.cells[index] ?? undefined,
         tone: (row) =>
-          row.cells[index] === null ? "italic text-zinc-400 dark:text-zinc-600" : "",
+          row.cells[index] === null ? "cell-null" : "",
       };
     });
 

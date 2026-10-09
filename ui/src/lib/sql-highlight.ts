@@ -10,12 +10,12 @@ import { tagHighlighter, tags, type Highlighter, type Tag } from "@lezer/highlig
  * claro a oscuro repinta sin recrear nada, porque lo único que cambia son las variables.
  */
 const STYLES: { tag: Tag | readonly Tag[]; css: Record<string, string> }[] = [
-  { tag: tags.keyword, css: { color: "var(--cm-keyword)", "font-weight": "500" } },
+  { tag: tags.keyword, css: { color: "var(--cm-keyword)", "font-weight": "var(--cm-keyword-weight, 500)" } },
   { tag: [tags.string, tags.special(tags.string)], css: { color: "var(--cm-string)" } },
   { tag: [tags.number, tags.bool, tags.null], css: { color: "var(--cm-number)" } },
   {
     tag: [tags.comment, tags.lineComment, tags.blockComment],
-    css: { color: "var(--cm-comment)", "font-style": "italic" },
+    css: { color: "var(--cm-comment)", "font-style": "var(--cm-comment-style, italic)" },
   },
   { tag: [tags.typeName, tags.typeOperator], css: { color: "var(--cm-type)" } },
   {
@@ -23,6 +23,11 @@ const STYLES: { tag: Tag | readonly Tag[]; css: Record<string, string> }[] = [
     css: { color: "var(--cm-function)" },
   },
   { tag: tags.operator, css: { color: "var(--cm-operator)" } },
+  // Los nombres de tablas y columnas. Va al final y con la etiqueta pelada: `Builtin` es
+  // `standard(name)` y `QuotedIdentifier` es `special(string)`, así que las funciones y los nombres
+  // entre comillas siguen con su color, que es más específico. Sin tinte, `--cm-ident` vale el color
+  // del texto y esto no cambia nada a la vista.
+  { tag: tags.name, css: { color: "var(--cm-ident, inherit)" } },
 ];
 
 /** Camel no: `HighlightStyle` acepta las propiedades tal cual se escriben en CSS. */

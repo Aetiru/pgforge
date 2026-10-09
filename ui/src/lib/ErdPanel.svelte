@@ -13,7 +13,21 @@
   const ZOOM_MIN = 0.25;
   const ZOOM_MAX = 2.5;
 
+  /**
+   * Por debajo de este zoom el diagrama se lee como un mapa: las columnas son rayas ilegibles, así
+   * que se esconden y el nombre de cada tabla pasa al centro de la caja, más grande. Con cien
+   * tablas es la única forma de ver cuáles se relacionan con cuáles sin acercarse a cada una.
+   */
+  const COLLAPSE_BELOW = 0.6;
+
   let zoom = $state(1);
+  const collapsed = $derived(zoom < COLLAPSE_BELOW);
+
+  /** El tamaño del nombre compacto: crece al alejarse, pero nunca más ancho que su caja. */
+  function compactSize(box: ErdBox): number {
+    const wanted = Math.min(30, 12 / zoom);
+    return Math.min(wanted, box.width / (box.table.name.length * 0.62 + 1));
+  }
   let panX = $state(0);
   let panY = $state(0);
 
@@ -130,6 +144,9 @@
     clone.removeAttribute("class");
     // El archivo lleva el diagrama completo, sin el zoom ni el desplazamiento de la pantalla.
     clone.querySelector("g")?.setAttribute("transform", "translate(0 0)");
+    // Y tampoco el modo mapa: el archivo siempre lleva las columnas.
+    clone.querySelectorAll("[data-compact]").forEach((node) => node.remove());
+    clone.querySelectorAll(".erd-col").forEach((node) => node.removeAttribute("style"));
 
     const vars = ["bg", "box", "header", "border", "text", "muted", "edge", "accent"]
       .map((name) => `--erd-${name}: ${resolved(`--erd-${name}`)};`)
@@ -318,6 +335,8 @@
               fill="var(--erd-header)"
             />
             <text
+              class="erd-col"
+              style={collapsed ? "display:none" : undefined}
               x={box.x + METRICS.padding}
               y={box.y + METRICS.headerHeight / 2}
               font-size="12"
@@ -327,8 +346,24 @@
             >
               {box.table.name}
             </text>
+            {#if collapsed}
+              <text
+                data-compact
+                x={box.x + box.width / 2}
+                y={box.y + box.height / 2}
+                font-size={compactSize(box)}
+                font-weight="600"
+                text-anchor="middle"
+                dominant-baseline="middle"
+                fill="var(--erd-text)"
+              >
+                {box.table.name}
+              </text>
+            {/if}
             {#if box.table.kind !== "table"}
               <text
+                class="erd-col"
+                style={collapsed ? "display:none" : undefined}
                 x={box.x + box.width - METRICS.padding}
                 y={box.y + METRICS.headerHeight / 2}
                 font-size="9"
@@ -342,6 +377,8 @@
 
             {#each box.columns as column, index (column.position)}
               <text
+                class="erd-col"
+                style={collapsed ? "display:none" : undefined}
                 x={box.x + METRICS.padding}
                 y={rowY(box, index)}
                 font-size="11"
@@ -351,6 +388,8 @@
                 {column.name}
               </text>
               <text
+                class="erd-col"
+                style={collapsed ? "display:none" : undefined}
                 x={box.x + box.width - METRICS.padding}
                 y={rowY(box, index)}
                 font-size="10"
@@ -366,6 +405,8 @@
 
             {#if box.hidden > 0}
               <text
+                class="erd-col"
+                style={collapsed ? "display:none" : undefined}
                 x={box.x + METRICS.padding}
                 y={rowY(box, box.columns.length)}
                 font-size="10"

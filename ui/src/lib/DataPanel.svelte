@@ -17,7 +17,7 @@
   let { tab }: { tab: DataTab } = $props();
 
   /** Lo que se muestra en lugar de un NULL, que no es lo mismo que una celda vacía. */
-  const NULL = "[null]";
+  const NULL = "NULL";
 
   const SAMPLE = 50;
   const MIN_WIDTH = 72;
@@ -91,7 +91,7 @@
         edit: (row) => tab.value(row, index),
         title: (row) => tab.value(row, index) ?? undefined,
         tone: (row) => {
-          if (tab.value(row, index) === null) return "italic text-zinc-400 dark:text-zinc-600";
+          if (tab.value(row, index) === null) return "cell-null";
           return row.edited.has(index) ? "font-medium text-amber-700 dark:text-amber-400" : "";
         },
       };

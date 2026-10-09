@@ -95,7 +95,7 @@
     // SQL de la aplicación, no solo para este editor.
     "&": { height: "100%", fontSize: "var(--sql-font-size)", backgroundColor: "transparent" },
     "&.cm-focused": { outline: "none" },
-    ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "1.6" },
+    ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "1.65" },
     ".cm-content": { paddingBlock: "8px" },
     ".cm-gutters": {
       backgroundColor: "transparent",

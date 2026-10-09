@@ -9,11 +9,82 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @theme {
-  /* Source Code Pro es la fuente de toda la interfaz, no solo del código. Es monoespaciada a
-     propósito: se buscó ese aire de herramienta de consola. Las fuentes del sistema quedan de
-     respaldo por si la empaquetada no cargara. */
-  --font-sans: "Source Code Pro", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  /* Sans para la interfaz (menús, rótulos, diálogos) y monoespaciada para lo que es dato o código
+     (SQL, nombres de objetos, celdas). La monoespaciada en todo ocupaba mucho ancho en cada menú y
+     volvía a todo igual de pesado; separar los dos roles es lo que deja ver la jerarquía. Las
+     fuentes del sistema quedan de respaldo por si la empaquetada no cargara. */
+  --font-sans: "IBM Plex Sans", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --font-mono: "Source Code Pro", "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
+
+  /* Grises con un matiz azul leve, en vez del zinc neutro: se leen como parte de la paleta y no
+     como un gris «de fábrica». Se redefine la escala de Tailwind y no se toca ningún componente:
+     las 180 pantallas ya hablan en `zinc-*`. Los escalones 400 y 500 están más oscuros que los de
+     Tailwind a propósito —texto secundario y marcadores de posición pasan 4,5:1 sobre blanco el
+     500 y 3,5:1 el 400—, que era el «contraste insuficiente». */
+  --color-zinc-50: #f6f7f9;
+  --color-zinc-100: #eceef2;
+  --color-zinc-200: #dde0e6;
+  --color-zinc-300: #c3c8d2;
+  --color-zinc-400: #7d8596;
+  --color-zinc-500: #626a7a;
+  --color-zinc-600: #4b5262;
+  --color-zinc-700: #373d4b;
+  --color-zinc-800: #252a36;
+  --color-zinc-900: #181c25;
+  --color-zinc-950: #0f121a;
+
+  /* El azul del acento es el de PostgreSQL (#336791, escalón 600) apagado en los extremos: el
+     azul eléctrico de Tailwind cansaba en una ventana que se mira ocho horas. El 400 es más claro
+     que el de la escala para que el texto azul también se lea sobre fondo oscuro. */
+  --color-blue-50: #eef4f9;
+  --color-blue-100: #dce8f2;
+  --color-blue-200: #bad1e5;
+  --color-blue-300: #8fb3d1;
+  --color-blue-400: #6b9cc6;
+  --color-blue-500: #437aa6;
+  --color-blue-600: #336791;
+  --color-blue-700: #2a5476;
+  --color-blue-800: #234560;
+  --color-blue-900: #1d3951;
+  --color-blue-950: #122638;
+
+  /* Instrumento, no aplicación web: esquinas casi rectas y sombras que apenas separan capas. */
+  --radius-xs: 0.125rem;
+  --radius-sm: 0.1875rem;
+  --radius-md: 0.25rem;
+  --radius-lg: 0.375rem;
+  --radius-xl: 0.5rem;
+  --shadow-xs: 0 1px 0 rgb(15 18 26 / 0.04);
+  --shadow-sm: 0 1px 0 rgb(15 18 26 / 0.05);
+  --shadow-md: 0 2px 6px rgb(15 18 26 / 0.08);
+  --shadow-lg: 0 8px 24px rgb(15 18 26 / 0.16);
+  --shadow-xl: 0 12px 32px rgb(15 18 26 / 0.2);
+}
+
+/**
+ * Alto contraste: se prende con `data-contrast="high"` (`theme.svelte.ts`) y es un eje aparte del
+ * claro/oscuro, porque se combina con los dos. Redefine la misma escala de grises: el texto
+ * secundario y los bordes se acercan al extremo, y el azul del foco pasa a ser más oscuro (claro) o
+ * más claro (oscuro). Va sin capa, así que gana a los valores del `@theme`.
+ */
+html[data-contrast="high"] {
+  --color-zinc-200: #a7aebc;
+  --color-zinc-300: #8a91a1;
+  --color-zinc-400: #555c6c;
+  --color-zinc-500: #3d4350;
+  --color-zinc-600: #2b303c;
+  --color-blue-500: #2a5476;
+  --color-blue-600: #234560;
+}
+
+html[data-contrast="high"][data-theme="dark"] {
+  --color-zinc-400: #c4cad6;
+  --color-zinc-500: #b0b7c6;
+  --color-zinc-600: #7a8294;
+  --color-zinc-700: #5a6274;
+  --color-blue-400: #9cc0e0;
+  --color-blue-500: #7fb0d8;
+  --color-blue-600: #3f78a8;
 }
 
 html,
@@ -35,6 +106,9 @@ body {
   /* La ventana es una aplicación, no una página: nada de rebote ni de selección accidental. */
   overscroll-behavior: none;
   user-select: none;
+  /* Cifras de ancho fijo en toda la interfaz: tamaños, conteos y duraciones se comparan de arriba
+     abajo, y con cifras proporcionales las columnas no alinean. */
+  font-variant-numeric: tabular-nums;
   /* Y tampoco barras de desplazamiento del documento: todo lo que desborda lo resuelve el panel
      que lo contiene. Sin esto, un contenido más ancho que su panel —la tira de secciones del
      inspector, una tabla de privilegios— corría la ventana entera de costado y se llevaba puestas
@@ -143,14 +217,32 @@ body {
   @apply text-zinc-500 dark:text-zinc-400;
 }
 
-/* Barra de herramientas: el patrón que repiten el editor, la grilla y el monitor. Alto fijo,
-   igual de fino que el `footer` de estado (`App.svelte`, `h-6`) pero un escalón más alto: lo pone
-   el botón más grande que puede tener adentro (`.btn-icon`, 28px), no el acolchado — de ahí `h-8`
-   con `items-center` centrando en vez de `py-*`. `flex-wrap` sigue de defensa para una ventana
-   angosta; con alto fijo, un grupo que caiga a una segunda línea quedaría recortado, pero con los
-   botones de hoy (todos íconos) no llega a pasar en un ancho normal de ventana. */
+/* El NULL de una celda: en cursiva y apagado, para que no se lea como el texto «NULL». Es lo único
+   que la grilla dice de la ausencia de un valor, y tiene que verse distinto de una cadena vacía. */
+.cell-null {
+  @apply text-[0.85em] tracking-wide text-zinc-400 italic dark:text-zinc-500;
+}
+
+/* Un filtro que se prende y se apaga y dice cuántos deja pasar. Más visible que una casilla en una
+   barra: el estado se lee por el fondo, y el conteo avisa qué se pierde al apagarlo. */
+.chip-toggle {
+  @apply inline-flex items-center gap-1.5 rounded-full border border-zinc-200 px-2.5 py-0.5 text-xs
+    text-zinc-500 transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400
+    dark:hover:bg-zinc-700;
+}
+
+.chip-toggle[aria-pressed="true"] {
+  @apply border-blue-500/50 bg-blue-50 text-zinc-900 dark:bg-blue-950/60 dark:text-zinc-100;
+}
+
+/* Barra de herramientas: el patrón que repiten el editor, la grilla y el monitor. Igual de fina que
+   el `footer` de estado (`App.svelte`, `h-6`) pero un escalón más alta: lo pone el botón más grande
+   que puede tener adentro (`.btn-icon`, 28px) más un píxel de aire arriba y abajo, de ahí `min-h-8`
+   con `items-center`. **Es altura mínima y no fija**: con la ventana angosta los controles envuelven a
+   una segunda línea, y con alto fijo esa línea desbordaba hacia abajo y quedaba recortada o encima de
+   lo que sigue (le pasaba a los botones de «Consultas lentas» y al filtro del monitoreo). */
 .toolbar {
-  @apply flex h-8 flex-wrap items-center gap-1.5 border-b border-zinc-200 px-2
+  @apply flex min-h-8 flex-wrap items-center gap-1.5 border-b border-zinc-200 px-2 py-0.5
     dark:border-zinc-700;
 }
 
@@ -165,7 +257,7 @@ body {
    (`DataPanel`, mantenimiento, backup, monitor, …) lleva botones con texto que no entran ahí, así
    que la clase base sigue en `h-8` y esto se aplica junto a `toolbar`, no en su lugar. */
 .toolbar-compact {
-  @apply h-6;
+  @apply h-6 min-h-0 py-0;
 }
 
 /* El botón llena la barra entera en vez de dejar aire alrededor del ícono: a 20px (`size-5`) con un
@@ -355,7 +447,8 @@ input[type="password"]::-ms-clear {
     hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100;
 }
 
-.seg-item[aria-selected="true"] {
+.seg-item[aria-selected="true"],
+.seg-item[aria-pressed="true"] {
   @apply bg-white text-zinc-900 shadow-sm dark:bg-zinc-600 dark:text-zinc-50;
 }
 

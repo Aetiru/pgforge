@@ -40,7 +40,10 @@
   import Actions from "./detail/Actions.svelte";
   import Columns from "./detail/Columns.svelte";
   import Constraints from "./detail/Constraints.svelte";
+  import MaintenanceDialog from "./MaintenanceDialog.svelte";
   import DdlSection from "./detail/Ddl.svelte";
+  import DependenciesSection from "./detail/Dependencies.svelte";
+  import StatisticsSection from "./detail/Statistics.svelte";
   import GroupServers from "./detail/GroupServers.svelte";
   import Indexes from "./detail/Indexes.svelte";
   import Mappings from "./detail/Mappings.svelte";
@@ -95,6 +98,8 @@
     tablePartitions,
     tableSecurity,
     tableTriggers,
+    relationDependencies,
+    tableStat,
     typeInfo,
     userMappingApply,
     userMappings,
@@ -117,6 +122,9 @@
     type TableColumn,
     type TableSecurity,
     type TableShape,
+    type Dependency,
+    type TableStat,
+    type Target,
     type TriggerInfo,
     type UserMapping,
   } from "./ipc";
@@ -315,6 +323,47 @@
     }
   }
 
+  let stat = $state<TableStat | null>(null);
+  let statError = $state<string | null>(null);
+  let statLoading = $state(false);
+
+  async function loadStat() {
+    if (!flags.isTable || !node?.oid || !selected) {
+      stat = null;
+      return;
+    }
+    statLoading = true;
+    statError = null;
+    try {
+      stat = await tableStat(selected.profileId, node.oid, node.database);
+    } catch (error) {
+      statError = describeError(error);
+    } finally {
+      statLoading = false;
+    }
+  }
+
+  let dependencies = $state<Dependency[] | null>(null);
+  let dependenciesError = $state<string | null>(null);
+  let dependenciesLoading = $state(false);
+
+  /** Tablas y vistas: lo único que el catálogo une con `pg_depend`/`pg_constraint` es una relación. */
+  async function loadDependencies() {
+    if (!(flags.isTable || flags.isView || flags.isMaterializedView) || !node?.oid || !selected) {
+      dependencies = null;
+      return;
+    }
+    dependenciesLoading = true;
+    dependenciesError = null;
+    try {
+      dependencies = await relationDependencies(selected.profileId, node.oid, node.database);
+    } catch (error) {
+      dependenciesError = describeError(error);
+    } finally {
+      dependenciesLoading = false;
+    }
+  }
+
   let triggers = $state<TriggerInfo[] | null>(null);
   let triggersError = $state<string | null>(null);
   let triggersLoading = $state(false);
@@ -428,6 +477,8 @@
     loadIndexes();
     loadConstraints();
     loadTriggers();
+    loadDependencies();
+    loadStat();
     loadSecurity();
     loadPrivileges();
   });
@@ -447,6 +498,8 @@
     | "constraints"
     | "triggers"
     | "security"
+    | "dependencies"
+    | "stats"
     | "privileges"
     | "mappings"
     | "ddl";
@@ -469,7 +522,16 @@
         { id: "constraints", label: "Restricciones", count: constraints?.length ?? null },
         { id: "triggers", label: "Triggers", count: triggers?.length ?? null },
         { id: "security", label: "Seguridad por fila", count: security?.policies.length ?? null },
+        { id: "dependencies", label: "Dependencias", count: dependencies?.length ?? null },
+        { id: "stats", label: "Estadísticas", count: null },
         privilegeSection,
+        { id: "ddl", label: "DDL", count: null },
+      ];
+    }
+    if (flags.isView || flags.isMaterializedView) {
+      return [
+        { id: "dependencies", label: "Dependencias", count: dependencies?.length ?? null },
+        ...(flags.hasPrivileges ? [privilegeSection] : []),
         { id: "ddl", label: "DDL", count: null },
       ];
     }
@@ -577,6 +639,17 @@
   } | null>(null);
   let domainDialog = $state<{ existing: { oid: number; name: string } | null } | null>(null);
   let schemaDialog = $state<{ existing: { name: string; owner: string } | null } | null>(null);
+  let maintenanceOpen = $state(false);
+
+  /** Sobre qué objeto corre el mantenimiento, según lo que esté elegido. */
+  const maintenanceTarget = $derived.by<Target | null>(() => {
+    if (!node) return null;
+    if (flags.isDatabase) return { kind: "database", name: node.label };
+    if (!node.schema) return null;
+    if (node.kind === "index") return { kind: "index", schema: node.schema, name: node.label };
+    return { kind: "table", schema: node.schema, name: node.label };
+  });
+
   let databaseDialog = $state<{ existing: string | null } | null>(null);
   let partitionDialog = $state<{ strategy: string } | null>(null);
   let commentDialog = $state<{
@@ -713,6 +786,9 @@
         break;
       case "backup":
         backupDialog = true;
+        break;
+      case "maintenance":
+        maintenanceOpen = true;
         break;
       case "restore":
         restoreDialog = true;
@@ -1096,7 +1172,9 @@
     />
   {:else}
     <header class="divider-b px-3 py-2 @md/detail:px-5 @md/detail:py-3">
-      <div class="flex items-center gap-2.5">
+      <!-- Con el panel angosto los botones bajan a una segunda fila en vez de apretar el nombre: con
+           ocho acciones al lado, el de una tabla quedaba reducido a su primera letra. -->
+      <div class="flex flex-wrap items-center gap-x-2.5 gap-y-2">
         <div
           class="grid size-9 shrink-0 place-items-center rounded-lg bg-zinc-100 dark:bg-zinc-700
                  {look.tone}"
@@ -1104,9 +1182,9 @@
           <Icon name={look.icon} size={18} />
         </div>
 
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2">
-            <h2 class="truncate text-base font-medium">{selected.label}</h2>
+        <div class="min-w-0 flex-1 basis-44">
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <h2 class="max-w-full min-w-0 truncate text-base font-medium" title={selected.label}>{selected.label}</h2>
             <span class="tag tag-neutral shrink-0">
               {isGroup ? "Carpeta de conexiones" : kindLabel(node?.kind ?? null)}
             </span>
@@ -1126,6 +1204,15 @@
 
       {#if selected.comment}
         <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-300">{selected.comment}</p>
+      {/if}
+
+      <!-- El motivo ya viaja en el `title` de cada botón apagado, pero un botón gris no dice por
+           qué hasta que se pasa el mouse por encima: acá se dice sin pedirlo. -->
+      {#if blocked.disabled}
+        <p class="mt-2 flex items-center gap-1.5 text-xs muted">
+          <Icon name="lock" size={12} />
+          Conexión de solo lectura: las acciones que modifican están desactivadas.
+        </p>
       {/if}
     </header>
 
@@ -1213,6 +1300,21 @@
             {blocked}
             onnew={() => (newConstraint = true)}
             ondrop={(name) => (dropTarget = { kind: "constraint", label: name })}
+          />
+        {:else if section === "stats"}
+          <StatisticsSection
+            {stat}
+            loading={statLoading}
+            error={statError}
+            partitioned={node?.kind === "partitionedTable"}
+            {blocked}
+            onmaintenance={() => (maintenanceOpen = true)}
+          />
+        {:else if section === "dependencies"}
+          <DependenciesSection
+            {dependencies}
+            loading={dependenciesLoading}
+            error={dependenciesError}
           />
         {:else if section === "triggers"}
           <Triggers
@@ -1453,6 +1555,15 @@
       if (parent) explorer.reload(parent);
       else reloadSelected();
     }}
+  />
+{/if}
+
+{#if maintenanceOpen && maintenanceTarget && selected}
+  <MaintenanceDialog
+    profileId={selected.profileId}
+    target={maintenanceTarget}
+    database={node?.database ?? null}
+    onclose={() => (maintenanceOpen = false)}
   />
 {/if}
 

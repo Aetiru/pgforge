@@ -64,10 +64,9 @@ pub struct TableStat {
     pub last_analyze_seconds: Option<f64>,
 }
 
-pub async fn tables(client: &Client, limit: i64) -> Result<Vec<TableStat>> {
-    let rows = client
-        .query(
-            "SELECT s.schemaname::text,
+/// Las columnas de una fila de estadísticas, en el orden en que las lee [`table_stat`]. Está escrito
+/// una sola vez porque la lista de todas las tablas y la de una sola tienen que decir lo mismo.
+const TABLE_STAT_COLUMNS: &str = "s.schemaname::text,
                     s.relname::text,
                     s.n_live_tup,
                     s.n_dead_tup,
@@ -80,32 +79,52 @@ pub async fn tables(client: &Client, limit: i64) -> Result<Vec<TableStat>> {
                     s.idx_scan,
                     extract(epoch from (now() - s.last_vacuum))::float8,
                     extract(epoch from (now() - s.last_autovacuum))::float8,
-                    extract(epoch from (now() - greatest(s.last_analyze, s.last_autoanalyze)))::float8
-               FROM pg_catalog.pg_stat_user_tables s
-              ORDER BY s.n_dead_tup DESC, pg_catalog.pg_total_relation_size(s.relid) DESC
-              LIMIT $1",
-            &[&limit],
-        )
-        .await?;
+                    extract(epoch from (now() - greatest(s.last_analyze, s.last_autoanalyze)))::float8";
 
-    Ok(rows
-        .into_iter()
-        .map(|row| TableStat {
-            schema: row.get(0),
-            table: row.get(1),
-            live_tuples: row.get(2),
-            dead_tuples: row.get(3),
-            dead_ratio: row.get(4),
-            total_bytes: row.get(5),
-            table_bytes: row.get(6),
-            index_bytes: row.get(7),
-            sequential_scans: row.get(8),
-            index_scans: row.get(9),
-            last_vacuum_seconds: row.get(10),
-            last_autovacuum_seconds: row.get(11),
-            last_analyze_seconds: row.get(12),
-        })
-        .collect())
+fn table_stat(row: &tokio_postgres::Row) -> TableStat {
+    TableStat {
+        schema: row.get(0),
+        table: row.get(1),
+        live_tuples: row.get(2),
+        dead_tuples: row.get(3),
+        dead_ratio: row.get(4),
+        total_bytes: row.get(5),
+        table_bytes: row.get(6),
+        index_bytes: row.get(7),
+        sequential_scans: row.get(8),
+        index_scans: row.get(9),
+        last_vacuum_seconds: row.get(10),
+        last_autovacuum_seconds: row.get(11),
+        last_analyze_seconds: row.get(12),
+    }
+}
+
+pub async fn tables(client: &Client, limit: i64) -> Result<Vec<TableStat>> {
+    let sql = format!(
+        "SELECT {TABLE_STAT_COLUMNS}
+           FROM pg_catalog.pg_stat_user_tables s
+          ORDER BY s.n_dead_tup DESC, pg_catalog.pg_total_relation_size(s.relid) DESC
+          LIMIT $1"
+    );
+    let rows = client.query(&sql, &[&limit]).await?;
+    Ok(rows.iter().map(table_stat).collect())
+}
+
+/// Las estadísticas de una sola tabla, por OID. `None` si no tiene: una tabla particionada no
+/// guarda filas propias, cada partición cuenta por su lado.
+///
+/// Se descarta `relkind = 'p'` a mano y no se confía en el catálogo: hasta PG 13 una tabla
+/// particionada no aparece en `pg_stat_user_tables`, pero desde PG 14 sí, con todos los contadores en
+/// cero, y mostrar «0 filas» de una tabla que tiene millones es peor que no mostrar nada.
+pub async fn table_by_oid(client: &Client, oid: u32) -> Result<Option<TableStat>> {
+    let sql = format!(
+        "SELECT {TABLE_STAT_COLUMNS}
+           FROM pg_catalog.pg_stat_user_tables s
+           JOIN pg_catalog.pg_class c ON c.oid = s.relid
+          WHERE s.relid = $1 AND c.relkind <> 'p'"
+    );
+    let row = client.query_opt(&sql, &[&oid]).await?;
+    Ok(row.as_ref().map(table_stat))
 }
 
 /// Lo que hace que un índice no sea de quien mira la lista, aunque nadie lo consulte y aunque otro

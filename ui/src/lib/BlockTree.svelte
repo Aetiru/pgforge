@@ -8,11 +8,21 @@
     node,
     level = 0,
     onselect,
+    onterminate,
   }: {
     node: BlockNode;
     level?: number;
     onselect?: (pid: number) => void;
+    /** Pide terminar la sesión; solo se ofrece en la raíz, que es la que hay que resolver. */
+    onterminate?: (pid: number) => void;
   } = $props();
+
+  /** Cuántas sesiones esperan, directa o indirectamente, a esta: lo que cuesta no resolverla. */
+  const waiting = $derived.by(() => {
+    const walk = (item: BlockNode): number =>
+      item.blocking.reduce((sum, child) => sum + 1 + walk(child), 0);
+    return walk(node);
+  });
 
   const backend = $derived(monitor.backendOf(node.pid));
   /** La raíz es la que bloquea sin estar bloqueada: es la sesión sobre la que hay que actuar. */
@@ -39,7 +49,9 @@
     </span>
 
     {#if isRoot}
-      <span class="tag tag-warn shrink-0">la que bloquea</span>
+      <span class="tag tag-warn shrink-0">
+        la que bloquea a {waiting} {waiting === 1 ? "sesión" : "sesiones"}
+      </span>
     {/if}
 
     {#if backend}
@@ -54,6 +66,21 @@
     {:else}
       <!-- El filtro puede estar ocultando la sesión, pero el bloqueo existe igual. -->
       <span class="text-xs text-zinc-400">sesión fuera del filtro actual</span>
+    {/if}
+
+    {#if isRoot && onterminate}
+      <!-- Pide la confirmación de la lista de sesiones, no ejecuta: terminar una sesión corta
+           su transacción, y eso no se deshace con un clic perdido. -->
+      <button
+        class="btn btn-danger-ghost btn-sm ml-auto shrink-0"
+        title="Terminar la sesión {node.pid}: corta su transacción y libera a las que esperan"
+        onclick={(event) => {
+          event.stopPropagation();
+          onterminate(node.pid);
+        }}
+      >
+        Terminar…
+      </button>
     {/if}
   </div>
 

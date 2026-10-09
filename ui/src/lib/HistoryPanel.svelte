@@ -3,6 +3,7 @@
   import Confirm from "./Confirm.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
+  import Sql from "./Sql.svelte";
   import { count, decimal } from "./format";
   import {
     describeError,
@@ -26,6 +27,31 @@
   let error = $state<string | null>(null);
   let onlyThisServer = $state(true);
   let confirmClear = $state(false);
+  /** La entrada elegida: se ve entera abajo, antes de decidir si se trae al editor. */
+  let selectedId = $state<number | null>(null);
+  const selected = $derived(entries.find((entry) => entry.id === selectedId) ?? null);
+  let copied = $state(false);
+  let searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Busca mientras se escribe, con una pausa: el historial es un SQLite local y una consulta por
+   * pausa no pesa, y obligar a apretar Enter para ver si hay algo escondía que la búsqueda existía.
+   */
+  function searchSoon() {
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(load, 250);
+  }
+
+  async function copySelected() {
+    if (!selected) return;
+    try {
+      await navigator.clipboard.writeText(selected.sql);
+      copied = true;
+      setTimeout(() => (copied = false), 1500);
+    } catch {
+      // Sin permiso del portapapeles no hay nada que mostrar: el texto sigue seleccionable abajo.
+    }
+  }
 
   /**
    * La búsqueda va al servidor y no filtra en memoria: el historial crece sin techo y traerlo
@@ -82,8 +108,9 @@
       />
       <input
         class="field w-full py-1 pl-7"
-        placeholder="Buscar en el historial y confirmar con Enter"
+        placeholder="Buscar en el historial"
         bind:value={search}
+        oninput={searchSoon}
         onkeydown={(event) => {
           if (event.key === "Enter") load();
           if (event.key === "Escape") {
@@ -121,9 +148,12 @@
         <li>
           <button
             class="group flex w-full items-baseline gap-2 px-3 py-1.5 text-left
-                   hover:bg-zinc-100 dark:hover:bg-zinc-700/70"
-            title="Traer esta consulta al editor"
-            onclick={() => onpick(entry.sql)}
+                   hover:bg-zinc-100 dark:hover:bg-zinc-700/70
+                   {entry.id === selectedId ? 'bg-blue-50 dark:bg-blue-950/50' : ''}"
+            title="Ver la consulta entera. Doble clic la trae al editor"
+            aria-pressed={entry.id === selectedId}
+            onclick={() => (selectedId = entry.id)}
+            ondblclick={() => onpick(entry.sql)}
           >
             <span class="shrink-0 text-xs whitespace-nowrap tabular-nums muted">
               {when(entry.startedAt)}
@@ -157,6 +187,27 @@
         </li>
       {/each}
     </ul>
+
+    <!-- Antes un clic traía la consulta al editor y pisaba lo que hubiera: para saber si era la del
+         martes había que traerla. Ahora se ve entera acá y traerla es una decisión aparte. -->
+    {#if selected}
+      <div class="divider-t flex max-h-[45%] min-h-0 shrink-0 flex-col">
+        <div class="flex items-center gap-1.5 px-3 py-1 text-xs muted">
+          <span class="tabular-nums">{when(selected.startedAt)}</span>
+          <span class="ml-auto"></span>
+          <button class="btn btn-sm btn-ghost" onclick={copySelected}>
+            <Icon name={copied ? "check" : "copy"} size={11} />
+            {copied ? "Copiada" : "Copiar"}
+          </button>
+          <button class="btn btn-sm btn-primary" onclick={() => onpick(selected.sql)}>
+            Traer al editor
+          </button>
+        </div>
+        <div class="min-h-0 flex-1 overflow-auto px-3 pb-2 select-text">
+          <Sql code={selected.sql} />
+        </div>
+      </div>
+    {/if}
   {/if}
 </div>
 

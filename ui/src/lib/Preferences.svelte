@@ -2,15 +2,17 @@
   import Modal from "./Modal.svelte";
   import Icon from "./Icon.svelte";
   import { font, FONT_LABELS, type FontChoice } from "./font.svelte";
+  import SqlColors from "./SqlColors.svelte";
+  import { theme } from "./theme.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
   const OPTIONS: FontChoice[] = ["source-code-pro", "jetbrains-mono"];
 </script>
 
-<Modal title="Preferencias" subtitle="Vale para toda la aplicación" {onclose}>
+<Modal title="Preferencias" subtitle="Vale para toda la aplicación" size="lg" {onclose}>
   <div class="flex flex-col gap-1.5">
-    <span class="label">Tipo de letra</span>
+    <span class="label">Tipo de letra del código y los datos</span>
     <div class="grid grid-cols-2 gap-2">
       {#each OPTIONS as option (option)}
         <button
@@ -38,4 +40,23 @@
       {/each}
     </div>
   </div>
+
+  <div class="divider-t my-4"></div>
+
+  <SqlColors />
+
+  <div class="divider-t my-4"></div>
+
+  <label class="check">
+    <input
+      type="checkbox"
+      checked={theme.contrast}
+      onchange={(event) => theme.setContrast(event.currentTarget.checked)}
+    />
+    <span>Alto contraste</span>
+  </label>
+  <p class="mt-1 text-xs muted">
+    Oscurece textos secundarios y bordes (o los aclara en el tema oscuro). Se combina con el tema
+    que elijas.
+  </p>
 </Modal>

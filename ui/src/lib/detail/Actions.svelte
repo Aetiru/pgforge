@@ -26,7 +26,7 @@
   }
 </script>
 
-<div class="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+<div class="ml-auto flex flex-wrap items-center justify-end gap-1.5">
   {#each actions as action (action.kind)}
     <button
       class="btn {toneClass(action.tone)} btn-icon"

@@ -14,6 +14,16 @@ export type ResolvedTheme = "light" | "dark";
 
 const KEY = "pgforge.theme";
 
+const CONTRAST_KEY = "pgforge.contrast";
+
+function storedContrast(): boolean {
+  try {
+    return localStorage.getItem(CONTRAST_KEY) === "high";
+  } catch {
+    return false;
+  }
+}
+
 const media = window.matchMedia("(prefers-color-scheme: dark)");
 
 /**
@@ -44,6 +54,7 @@ class Theme {
 
   constructor() {
     this.apply();
+    this.applyContrast();
     // Si la preferencia es «automático», seguir al sistema mientras la ventana está abierta.
     media.addEventListener("change", () => {
       if (this.preference === "system") this.apply();
@@ -63,6 +74,27 @@ class Theme {
       // Nada que hacer sin `localStorage`: la preferencia no se recuerda esta vez.
     }
     this.apply();
+  }
+
+  /**
+   * Alto contraste: eje aparte de claro/oscuro, porque se combina con los dos. Se escribe como
+   * `data-contrast` y `app.css` redefine la escala de grises; ningún componente lo consulta.
+   */
+  contrast = $state(storedContrast());
+
+  setContrast(on: boolean) {
+    this.contrast = on;
+    try {
+      localStorage.setItem(CONTRAST_KEY, on ? "high" : "normal");
+    } catch {
+      // Nada que hacer sin `localStorage`: la preferencia no se recuerda esta vez.
+    }
+    this.applyContrast();
+  }
+
+  private applyContrast() {
+    if (this.contrast) document.documentElement.dataset.contrast = "high";
+    else delete document.documentElement.dataset.contrast;
   }
 
   /** Recorre los tres estados en orden; es lo que hace el botón de la barra. */

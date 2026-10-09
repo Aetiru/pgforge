@@ -150,6 +150,8 @@ const ENVIRONMENTS: Record<
     bar: string;
     accent: string;
     wash: string;
+    frame: string;
+    ribbon: string;
     title: string;
   }
 > = {
@@ -160,6 +162,8 @@ const ENVIRONMENTS: Record<
     bar: "border-l-[3px] border-l-emerald-500/70 bg-emerald-500/[0.06]",
     accent: "border-t-2 border-t-emerald-500/70",
     wash: "bg-emerald-500/[0.06]",
+    frame: "border-2 border-emerald-500/50",
+    ribbon: "bg-emerald-600 text-white",
     title: "Servidor de desarrollo",
   },
   test: {
@@ -169,6 +173,8 @@ const ENVIRONMENTS: Record<
     bar: "border-l-[3px] border-l-blue-500/70 bg-blue-500/[0.06]",
     accent: "border-t-2 border-t-blue-500/70",
     wash: "bg-blue-500/[0.06]",
+    frame: "border-2 border-blue-500/50",
+    ribbon: "bg-blue-600 text-white",
     title: "Servidor de pruebas",
   },
   prod: {
@@ -180,6 +186,8 @@ const ENVIRONMENTS: Record<
     bar: "border-l-[3px] border-l-rose-500/80 bg-rose-500/[0.10]",
     accent: "border-t-2 border-t-rose-500/80",
     wash: "bg-rose-500/[0.10]",
+    frame: "border-[3px] border-rose-500/90",
+    ribbon: "bg-rose-600 text-white",
     title: "Servidor de producción: cada modificación pide una confirmación de más",
   },
 };
@@ -221,6 +229,21 @@ export function envBar(environment: Environment | null): string {
  */
 export function tabAccent(environment: Environment | null): string {
   return environment === null ? "border-t-2 border-t-transparent" : ENVIRONMENTS[environment].accent;
+}
+
+/**
+ * El marco de color que rodea la ventana entera según el entorno del servidor que se está mirando
+ * (`EnvFrame.svelte`), o `null` sin entorno marcado: ahí no se dibuja nada, a diferencia de `envBar`,
+ * porque el marco va superpuesto y no ocupa lugar que haya que reservar.
+ *
+ * `envBar` y `tabAccent` pintan lo que está al lado del botón que se va a apretar; esto pinta lo que
+ * se ve con el rabillo del ojo, en cualquier pantalla (detalle, monitoreo, un diálogo abierto). Es
+ * la respuesta a «cuesta distinguir dev de prod»: el color ya no depende de en qué barra se mire.
+ */
+export function envFrame(environment: Environment | null) {
+  if (environment === null) return null;
+  const look = ENVIRONMENTS[environment];
+  return { frame: look.frame, ribbon: look.ribbon, label: look.label };
 }
 
 /**
