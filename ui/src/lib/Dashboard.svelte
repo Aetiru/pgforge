@@ -7,6 +7,8 @@
   import DataGrid, { type Column } from "./DataGrid.svelte";
   import Empty from "./Empty.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
+  import Spark from "./Spark.svelte";
+  import { assessHealth, connectionLevel } from "./health";
   import MaintenanceDialog from "./MaintenanceDialog.svelte";
   import { ago, bytes, count, decimal, duration, oneLine, percent } from "./format";
   import {
@@ -155,21 +157,26 @@
    */
   const tiles = $derived.by(() => {
     if (!metrics) return [];
-    const nearLimit =
-      metrics.maxConnections > 0 && metrics.totalConnections / metrics.maxConnections > 0.8;
+    const nearLimit = connectionLevel(metrics.totalConnections, metrics.maxConnections) !== "ok";
 
     return [
       {
         label: "Conexiones",
         icon: "plug" as const,
         value: `${metrics.totalConnections} / ${metrics.maxConnections}`,
-        tone: nearLimit ? "bad" : null,
+        series: monitor.history.map((sample) => sample.connections) as (number | null)[],
+        tone: nearLimit
+          ? connectionLevel(metrics.totalConnections, metrics.maxConnections) === "bad"
+            ? "bad"
+            : "warn"
+          : null,
         hint: nearLimit ? "cerca del máximo configurado" : null,
       },
       {
         label: "Activas",
         icon: "play" as const,
         value: String(metrics.activeConnections),
+        series: monitor.history.map((sample) => sample.active) as (number | null)[],
         tone: null,
         hint: null,
       },
@@ -191,6 +198,7 @@
         label: "Transacciones/s",
         icon: "gauge" as const,
         value: decimal(metrics.transactionsPerSecond),
+        series: monitor.history.map((sample) => sample.transactionsPerSecond),
         tone: null,
         hint: null,
       },
@@ -203,6 +211,15 @@
       },
     ];
   });
+
+  const health = $derived(metrics ? assessHealth(metrics) : { level: "ok" as const, issues: [] });
+
+  const HEALTH_TITLE = { ok: "Todo en orden", warn: "Para revisar", bad: "Requiere atención" } as const;
+  const HEALTH_BOX = {
+    ok: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+    warn: "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300",
+    bad: "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300",
+  } as const;
 
   const TILE_TONE: Record<string, string> = {
     bad: "text-rose-600 dark:text-rose-400",
@@ -814,6 +831,18 @@
 
   <div class="bg-zinc-50/70 dark:bg-black/15">
     {#if metrics}
+      <!-- El veredicto antes que las fichas: para saber si todo está bien no hay que leer las seis. -->
+      <div
+        class="mx-4 mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2 text-sm
+               {HEALTH_BOX[health.level]}"
+        role="status"
+      >
+        <Icon name={health.level === "ok" ? "check" : "warn"} size={14} />
+        <span class="font-semibold">{HEALTH_TITLE[health.level]}</span>
+        {#each health.issues as issue, index (index)}
+          <span class="text-xs">{index === 0 ? "" : "· "}{issue.text}</span>
+        {/each}
+      </div>
       <div
         class="grid gap-3 px-4 py-4"
         style="grid-template-columns: repeat(auto-fit, minmax(178px, 1fr))"
@@ -843,6 +872,9 @@
               >
                 {tile.value}
               </div>
+              {#if tile.series}
+                <div class="mt-1"><Spark values={tile.series} width={96} height={20} /></div>
+              {/if}
               {#if tile.hint}
                 <div
                   class="mt-0.5 truncate text-[10.5px] {tile.tone ? TILE_TONE[tile.tone] : 'muted'}"
@@ -991,6 +1023,11 @@
         {#each snapshot.blocking as node (node.pid)}
           <BlockTree
             {node}
+            onterminate={(pid) => {
+              selectedPid = pid;
+              tab = "sesiones";
+              confirming = { pid, kind: "terminate" };
+            }}
             onselect={(pid) => {
               selectedPid = pid;
               tab = "sesiones";
