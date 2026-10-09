@@ -101,6 +101,7 @@ pub fn run() {
             commands::monitoring::terminate_backend,
             commands::monitoring::table_stats,
             commands::monitoring::index_stats,
+            commands::monitoring::stats_window,
             commands::monitoring::redundant_indexes,
             commands::monitoring::has_statement_stats,
             commands::monitoring::statement_stats,

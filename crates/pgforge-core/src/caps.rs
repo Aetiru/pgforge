@@ -80,6 +80,12 @@ impl ServerCaps {
         self.version.at_least(16)
     }
 
+    /// `pg_stat_user_indexes.last_idx_scan`: cuándo se usó un índice por última vez, y no solo
+    /// cuántas veces desde que se reiniciaron las estadísticas.
+    pub fn has_last_idx_scan(&self) -> bool {
+        self.version.at_least(16)
+    }
+
     /// `REINDEX` con la opción `CONCURRENTLY`.
     pub fn has_reindex_concurrently(&self) -> bool {
         self.version.at_least(12)

@@ -15,7 +15,8 @@ pub mod stats;
 pub use activity::{ActivityFilter, Backend, BlockNode, Lock};
 pub use maintenance::{Operation, Target};
 pub use stats::{
-    Guards, IndexShape, IndexStat, Redundancy, RedundancyKind, StatementStat, TableBloat, TableStat,
+    Guards, IndexShape, IndexStat, Redundancy, RedundancyKind, StatementStat, StatsWindow,
+    TableBloat, TableStat,
 };
 
 use std::time::Instant;
@@ -188,7 +189,12 @@ impl Monitor {
 
     pub async fn indexes(&self, limit: i64) -> Result<Vec<IndexStat>> {
         self.require_stats()?;
-        stats::indexes(self.session.client(), limit).await
+        stats::indexes(self.session.client(), &self.caps, limit).await
+    }
+
+    /// Desde cuándo cuentan los usos que muestra [`Monitor::indexes`].
+    pub async fn stats_window(&self) -> Result<StatsWindow> {
+        stats::window(self.session.client(), &self.caps).await
     }
 
     /// Los índices que otro ya cubre. Se leen todos y la comparación es local: son unos cientos de

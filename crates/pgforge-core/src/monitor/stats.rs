@@ -5,7 +5,39 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 use tokio_postgres::Client;
 
+use crate::caps::ServerCaps;
 use crate::error::{Error, Result};
+
+/// Desde cuándo cuentan los contadores de uso.
+///
+/// «0 usos» no dice nada sin esto: `idx_scan` vuelve a cero con `pg_stat_reset()` y cuando el
+/// servidor cae, así que un índice que se usa todos los fines de mes puede salir «sin usos» al día
+/// siguiente de un reinicio, y borrarlo sería un error que se paga recién a fin de mes.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatsWindow {
+    /// Hace cuántos segundos se reiniciaron las estadísticas de esta base. `None` si nunca se
+    /// reiniciaron a mano: cuentan desde que se creó la base o desde la última caída.
+    pub reset_seconds: Option<f64>,
+    /// Si el servidor anota cuándo se usó cada índice por última vez (PG 16+). Sin esto, que
+    /// `last_scan_seconds` venga vacío no distingue «nunca» de «no se sabe».
+    pub tracks_last_scan: bool,
+}
+
+pub async fn window(client: &Client, caps: &ServerCaps) -> Result<StatsWindow> {
+    let row = client
+        .query_opt(
+            "SELECT extract(epoch from (now() - stats_reset))::float8
+               FROM pg_catalog.pg_stat_database
+              WHERE datname = pg_catalog.current_database()",
+            &[],
+        )
+        .await?;
+    Ok(StatsWindow {
+        reset_seconds: row.and_then(|row| row.get(0)),
+        tracks_last_scan: caps.has_last_idx_scan(),
+    })
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -107,11 +139,28 @@ impl Guards {
     /// `DROP INDEX` funciona y la tabla queda con `relreplident = 'i'` apuntando a nada, así que la
     /// replicación lógica se rompe recién en el próximo `UPDATE`, lejos del botón que lo causó.
     pub fn droppable(&self) -> bool {
-        self.constraint.is_none()
-            && !self.referenced_by_fk
-            && !self.replica_identity
-            && !self.clustered
-            && !self.from_extension
+        self.reason().is_none()
+    }
+
+    /// Qué lo protege, dicho para el usuario. Es lo que explica por qué el botón de borrar está
+    /// apagado; sin el motivo, un índice que nadie consulta y que no se deja borrar parece un error.
+    pub fn reason(&self) -> Option<String> {
+        if let Some(constraint) = &self.constraint {
+            return Some(format!("sostiene la restricción {constraint}"));
+        }
+        if self.referenced_by_fk {
+            return Some("lo usa una clave foránea".to_owned());
+        }
+        if self.replica_identity {
+            return Some("es la identidad de réplica de su tabla".to_owned());
+        }
+        if self.clustered {
+            return Some("es el índice del último CLUSTER".to_owned());
+        }
+        if self.from_extension {
+            return Some("lo instaló una extensión".to_owned());
+        }
+        None
     }
 }
 
@@ -157,6 +206,9 @@ pub struct IndexStat {
     pub is_unique: bool,
     pub is_primary: bool,
     pub is_valid: bool,
+    /// Hace cuántos segundos se usó por última vez. Siempre `None` antes de PG 16 (ver
+    /// [`StatsWindow::tracks_last_scan`]).
+    pub last_scan_seconds: Option<f64>,
     /// Lo que sostiene, si sostiene algo. No cruza el IPC: la interfaz muestra `unused`, y qué lo
     /// protege es el porqué de esa decisión, no otra columna de la grilla.
     #[serde(skip)]
@@ -167,6 +219,11 @@ pub struct IndexStat {
     /// mano en dos lugares y sin las guardas: un índice de `EXCLUDE` que nadie consulta salía
     /// marcado «nunca se usó».
     pub unused: bool,
+    /// Por qué no se ofrece borrarlo, o `None` si se puede.
+    pub protected_by: Option<String>,
+    /// La sentencia exacta que lo borraría, para mostrarla antes de confirmar. `None` si está
+    /// protegido.
+    pub drop_sql: Option<String>,
 }
 
 impl IndexStat {
@@ -179,7 +236,12 @@ impl IndexStat {
     }
 }
 
-pub async fn indexes(client: &Client, limit: i64) -> Result<Vec<IndexStat>> {
+pub async fn indexes(client: &Client, caps: &ServerCaps, limit: i64) -> Result<Vec<IndexStat>> {
+    let last_scan = if caps.has_last_idx_scan() {
+        "extract(epoch from (now() - s.last_idx_scan))::float8"
+    } else {
+        "NULL::float8"
+    };
     let rows = client
         .query(
             &format!(
@@ -191,7 +253,11 @@ pub async fn indexes(client: &Client, limit: i64) -> Result<Vec<IndexStat>> {
                         i.indisunique,
                         i.indisprimary,
                         i.indisvalid,
-                        {GUARD_COLUMNS}
+                        {GUARD_COLUMNS},
+                        EXISTS (SELECT 1
+                                  FROM pg_catalog.pg_inherits h
+                                 WHERE h.inhrelid = i.indexrelid),
+                        {last_scan}
                    FROM pg_catalog.pg_stat_user_indexes s
                    JOIN pg_catalog.pg_index i ON i.indexrelid = s.indexrelid
                   ORDER BY s.idx_scan ASC, pg_catalog.pg_relation_size(s.indexrelid) DESC
@@ -201,27 +267,47 @@ pub async fn indexes(client: &Client, limit: i64) -> Result<Vec<IndexStat>> {
         )
         .await?;
 
-    Ok(rows
-        .into_iter()
+    rows.into_iter()
         .map(|row| {
+            let guards = guards_at(&row, 8);
+            // El índice de una partición cuelga del de su madre: el servidor rechaza borrarlo
+            // suelto. No va en `Guards` porque la lista de los que sobran ya deja afuera las
+            // particiones, y ahí sería una guarda que nunca dispara.
+            let attached: bool = row.get(13);
+            let protected_by = if attached {
+                Some("cuelga del índice de la tabla madre".to_owned())
+            } else {
+                guards.reason()
+            };
+            let schema: String = row.get(0);
+            let index: String = row.get(2);
+            // `pg_stat_user_indexes` solo trae índices comunes, nunca uno particionado, así que
+            // `CONCURRENTLY` vale siempre y el borrado no frena las escrituras sobre la tabla.
+            let drop_sql = match protected_by {
+                None => Some(crate::ddl::index::drop_sql(&schema, &index, false, true)?.sql),
+                Some(_) => None,
+            };
             let stat = IndexStat {
-                schema: row.get(0),
+                schema,
                 table: row.get(1),
-                index: row.get(2),
+                index,
                 scans: row.get::<_, Option<i64>>(3).unwrap_or(0),
                 bytes: row.get(4),
                 is_unique: row.get(5),
                 is_primary: row.get(6),
                 is_valid: row.get(7),
-                guards: guards_at(&row, 8),
+                last_scan_seconds: row.get(14),
+                guards,
                 unused: false,
+                protected_by,
+                drop_sql,
             };
-            IndexStat {
+            Ok(IndexStat {
                 unused: stat.is_unused(),
                 ..stat
-            }
+            })
         })
-        .collect())
+        .collect()
 }
 
 /// La forma de un índice, que es lo que hace falta para saber si sobra.
@@ -748,8 +834,24 @@ mod tests {
             is_unique: unique,
             is_primary: primary,
             is_valid: true,
+            last_scan_seconds: None,
             guards: Guards::default(),
             unused: false,
+            protected_by: None,
+            drop_sql: None,
+        }
+    }
+
+    #[test]
+    fn cada_guarda_dice_por_que_protege() {
+        // El motivo es lo que la interfaz pone en el botón de borrar apagado: una guarda sin
+        // motivo dejaría el botón prendido, y `droppable` se apoya en el mismo `reason`.
+        assert!(Guards::default().reason().is_none());
+        for (motivo, marcar) in GUARDAS {
+            let mut guards = Guards::default();
+            marcar(&mut guards);
+            assert!(guards.reason().is_some(), "{motivo} no da motivo");
+            assert!(!guards.droppable(), "{motivo} se deja borrar");
         }
     }
 

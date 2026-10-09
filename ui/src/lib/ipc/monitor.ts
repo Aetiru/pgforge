@@ -97,11 +97,17 @@ export interface IndexStat {
   isUnique: boolean;
   isPrimary: boolean;
   isValid: boolean;
+  /** Hace cuántos segundos se usó por última vez. Siempre `null` antes de PG 16. */
+  lastScanSeconds: number | null;
   /**
    * Nunca se usó y no sostiene nada. Lo decide el núcleo: acá faltaban las guardas —la restricción
    * de un EXCLUDE, la identidad de réplica, el CLUSTER— y un índice intocable salía marcado.
    */
   unused: boolean;
+  /** Por qué no se ofrece borrarlo —una restricción, la identidad de réplica, …—, o `null`. */
+  protectedBy: string | null;
+  /** La sentencia exacta que lo borraría; `null` si está protegido. */
+  dropSql: string | null;
 }
 
 export interface TableBloat {
@@ -172,6 +178,19 @@ export const tableStats = (id: string, limit?: number) =>
 
 export const indexStats = (id: string, limit?: number) =>
   invoke<IndexStat[]>("index_stats", { id, limit: limit ?? null });
+
+/**
+ * Desde cuándo cuentan los usos de los índices. «0 usos» sin esto engaña: el contador vuelve a cero
+ * con `pg_stat_reset()` y cuando el servidor cae.
+ */
+export interface StatsWindow {
+  /** Hace cuántos segundos se reiniciaron las estadísticas de la base; `null` si nunca a mano. */
+  resetSeconds: number | null;
+  /** PG 16+: el servidor anota cuándo se usó cada índice (`IndexStat.lastScanSeconds`). */
+  tracksLastScan: boolean;
+}
+
+export const statsWindow = (id: string) => invoke<StatsWindow>("stats_window", { id });
 
 /** Un índice que otro ya cubre: o es una copia, o sus columnas son el principio de las del otro. */
 export interface Redundancy {

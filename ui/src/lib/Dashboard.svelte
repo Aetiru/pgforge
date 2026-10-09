@@ -19,6 +19,7 @@
     indexStats,
     redundantIndexes,
     statementStats,
+    statsWindow,
     tableBloat,
     tableStats,
     terminateBackend,
@@ -28,6 +29,7 @@
     type Lock,
     type Redundancy,
     type StatementStat,
+    type StatsWindow,
     type TableBloat,
     type TableStat,
     type Target,
@@ -88,6 +90,17 @@
 
   let tables = $state<TableStat[]>([]);
   let indexes = $state<IndexStat[]>([]);
+  /** Desde cuándo cuentan los usos de `indexes`. */
+  let usageWindow = $state<StatsWindow | null>(null);
+
+  /** La frase que acompaña a «Usos», para que un 0 no se lea como «nunca en la vida». */
+  const countingSince = $derived(
+    !usageWindow
+      ? null
+      : usageWindow.resetSeconds === null
+        ? "Los usos cuentan desde que se creó la base o desde la última caída del servidor: las estadísticas nunca se reiniciaron a mano."
+        : `Los usos cuentan desde que se reiniciaron las estadísticas, ${ago(usageWindow.resetSeconds)}: un índice que solo se usa a fin de mes puede figurar sin usos.`,
+  );
   let statements = $state<StatementStat[]>([]);
   let selectedStatement = $state<StatementStat | null>(null);
   let statementsAvailable = $state<boolean | null>(null);
@@ -107,6 +120,8 @@
   const keyOf = (item: Redundancy) => `${item.schema}.${item.index}`;
   let selectedRedundant = $state<Redundancy | null>(null);
   let droppingIndex = $state<Redundancy | null>(null);
+  /** El índice de la pestaña «Índices» que se está por borrar. */
+  let droppingStat = $state<IndexStat | null>(null);
   let selectedBloat = $state<TableBloat | null>(null);
   let maintenanceTarget = $state<Target | null>(null);
 
@@ -257,9 +272,14 @@
         .then((result) => (tables = result))
         .catch((error) => (actionMessage = describeError(error)));
     } else if (current === "indices") {
+      dropError = null;
       indexStats(profileId)
         .then((result) => (indexes = result))
         .catch((error) => (actionMessage = describeError(error)));
+      // Si no se puede leer, la grilla igual sirve: solo falta el «desde cuándo».
+      statsWindow(profileId)
+        .then((result) => (usageWindow = result))
+        .catch(() => (usageWindow = null));
     } else if (current === "duplicados") {
       redundantError = null;
       dropError = null;
@@ -497,7 +517,42 @@
     }
   }
 
-  const indexColumns: Column<IndexStat>[] = [
+  /**
+   * Borra un índice de la lista de estadísticas. Siempre con CONCURRENTLY: esa lista no trae índices
+   * particionados, y así el borrado no frena las escrituras sobre la tabla. Lo protegido ni llega
+   * acá —el botón se apaga con el motivo—, y lo que el servidor rechace igual cae en `dropError`.
+   */
+  async function dropStat(target: IndexStat) {
+    droppingStat = null;
+    if (!(await confirmMutation(profileId, "Se va a borrar un índice del servidor."))) return;
+    try {
+      await indexDrop(profileId, target.schema, target.index, false, true, database ?? undefined);
+      const key = `${target.schema}.${target.index}`;
+      indexes = indexes.filter((item) => `${item.schema}.${item.index}` !== key);
+      if (selectedIndex && `${selectedIndex.schema}.${selectedIndex.index}` === key) {
+        selectedIndex = null;
+      }
+      dropError = null;
+    } catch (error) {
+      dropError = describeError(error);
+    }
+  }
+
+  /**
+   * «Último uso» solo existe desde PG 16. Antes la columna saldría entera en «nunca», que se lee
+   * como un dato y es una ausencia: mejor que no esté.
+   */
+  const lastScanColumn: Column<IndexStat> = {
+    key: "lastScan",
+    header: "Último uso",
+    width: 120,
+    align: "right",
+    value: (i) => ago(i.lastScanSeconds),
+    // Lo que nunca se usó va al fondo al ordenar de más reciente a más viejo.
+    sort: (i) => i.lastScanSeconds ?? Number.MAX_VALUE,
+  };
+
+  const indexColumns: Column<IndexStat>[] = $derived([
     { key: "schema", header: "Esquema", width: 130, value: (i) => i.schema },
     { key: "table", header: "Tabla", width: 200, value: (i) => i.table },
     { key: "index", header: "Índice", width: 260, value: (i) => i.index },
@@ -509,6 +564,7 @@
       value: (i) => count(i.scans),
       sort: (i) => i.scans ?? -1,
     },
+    ...(usageWindow?.tracksLastScan ? [lastScanColumn] : []),
     {
       key: "size",
       header: "Tamaño",
@@ -528,7 +584,8 @@
       header: "Observación",
       width: 200,
       value: (i) =>
-        !i.isValid ? "INVÁLIDO: hay que reconstruirlo" : i.unused ? "nunca se usó" : "",
+        // «Sin usos» y no «nunca se usó»: cuenta desde el último reinicio de las estadísticas.
+        !i.isValid ? "INVÁLIDO: hay que reconstruirlo" : i.unused ? "sin usos registrados" : "",
       tone: (i) =>
         !i.isValid
           ? "text-rose-600 dark:text-rose-400"
@@ -536,7 +593,7 @@
             ? "text-amber-600 dark:text-amber-400"
             : undefined,
     },
-  ];
+  ]);
 
   /**
    * Abre una pestaña de consulta con este texto y lleva a ella.
@@ -1000,7 +1057,7 @@
         </div>
         <div class="toolbar divider-b">
           <span class="text-xs muted">
-            Un índice que nunca se usó o que quedó inválido se reconstruye con REINDEX.
+            Un índice que quedó inválido se reconstruye con REINDEX.
           </span>
           <button
             class="btn btn-sm ml-auto"
@@ -1019,7 +1076,29 @@
             <Icon name="gauge" size={12} />
             Mantenimiento
           </button>
+          <button
+            class="btn btn-sm btn-danger"
+            disabled={!selectedIndex?.dropSql}
+            title={!selectedIndex
+              ? "Elegí un índice de la lista"
+              : selectedIndex.protectedBy
+                ? `No se puede borrar: ${selectedIndex.protectedBy}`
+                : selectedIndex.dropSql}
+            onclick={() => (droppingStat = selectedIndex)}
+          >
+            <Icon name="trash" size={12} />
+            Borrar el índice…
+          </button>
         </div>
+        {#if countingSince}
+          <div class="divider-b flex items-center gap-1.5 px-3 py-1 text-xs muted">
+            <Icon name="info" size={11} class="shrink-0" />
+            {countingSince}
+          </div>
+        {/if}
+        {#if dropError}
+          <Alert tone="bad">{dropError}</Alert>
+        {/if}
         <div class="min-h-0 flex-1">
           <DataGrid
             columns={indexColumns}
@@ -1215,6 +1294,19 @@
     danger
     onconfirm={() => droppingIndex && dropRedundant(droppingIndex)}
     onclose={() => (droppingIndex = null)}
+  />
+{/if}
+
+{#if droppingStat}
+  <Confirm
+    title="Borrar «{droppingStat.index}»"
+    message="{droppingStat.scans === 0
+      ? 'No registra usos desde el último reinicio de las estadísticas.'
+      : `Registra ${count(droppingStat.scans)} usos: las consultas que hoy lo usan van a tener que resolverse de otra forma.`} Se ejecuta: {droppingStat.dropSql}"
+    confirmLabel="Borrar el índice"
+    danger
+    onconfirm={() => droppingStat && dropStat(droppingStat)}
+    onclose={() => (droppingStat = null)}
   />
 {/if}
 

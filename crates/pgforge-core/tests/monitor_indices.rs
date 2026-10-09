@@ -322,12 +322,22 @@ async fn encuentra_los_indices_de_mas_contra_servidores_reales() {
                 // La otra lista de índices que sobran, la de los que nunca se usaron, tiene que
                 // frenar ante lo mismo: es la misma base con las mismas guardas leída por otra
                 // consulta, así que acá se ve si las dos siguen de acuerdo.
-                let stats: Vec<_> = stats::indexes(&client, 2000)
+                let stats: Vec<_> = stats::indexes(&client, &handle.caps, 2000)
                     .await
                     .expect("no se pudieron leer las estadísticas de índices")
                     .into_iter()
                     .filter(|stat| stat.schema == schema)
                     .collect();
+
+                // La consulta de «desde cuándo» y la columna de último uso dependen de la versión:
+                // se ejecutan en las cinco para que un gating mal puesto falle acá.
+                let ventana = stats::window(&client, &handle.caps)
+                    .await
+                    .expect("no se pudo leer desde cuándo cuentan las estadísticas");
+                assert_eq!(ventana.tracks_last_scan, handle.caps.has_last_idx_scan());
+                if !ventana.tracks_last_scan {
+                    assert!(stats.iter().all(|stat| stat.last_scan_seconds.is_none()));
+                }
 
                 let sin_uso = |name: &str| {
                     stats
@@ -352,6 +362,53 @@ async fn encuentra_los_indices_de_mas_contra_servidores_reales() {
                     sin_uso("trabajos_estado_a"),
                     "nadie lo consultó y no sostiene nada"
                 );
+
+                // El botón de borrar de la pestaña «Índices» se apaga con `protected_by` y ejecuta
+                // `drop_sql`: lo protegido no trae sentencia, y lo demás trae la que corre.
+                let stat = |name: &str| {
+                    stats
+                        .iter()
+                        .find(|stat| stat.index == name)
+                        .unwrap_or_else(|| panic!("falta {name} entre las estadísticas leídas"))
+                };
+                for protegido in ["reservas_per_excl", "eventos_dato_b", "eventos_u2"] {
+                    assert!(
+                        stat(protegido).protected_by.is_some() && stat(protegido).drop_sql.is_none(),
+                        "{protegido} sostiene algo y no se ofrece borrarlo"
+                    );
+                }
+                // La identidad de réplica es la que el servidor no frena: sin esta guarda el
+                // DROP funciona y la replicación se rompe en el próximo UPDATE.
+                assert!(
+                    stat("eventos_u2")
+                        .protected_by
+                        .as_deref()
+                        .is_some_and(|motivo| motivo.contains("réplica")),
+                    "el motivo dice cuál es: {:?}",
+                    stat("eventos_u2").protected_by
+                );
+                let libre = stat("trabajos_estado_a");
+                assert!(libre.protected_by.is_none());
+                assert!(
+                    libre
+                        .drop_sql
+                        .as_deref()
+                        .is_some_and(|sql| sql.starts_with("DROP INDEX CONCURRENTLY")),
+                    "{:?}",
+                    libre.drop_sql
+                );
+                // El índice de una partición cuelga del de su madre: el servidor rechaza borrarlo
+                // suelto, así que tampoco se ofrece.
+                let de_particion: Vec<_> =
+                    stats.iter().filter(|s| s.table == "partes_2025").collect();
+                assert!(!de_particion.is_empty(), "la partición tiene sus índices");
+                for indice in de_particion {
+                    assert!(
+                        indice.protected_by.is_some() && indice.drop_sql.is_none(),
+                        "{} cuelga del índice de la madre",
+                        indice.index
+                    );
+                }
             })
             .await
         };
