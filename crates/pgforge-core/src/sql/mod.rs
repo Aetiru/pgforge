@@ -13,7 +13,7 @@ pub mod exec;
 pub mod explain;
 pub mod format;
 pub mod history;
-mod lex;
+pub(crate) mod lex;
 pub mod saved;
 pub mod snippet;
 pub mod split;
