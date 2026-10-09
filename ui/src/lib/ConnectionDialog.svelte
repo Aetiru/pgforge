@@ -352,6 +352,7 @@
         <input
           class="field grow"
           bind:value={form.rootCert}
+          readonly
           placeholder="Vacío: las CA del sistema"
         />
         <button type="button" class="btn btn-sm" onclick={pickRootCert}>Elegir…</button>
@@ -406,6 +407,7 @@
           <input
             class="field grow"
             bind:value={form.tunnel.privateKey}
+            readonly
             placeholder="Vacío: autenticar por contraseña"
           />
           <button type="button" class="btn btn-sm" onclick={pickKey}>Elegir…</button>
