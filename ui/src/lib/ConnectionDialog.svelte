@@ -265,6 +265,44 @@
       </div>
     </label>
 
+    <!-- Entorno y solo lectura son lo que más protege y antes vivían en «Conexión», donde nadie
+         los busca al dar de alta un servidor. El entorno decide el marco de color de toda la ventana
+         y cuánto se pregunta antes de modificar algo. -->
+    <div class="col-span-2 flex flex-col gap-1.5">
+      <span class="label">Entorno</span>
+      <div class="seg w-fit" role="group" aria-label="Entorno del servidor">
+        {#each ENVIRONMENTS as item (item.value)}
+          <button
+            type="button"
+            class="seg-item"
+            aria-pressed={(form.environment ?? "") === item.value}
+            onclick={() => (form.environment = (item.value || undefined) as Environment | undefined)}
+          >
+            {item.label}
+          </button>
+        {/each}
+      </div>
+      <p class="text-xs {form.environment === 'prod' ? 'text-rose-600 dark:text-rose-400' : 'muted'}">
+        {#if form.environment === "prod"}
+          Toda la ventana se enmarca en rojo mientras se mira este servidor, y cada modificación pide
+          una confirmación de más.
+        {:else if form.environment}
+          Se enmarca la ventana con el color del entorno mientras se mira este servidor.
+        {:else}
+          Sin marcar no cambia nada a la vista. Marcá producción para no confundirlo con desarrollo.
+        {/if}
+      </p>
+    </div>
+
+    <label class="check col-span-2">
+      <input type="checkbox" bind:checked={form.readOnly} />
+      Conexión de solo lectura
+    </label>
+    <p class="col-span-2 -mt-2 text-xs muted">
+      Abre cada conexión con <code>default_transaction_read_only</code>: el rechazo lo hace el
+      servidor, así vale igual para el explorador, el editor de SQL y las importaciones.
+    </p>
+
     <label class="flex flex-col gap-1">
       <span class="label">Servidor</span>
       <input class="field" bind:value={form.host} />
@@ -315,21 +353,6 @@
 
   <div class="grid grid-cols-2 gap-3" class:hidden={section !== "connection"}>
     <label class="flex flex-col gap-1">
-      <span class="label">Entorno</span>
-      <select
-        class="field"
-        title="Solo cambia cómo se ve y cuánto se pregunta antes de modificar algo"
-        value={form.environment ?? ""}
-        onchange={(event) =>
-          (form.environment = (event.currentTarget.value || undefined) as Environment | undefined)}
-      >
-        {#each ENVIRONMENTS as item (item.value)}
-          <option value={item.value}>{item.label}</option>
-        {/each}
-      </select>
-    </label>
-
-    <label class="flex flex-col gap-1">
       <span class="label">Límite por sentencia (ms)</span>
       <input
         class="field"
@@ -358,15 +381,6 @@
         <button type="button" class="btn btn-sm" onclick={pickRootCert}>Elegir…</button>
       </div>
     </label>
-
-    <label class="check col-span-2">
-      <input type="checkbox" bind:checked={form.readOnly} />
-      Conexión de solo lectura
-    </label>
-    <p class="col-span-2 -mt-2 text-xs muted">
-      Abre cada conexión con <code>default_transaction_read_only</code>: el rechazo lo hace el
-      servidor, así vale igual para el explorador, el editor de SQL y las importaciones.
-    </p>
 
     <label class="check col-span-2">
       <input type="checkbox" bind:checked={form.autocommit} />

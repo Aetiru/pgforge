@@ -103,6 +103,17 @@ for (const variant of VARIANTS) {
   await shot(page, "sesiones-linea");
   await page.close();
 
+  // Consultas lentas, con la sentencia que trae parámetros elegida.
+  page = await connected(variant);
+  await page.getByText("ventas", { exact: true }).first().click();
+  await page.getByRole("button", { name: "Monitoreo" }).first().click();
+  await page.waitForTimeout(600);
+  await page.getByRole("tab", { name: /Consultas lentas/ }).click();
+  await page.waitForTimeout(500);
+  await page.locator('[role="row"]').filter({ hasText: "cliente_id = $1" }).first().click();
+  await shot(page, "consultas-lentas");
+  await page.close();
+
   // Diagrama, alejado hasta el modo mapa.
   page = await connected(variant);
   await expand(page, ["ventas", "Esquemas", "public"]);
@@ -112,6 +123,32 @@ for (const variant of VARIANTS) {
   for (let i = 0; i < 3; i++) await page.getByTitle("Alejar").click();
   await page.waitForTimeout(400);
   await shot(page, "diagrama-mapa");
+  await page.close();
+
+  // Primera vez: sin servidores configurados.
+  page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+  page.on("pageerror", (error) => errors.push(`${variant.name}: ${error.message}`));
+  await page.addInitScript(
+    ({ theme, contrast }) => {
+      localStorage.setItem("pgforge.theme", theme);
+      if (contrast) localStorage.setItem("pgforge.contrast", "high");
+    },
+    variant,
+  );
+  await page.addInitScript({
+    content: `${mock}\nwindow.__MOCK.list_profiles = () => []; window.__MOCK.list_groups = () => []; window.__MOCK.connected_servers = () => [];`,
+  });
+  await page.goto(url);
+  await page.waitForTimeout(900);
+  await shot(page, "primer-uso");
+  await page.close();
+
+  // El diálogo de nuevo servidor.
+  page = await open(variant);
+  await page.locator('button[title*="uevo"]').first().click();
+  await page.waitForTimeout(400);
+  await page.getByRole("button", { name: "Producción" }).click();
+  await shot(page, "dialogo-conexion");
   await page.close();
 
   // Preferencias, con los colores del SQL.
@@ -128,4 +165,4 @@ if (errors.length > 0) {
   console.error(`Hubo ${errors.length} excepciones en la interfaz:\n${errors.join("\n")}`);
   process.exit(1);
 }
-console.log(`Listo: ${VARIANTS.length * 8} capturas en ${out}`);
+console.log(`Listo: ${VARIANTS.length * 11} capturas en ${out}`);

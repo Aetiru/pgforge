@@ -235,14 +235,14 @@ body {
   @apply border-blue-500/50 bg-blue-50 text-zinc-900 dark:bg-blue-950/60 dark:text-zinc-100;
 }
 
-/* Barra de herramientas: el patrón que repiten el editor, la grilla y el monitor. Alto fijo,
-   igual de fino que el `footer` de estado (`App.svelte`, `h-6`) pero un escalón más alto: lo pone
-   el botón más grande que puede tener adentro (`.btn-icon`, 28px), no el acolchado — de ahí `h-8`
-   con `items-center` centrando en vez de `py-*`. `flex-wrap` sigue de defensa para una ventana
-   angosta; con alto fijo, un grupo que caiga a una segunda línea quedaría recortado, pero con los
-   botones de hoy (todos íconos) no llega a pasar en un ancho normal de ventana. */
+/* Barra de herramientas: el patrón que repiten el editor, la grilla y el monitor. Igual de fina que
+   el `footer` de estado (`App.svelte`, `h-6`) pero un escalón más alta: lo pone el botón más grande
+   que puede tener adentro (`.btn-icon`, 28px) más un píxel de aire arriba y abajo, de ahí `min-h-8`
+   con `items-center`. **Es altura mínima y no fija**: con la ventana angosta los controles envuelven a
+   una segunda línea, y con alto fijo esa línea desbordaba hacia abajo y quedaba recortada o encima de
+   lo que sigue (le pasaba a los botones de «Consultas lentas» y al filtro del monitoreo). */
 .toolbar {
-  @apply flex h-8 flex-wrap items-center gap-1.5 border-b border-zinc-200 px-2
+  @apply flex min-h-8 flex-wrap items-center gap-1.5 border-b border-zinc-200 px-2 py-0.5
     dark:border-zinc-700;
 }
 
@@ -257,7 +257,7 @@ body {
    (`DataPanel`, mantenimiento, backup, monitor, …) lleva botones con texto que no entran ahí, así
    que la clase base sigue en `h-8` y esto se aplica junto a `toolbar`, no en su lugar. */
 .toolbar-compact {
-  @apply h-6;
+  @apply h-6 min-h-0 py-0;
 }
 
 /* El botón llena la barra entera en vez de dejar aire alrededor del ícono: a 20px (`size-5`) con un

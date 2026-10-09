@@ -1,13 +1,13 @@
 <script lang="ts">
   import type uPlot from "uplot";
   import Alert from "./Alert.svelte";
-  import BlockTree from "./BlockTree.svelte";
   import Chart from "./Chart.svelte";
   import Confirm from "./Confirm.svelte";
   import DataGrid, { type Column } from "./DataGrid.svelte";
   import Empty from "./Empty.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
   import SessionsPanel from "./SessionsPanel.svelte";
+  import { needsValues, withValuesHint } from "./statement-explain";
   import Spark from "./Spark.svelte";
   import { assessHealth, connectionLevel } from "./health";
   import MaintenanceDialog from "./MaintenanceDialog.svelte";
@@ -76,7 +76,6 @@
 
   type Tab =
     | "sesiones"
-    | "bloqueos"
     | "tablas"
     | "indices"
     | "duplicados"
@@ -590,6 +589,27 @@
     }
   }
 
+  /**
+   * Explica una sentencia de la lista. Sin parámetros se explica en el acto, en una pestaña nueva;
+   * con `$1…` se abre escrita y con un aviso (ver `statement-explain.ts`): el plan depende de los
+   * valores y el servidor no puede inventarlos.
+   */
+  async function explainStatement(statement: StatementStat) {
+    if (!statement.query) return;
+    const target = statement.database ?? database ?? "";
+    try {
+      if (needsValues(statement.query)) {
+        await openInQuery(withValuesHint(statement.query), target);
+        return;
+      }
+      const tab = await openQuery(profileId, target, "Plan");
+      tab.sql = statement.query;
+      await tab.explain(statement.query, 0, { analyze: false, buffers: false, verbose: true });
+    } catch (error) {
+      actionMessage = describeError(error);
+    }
+  }
+
   const statementColumns: Column<StatementStat>[] = [
     { key: "database", header: "Base", width: 120, value: (s) => s.database ?? "—" },
     { key: "user", header: "Usuario", width: 110, value: (s) => s.user ?? "—" },
@@ -636,7 +656,6 @@
 
   const TABS: { value: Tab; label: string; icon: IconName }[] = [
     { value: "sesiones", label: "Sesiones", icon: "gauge" },
-    { value: "bloqueos", label: "Bloqueos", icon: "lock" },
     { value: "tablas", label: "Tablas", icon: "table" },
     { value: "indices", label: "Índices", icon: "index" },
     { value: "duplicados", label: "Índices de más", icon: "compare" },
@@ -688,9 +707,7 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <!-- Con la ventana angosta los controles envuelven a una segunda línea; con el alto fijo de `.toolbar`
-       esa línea desbordaba por debajo y se montaba sobre lo que viene después. -->
-  <div class="toolbar" style="height: auto; min-height: 2rem; padding-block: 0.25rem">
+  <div class="toolbar">
     <div class="seg" role="tablist">
       {#each TABS as item (item.value)}
         <button
@@ -701,7 +718,7 @@
         >
           <Icon name={item.icon} size={12} />
           {item.label}
-          {#if item.value === "bloqueos" && blocked > 0}
+          {#if item.value === "sesiones" && blocked > 0}
             <span class="tag tag-bad px-1 py-0 text-[10px]">{blocked}</span>
           {/if}
         </button>
@@ -897,35 +914,6 @@
       onterminate={(pids) => (confirming = { pids, kind: "terminate" })}
       onopen={(sql, db) => openInQuery(sql, db)}
     />
-  {:else if tab === "bloqueos"}
-    <div class="min-h-0 flex-1 overflow-auto px-3 py-2">
-      {#if !snapshot || snapshot.blocking.length === 0}
-        <Empty
-          icon="check"
-          title="Ninguna sesión está esperando a otra"
-          hint="Cuando una sesión quede bloqueada, acá aparece la cadena completa hasta la que hay que resolver."
-        />
-      {:else}
-        <p class="mb-2 text-xs muted">
-          La sesión de arriba de cada rama es la que hay que resolver: las de abajo esperan por
-          ella.
-        </p>
-        {#each snapshot.blocking as node (node.pid)}
-          <BlockTree
-            {node}
-            onterminate={(pid) => {
-              selectedPid = pid;
-              tab = "sesiones";
-              confirming = { pids: [pid], kind: "terminate" };
-            }}
-            onselect={(pid) => {
-              selectedPid = pid;
-              tab = "sesiones";
-            }}
-          />
-        {/each}
-      {/if}
-    </div>
   {:else if tab === "tablas"}
     <div class="flex min-h-0 flex-1 flex-col bg-zinc-50/70 px-4 py-4 dark:bg-black/15">
       <div class="card flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl shadow-sm">
@@ -1160,6 +1148,19 @@
           </span>
           <button
             class="btn btn-sm ml-auto"
+            disabled={!selectedStatement?.query}
+            title={selectedStatement?.query
+              ? needsValues(selectedStatement.query)
+                ? "Abre la sentencia para que le pongas valores a los parámetros y la expliques"
+                : "Muestra el plan estimado de esta sentencia, sin ejecutarla"
+              : "Elegí una consulta de la lista"}
+            onclick={() => selectedStatement && explainStatement(selectedStatement)}
+          >
+            <Icon name="plan" size={12} />
+            Explicar
+          </button>
+          <button
+            class="btn btn-sm"
             disabled={!selectedStatement?.query}
             title={selectedStatement?.query
               ? "Abre una pestaña de consulta con este texto"

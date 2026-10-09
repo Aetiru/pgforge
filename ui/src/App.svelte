@@ -1043,6 +1043,23 @@
             {#key tabs.current.key}
               {@render tabBody(tabs.current)}
             {/key}
+          {:else if explorer.profiles.length === 0}
+            <!-- La primera vez no hay nada que abrir: los botones de consulta, monitoreo y
+                 configuración estaban apagados y se leían como una aplicación rota. Acá va lo único
+                 que se puede hacer, y el camino corto si ya hay servidores configurados en otra
+                 herramienta. -->
+            <Empty
+              icon="server"
+              title="Empezá con un servidor"
+              hint="Agregá una conexión a PostgreSQL, o traé las que ya tenés configuradas en pgpass, pg_service.conf o DBeaver. Las contraseñas nunca se importan."
+            >
+              <button class="btn btn-primary" onclick={() => (dialog = { profile: null })}>
+                Nuevo servidor
+              </button>
+              <button class="btn" onclick={() => (importDialog = true)}>
+                Importar servidores existentes…
+              </button>
+            </Empty>
           {:else}
             <!-- Sin pestañas la ventana no está vacía: el objeto elegido se ve en el inspector, y
                  acá van las tres cosas que se abren desde cero. -->
