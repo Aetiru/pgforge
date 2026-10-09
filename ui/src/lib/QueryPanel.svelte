@@ -11,6 +11,7 @@
   import IndexDialog from "./IndexDialog.svelte";
   import PlanAdvice from "./PlanAdvice.svelte";
   import PlanTree from "./PlanTree.svelte";
+  import { planHeat } from "./plan-heat";
   import ResultGrid from "./ResultGrid.svelte";
   import SaveQueryDialog from "./SaveQueryDialog.svelte";
   import SavedPanel from "./SavedPanel.svelte";
@@ -142,13 +143,8 @@
   );
   const errors = $derived(tab.messages.filter((message) => message.tone === "error").length);
 
-  /** El nodo más caro del plan, para que la barra de cada uno signifique algo. */
-  const worst = $derived.by(() => {
-    if (!tab.plan) return 0;
-    const walk = (node: typeof tab.plan.root): number =>
-      Math.max(node.selfMs ?? 0, ...node.children.map(walk));
-    return walk(tab.plan.root);
-  });
+  /** Qué pesa el nodo más caro del plan, para que el color de cada uno signifique algo. */
+  const heat = $derived(tab.plan ? planHeat(tab.plan.root) : null);
 
   /**
    * Qué ejecutar cuando no se pidió el script entero: lo seleccionado si hay selección, y si no la
@@ -1028,7 +1024,7 @@
               />
             </div>
 
-            <PlanTree node={tab.plan.root} {worst} />
+            <PlanTree node={tab.plan.root} heat={heat ?? planHeat(tab.plan.root)} />
             <p class="mt-3 flex flex-wrap gap-x-3 px-2 text-xs muted">
               {#if tab.plan.planningMs !== null}
                 <span>planificación {decimal(tab.plan.planningMs, 2)} ms</span>

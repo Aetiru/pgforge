@@ -217,6 +217,12 @@ body {
   @apply text-zinc-500 dark:text-zinc-400;
 }
 
+/* El NULL de una celda: en cursiva y apagado, para que no se lea como el texto «NULL». Es lo único
+   que la grilla dice de la ausencia de un valor, y tiene que verse distinto de una cadena vacía. */
+.cell-null {
+  @apply text-[0.85em] tracking-wide text-zinc-400 italic dark:text-zinc-500;
+}
+
 /* Barra de herramientas: el patrón que repiten el editor, la grilla y el monitor. Alto fijo,
    igual de fino que el `footer` de estado (`App.svelte`, `h-6`) pero un escalón más alto: lo pone
    el botón más grande que puede tener adentro (`.btn-icon`, 28px), no el acolchado — de ahí `h-8`

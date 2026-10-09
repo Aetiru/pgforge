@@ -937,7 +937,7 @@
         class="w-full min-w-0 bg-transparent font-mono outline-none
                {draftNull ? 'italic text-zinc-400' : ''}"
         style="font-size: var(--grid-font-size, 0.875rem)"
-        value={draftNull ? "[null]" : draft}
+        value={draftNull ? "NULL" : draft}
         autofocus
         oninput={(event) => {
           draft = event.currentTarget.value;
