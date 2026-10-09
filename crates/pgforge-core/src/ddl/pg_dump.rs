@@ -54,8 +54,9 @@ pub async fn dump_object(
         .arg(profile.port.to_string())
         .arg("--username")
         .arg(&profile.user)
-        .arg("--dbname")
-        .arg(database)
+        // Por entorno y no por `--dbname`, que se leería como cadena de conexión si el nombre
+        // trae un `=` o empieza por `postgres://`.
+        .env("PGDATABASE", database)
         .env("PGSSLMODE", ssl_mode_env(profile.ssl_mode))
         .env("PGAPPNAME", "pgforge")
         .stdin(Stdio::null())

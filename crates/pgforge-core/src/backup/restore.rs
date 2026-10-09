@@ -140,7 +140,7 @@ pub fn arguments(profile: &ConnectionProfile, options: &RestoreOptions) -> Resul
         format!("--host={}", profile.host),
         format!("--port={}", profile.port),
         format!("--username={}", profile.user),
-        format!("--dbname={}", options.database),
+        // La base va por `PGDATABASE` y no por `--dbname=`, que se leería como cadena de conexión.
         format!("--format={}", options.format.flag()),
         // Sin esto no hay una sola línea de progreso.
         "--verbose".to_owned(),
@@ -186,6 +186,8 @@ pub fn arguments(profile: &ConnectionProfile, options: &RestoreOptions) -> Resul
 
     // El archivo va como argumento posicional, al final —así lo espera `pg_restore`, al revés que
     // `pg_dump` que lo toma con `--file`—. En el formato directorio es el directorio.
+    // Precedido de `--` para que un nombre que empiece con `-` no se lea como opción.
+    args.push("--".to_owned());
     args.push(options.source.display().to_string());
 
     Ok(args)
@@ -220,6 +222,22 @@ pub fn warning(options: &RestoreOptions) -> Option<&'static str> {
 /// falla más común —`pg_restore` puede escribir en servidores más viejos que él, nunca más nuevos—
 /// y conviene detectarla antes de empezar a tocar la base, no a mitad de la restauración.
 pub async fn plan(handle: &ServerHandle, options: &RestoreOptions) -> Result<RestorePlan> {
+    let (binary, args) = prepare(handle, options).await?;
+
+    // La base viaja por `PGDATABASE`; se antepone como asignación de entorno para que lo mostrado
+    // siga siendo copiable y completo.
+    let mut command = vec![super::database_env(&options.database), binary];
+    command.extend(args);
+
+    Ok(RestorePlan {
+        command,
+        warning: warning(options).map(str::to_owned),
+    })
+}
+
+/// El binario y sus argumentos, ya verificada su versión. `run` no puede partir `plan.command`
+/// porque ahí la primera palabra es la asignación de entorno.
+async fn prepare(handle: &ServerHandle, options: &RestoreOptions) -> Result<(String, Vec<String>)> {
     let binary = tools::require(Tool::PgRestore)?;
     let version = tools::version(&binary).await?;
     let server = handle.caps.version;
@@ -233,13 +251,10 @@ pub async fn plan(handle: &ServerHandle, options: &RestoreOptions) -> Result<Res
         )));
     }
 
-    let mut command = vec![binary.display().to_string()];
-    command.extend(arguments(&handle.profile, options)?);
-
-    Ok(RestorePlan {
-        command,
-        warning: warning(options).map(str::to_owned),
-    })
+    Ok((
+        binary.display().to_string(),
+        arguments(&handle.profile, options)?,
+    ))
 }
 
 /// Ejecuta el restore, transmitiendo el progreso por `progress` y abortando si llega algo por
@@ -252,14 +267,13 @@ pub async fn run(
     progress: mpsc::Sender<String>,
     cancel: oneshot::Receiver<()>,
 ) -> Result<RestoreOutcome> {
-    let plan = plan(handle, options).await?;
-    let (binary, args) = plan.command.split_first().expect("el plan trae el binario");
+    let (binary, args) = prepare(handle, options).await?;
 
-    let mut command = super::base_command(binary, handle);
+    let mut command = super::base_command(&binary, handle, &options.database);
     command.args(args);
 
     let started = Instant::now();
-    match super::spawn_streaming(command, binary, progress, cancel).await? {
+    match super::spawn_streaming(command, &binary, progress, cancel).await? {
         // A diferencia del backup no hay archivo que borrar: lo que se cargó quedó en la base. Que
         // no quede a medias es tarea de `--single-transaction`, no de esta función.
         Ended::Canceled => Err(Error::Canceled),
@@ -341,7 +355,7 @@ mod tests {
         assert!(args.contains(&"--host=servidor".to_owned()));
         assert!(args.contains(&"--port=5433".to_owned()));
         assert!(args.contains(&"--username=ana".to_owned()));
-        assert!(args.contains(&"--dbname=ventas".to_owned()));
+        assert!(!args.iter().any(|arg| arg.starts_with("--dbname")));
         assert!(args.contains(&"--format=c".to_owned()));
         assert!(args.contains(&"--verbose".to_owned()));
         assert!(args.contains(&"--no-password".to_owned()));
@@ -352,6 +366,7 @@ mod tests {
     fn el_archivo_va_al_final_como_posicional() {
         let args = args(&options(Format::Custom));
         assert_eq!(args.last().unwrap(), "/tmp/ventas.dump");
+        assert_eq!(args[args.len() - 2], "--");
         assert!(!args.iter().any(|arg| arg.starts_with("--file")));
     }
 

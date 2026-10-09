@@ -21,7 +21,7 @@ pub mod workspaces;
 
 use pgforge_core::caps::MIN_SUPPORTED_VERSION_NUM;
 use pgforge_core::ddl::table::Statement;
-use pgforge_core::sql::history::{NewEntry, Source};
+use pgforge_core::sql::history::{redact_secrets, NewEntry, Source};
 use pgforge_core::{ProfileId, Result, ServerVersion};
 use serde::Serialize;
 
@@ -65,7 +65,9 @@ pub async fn record_applied<T>(
         source: Source::Dialog,
         profile_id: id.to_string(),
         database: database.to_owned(),
-        sql,
+        // El historial es texto que se lista y se copia; la contraseña de un rol no tiene por qué
+        // quedar ahí. Solo se redacta lo que se anota: lo que se ejecutó ya salió con el valor real.
+        sql: redact_secrets(&sql),
         started_at,
         seconds: started.elapsed().as_secs_f64(),
         row_count: None,

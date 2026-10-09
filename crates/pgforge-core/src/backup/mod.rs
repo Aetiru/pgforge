@@ -143,7 +143,9 @@ pub fn arguments(profile: &ConnectionProfile, options: &BackupOptions) -> Result
         format!("--host={}", profile.host),
         format!("--port={}", profile.port),
         format!("--username={}", profile.user),
-        format!("--dbname={}", options.database),
+        // La base NO va como `--dbname=`: `pg_dump` lo interpreta como cadena de conexión si trae un
+        // `=` o empieza por `postgres://`, y un nombre de base cualquiera podría entonces cambiar
+        // host o usuario. `PGDATABASE` se toma siempre como nombre (ver `database_env`).
         format!("--format={}", options.format.flag()),
         format!("--file={}", options.path.display()),
         // Sin esto no hay una sola línea de progreso.
@@ -208,6 +210,22 @@ pub fn warning(options: &BackupOptions) -> Option<&'static str> {
 /// servidores más viejos que él, nunca más nuevos— que además falla tarde y con un mensaje que no
 /// dice qué hacer.
 pub async fn plan(handle: &ServerHandle, options: &BackupOptions) -> Result<BackupPlan> {
+    let (binary, args) = prepare(handle, options).await?;
+
+    // La base viaja por `PGDATABASE`; para que lo que se muestra siga siendo copiable y completo
+    // se antepone como asignación de entorno, que es como se la escribiría en una consola.
+    let mut command = vec![database_env(&options.database), binary];
+    command.extend(args);
+
+    Ok(BackupPlan {
+        command,
+        warning: warning(options).map(str::to_owned),
+    })
+}
+
+/// El binario y sus argumentos, ya verificada su versión. Lo comparten [`plan`] y [`run`]: `run`
+/// no puede partir `plan.command` porque ahí la primera palabra es la asignación de entorno.
+async fn prepare(handle: &ServerHandle, options: &BackupOptions) -> Result<(String, Vec<String>)> {
     let binary = tools::require(Tool::PgDump)?;
     let version = tools::version(&binary).await?;
     let server = handle.caps.version;
@@ -221,13 +239,23 @@ pub async fn plan(handle: &ServerHandle, options: &BackupOptions) -> Result<Back
         )));
     }
 
-    let mut command = vec![binary.display().to_string()];
-    command.extend(arguments(&handle.profile, options)?);
+    Ok((
+        binary.display().to_string(),
+        arguments(&handle.profile, options)?,
+    ))
+}
 
-    Ok(BackupPlan {
-        command,
-        warning: warning(options).map(str::to_owned),
-    })
+/// `PGDATABASE=<base>` listo para mostrar, entrecomillado solo si hace falta para un shell.
+pub(crate) fn database_env(database: &str) -> String {
+    let plain = !database.is_empty()
+        && database
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'));
+    if plain {
+        format!("PGDATABASE={database}")
+    } else {
+        format!("PGDATABASE='{}'", database.replace('\'', "'\\''"))
+    }
 }
 
 /// Ejecuta el backup, transmitiendo el progreso por `progress` y abortando si llega algo por
@@ -241,14 +269,13 @@ pub async fn run(
     progress: mpsc::Sender<String>,
     cancel: oneshot::Receiver<()>,
 ) -> Result<Outcome> {
-    let plan = plan(handle, options).await?;
-    let (binary, args) = plan.command.split_first().expect("el plan trae el binario");
+    let (binary, args) = prepare(handle, options).await?;
 
-    let mut command = base_command(binary, handle);
+    let mut command = base_command(&binary, handle, &options.database);
     command.args(args);
 
     let started = Instant::now();
-    match spawn_streaming(command, binary, progress, cancel).await? {
+    match spawn_streaming(command, &binary, progress, cancel).await? {
         // Matar el proceso no alcanza: `pg_dump` deja un archivo a medio escribir que parece válido,
         // y un backup truncado es peor que no tener backup. El error aparecería el día que hace falta
         // restaurar, el peor momento posible para descubrirlo.
@@ -279,9 +306,11 @@ pub async fn run(
 /// La contraseña va por `PGPASSWORD` y no por argumento: así la línea que la interfaz muestra y deja
 /// copiar no la filtra. stdout se descarta porque tanto `pg_dump` (que escribe con `--file`) como
 /// `pg_restore` (que escribe en el servidor) solo hablan por stderr con `--verbose`.
-fn base_command(binary: &str, handle: &ServerHandle) -> Command {
+fn base_command(binary: &str, handle: &ServerHandle, database: &str) -> Command {
     let mut command = Command::new(binary);
     tools::hidden(&mut command)
+        // Por entorno y no por `--dbname`: así nunca se lee como cadena de conexión.
+        .env("PGDATABASE", database)
         .env("PGSSLMODE", ssl_mode_env(handle.profile.ssl_mode))
         .env("PGAPPNAME", "pgforge")
         .stdin(Stdio::null())
@@ -482,10 +511,19 @@ mod tests {
         assert!(args.contains(&"--host=servidor".to_owned()));
         assert!(args.contains(&"--port=5433".to_owned()));
         assert!(args.contains(&"--username=ana".to_owned()));
-        assert!(args.contains(&"--dbname=ventas".to_owned()));
+        // La base no viaja por argumento: `--dbname` aceptaría una cadena de conexión.
+        assert!(!args.iter().any(|arg| arg.starts_with("--dbname")));
         assert!(args.contains(&"--format=c".to_owned()));
         assert!(args.contains(&"--verbose".to_owned()));
         assert!(args.contains(&"--no-password".to_owned()));
+    }
+
+    #[test]
+    fn la_base_se_muestra_como_asignacion_de_entorno() {
+        assert_eq!(database_env("ventas"), "PGDATABASE=ventas");
+        assert_eq!(database_env("a b"), "PGDATABASE='a b'");
+        assert_eq!(database_env("x'y"), "PGDATABASE='x'\\''y'");
+        assert_eq!(database_env("host=evil"), "PGDATABASE='host=evil'");
     }
 
     #[test]
