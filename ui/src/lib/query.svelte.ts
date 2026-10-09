@@ -1,5 +1,5 @@
 import type { SQLNamespace } from "@codemirror/lang-sql";
-import { save } from "@tauri-apps/plugin-dialog";
+import { pickSave } from "./ipc";
 import { changesCatalog } from "./ddl-tags";
 import { autoFormat } from "./editor.svelte";
 import { explorer } from "./explorer.svelte";
@@ -691,7 +691,7 @@ export async function saveQueryTab(tab: QueryTab, askPath: boolean) {
 
     let path = askPath ? null : tab.filePath;
     if (!path) {
-      path = await save({
+      path = await pickSave({
         title: "Guardar la consulta",
         defaultPath: tab.filePath ?? `${tab.title.replace(/[\\/:*?"<>|]/g, "_")}.sql`,
         filters: [{ name: "SQL", extensions: ["sql"] }],

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { open } from "@tauri-apps/plugin-dialog";
+  import { pickOpen } from "./ipc";
   import { confirmMutation, isReadOnly, readOnlyReason } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
@@ -111,8 +111,8 @@
 
   async function choose() {
     const chosen = isDirectory
-      ? await open({ directory: true, title: "El directorio del backup a restaurar" })
-      : await open({ title: "El archivo del backup a restaurar" });
+      ? await pickOpen({ directory: true, title: "El directorio del backup a restaurar" })
+      : await pickOpen({ title: "El archivo del backup a restaurar" });
     if (typeof chosen === "string") source = chosen;
   }
 
@@ -155,7 +155,12 @@
   <div class="mt-3 flex items-end gap-2">
     <label class="flex min-w-0 flex-1 flex-col gap-1">
       <span class="label">{isDirectory ? "Directorio del backup" : "Archivo del backup"}</span>
-      <input class="field font-mono text-xs" bind:value={source} />
+      <input
+        class="field font-mono text-xs"
+        bind:value={source}
+        readonly
+        title="La ruta se elige con el botón: solo se aceptan rutas elegidas en el diálogo del sistema"
+      />
     </label>
     <button class="btn" onclick={choose}>Elegir…</button>
   </div>

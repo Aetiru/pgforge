@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { open, save } from "@tauri-apps/plugin-dialog";
+  import { pickOpen, pickSave } from "./ipc";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
   import { tasks } from "./tasks.svelte";
@@ -101,8 +101,8 @@
 
   async function choose() {
     const chosen = isDirectory
-      ? await open({ directory: true, title: "Dónde guardar el backup" })
-      : await save({
+      ? await pickOpen({ directory: true, title: "Dónde guardar el backup" })
+      : await pickSave({
           title: "Guardar el backup",
           defaultPath: `${database}.${FORMATS.find((f) => f.value === format)?.extension}`,
         });
@@ -142,7 +142,12 @@
   <div class="mt-3 flex items-end gap-2">
     <label class="flex min-w-0 flex-1 flex-col gap-1">
       <span class="label">{isDirectory ? "Directorio" : "Archivo"}</span>
-      <input class="field font-mono text-xs" bind:value={path} />
+      <input
+        class="field font-mono text-xs"
+        bind:value={path}
+        readonly
+        title="La ruta se elige con el botón: solo se aceptan rutas elegidas en el diálogo del sistema"
+      />
     </label>
     <button class="btn" onclick={choose}>Elegir…</button>
   </div>

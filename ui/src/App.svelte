@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { open } from "@tauri-apps/plugin-dialog";
+  import { pickOpen } from "./lib/ipc";
   import Alert from "./lib/Alert.svelte";
   import Confirm from "./lib/Confirm.svelte";
   import CompareDialog from "./lib/CompareDialog.svelte";
@@ -442,7 +442,7 @@
   async function openSqlDialog() {
     if (!sqlTarget) return;
     try {
-      const chosen = await open({
+      const chosen = await pickOpen({
         title: "Abrir una consulta",
         multiple: true,
         filters: [{ name: "SQL", extensions: ["sql"] }],

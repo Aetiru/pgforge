@@ -23,7 +23,6 @@
     "@lezer/common": "^1.5.2",
     "@lezer/highlight": "^1.2.3",
     "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/plugin-dialog": "^2.7.2",
     "@tauri-apps/plugin-log": "^2.9.0",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "codemirror": "^6.0.2",
