@@ -2,6 +2,7 @@
   import Modal from "./Modal.svelte";
   import Icon from "./Icon.svelte";
   import { font, FONT_LABELS, type FontChoice } from "./font.svelte";
+  import { theme } from "./theme.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -10,7 +11,7 @@
 
 <Modal title="Preferencias" subtitle="Vale para toda la aplicación" {onclose}>
   <div class="flex flex-col gap-1.5">
-    <span class="label">Tipo de letra</span>
+    <span class="label">Tipo de letra del código y los datos</span>
     <div class="grid grid-cols-2 gap-2">
       {#each OPTIONS as option (option)}
         <button
@@ -38,4 +39,17 @@
       {/each}
     </div>
   </div>
+
+  <label class="check mt-4">
+    <input
+      type="checkbox"
+      checked={theme.contrast}
+      onchange={(event) => theme.setContrast(event.currentTarget.checked)}
+    />
+    <span>Alto contraste</span>
+  </label>
+  <p class="mt-1 text-xs muted">
+    Oscurece textos secundarios y bordes (o los aclara en el tema oscuro). Se combina con el tema
+    que elijas.
+  </p>
 </Modal>

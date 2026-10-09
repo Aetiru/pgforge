@@ -1,8 +1,8 @@
 /**
- * Fuente de toda la interfaz.
+ * Fuente monoespaciada: la del código y los datos.
  *
- * `app.css` define `--font-sans`/`--font-mono` con Source Code Pro como valor de nacimiento; acá se
- * los pisa con una variable en línea sobre `documentElement`, igual que el tamaño de letra del SQL
+ * `app.css` define `--font-mono` con Source Code Pro como valor de nacimiento; acá se la pisa con
+ * una variable en línea sobre `documentElement`, igual que el tamaño de letra del SQL
  * (`editor.svelte.ts`), para que Tailwind, CodeMirror y todo lo demás sigan leyendo la misma
  * variable sin que cada componente sepa que hay una preferencia detrás.
  *
@@ -44,10 +44,8 @@ class Font {
 
   private apply() {
     const stack = STACKS[this.choice];
-    // Las dos variables, no solo la monoespaciada: `--font-sans` es la que usa el resto de la
-    // interfaz (rótulos, botones, menús) y las dos fuentes elegibles lo son, así que también
-    // corresponde que la sigan.
-    document.documentElement.style.setProperty("--font-sans", stack);
+    // Solo la monoespaciada: `--font-sans` es la de la interfaz (rótulos, botones, menús) y queda
+    // fija; lo que se elige acá es la letra del código y de los datos.
     document.documentElement.style.setProperty("--font-mono", stack);
   }
 

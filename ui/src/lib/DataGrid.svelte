@@ -934,7 +934,7 @@
              left: {sticky ? columnOffsets[columnIndex] : 0}px"
     >
       <input
-        class="w-full min-w-0 bg-transparent outline-none
+        class="w-full min-w-0 bg-transparent font-mono outline-none
                {draftNull ? 'italic text-zinc-400' : ''}"
         style="font-size: var(--grid-font-size, 0.875rem)"
         value={draftNull ? "[null]" : draft}
@@ -1101,7 +1101,7 @@
                     : at % 2 === 1
                       ? 'bg-zinc-100/70 dark:bg-zinc-800'
                       : 'bg-white dark:bg-zinc-900'}
-                   {rowClass?.(row) ?? ''}"
+                   {rowClass?.(row) ?? ''} font-mono"
                 style="height: {rowHeight}px; width: {totalWidth}px;
                        font-size: var(--grid-font-size, 0.875rem)"
                 role="row"
