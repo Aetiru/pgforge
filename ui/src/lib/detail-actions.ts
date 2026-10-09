@@ -62,6 +62,7 @@ export type DetailActionKind =
   | "export"
   | "import"
   | "backup"
+  | "maintenance"
   | "restore"
   | "editView"
   | "editMaterializedView"
@@ -271,6 +272,23 @@ export function headerActions(context: ActionContext): DetailAction[] {
       title: context.bookmarked
         ? "Sacar de la sección fija de marcadores"
         : "Tenerlo siempre a mano en la sección fija de marcadores",
+    });
+  }
+
+  // --- Mantenimiento ---
+
+  // VACUUM, ANALYZE y REINDEX vivían solo adentro del monitoreo, y quien buscaba «mantenimiento de
+  // esta tabla» no lo encontraba parado sobre la tabla. El diálogo es el mismo.
+  if (
+    node &&
+    (flags.isTable || flags.isMaterializedView || flags.isDatabase || node.kind === "index")
+  ) {
+    actions.push({
+      kind: "maintenance",
+      icon: "refresh",
+      label: "Mantenimiento",
+      title: `VACUUM, ANALYZE o REINDEX sobre ${node.label}`,
+      guarded: true,
     });
   }
 

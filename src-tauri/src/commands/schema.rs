@@ -2,7 +2,7 @@
 
 use pgforge_core::conn::{self, CancelSink};
 use pgforge_core::ddl::{self, Ddl};
-use pgforge_core::introspect::{self, SchemaGraph, SearchHit, TreeNode, TreeOptions};
+use pgforge_core::introspect::{self, Dependency, SchemaGraph, SearchHit, TreeNode, TreeOptions};
 use pgforge_core::{ProfileId, Result};
 use tauri::State;
 
@@ -142,4 +142,18 @@ pub async fn schema_graph(
 ) -> Result<SchemaGraph> {
     let handle = state.manager.require(id).await?;
     introspect::schema_graph(&handle, &database, &schema).await
+}
+
+/// De qué depende una relación y qué depende de ella: claves foráneas y vistas.
+#[tauri::command]
+pub async fn relation_dependencies(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    oid: u32,
+) -> Result<Vec<Dependency>> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    introspect::dependencies(&handle, &database, oid).await
 }

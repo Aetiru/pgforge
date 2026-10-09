@@ -118,6 +118,20 @@ export const triggerApply = (id: string, changes: TriggerChange[], database?: st
 export const tableTriggers = (id: string, oid: number, database?: string) =>
   invoke<TriggerInfo[]>("table_triggers", { id, oid, database: database ?? null });
 
+/** De qué depende una relación y qué depende de ella (`introspect::dependencies`). */
+export interface Dependency {
+  direction: "uses" | "usedBy";
+  /** Etiqueta para mostrar: «tabla», «vista», «clave foránea»… */
+  kind: string;
+  schema: string;
+  name: string;
+  /** La definición de una clave foránea; `null` en el resto. */
+  detail: string | null;
+}
+
+export const relationDependencies = (id: string, oid: number, database?: string) =>
+  invoke<Dependency[]>("relation_dependencies", { id, oid, database: database ?? null });
+
 // ---------------------------------------------------------------------------
 // Roles
 // ---------------------------------------------------------------------------

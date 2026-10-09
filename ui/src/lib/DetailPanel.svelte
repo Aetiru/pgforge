@@ -40,7 +40,9 @@
   import Actions from "./detail/Actions.svelte";
   import Columns from "./detail/Columns.svelte";
   import Constraints from "./detail/Constraints.svelte";
+  import MaintenanceDialog from "./MaintenanceDialog.svelte";
   import DdlSection from "./detail/Ddl.svelte";
+  import DependenciesSection from "./detail/Dependencies.svelte";
   import GroupServers from "./detail/GroupServers.svelte";
   import Indexes from "./detail/Indexes.svelte";
   import Mappings from "./detail/Mappings.svelte";
@@ -95,6 +97,7 @@
     tablePartitions,
     tableSecurity,
     tableTriggers,
+    relationDependencies,
     typeInfo,
     userMappingApply,
     userMappings,
@@ -117,6 +120,8 @@
     type TableColumn,
     type TableSecurity,
     type TableShape,
+    type Dependency,
+    type Target,
     type TriggerInfo,
     type UserMapping,
   } from "./ipc";
@@ -315,6 +320,27 @@
     }
   }
 
+  let dependencies = $state<Dependency[] | null>(null);
+  let dependenciesError = $state<string | null>(null);
+  let dependenciesLoading = $state(false);
+
+  /** Tablas y vistas: lo único que el catálogo une con `pg_depend`/`pg_constraint` es una relación. */
+  async function loadDependencies() {
+    if (!(flags.isTable || flags.isView || flags.isMaterializedView) || !node?.oid || !selected) {
+      dependencies = null;
+      return;
+    }
+    dependenciesLoading = true;
+    dependenciesError = null;
+    try {
+      dependencies = await relationDependencies(selected.profileId, node.oid, node.database);
+    } catch (error) {
+      dependenciesError = describeError(error);
+    } finally {
+      dependenciesLoading = false;
+    }
+  }
+
   let triggers = $state<TriggerInfo[] | null>(null);
   let triggersError = $state<string | null>(null);
   let triggersLoading = $state(false);
@@ -428,6 +454,7 @@
     loadIndexes();
     loadConstraints();
     loadTriggers();
+    loadDependencies();
     loadSecurity();
     loadPrivileges();
   });
@@ -447,6 +474,7 @@
     | "constraints"
     | "triggers"
     | "security"
+    | "dependencies"
     | "privileges"
     | "mappings"
     | "ddl";
@@ -469,7 +497,15 @@
         { id: "constraints", label: "Restricciones", count: constraints?.length ?? null },
         { id: "triggers", label: "Triggers", count: triggers?.length ?? null },
         { id: "security", label: "Seguridad por fila", count: security?.policies.length ?? null },
+        { id: "dependencies", label: "Dependencias", count: dependencies?.length ?? null },
         privilegeSection,
+        { id: "ddl", label: "DDL", count: null },
+      ];
+    }
+    if (flags.isView || flags.isMaterializedView) {
+      return [
+        { id: "dependencies", label: "Dependencias", count: dependencies?.length ?? null },
+        ...(flags.hasPrivileges ? [privilegeSection] : []),
         { id: "ddl", label: "DDL", count: null },
       ];
     }
@@ -577,6 +613,17 @@
   } | null>(null);
   let domainDialog = $state<{ existing: { oid: number; name: string } | null } | null>(null);
   let schemaDialog = $state<{ existing: { name: string; owner: string } | null } | null>(null);
+  let maintenanceOpen = $state(false);
+
+  /** Sobre qué objeto corre el mantenimiento, según lo que esté elegido. */
+  const maintenanceTarget = $derived.by<Target | null>(() => {
+    if (!node) return null;
+    if (flags.isDatabase) return { kind: "database", name: node.label };
+    if (!node.schema) return null;
+    if (node.kind === "index") return { kind: "index", schema: node.schema, name: node.label };
+    return { kind: "table", schema: node.schema, name: node.label };
+  });
+
   let databaseDialog = $state<{ existing: string | null } | null>(null);
   let partitionDialog = $state<{ strategy: string } | null>(null);
   let commentDialog = $state<{
@@ -713,6 +760,9 @@
         break;
       case "backup":
         backupDialog = true;
+        break;
+      case "maintenance":
+        maintenanceOpen = true;
         break;
       case "restore":
         restoreDialog = true;
@@ -1223,6 +1273,12 @@
             onnew={() => (newConstraint = true)}
             ondrop={(name) => (dropTarget = { kind: "constraint", label: name })}
           />
+        {:else if section === "dependencies"}
+          <DependenciesSection
+            {dependencies}
+            loading={dependenciesLoading}
+            error={dependenciesError}
+          />
         {:else if section === "triggers"}
           <Triggers
             {triggers}
@@ -1462,6 +1518,15 @@
       if (parent) explorer.reload(parent);
       else reloadSelected();
     }}
+  />
+{/if}
+
+{#if maintenanceOpen && maintenanceTarget && selected}
+  <MaintenanceDialog
+    profileId={selected.profileId}
+    target={maintenanceTarget}
+    database={node?.database ?? null}
+    onclose={() => (maintenanceOpen = false)}
   />
 {/if}
 
