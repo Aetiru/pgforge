@@ -20,7 +20,7 @@
   };
   const keyOf = (p) => (p ? (typeof p.id === "string" ? p.id : "root") : "root");
   const handlers = {
-    app_info: () => ({ version: "0.9.4", minPostgresMajor: 13, logDir: null }),
+    app_info: () => ({ version: "0.10.0", minPostgresMajor: 13, logDir: null }),
     list_profiles: () => [PROD, DEV],
     connected_servers: () => ["p1", "p2"],
     list_groups: () => ["Clientes"],
