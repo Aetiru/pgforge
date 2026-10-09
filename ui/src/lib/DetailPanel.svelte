@@ -43,6 +43,7 @@
   import MaintenanceDialog from "./MaintenanceDialog.svelte";
   import DdlSection from "./detail/Ddl.svelte";
   import DependenciesSection from "./detail/Dependencies.svelte";
+  import StatisticsSection from "./detail/Statistics.svelte";
   import GroupServers from "./detail/GroupServers.svelte";
   import Indexes from "./detail/Indexes.svelte";
   import Mappings from "./detail/Mappings.svelte";
@@ -98,6 +99,7 @@
     tableSecurity,
     tableTriggers,
     relationDependencies,
+    tableStat,
     typeInfo,
     userMappingApply,
     userMappings,
@@ -121,6 +123,7 @@
     type TableSecurity,
     type TableShape,
     type Dependency,
+    type TableStat,
     type Target,
     type TriggerInfo,
     type UserMapping,
@@ -320,6 +323,26 @@
     }
   }
 
+  let stat = $state<TableStat | null>(null);
+  let statError = $state<string | null>(null);
+  let statLoading = $state(false);
+
+  async function loadStat() {
+    if (!flags.isTable || !node?.oid || !selected) {
+      stat = null;
+      return;
+    }
+    statLoading = true;
+    statError = null;
+    try {
+      stat = await tableStat(selected.profileId, node.oid, node.database);
+    } catch (error) {
+      statError = describeError(error);
+    } finally {
+      statLoading = false;
+    }
+  }
+
   let dependencies = $state<Dependency[] | null>(null);
   let dependenciesError = $state<string | null>(null);
   let dependenciesLoading = $state(false);
@@ -455,6 +478,7 @@
     loadConstraints();
     loadTriggers();
     loadDependencies();
+    loadStat();
     loadSecurity();
     loadPrivileges();
   });
@@ -475,6 +499,7 @@
     | "triggers"
     | "security"
     | "dependencies"
+    | "stats"
     | "privileges"
     | "mappings"
     | "ddl";
@@ -498,6 +523,7 @@
         { id: "triggers", label: "Triggers", count: triggers?.length ?? null },
         { id: "security", label: "Seguridad por fila", count: security?.policies.length ?? null },
         { id: "dependencies", label: "Dependencias", count: dependencies?.length ?? null },
+        { id: "stats", label: "Estadísticas", count: null },
         privilegeSection,
         { id: "ddl", label: "DDL", count: null },
       ];
@@ -1274,6 +1300,15 @@
             {blocked}
             onnew={() => (newConstraint = true)}
             ondrop={(name) => (dropTarget = { kind: "constraint", label: name })}
+          />
+        {:else if section === "stats"}
+          <StatisticsSection
+            {stat}
+            loading={statLoading}
+            error={statError}
+            partitioned={node?.kind === "partitionedTable"}
+            {blocked}
+            onmaintenance={() => (maintenanceOpen = true)}
           />
         {:else if section === "dependencies"}
           <DependenciesSection

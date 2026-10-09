@@ -74,6 +74,9 @@ for (const variant of VARIANTS) {
   await page.getByRole("tab", { name: /Dependencias/ }).click();
   await page.waitForTimeout(300);
   await shot(page, "detalle-dependencias");
+  await page.getByRole("tab", { name: /Estadísticas/ }).click();
+  await page.waitForTimeout(300);
+  await shot(page, "detalle-estadisticas");
 
   // Consulta con resultados, y su plan.
   await page.getByRole("button", { name: "Nueva consulta" }).first().click();
@@ -125,4 +128,4 @@ if (errors.length > 0) {
   console.error(`Hubo ${errors.length} excepciones en la interfaz:\n${errors.join("\n")}`);
   process.exit(1);
 }
-console.log(`Listo: ${VARIANTS.length * 7} capturas en ${out}`);
+console.log(`Listo: ${VARIANTS.length * 8} capturas en ${out}`);

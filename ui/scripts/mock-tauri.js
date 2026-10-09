@@ -31,6 +31,7 @@
       { direction: "usedBy", kind: "vista", schema: "public", name: "resumen_mensual", detail: null },
       { direction: "usedBy", kind: "clave foránea", schema: "public", name: "facturas", detail: "facturas_pedido_fk: FOREIGN KEY (pedido_id) REFERENCES pedidos(id)" },
     ],
+    table_stat: () => ({ schema: "public", table: "pedidos", liveTuples: 48213, deadTuples: 21400, deadRatio: 0.307, totalBytes: 73400320, tableBytes: 52428800, indexBytes: 20971520, sequentialScans: 4120, indexScans: 96, lastVacuumSeconds: null, lastAutovacuumSeconds: 1900000, lastAnalyzeSeconds: null }),
     schema_privileges: () => [], database_privileges: () => [], default_privileges: () => [],
     relation_privileges: () => [], column_privileges: () => [], function_privileges: () => [],
     object_ddl: () => ({ sql: "CREATE TABLE public.pedidos (\n  id bigint PRIMARY KEY\n);", source: "pgDump" }),

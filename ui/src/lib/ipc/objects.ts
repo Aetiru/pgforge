@@ -6,6 +6,7 @@
 import { invoke } from "./core";
 
 import type { DdlStatement } from "./ddl";
+import type { TableStat } from "./monitor";
 
 // ---------------------------------------------------------------------------
 // Comentarios
@@ -117,6 +118,10 @@ export const triggerApply = (id: string, changes: TriggerChange[], database?: st
 
 export const tableTriggers = (id: string, oid: number, database?: string) =>
   invoke<TriggerInfo[]>("table_triggers", { id, oid, database: database ?? null });
+
+/** Tamaño, filas vivas y muertas, último vacuum y análisis de una tabla; `null` si no las lleva. */
+export const tableStat = (id: string, oid: number, database?: string) =>
+  invoke<TableStat | null>("table_stat", { id, oid, database: database ?? null });
 
 /** De qué depende una relación y qué depende de ella (`introspect::dependencies`). */
 export interface Dependency {

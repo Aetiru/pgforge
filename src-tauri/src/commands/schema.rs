@@ -3,6 +3,7 @@
 use pgforge_core::conn::{self, CancelSink};
 use pgforge_core::ddl::{self, Ddl};
 use pgforge_core::introspect::{self, Dependency, SchemaGraph, SearchHit, TreeNode, TreeOptions};
+use pgforge_core::monitor::stats::{self as monitor_stats, TableStat};
 use pgforge_core::{ProfileId, Result};
 use tauri::State;
 
@@ -156,4 +157,23 @@ pub async fn relation_dependencies(
     let database = database.unwrap_or_else(|| handle.default_database().to_owned());
 
     introspect::dependencies(&handle, &database, oid).await
+}
+
+/// Las estadísticas de una tabla: tamaño, filas vivas y muertas, último vacuum y análisis. `null` si
+/// el servidor no las lleva (una tabla particionada).
+///
+/// Va por una conexión del pool y no por el monitor: el detalle de una tabla no tiene por qué haber
+/// abierto la vista de monitoreo para poder mostrar esto.
+#[tauri::command]
+pub async fn table_stat(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    oid: u32,
+) -> Result<Option<TableStat>> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+    let client = handle.client(&database).await?;
+
+    monitor_stats::table_by_oid(&client, oid).await
 }

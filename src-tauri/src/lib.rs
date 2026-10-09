@@ -87,6 +87,7 @@ pub fn run() {
             commands::workspaces::workspace_open,
             commands::schema::tree_children,
             commands::schema::relation_dependencies,
+            commands::schema::table_stat,
             commands::schema::tree_search,
             commands::schema::read_cancel,
             commands::schema::object_ddl,
