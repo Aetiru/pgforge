@@ -69,6 +69,7 @@ const SELECT: &str =
 
 impl SavedStore {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        crate::private::restrict(path.as_ref())?;
         let connection = Connection::open(path)?;
 
         // Mismo criterio que el historial: que el archivo siga abriendo después de un corte importa

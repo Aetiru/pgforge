@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { save } from "@tauri-apps/plugin-dialog";
+  import { pickSave } from "./ipc";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
   import { tasks } from "./tasks.svelte";
@@ -104,7 +104,7 @@
   });
 
   async function choose() {
-    const chosen = await save({
+    const chosen = await pickSave({
       title: "Dónde guardar la exportación",
       defaultPath: `${fileName}.${FORMATS.find((f) => f.value === format)?.extension}`,
     });
@@ -142,7 +142,12 @@
   <div class="mt-3 flex items-end gap-2">
     <label class="flex min-w-0 flex-1 flex-col gap-1">
       <span class="label">Archivo</span>
-      <input class="field font-mono text-xs" bind:value={path} />
+      <input
+        class="field font-mono text-xs"
+        bind:value={path}
+        readonly
+        title="La ruta se elige con el botón: solo se aceptan rutas elegidas en el diálogo del sistema"
+      />
     </label>
     <button class="btn" onclick={choose}>Elegir…</button>
   </div>

@@ -40,6 +40,12 @@ Una columna `geometry`/`geography` (extensión PostGIS) llega como hex EWKB, no 
 
 **Diagrama ERD**: `introspect::graph` devuelve tablas y aristas, jamás coordenadas — posición depende del ancho del texto en pantalla y de lo que el usuario arrastre, así que layout vive en `ui/src/lib/erd.ts`, puro y con Vitest (rangos por capas, ciclos de FK que no pueden colgar la interfaz, tope de columnas por caja). `ErdPanel.svelte` solo dibuja el SVG y maneja zoom/pan/arrastre. Excepción anotada a la regla de que lógica vive en core: `erd_export_svg` escribe el archivo desde `src-tauri` porque SVG lo arma la interfaz y sumar el plugin de archivos por un caso costaba más que cinco líneas de `std::fs`. `sql_write_file` —guardar una pestaña de consulta como `.sql`— es la misma excepción y por la misma razón; no agregar una tercera sin ese mismo argumento.
 
+### Elegir archivos y carpetas
+
+**Nunca** `@tauri-apps/plugin-dialog` (ni está en `package.json` ni en los permisos de `capabilities/default.json`): los diálogos de archivos son `pickOpen`/`pickSave` de `ipc/dialogs.ts`, que los abren desde Rust y dejan la ruta elegida autorizada del lado de Rust. Los comandos que reciben una ruta (guardar/abrir `.sql`, exportar/importar, backup/restore, instantáneas, diagrama) rechazan cualquier otra, así que una ruta escrita a mano en un campo no sirve: esos campos son `readonly` y se llenan con el botón. Lo autorizado vive en memoria de Rust: tras reiniciar la aplicación hay que volver a elegir (una pestaña con `filePath` de la sesión anterior no se guarda con `Ctrl+S` sin pasar por «Guardar como»). La firma imita a `open`/`save` del complemento; `defaultPath` solo orienta al diálogo.
+
+La excepción anotada de `erd_export_svg` y `sql_write_file` (escribir desde `src-tauri`) sigue en pie, pero ya no es «cinco líneas de `std::fs`»: pasan por el registro de rutas.
+
 ### Estilos
 
 `ui/src/app.css` no es solo el import de Tailwind: tiene **capa de componentes** con las piezas repetidas en toda la aplicación — `.card`, `.panel`, `.toolbar`, `.btn` (`btn-primary`, `btn-danger`, `btn-ghost`, `btn-icon`, `btn-sm`), `.field`, `.label`, `.check`, `.seg`, `.tag-*`, `.alert-*`, `.list-table`, `.row-actions`, `.spinner`, `.muted`, `.divider-*`. Antes de escribir cadena de clases Tailwind para botón, campo o tarjeta, usar la clase que ya existe; si hace falta variante nueva, va ahí, no repetida en cada componente.

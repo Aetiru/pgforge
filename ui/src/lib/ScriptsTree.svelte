@@ -8,7 +8,7 @@
    * lectura; no se usa para armar ninguna ruta que se mande a escribir o a borrar, esas siempre
    * llegan enteras del backend (`ScriptFolder.path` / `ScriptEntry.path`).
    */
-  import { open } from "@tauri-apps/plugin-dialog";
+  import { pickOpen } from "./ipc";
   import Alert from "./Alert.svelte";
   import Confirm from "./Confirm.svelte";
   import Empty from "./Empty.svelte";
@@ -235,7 +235,7 @@
 
   async function importFolder(defaultProfileId: string | null) {
     error = null;
-    const chosen = await open({ directory: true, title: "Carpeta con scripts .sql" }).catch(
+    const chosen = await pickOpen({ directory: true, title: "Carpeta con scripts .sql" }).catch(
       () => null,
     );
     if (typeof chosen !== "string") return;

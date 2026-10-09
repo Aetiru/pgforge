@@ -9,6 +9,7 @@ pub mod bookmarks;
 pub mod compare;
 pub mod data;
 pub mod ddl;
+pub mod dialogs;
 pub mod monitoring;
 pub mod query;
 pub mod schema;
@@ -65,6 +66,7 @@ pub async fn record_applied<T>(
         source: Source::Dialog,
         profile_id: id.to_string(),
         database: database.to_owned(),
+        // `HistoryStore::record` redacta las contraseñas; lo que se ejecutó ya salió con el valor real.
         sql,
         started_at,
         seconds: started.elapsed().as_secs_f64(),

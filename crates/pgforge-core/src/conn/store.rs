@@ -149,7 +149,8 @@ impl ProfileStore {
             .map_err(|e| Error::Config(format!("no se pudo serializar la lista: {e}")))?;
 
         let tmp = self.path.with_extension("json.tmp");
-        std::fs::write(&tmp, json)?;
+        // 0600: el archivo lista hosts, usuarios y rutas de claves SSH.
+        crate::private::write(&tmp, &json)?;
         std::fs::rename(&tmp, &self.path)?;
         Ok(())
     }
@@ -223,6 +224,21 @@ mod tests {
     fn un_archivo_inexistente_es_un_almacen_vacio() {
         let store = ProfileStore::load(temp_path("inexistente")).unwrap();
         assert!(store.profiles().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn el_archivo_de_conexiones_queda_solo_para_su_dueno() {
+        use std::os::unix::fs::PermissionsExt;
+        let path = temp_path("permisos");
+        let _ = std::fs::remove_file(&path);
+        let mut store = ProfileStore::load(&path).unwrap();
+        store
+            .upsert(ConnectionProfile::new("Local", "localhost", "postgres"))
+            .unwrap();
+        let modo = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(modo, 0o600);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

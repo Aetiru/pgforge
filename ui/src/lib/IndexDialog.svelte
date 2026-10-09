@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { confirmMutation } from "./access.svelte";
+  import { confirmMutation, isReadOnly, readOnlyReason } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
   import SqlPreview from "./SqlPreview.svelte";
@@ -34,6 +34,11 @@
     onclose: () => void;
     oncreated: () => void;
   } = $props();
+
+  /** Servidor de solo lectura: el botón se apaga con el motivo, y el núcleo lo rechaza igual. */
+  const blocked = $derived(
+    isReadOnly(profileId) ? { disabled: true, title: readOnlyReason(profileId) ?? "" } : {},
+  );
 
   // Se toma una sola vez, como el resto de los formularios: a partir de acá el dueño es el usuario.
   let form = $state(untrack(() => indexForm(initialColumns)));
@@ -151,6 +156,6 @@
   {#snippet footer()}
     <button class="btn btn-ghost btn-sm" onclick={showPreview}>Ver SQL</button>
     <button class="btn ml-auto" onclick={onclose}>Cancelar</button>
-    <button class="btn btn-primary" onclick={submit}>Crear índice</button>
+    <button class="btn btn-primary" onclick={submit} {...blocked}>Crear índice</button>
   {/snippet}
 </Modal>

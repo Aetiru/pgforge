@@ -549,8 +549,8 @@ pub fn sql_format(sql: String) -> String {
 /// servidor, así que no hay lógica que llevar al núcleo, y estas dos líneas salen más baratas que
 /// sumar el complemento de archivos con su ámbito de permisos.
 #[tauri::command]
-pub fn sql_write_file(path: String, sql: String) -> Result<()> {
-    std::fs::write(path, sql)?;
+pub fn sql_write_file(state: State<'_, AppState>, path: String, sql: String) -> Result<()> {
+    std::fs::write(state.paths.check(&path)?, sql)?;
     Ok(())
 }
 
@@ -560,8 +560,8 @@ pub fn sql_write_file(path: String, sql: String) -> Result<()> {
 /// Latin-1 tiene que poder abrirse y arreglarse, y negarse a mostrarlo por un acento roto no ayuda
 /// a nadie.
 #[tauri::command]
-pub fn sql_read_file(path: String) -> Result<String> {
-    let bytes = std::fs::read(path)?;
+pub fn sql_read_file(state: State<'_, AppState>, path: String) -> Result<String> {
+    let bytes = std::fs::read(state.paths.check(&path)?)?;
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 

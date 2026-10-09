@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { open } from "@tauri-apps/plugin-dialog";
+  import { pickOpen } from "./ipc";
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
@@ -95,7 +95,7 @@
    * en vez de sumarse a ella: es otra fuente, no un agregado a la que ya se trajo.
    */
   async function chooseDbeaverWorkspace() {
-    const root = await open({ directory: true, title: "Carpeta raíz del workspace de DBeaver" });
+    const root = await pickOpen({ directory: true, title: "Carpeta raíz del workspace de DBeaver" });
     if (typeof root !== "string") return;
 
     loading = true;

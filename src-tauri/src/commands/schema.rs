@@ -121,8 +121,13 @@ pub async fn object_ddl(
 /// no hay lógica que llevar al core. Escribir el archivo desde Rust evita sumar el plugin de
 /// archivos y su ámbito de permisos por este único caso.
 #[tauri::command]
-pub fn erd_export_svg(path: String, svg: String) -> Result<()> {
-    std::fs::write(path, svg)?;
+pub fn erd_export_svg(state: State<'_, AppState>, path: String, svg: String) -> Result<()> {
+    write_svg(&state.paths, &path, &svg)
+}
+
+/// Lo que hace `erd_export_svg`, separado para probarlo sin una ventana que provea el `State`.
+pub fn write_svg(paths: &crate::paths::AllowedPaths, path: &str, svg: &str) -> Result<()> {
+    std::fs::write(paths.check(path)?, svg)?;
     Ok(())
 }
 

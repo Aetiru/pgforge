@@ -97,6 +97,172 @@ pub struct Entry {
     pub error: Option<String>,
 }
 
+/// Sustituye por `'***'` el literal que sigue a `PASSWORD`: la contraseña de `CREATE`/`ALTER ROLE`
+/// y la opción `password` de `CREATE`/`ALTER USER MAPPING` (y de `CREATE SERVER`, que usa la misma
+/// forma `OPTIONS (password '…')`).
+///
+/// Es función pura y se aplica solo al anotar en el historial: la vista previa y la ejecución llevan
+/// el SQL entero, porque el servidor lo necesita. El historial, en cambio, es un archivo de texto
+/// que se lista, se busca y se copia, y una contraseña ahí dura mucho más que la operación.
+///
+/// No analiza SQL entero: recorre el texto saltando comentarios, identificadores entrecomillados y
+/// literales (con `''`, `E'…\'…'` y `$tag$…$tag$`) para que un `password` dentro de un literal no
+/// cuente, y reemplaza el literal que sigue a la palabra. `PASSWORD NULL` no tiene secreto y queda.
+/// Si el literal no cierra se redacta hasta el final: ante la duda, se oculta de más.
+pub fn redact_secrets(sql: &str) -> String {
+    let c: Vec<char> = sql.chars().collect();
+    let mut out = String::with_capacity(sql.len());
+    let mut i = 0;
+    while i < c.len() {
+        let ch = c[i];
+        if ch == '-' && c.get(i + 1) == Some(&'-') {
+            let end = c[i..]
+                .iter()
+                .position(|&x| x == '\n')
+                .map_or(c.len(), |p| i + p);
+            out.extend(&c[i..end]);
+            i = end;
+        } else if ch == '/' && c.get(i + 1) == Some(&'*') {
+            let end = block_comment_end(&c, i);
+            out.extend(&c[i..end]);
+            i = end;
+        } else if ch == '"' {
+            let mut j = i + 1;
+            while j < c.len() {
+                if c[j] == '"' {
+                    if c.get(j + 1) == Some(&'"') {
+                        j += 2;
+                        continue;
+                    }
+                    j += 1;
+                    break;
+                }
+                j += 1;
+            }
+            out.extend(&c[i..j]);
+            i = j;
+        } else if ch == '\'' {
+            let end = quoted_end(&c, i, false);
+            out.extend(&c[i..end]);
+            i = end;
+        } else if ch == '$' {
+            let end = dollar_end(&c, i).unwrap_or(i + 1);
+            out.extend(&c[i..end]);
+            i = end;
+        } else if ch.is_alphabetic() || ch == '_' {
+            let mut j = i + 1;
+            while j < c.len() && (c[j].is_alphanumeric() || c[j] == '_' || c[j] == '$') {
+                j += 1;
+            }
+            let word: String = c[i..j].iter().collect();
+            if word.eq_ignore_ascii_case("e") && c.get(j) == Some(&'\'') {
+                // Cadena con escapes: el literal entero se copia, la `E` no es una palabra.
+                let end = quoted_end(&c, j, true);
+                out.extend(&c[i..end]);
+                i = end;
+                continue;
+            }
+            out.push_str(&word);
+            i = j;
+            if word.eq_ignore_ascii_case("password") {
+                let k = skip_trivia(&c, i);
+                if let Some(end) = literal_end(&c, k) {
+                    out.extend(&c[i..k]);
+                    out.push_str("'***'");
+                    i = end;
+                }
+            }
+        } else {
+            out.push(ch);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Posición justo después del comentario de bloque que empieza en `start` (anidan, como en
+/// PostgreSQL).
+fn block_comment_end(c: &[char], start: usize) -> usize {
+    let (mut depth, mut i) = (0, start);
+    while i < c.len() {
+        if c[i] == '/' && c.get(i + 1) == Some(&'*') {
+            depth += 1;
+            i += 2;
+        } else if c[i] == '*' && c.get(i + 1) == Some(&'/') {
+            depth -= 1;
+            i += 2;
+            if depth == 0 {
+                return i;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    c.len()
+}
+
+/// Posición justo después de la cadena entre comillas simples que abre en `start`.
+fn quoted_end(c: &[char], start: usize, backslash_escapes: bool) -> usize {
+    let mut i = start + 1;
+    while i < c.len() {
+        match c[i] {
+            '\\' if backslash_escapes => i += 2,
+            '\'' if c.get(i + 1) == Some(&'\'') => i += 2,
+            '\'' => return i + 1,
+            _ => i += 1,
+        }
+    }
+    c.len()
+}
+
+/// Posición justo después del literal entre dólares (`$$…$$`, `$tag$…$tag$`) que abre en `start`,
+/// o `None` si ahí no abre uno (por ejemplo `$1`).
+fn dollar_end(c: &[char], start: usize) -> Option<usize> {
+    let mut j = start + 1;
+    while j < c.len() && (c[j].is_alphanumeric() || c[j] == '_') {
+        j += 1;
+    }
+    if c.get(j) != Some(&'$') || c.get(start + 1).is_some_and(|d| d.is_ascii_digit()) {
+        return None;
+    }
+    let tag = &c[start..=j];
+    let mut i = j + 1;
+    while i + tag.len() <= c.len() {
+        if &c[i..i + tag.len()] == tag {
+            return Some(i + tag.len());
+        }
+        i += 1;
+    }
+    Some(c.len())
+}
+
+/// Salta espacios y comentarios.
+fn skip_trivia(c: &[char], mut i: usize) -> usize {
+    loop {
+        match c.get(i) {
+            Some(x) if x.is_whitespace() => i += 1,
+            Some('-') if c.get(i + 1) == Some(&'-') => {
+                i = c[i..]
+                    .iter()
+                    .position(|&x| x == '\n')
+                    .map_or(c.len(), |p| i + p);
+            }
+            Some('/') if c.get(i + 1) == Some(&'*') => i = block_comment_end(c, i),
+            _ => return i,
+        }
+    }
+}
+
+/// Fin del literal de texto que empieza en `i`, si ahí empieza uno.
+fn literal_end(c: &[char], i: usize) -> Option<usize> {
+    match c.get(i)? {
+        '\'' => Some(quoted_end(c, i, false)),
+        'e' | 'E' if c.get(i + 1) == Some(&'\'') => Some(quoted_end(c, i + 1, true)),
+        '$' => dollar_end(c, i),
+        _ => None,
+    }
+}
+
 fn editor_source() -> Source {
     Source::Editor
 }
@@ -111,6 +277,7 @@ const SELECT: &str = "SELECT id, profile_id, database, sql, started_at, seconds,
 
 impl HistoryStore {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        crate::private::restrict(path.as_ref())?;
         let connection = Connection::open(path)?;
 
         // El historial es lo más prescindible de la aplicación: si el proceso se corta a mitad de
@@ -161,6 +328,9 @@ impl HistoryStore {
     }
 
     pub fn record(&self, entry: &NewEntry) -> Result<i64> {
+        // Acá y no en cada llamador: el editor también anota lo que el usuario escribió a mano
+        // (`ALTER ROLE … PASSWORD '…'`), y un solo punto de entrada no se puede olvidar.
+        let sql = redact_secrets(&entry.sql);
         self.connection.execute(
             "INSERT INTO history
                  (profile_id, database, sql, started_at, seconds, row_count, succeeded, error,
@@ -169,7 +339,7 @@ impl HistoryStore {
             params![
                 entry.profile_id,
                 entry.database,
-                entry.sql,
+                sql,
                 entry.started_at,
                 entry.seconds,
                 entry.row_count,
@@ -265,6 +435,88 @@ mod tests {
             row_count: Some(3),
             error: None,
         }
+    }
+
+    #[test]
+    fn oculta_la_contrasena_de_un_rol() {
+        assert_eq!(
+            redact_secrets("CREATE ROLE ana LOGIN PASSWORD 's3cr3t' VALID UNTIL 'infinity'"),
+            "CREATE ROLE ana LOGIN PASSWORD '***' VALID UNTIL 'infinity'"
+        );
+        assert_eq!(
+            redact_secrets("alter role ana with encrypted password 'x'"),
+            "alter role ana with encrypted password '***'"
+        );
+    }
+
+    #[test]
+    fn las_comillas_escapadas_no_cortan_el_literal() {
+        let out = redact_secrets("ALTER ROLE a PASSWORD 'it''s a ''secret'' ok'; SELECT 1");
+        assert_eq!(out, "ALTER ROLE a PASSWORD '***'; SELECT 1");
+        assert!(!out.contains("secret"));
+    }
+
+    #[test]
+    fn oculta_la_opcion_password_de_un_user_mapping() {
+        let out = redact_secrets(
+            "CREATE USER MAPPING FOR ana SERVER remoto OPTIONS (user 'ana', Password 'p''w')",
+        );
+        assert_eq!(
+            out,
+            "CREATE USER MAPPING FOR ana SERVER remoto OPTIONS (user 'ana', Password '***')"
+        );
+        let out =
+            redact_secrets("ALTER USER MAPPING FOR ana SERVER r OPTIONS (SET password 'zzz')");
+        assert!(!out.contains("zzz") && out.contains("'***'"));
+    }
+
+    #[test]
+    fn entiende_cadenas_con_escapes_y_entre_dolares() {
+        assert_eq!(
+            redact_secrets(r"ALTER ROLE a PASSWORD E'a\'b'"),
+            "ALTER ROLE a PASSWORD '***'"
+        );
+        assert_eq!(
+            redact_secrets("ALTER ROLE a PASSWORD $$un 'secreto'$$ LOGIN"),
+            "ALTER ROLE a PASSWORD '***' LOGIN"
+        );
+        assert_eq!(
+            redact_secrets("ALTER ROLE a PASSWORD /* nota */\n  'x'"),
+            "ALTER ROLE a PASSWORD /* nota */\n  '***'"
+        );
+    }
+
+    #[test]
+    fn no_toca_lo_que_no_es_una_contrasena() {
+        for sql in [
+            "ALTER ROLE a PASSWORD NULL",
+            "SELECT 'PASSWORD ''x'''",
+            "SELECT \"password\", password FROM usuarios WHERE nombre = 'password'",
+            "-- PASSWORD 'x'\nSELECT 1",
+            "SELECT 1; /* password 'x' */",
+            "CREATE ROLE ñandú LOGIN",
+        ] {
+            assert_eq!(redact_secrets(sql), sql);
+        }
+    }
+
+    #[test]
+    fn un_literal_sin_cerrar_se_oculta_hasta_el_final() {
+        assert_eq!(
+            redact_secrets("ALTER ROLE a PASSWORD 'sin cerrar"),
+            "ALTER ROLE a PASSWORD '***'"
+        );
+    }
+
+    #[test]
+    fn el_historial_del_editor_tambien_oculta_contrasenas() {
+        let store = store();
+        store
+            .record(&entry("ALTER ROLE ana PASSWORD 'secreto'"))
+            .unwrap();
+        let guardado = &store.recent(None, 10).unwrap()[0];
+        assert_eq!(guardado.sql, "ALTER ROLE ana PASSWORD '***'");
+        assert!(store.search("secreto", 10).unwrap().is_empty());
     }
 
     fn store() -> HistoryStore {

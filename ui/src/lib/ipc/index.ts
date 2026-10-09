@@ -13,6 +13,7 @@
  */
 
 export * from "./core";
+export * from "./dialogs";
 export * from "./servers";
 export * from "./schema";
 export * from "./scripts";

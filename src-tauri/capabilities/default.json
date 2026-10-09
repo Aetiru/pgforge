@@ -8,8 +8,6 @@
   ],
   "permissions": [
     "core:default",
-    "dialog:allow-save",
-    "dialog:allow-open",
     "log:default",
     "notification:default"
   ]

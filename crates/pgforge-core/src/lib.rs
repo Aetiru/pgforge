@@ -16,6 +16,7 @@ pub mod ddl;
 pub mod error;
 pub mod introspect;
 pub mod monitor;
+mod private;
 pub mod scripts;
 pub mod settings;
 pub mod sql;

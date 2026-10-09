@@ -36,8 +36,11 @@ pub async fn backup_run(
     app: AppHandle,
     state: State<'_, AppState>,
     id: ProfileId,
-    options: BackupOptions,
+    mut options: BackupOptions,
 ) -> Result<String> {
+    // Destino elegido en un diálogo: sin esto, el webview podría pedir un backup sobre cualquier
+    // archivo que el usuario pueda escribir.
+    options.path = state.paths.check(&options.path)?;
     let handle = state.manager.require(id).await?;
 
     // El plan se pide antes de lanzar la tarea para que los errores que se pueden anticipar —una
@@ -124,9 +127,11 @@ pub async fn restore_run(
     app: AppHandle,
     state: State<'_, AppState>,
     id: ProfileId,
-    options: RestoreOptions,
+    mut options: RestoreOptions,
 ) -> Result<String> {
+    options.source = state.paths.check(&options.source)?;
     let handle = state.manager.require(id).await?;
+    handle.profile.ensure_writable("restaurar un backup")?;
 
     // El plan se pide antes de lanzar la tarea para que los errores que se pueden anticipar —una
     // combinación inválida, un pg_restore más viejo que el servidor— lleguen como el error de este

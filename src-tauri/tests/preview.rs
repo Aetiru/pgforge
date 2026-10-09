@@ -771,7 +771,15 @@ fn exportar_el_diagrama_escribe_el_svg_tal_cual_lo_dibujo_la_interfaz() {
     let path = std::env::temp_dir().join(format!("pgforge_erd_{}.svg", std::process::id()));
     let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>";
 
-    commands::schema::erd_export_svg(path.to_string_lossy().into_owned(), svg.to_owned()).unwrap();
+    let paths = pgforge_app_lib::paths::AllowedPaths::default();
+    let texto = path.to_string_lossy().into_owned();
+
+    // Sin haberla elegido en un diálogo, la ruta no se escribe.
+    assert!(commands::schema::write_svg(&paths, &texto, svg).is_err());
+    assert!(!path.exists());
+
+    paths.authorize(&path).unwrap();
+    commands::schema::write_svg(&paths, &texto, svg).unwrap();
     let escrito = std::fs::read_to_string(&path).unwrap();
     let _ = std::fs::remove_file(&path);
 

@@ -82,12 +82,30 @@ pub async fn compare_with_file(
     target_schema: &str,
 ) -> Result<Comparison> {
     let target_snapshot = snapshot::read(target, target_database, target_schema).await?;
-    Ok(compare_snapshots(
-        &source.snapshot,
-        &source.label(),
+    Ok(compare_file_with_snapshot(
+        source,
         &target_snapshot,
         &target.profile.name,
     ))
+}
+
+/// La parte pura de [`compare_with_file`]: una instantánea de archivo contra otra ya leída.
+///
+/// Todo lo que sale de un archivo se marca como mínimo `Review`: el texto de una instantánea no se
+/// puede verificar contra el servidor que la escribió (`file::parse` solo descarta lo evidentemente
+/// ajeno), así que ninguna sentencia se presenta como `Safe` para correr sin leer.
+pub fn compare_file_with_snapshot(
+    source: &file::SnapshotFile,
+    target: &SchemaSnapshot,
+    target_name: &str,
+) -> Comparison {
+    let mut comparison = compare_snapshots(&source.snapshot, &source.label(), target, target_name);
+    for statement in &mut comparison.plan.statements {
+        if statement.risk == Risk::Safe {
+            statement.risk = Risk::Review;
+        }
+    }
+    comparison
 }
 
 /// La comparación entera sobre dos instantáneas ya leídas, sin servidor.

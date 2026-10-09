@@ -97,6 +97,11 @@ pub async fn spawn_statement(
     sql: String,
 ) -> Result<String> {
     let handle = state.manager.require(id).await?;
+    // Estas sentencias (`VACUUM`, `REINDEX`, `CREATE INDEX CONCURRENTLY`) corren fuera de una
+    // transacción, donde `default_transaction_read_only` no las frena.
+    handle
+        .profile
+        .ensure_writable("lanzar una tarea que modifica el servidor")?;
     let mut session = handle.open_session(&database, None).await?;
     let notices = session.take_notices();
     let token = session.cancel_token();

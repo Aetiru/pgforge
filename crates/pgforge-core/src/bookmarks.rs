@@ -113,6 +113,7 @@ const SELECT: &str =
 
 impl BookmarkStore {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        crate::private::restrict(path.as_ref())?;
         let connection = Connection::open(path)?;
 
         // Mismo criterio que `saved`/`history`: que el archivo siga abriendo después de un corte

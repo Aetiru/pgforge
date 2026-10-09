@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { open, save } from "@tauri-apps/plugin-dialog";
+  import { pickOpen, pickSave } from "./ipc";
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
@@ -48,13 +48,13 @@
   const EXTENSION = { name: "Instantánea de esquema", extensions: ["json"] };
 
   async function chooseSnapshot() {
-    const chosen = await open({ title: "Instantánea a comparar", filters: [EXTENSION] });
+    const chosen = await pickOpen({ title: "Instantánea a comparar", filters: [EXTENSION] });
     if (typeof chosen === "string") snapshotPath = chosen;
   }
 
   /** Guarda el esquema de origen tal como está ahora, para compararlo más adelante. */
   async function saveSnapshot() {
-    const chosen = await save({
+    const chosen = await pickSave({
       title: "Dónde guardar la instantánea",
       defaultPath: `${sourceName}-${source.database}-${source.schema}.json`,
       filters: [EXTENSION],

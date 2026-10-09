@@ -2,7 +2,7 @@
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
-  import { save } from "@tauri-apps/plugin-dialog";
+  import { pickSave } from "./ipc";
 
   import { METRICS, layout, neighbors, pathOf, type ErdBox } from "./erd";
   import { describeError, erdExportSvg } from "./ipc";
@@ -116,7 +116,7 @@
   async function exportSvg() {
     if (!svg || !plan) return;
 
-    const chosen = await save({
+    const chosen = await pickSave({
       title: "Dónde guardar el diagrama",
       defaultPath: `${tab.schema}.svg`,
     });

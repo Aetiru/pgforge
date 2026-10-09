@@ -107,5 +107,5 @@ pub async fn scripts_import_folder(
     };
     std::fs::create_dir_all(&dest)?;
 
-    pgforge_core::scripts::import_folder(&PathBuf::from(src), &dest)
+    pgforge_core::scripts::import_folder(&state.paths.check(&src)?, &dest)
 }

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { open } from "@tauri-apps/plugin-dialog";
-  import { confirmMutation } from "./access.svelte";
+  import { pickOpen } from "./ipc";
+  import { confirmMutation, isReadOnly, readOnlyReason } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
   import { tasks } from "./tasks.svelte";
@@ -16,6 +16,11 @@
     database: string;
     onclose: () => void;
   } = $props();
+
+  /** Servidor de solo lectura: el botón se apaga con el motivo, y el núcleo lo rechaza igual. */
+  const blocked = $derived(
+    isReadOnly(profileId) ? { disabled: true, title: readOnlyReason(profileId) ?? "" } : {},
+  );
 
   // El formato plano queda afuera a propósito: es un script SQL que se restaura con psql, no con
   // pg_restore. Los otros tres son los que esta herramienta sabe leer.
@@ -106,8 +111,8 @@
 
   async function choose() {
     const chosen = isDirectory
-      ? await open({ directory: true, title: "El directorio del backup a restaurar" })
-      : await open({ title: "El archivo del backup a restaurar" });
+      ? await pickOpen({ directory: true, title: "El directorio del backup a restaurar" })
+      : await pickOpen({ title: "El archivo del backup a restaurar" });
     if (typeof chosen === "string") source = chosen;
   }
 
@@ -150,7 +155,12 @@
   <div class="mt-3 flex items-end gap-2">
     <label class="flex min-w-0 flex-1 flex-col gap-1">
       <span class="label">{isDirectory ? "Directorio del backup" : "Archivo del backup"}</span>
-      <input class="field font-mono text-xs" bind:value={source} />
+      <input
+        class="field font-mono text-xs"
+        bind:value={source}
+        readonly
+        title="La ruta se elige con el botón: solo se aceptan rutas elegidas en el diálogo del sistema"
+      />
     </label>
     <button class="btn" onclick={choose}>Elegir…</button>
   </div>
@@ -243,6 +253,8 @@
 
   {#snippet footer()}
     <button class="btn ml-auto" onclick={onclose}>Cerrar</button>
-    <button class="btn btn-primary" onclick={run} disabled={command.length === 0}>Restaurar</button>
+    <button class="btn btn-primary" onclick={run} disabled={command.length === 0} {...blocked}>
+      Restaurar
+    </button>
   {/snippet}
 </Modal>

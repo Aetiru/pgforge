@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { open } from "@tauri-apps/plugin-dialog";
+  import { pickOpen } from "./ipc";
   import Alert from "./Alert.svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
@@ -120,12 +120,12 @@
   ];
 
   async function pickKey() {
-    const chosen = await open({ title: "Elegir la clave privada SSH" });
+    const chosen = await pickOpen({ title: "Elegir la clave privada SSH" });
     if (typeof chosen === "string" && form.tunnel) form.tunnel.privateKey = chosen;
   }
 
   async function pickRootCert() {
-    const chosen = await open({ title: "Elegir el certificado raíz" });
+    const chosen = await pickOpen({ title: "Elegir el certificado raíz" });
     if (typeof chosen === "string") form.rootCert = chosen;
   }
 
