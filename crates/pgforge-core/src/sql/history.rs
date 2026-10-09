@@ -328,6 +328,9 @@ impl HistoryStore {
     }
 
     pub fn record(&self, entry: &NewEntry) -> Result<i64> {
+        // Acá y no en cada llamador: el editor también anota lo que el usuario escribió a mano
+        // (`ALTER ROLE … PASSWORD '…'`), y un solo punto de entrada no se puede olvidar.
+        let sql = redact_secrets(&entry.sql);
         self.connection.execute(
             "INSERT INTO history
                  (profile_id, database, sql, started_at, seconds, row_count, succeeded, error,
@@ -336,7 +339,7 @@ impl HistoryStore {
             params![
                 entry.profile_id,
                 entry.database,
-                entry.sql,
+                sql,
                 entry.started_at,
                 entry.seconds,
                 entry.row_count,
@@ -503,6 +506,17 @@ mod tests {
             redact_secrets("ALTER ROLE a PASSWORD 'sin cerrar"),
             "ALTER ROLE a PASSWORD '***'"
         );
+    }
+
+    #[test]
+    fn el_historial_del_editor_tambien_oculta_contrasenas() {
+        let store = store();
+        store
+            .record(&entry("ALTER ROLE ana PASSWORD 'secreto'"))
+            .unwrap();
+        let guardado = &store.recent(None, 10).unwrap()[0];
+        assert_eq!(guardado.sql, "ALTER ROLE ana PASSWORD '***'");
+        assert!(store.search("secreto", 10).unwrap().is_empty());
     }
 
     fn store() -> HistoryStore {
