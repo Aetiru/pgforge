@@ -140,7 +140,10 @@ pub fn arguments(profile: &ConnectionProfile, options: &RestoreOptions) -> Resul
         format!("--host={}", profile.host),
         format!("--port={}", profile.port),
         format!("--username={}", profile.user),
-        // La base va por `PGDATABASE` y no por `--dbname=`, que se leería como cadena de conexión.
+        // `pg_restore` exige `--dbname` (o `--file`): `PGDATABASE` no lo reemplaza, a diferencia de
+        // `pg_dump`. Como libpq lee ese valor como cadena de conexión si trae `=` o parece una URL,
+        // un nombre así se manda ya dentro de una, con la base entrecomillada.
+        format!("--dbname={}", dbname_value(&options.database)),
         format!("--format={}", options.format.flag()),
         // Sin esto no hay una sola línea de progreso.
         "--verbose".to_owned(),
@@ -216,6 +219,19 @@ pub fn warning(options: &RestoreOptions) -> Option<&'static str> {
     None
 }
 
+/// El valor de `--dbname`: el nombre tal cual si libpq lo toma como nombre, y si no, una cadena de
+/// conexión que lo lleva entrecomillado para que no pueda traer `host=` ni nada más.
+fn dbname_value(database: &str) -> String {
+    let looks_like_conninfo = database.contains('=')
+        || database.starts_with("postgres://")
+        || database.starts_with("postgresql://");
+    if !looks_like_conninfo {
+        return database.to_owned();
+    }
+    let escaped = database.replace('\\', "\\\\").replace('\'', "\\'");
+    format!("dbname='{escaped}'")
+}
+
 /// La línea de comando completa y su advertencia, con el binario ya ubicado.
 ///
 /// Como en el backup, es acá donde se compara la versión del binario con la del servidor: es la
@@ -224,9 +240,7 @@ pub fn warning(options: &RestoreOptions) -> Option<&'static str> {
 pub async fn plan(handle: &ServerHandle, options: &RestoreOptions) -> Result<RestorePlan> {
     let (binary, args) = prepare(handle, options).await?;
 
-    // La base viaja por `PGDATABASE`; se antepone como asignación de entorno para que lo mostrado
-    // siga siendo copiable y completo.
-    let mut command = vec![super::database_env(&options.database), binary];
+    let mut command = vec![binary];
     command.extend(args);
 
     Ok(RestorePlan {
@@ -350,13 +364,29 @@ mod tests {
         arguments(&profile(), options).expect("tenía que armar los argumentos")
     }
 
+    /// Un nombre con `=` o forma de URL se leería como cadena de conexión y podría redirigir el
+    /// restore (con la contraseña) a otro servidor; entrecomillado, es solo la base.
+    #[test]
+    fn un_nombre_con_forma_de_conexion_se_manda_entrecomillado() {
+        assert_eq!(dbname_value("ventas"), "ventas");
+        assert_eq!(
+            dbname_value("host=evil dbname=x"),
+            "dbname='host=evil dbname=x'"
+        );
+        assert_eq!(
+            dbname_value("postgres://evil/x"),
+            "dbname='postgres://evil/x'"
+        );
+        assert_eq!(dbname_value("a=b'c\\d"), "dbname='a=b\\'c\\\\d'");
+    }
+
     #[test]
     fn arma_la_linea_basica() {
         let args = args(&options(Format::Custom));
         assert!(args.contains(&"--host=servidor".to_owned()));
         assert!(args.contains(&"--port=5433".to_owned()));
         assert!(args.contains(&"--username=ana".to_owned()));
-        assert!(!args.iter().any(|arg| arg.starts_with("--dbname")));
+        assert!(args.contains(&"--dbname=ventas".to_owned()));
         assert!(args.contains(&"--format=c".to_owned()));
         assert!(args.contains(&"--verbose".to_owned()));
         assert!(args.contains(&"--no-password".to_owned()));
