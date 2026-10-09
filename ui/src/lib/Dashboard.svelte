@@ -727,7 +727,9 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <div class="toolbar">
+  <!-- Con la ventana angosta los controles envuelven a una segunda línea; con el alto fijo de `.toolbar`
+       esa línea desbordaba por debajo y se montaba sobre lo que viene después. -->
+  <div class="toolbar" style="height: auto; min-height: 2rem; padding-block: 0.25rem">
     <div class="seg" role="tablist">
       {#each TABS as item (item.value)}
         <button

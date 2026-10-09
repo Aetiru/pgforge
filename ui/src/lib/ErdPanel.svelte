@@ -25,7 +25,7 @@
 
   /** El tamaño del nombre compacto: crece al alejarse, pero nunca más ancho que su caja. */
   function compactSize(box: ErdBox): number {
-    const wanted = Math.min(26, (12 / zoom) * 0.75);
+    const wanted = Math.min(30, 12 / zoom);
     return Math.min(wanted, box.width / (box.table.name.length * 0.62 + 1));
   }
   let panX = $state(0);
