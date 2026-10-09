@@ -261,13 +261,35 @@
     await tab.explain(target.sql, target.base, options);
   }
 
+  /**
+   * Lo mínimo que se le deja a los resultados: la barra y unas filas. El alto del editor se guarda en
+   * píxeles, y uno elegido en una pantalla alta —un escritorio remoto a 1080p— no entra en una más
+   * baja o con la escala de Windows al 125 %: el editor es `shrink-0`, así que se comía todo, y el
+   * divisor para achicarlo quedaba recortado fuera de vista, sin forma de recuperar la grilla.
+   */
+  const RESULTS_MIN = 120;
+
+  let panelHeight = $state(0);
+
+  /**
+   * El alto que se dibuja, recortado al espacio que hay. La preferencia guardada no se toca: de
+   * vuelta en la pantalla grande, el editor recupera el alto que se eligió ahí.
+   */
+  const editorHeight = $derived(
+    panelHeight > 0
+      ? Math.min(editorSplit.height, Math.max(0, panelHeight - RESULTS_MIN))
+      : editorSplit.height,
+  );
+
   function startResize(event: MouseEvent) {
     event.preventDefault();
     const origin = event.clientY;
-    const initial = editorSplit.height;
+    // Desde lo que se ve y no desde lo guardado: si estaba recortado, arrastrar no tiene que
+    // recorrer primero el tramo invisible para empezar a moverse.
+    const initial = editorHeight;
 
     const move = (moved: MouseEvent) => {
-      editorSplit.set(initial + moved.clientY - origin);
+      editorSplit.set(Math.min(initial + moved.clientY - origin, panelHeight - RESULTS_MIN));
     };
     const up = () => {
       window.removeEventListener("mousemove", move);
@@ -357,7 +379,7 @@
 
 <svelte:window onkeydown={onResultKey} />
 
-<div class="flex h-full flex-col">
+<div class="flex h-full flex-col" bind:clientHeight={panelHeight}>
   <!--
     Plegado, el editor se queda con todo el alto: por eso crece en vez de llevar altura fija. Antes
     esta era la barra «Ejecutar» horizontal, encima del editor; ahora es un riel angosto a la
@@ -370,7 +392,7 @@
       : editorSplit.editorHidden
         ? 'hidden'
         : 'shrink-0'}"
-    style={editorSplit.resultsHidden ? "" : `height: ${editorSplit.height}px`}
+    style={editorSplit.resultsHidden ? "" : `height: ${editorHeight}px`}
   >
     <div class="min-h-0 min-w-0 flex-1 overflow-hidden">
       <SqlEditor
