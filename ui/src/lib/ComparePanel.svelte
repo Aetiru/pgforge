@@ -4,7 +4,7 @@
   import Icon from "./Icon.svelte";
   import Sql from "./Sql.svelte";
   import { compareLabel, compareLook } from "./badges";
-  import { countEntries, filterStatements, scriptOf } from "./compare-script";
+  import { countEntries, countRisks, filterStatements, scriptOf } from "./compare-script";
   import { openQuery } from "./query.svelte";
   import type { CompareTab } from "./compare.svelte";
   import type { DiffDetail, DiffEntry, DiffStatus } from "./ipc";
@@ -27,6 +27,21 @@
     tab.result ? filterStatements(tab.result.plan.statements, tab.risks) : [],
   );
   const script = $derived(scriptOf(statements));
+  const riskCounts = $derived(countRisks(tab.result?.plan.statements ?? []));
+
+  /** Qué estados del informe se ven. Es de la pantalla: no cambia lo que se compara ni el script. */
+  let shown = $state<Record<DiffStatus, boolean>>({
+    onlySource: true,
+    onlyTarget: true,
+    different: true,
+  });
+  const entries = $derived(diff ? diff.entries.filter((entry) => shown[entry.status]) : []);
+
+  const RISK_CHIPS = [
+    { key: "safe", label: "Seguro", tone: "text-emerald-700 dark:text-emerald-300", title: "Todo lo que solo agrega: no puede perder nada" },
+    { key: "review", label: "Para revisar", tone: "text-amber-700 dark:text-amber-300", title: "Puede fallar o tardar contra una tabla con datos" },
+    { key: "destructive", label: "Destructivo", tone: "text-rose-700 dark:text-rose-300", title: "Borra estructura, y con ella los datos que tenga adentro" },
+  ] as const;
   const warnings = $derived(tab.result?.plan.warnings ?? []);
 
   /** `+` falta en el destino, `−` sobra, `~` está en los dos y difiere. */
@@ -146,12 +161,24 @@
           hint="Los {diff.equal} objetos comparados son iguales de los dos lados."
         />
       {:else}
-        <div class="px-3 py-2 text-[11px] muted">
-          {counts?.onlySource} solo en el origen · {counts?.onlyTarget} solo en el destino ·
-          {counts?.different} distintos · {diff.equal} iguales
+        <!-- Los tres estados son filtros: en un esquema con doscientas diferencias, lo que falta en
+             el destino se mira solo y no mezclado con lo que difiere. -->
+        <div class="flex flex-wrap items-center gap-2 px-3 py-2">
+          {#each [["onlySource", "solo en el origen", counts?.onlySource], ["onlyTarget", "solo en el destino", counts?.onlyTarget], ["different", "distintos", counts?.different]] as const as [status, label, total] (status)}
+            <button
+              class="chip-toggle"
+              aria-pressed={shown[status]}
+              title={MARK[status].title}
+              onclick={() => (shown[status] = !shown[status])}
+            >
+              <span class="tag {MARK[status].tone} w-5 justify-center font-mono">{MARK[status].text}</span>
+              {total} {label}
+            </button>
+          {/each}
+          <span class="text-[11px] muted">{diff.equal} iguales</span>
         </div>
 
-        {#each diff.entries as entry (entry.kind + entry.name)}
+        {#each entries as entry (entry.kind + entry.name)}
           {@const look = compareLook(entry.kind)}
           <div class="divider-b">
             <button
@@ -216,19 +243,23 @@
       {/if}
     </div>
   {:else}
-    <div class="toolbar divider-b gap-3">
-      <label class="check" title="Todo lo que solo agrega: no puede perder nada">
-        <input type="checkbox" bind:checked={tab.risks.safe} />
-        Seguro
-      </label>
-      <label class="check" title="Puede fallar o tardar contra una tabla con datos">
-        <input type="checkbox" bind:checked={tab.risks.review} />
-        Para revisar
-      </label>
-      <label class="check" title="Borra estructura, y con ella los datos que tenga adentro">
-        <input type="checkbox" bind:checked={tab.risks.destructive} />
-        Destructivo
-      </label>
+    <div class="toolbar divider-b gap-2">
+      {#each RISK_CHIPS as chip (chip.key)}
+        <button
+          class="chip-toggle"
+          aria-pressed={tab.risks[chip.key]}
+          title={chip.title}
+          onclick={() => (tab.risks[chip.key] = !tab.risks[chip.key])}
+        >
+          <span class="font-medium {chip.tone}">{riskCounts[chip.key]}</span>
+          {chip.label}
+        </button>
+      {/each}
+      {#if !tab.risks.destructive && riskCounts.destructive > 0}
+        <span class="text-[11px] text-rose-700 dark:text-rose-300">
+          {riskCounts.destructive} destructiva{riskCounts.destructive === 1 ? "" : "s"} fuera del script
+        </span>
+      {/if}
 
       <div class="flex-1"></div>
 

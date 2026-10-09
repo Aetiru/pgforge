@@ -40,6 +40,13 @@ export function scriptOf(statements: SyncStatement[]): string {
     .join("\n\n");
 }
 
+/** Cuántas sentencias hay de cada riesgo, para que el filtro diga qué deja afuera antes de usarlo. */
+export function countRisks(statements: SyncStatement[]): Record<SyncRisk, number> {
+  const counts: Record<SyncRisk, number> = { safe: 0, review: 0, destructive: 0 };
+  for (const statement of statements) counts[statement.risk] += 1;
+  return counts;
+}
+
 /** Cuántos objetos hay de cada lado, para el resumen de arriba del informe. */
 export interface DiffCounts {
   onlySource: number;

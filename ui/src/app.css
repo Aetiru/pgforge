@@ -223,6 +223,18 @@ body {
   @apply text-[0.85em] tracking-wide text-zinc-400 italic dark:text-zinc-500;
 }
 
+/* Un filtro que se prende y se apaga y dice cuántos deja pasar. Más visible que una casilla en una
+   barra: el estado se lee por el fondo, y el conteo avisa qué se pierde al apagarlo. */
+.chip-toggle {
+  @apply inline-flex items-center gap-1.5 rounded-full border border-zinc-200 px-2.5 py-0.5 text-xs
+    text-zinc-500 transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400
+    dark:hover:bg-zinc-700;
+}
+
+.chip-toggle[aria-pressed="true"] {
+  @apply border-blue-500/50 bg-blue-50 text-zinc-900 dark:bg-blue-950/60 dark:text-zinc-100;
+}
+
 /* Barra de herramientas: el patrón que repiten el editor, la grilla y el monitor. Alto fijo,
    igual de fino que el `footer` de estado (`App.svelte`, `h-6`) pero un escalón más alto: lo pone
    el botón más grande que puede tener adentro (`.btn-icon`, 28px), no el acolchado — de ahí `h-8`

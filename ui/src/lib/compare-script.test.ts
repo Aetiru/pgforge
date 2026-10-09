@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   countEntries,
+  countRisks,
   filterStatements,
   scriptOf,
   DEFAULT_RISKS,
@@ -58,6 +59,17 @@ describe("armado del script", () => {
 
   it("sin sentencias devuelve texto vacío", () => {
     expect(scriptOf([])).toBe("");
+  });
+});
+
+describe("conteo por riesgo", () => {
+  it("cuenta cada riesgo, también los que están en cero", () => {
+    const counts = countRisks([
+      statement({ risk: "safe" }),
+      statement({ risk: "safe" }),
+      statement({ risk: "destructive" }),
+    ]);
+    expect(counts).toEqual({ safe: 2, review: 0, destructive: 1 });
   });
 });
 
