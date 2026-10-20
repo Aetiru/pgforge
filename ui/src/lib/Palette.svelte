@@ -38,7 +38,12 @@
     onclose: () => void;
   } = $props();
 
-  const THEME_LABEL = { system: "el del sistema", light: "claro", dark: "oscuro" } as const;
+  const THEME_LABEL = {
+    system: "el del sistema",
+    light: "claro",
+    dark: "oscuro",
+    paper: "papel",
+  } as const;
 
   let query = $state("");
   let cursor = $state(0);

@@ -183,10 +183,10 @@ const ENVIRONMENTS: Record<
     // Producción pinta más fuerte que las otras dos, y además conserva la pastilla: el color solo
     // no se le puede confiar a la única distinción que importa de verdad.
     spine: "bg-rose-500/80",
-    bar: "border-l-[3px] border-l-rose-500/80 bg-rose-500/[0.10]",
+    bar: "border-l-[3px] border-l-rose-500/80 bg-rose-500/[0.10] paper:bg-rose-500/[0.05]",
     accent: "border-t-2 border-t-rose-500/80",
-    wash: "bg-rose-500/[0.10]",
-    frame: "border-[3px] border-rose-500/90",
+    wash: "bg-rose-500/[0.10] paper:bg-rose-500/[0.05]",
+    frame: "border-[3px] border-rose-500/90 paper:border-2",
     ribbon: "bg-rose-600 text-white",
     title: "Servidor de producción: cada modificación pide una confirmación de más",
   },

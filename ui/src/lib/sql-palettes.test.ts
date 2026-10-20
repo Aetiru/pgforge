@@ -51,6 +51,22 @@ describe("paletteCss", () => {
     expect(css).toContain("--cm-comment-style: normal");
   });
 
+  it("escribe el bloque de Papel con los colores propios de la paleta", () => {
+    const css = paletteCss({ ...defaultPrefs(), palette: "papel" });
+    const paper = css.split('html[data-theme="paper"]')[1];
+    expect(paper).toContain("--cm-comment: #6f6657");
+  });
+
+  it("una paleta sin colores propios de Papel usa los del claro, y Personalizada los suyos", () => {
+    const base = defaultPrefs();
+    const light = PALETTES[0].light;
+    const paper = paletteCss(base).split('html[data-theme="paper"]')[1];
+    expect(paper).toContain(`--cm-keyword: ${light.keyword}`);
+
+    const custom = { ...base, palette: "custom", custom: { ...base.custom, light: { ...light, keyword: "#123456" } } };
+    expect(paletteCss(custom).split('html[data-theme="paper"]')[1]).toContain("--cm-keyword: #123456");
+  });
+
   it("sin tinte, los nombres toman el color del texto", () => {
     expect(paletteCss({ ...defaultPrefs(), identTint: false })).toContain("--cm-ident: var(--cm-text)");
     expect(paletteCss({ ...defaultPrefs(), identTint: true })).not.toContain("--cm-ident: var(--cm-text)");

@@ -3,14 +3,41 @@
   import Icon from "./Icon.svelte";
   import { font, FONT_LABELS, type FontChoice } from "./font.svelte";
   import SqlColors from "./SqlColors.svelte";
-  import { theme } from "./theme.svelte";
+  import { theme, type ThemePreference } from "./theme.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
   const OPTIONS: FontChoice[] = ["source-code-pro", "jetbrains-mono"];
+
+  const THEMES: { id: ThemePreference; label: string }[] = [
+    { id: "system", label: "Sistema" },
+    { id: "light", label: "Claro" },
+    { id: "dark", label: "Oscuro" },
+    { id: "paper", label: "Papel" },
+  ];
 </script>
 
 <Modal title="Preferencias" subtitle="Vale para toda la aplicación" size="lg" {onclose}>
+  <div class="flex flex-col gap-1.5">
+    <span class="label">Tema</span>
+    <div class="seg self-start" role="group" aria-label="Tema">
+      {#each THEMES as option (option.id)}
+        <button
+          class="seg-item"
+          aria-pressed={theme.preference === option.id}
+          onclick={() => theme.set(option.id)}
+        >
+          {option.label}
+        </button>
+      {/each}
+    </div>
+    <p class="text-xs muted">
+      «Papel» es un claro de fondos crema y acento verde azulado, más cálido que el claro común.
+    </p>
+  </div>
+
+  <div class="divider-t my-4"></div>
+
   <div class="flex flex-col gap-1.5">
     <span class="label">Tipo de letra del código y los datos</span>
     <div class="grid grid-cols-2 gap-2">
