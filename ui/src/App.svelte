@@ -32,6 +32,9 @@
   import TreePanel from "./lib/TreePanel.svelte";
   import UpdateDialog from "./lib/UpdateDialog.svelte";
   import { openCompare, CompareTab } from "./lib/compare.svelte";
+  import { openDataCompare, DataCompareTab } from "./lib/data-compare.svelte";
+  import DataCompareDialog from "./lib/DataCompareDialog.svelte";
+  import DataComparePanel from "./lib/DataComparePanel.svelte";
   import { openConfig, ConfigTab } from "./lib/config.svelte";
   import { dock, INSPECTOR_DEFAULT, SIDEBAR_DEFAULT } from "./lib/dock.svelte";
   import { openMonitor, MonitorTab } from "./lib/monitor.svelte";
@@ -66,6 +69,7 @@
     workspaceDelete,
     type AppInfo,
     type CompareSide,
+    type DataSide,
     type ConnectionProfile,
     type Workspace,
   } from "./lib/ipc";
@@ -78,6 +82,8 @@
   let confirmDelete = $state<ConnectionProfile | null>(null);
   /** Esquema desde el que se pidió comparar; el otro lado lo elige el diálogo. */
   let compareSource = $state<CompareSide | null>(null);
+  /** Tabla desde la que se pidió comparar datos; la otra la elige el diálogo. */
+  let dataCompareSource = $state<DataSide | null>(null);
   /**
    * Pestaña que se quiere cerrar con una transacción abierta. La pregunta va acá y no en
    * `QueryTab.dispose()`, que corre cuando la pestaña ya se cerró y no puede preguntar nada.
@@ -172,6 +178,7 @@
     data: "table",
     erd: "diagram",
     compare: "compare",
+    dataCompare: "compare",
     monitor: "chart",
     config: "sliders",
     permissionMatrix: "role",
@@ -772,6 +779,7 @@
                 ondata={openData}
                 onerd={openErd}
                 oncompare={(source) => (compareSource = source)}
+                oncomparedata={(source) => (dataCompareSource = source)}
                 onmatrix={openPermissionMatrix}
                 onrolecapabilities={openRoleCapabilities}
               />
@@ -1021,6 +1029,8 @@
           <ErdPanel {tab} />
         {:else if tab instanceof CompareTab}
           <ComparePanel {tab} />
+        {:else if tab instanceof DataCompareTab}
+          <DataComparePanel {tab} />
         {:else if tab instanceof PermissionMatrixTab}
           <PermissionMatrixPanel {tab} />
         {:else if tab instanceof RoleCapabilitiesTab}
@@ -1149,6 +1159,7 @@
             ondata={openData}
             onerd={openErd}
             oncompare={(source) => (compareSource = source)}
+            oncomparedata={(source) => (dataCompareSource = source)}
             onmatrix={openPermissionMatrix}
             onrolecapabilities={openRoleCapabilities}
           />
@@ -1260,6 +1271,14 @@
     source={compareSource}
     onclose={() => (compareSource = null)}
     oncompare={(source, target) => void openCompare(source, target)}
+  />
+{/if}
+
+{#if dataCompareSource}
+  <DataCompareDialog
+    source={dataCompareSource}
+    onclose={() => (dataCompareSource = null)}
+    oncompare={(source, target) => void openDataCompare(source, target)}
   />
 {/if}
 

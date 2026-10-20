@@ -96,6 +96,8 @@ pub fn run() {
             commands::compare::schema_compare_file,
             commands::compare::schema_snapshot_save,
             commands::compare::schema_names,
+            commands::compare::data_compare,
+            commands::compare::data_compare_cancel,
             commands::schema::erd_export_svg,
             commands::monitoring::monitor_start,
             commands::monitoring::monitor_stop,

@@ -4,6 +4,7 @@ import {
   connectionUrl,
   dataTargetOf,
   schemaTargetOf,
+  tableTargetOf,
   roleTargetOf,
   folderForKind,
   qualifiedNameOf,
@@ -88,6 +89,20 @@ describe("dataTargetOf", () => {
   it("sin oid no hay nada que consultar, aunque el tipo sirva", () => {
     expect(dataTargetOf(node("table"))).toBeNull();
     expect(dataTargetOf(null)).toBeNull();
+  });
+});
+
+describe("tableTargetOf", () => {
+  it("solo una tabla, con su esquema, se puede comparar por datos", () => {
+    expect(tableTargetOf(node("table", { schema: "public" }))).toEqual({
+      database: "app",
+      schema: "public",
+      table: "clientes",
+    });
+    expect(tableTargetOf(node("partitionedTable", { schema: "public" }))?.table).toBe("clientes");
+    expect(tableTargetOf(node("view", { schema: "public" }))).toBeNull();
+    expect(tableTargetOf(node("table"))).toBeNull();
+    expect(tableTargetOf(null)).toBeNull();
   });
 });
 

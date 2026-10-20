@@ -152,6 +152,36 @@ enum Command {
         sql: bool,
     },
 
+    /// Compara las filas de una tabla contra la de otro servidor, emparejando por clave.
+    DataCompare {
+        /// Servidor de origen: el estado que se quiere.
+        #[arg(long)]
+        url: String,
+        /// Servidor de destino: el que habría que igualar al origen.
+        #[arg(long)]
+        target_url: String,
+        /// Esquema de la tabla. Por omisión, public.
+        #[arg(long, default_value = "public")]
+        schema: String,
+        /// Esquema en el destino, si se llama distinto. Por omisión, el mismo.
+        #[arg(long)]
+        target_schema: Option<String>,
+        /// Base del origen. Por omisión, la de la cadena de conexión.
+        #[arg(long)]
+        database: Option<String>,
+        /// Base del destino. Por omisión, la de su cadena de conexión.
+        #[arg(long)]
+        target_database: Option<String>,
+        /// Cuántas diferencias se listan como máximo (los totales se cuentan igual).
+        #[arg(long, default_value_t = compare::data::DEFAULT_MAX_DIFFS)]
+        max_diffs: usize,
+        /// Imprime el SQL de sincronización en vez del informe de diferencias.
+        #[arg(long)]
+        sql: bool,
+        /// Nombre de la tabla.
+        table: String,
+    },
+
     /// Imprime el DDL de un objeto, indicado como esquema.nombre
     Ddl {
         #[arg(long)]
@@ -500,6 +530,30 @@ async fn main() -> ExitCode {
             database,
             sql,
         } => compare_file(&file, &url, schema, database.as_deref(), sql).await,
+        Command::DataCompare {
+            url,
+            target_url,
+            schema,
+            target_schema,
+            database,
+            target_database,
+            max_diffs,
+            sql,
+            table,
+        } => {
+            data_compare(
+                &url,
+                &target_url,
+                &schema,
+                target_schema.as_deref(),
+                database.as_deref(),
+                target_database.as_deref(),
+                &table,
+                max_diffs,
+                sql,
+            )
+            .await
+        }
         Command::Ddl { url, object } => show_ddl(&url, &object).await,
         Command::Query {
             url,
@@ -1271,6 +1325,102 @@ fn print_comparison(comparison: &compare::Comparison, print_sql: bool) {
         diff.equal
     );
     for warning in &comparison.plan.warnings {
+        println!("aviso: {warning}");
+    }
+}
+
+/// Compara las filas de una tabla contra la de otro servidor.
+#[allow(clippy::too_many_arguments)]
+async fn data_compare(
+    url: &str,
+    target_url: &str,
+    schema: &str,
+    target_schema: Option<&str>,
+    database: Option<&str>,
+    target_database: Option<&str>,
+    table: &str,
+    max_diffs: usize,
+    print_sql: bool,
+) -> Result<()> {
+    let source_handle = connect(url).await?;
+    let target_handle = connect(target_url).await?;
+    let comparison = compare::data::compare(
+        compare::data::Side {
+            handle: &source_handle,
+            database: database.unwrap_or_else(|| source_handle.default_database()),
+            schema,
+            table,
+            sink: None,
+        },
+        compare::data::Side {
+            handle: &target_handle,
+            database: target_database.unwrap_or_else(|| target_handle.default_database()),
+            schema: target_schema.unwrap_or(schema),
+            table,
+            sink: None,
+        },
+        max_diffs,
+        &|_| {},
+    )
+    .await?;
+    print_data_comparison(&comparison, print_sql);
+    Ok(())
+}
+
+/// El informe de una comparación de datos, o con `print_sql` el script que ofrece copiar la
+/// aplicación (el mismo `compare::data::script`).
+fn print_data_comparison(comparison: &compare::data::DataComparison, print_sql: bool) {
+    use compare::data::RowDiff;
+
+    if print_sql {
+        if comparison.statements.is_empty() {
+            println!("-- no hay nada que sincronizar");
+        } else {
+            println!("{}", compare::data::script(&comparison.statements));
+        }
+        for warning in &comparison.warnings {
+            println!("-- aviso: {warning}");
+        }
+        return;
+    }
+
+    println!("origen  {}", comparison.source);
+    println!("destino {}\n", comparison.target);
+
+    let columns = &comparison.layout.columns;
+    for row in &comparison.rows {
+        match row {
+            RowDiff::OnlySource { key, .. } => println!("+ {}", key.join(", ")),
+            RowDiff::OnlyTarget { key, .. } => println!("- {}", key.join(", ")),
+            RowDiff::Different {
+                key,
+                source,
+                target,
+                changed,
+            } => {
+                println!("~ {}", key.join(", "));
+                for &index in changed {
+                    let show = |value: &Option<String>| match value {
+                        Some(text) => format!("{text:?}"),
+                        None => "NULL".to_owned(),
+                    };
+                    println!(
+                        "    {} · {}  ≠  {}",
+                        columns[index],
+                        show(&source[index]),
+                        show(&target[index])
+                    );
+                }
+            }
+        }
+    }
+
+    let counts = &comparison.counts;
+    println!(
+        "\n{} solo en origen, {} solo en destino, {} distintas, {} iguales",
+        counts.only_source, counts.only_target, counts.different, counts.equal
+    );
+    for warning in &comparison.warnings {
         println!("aviso: {warning}");
     }
 }

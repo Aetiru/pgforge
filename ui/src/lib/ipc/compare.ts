@@ -9,6 +9,7 @@
  * pestaña de consulta, y quien lo corre es el usuario.
  */
 
+import { Channel } from "@tauri-apps/api/core";
 import { invoke } from "./core";
 
 /** Qué clase de objeto difiere. Espejo de `compare::ObjectKind`. */
@@ -121,3 +122,91 @@ export const schemaCompareFile = (path: string, target: CompareSide) =>
 /** Los esquemas de una base, para elegir contra cuál comparar sin desplegar el árbol. */
 export const schemaNames = (id: string, database: string) =>
   invoke<string[]>("schema_names", { id, database });
+
+// --- Comparación de datos -------------------------------------------------------------------------
+
+/** Una tabla de un lado de la comparación de datos. */
+export interface DataSide {
+  id: string;
+  database: string;
+  schema: string;
+  table: string;
+}
+
+/**
+ * Una diferencia entre las dos tablas. Los valores son `string | null`: `null` es el NULL de la base,
+ * distinto de la cadena vacía. `changed` son posiciones dentro de `DataLayout.columns`.
+ */
+export type DataRowDiff =
+  | { kind: "onlySource"; key: string[]; values: (string | null)[] }
+  | { kind: "onlyTarget"; key: string[]; values: (string | null)[] }
+  | {
+      kind: "different";
+      key: string[];
+      source: (string | null)[];
+      target: (string | null)[];
+      changed: number[];
+    };
+
+export interface DataLayout {
+  keyColumns: string[];
+  /** Las columnas comparadas que no son la clave, en el orden de `values`. */
+  columns: string[];
+  /** Existen de un solo lado o las calcula el servidor: no se comparan. */
+  skipped: string[];
+  keyGenerated: boolean;
+}
+
+export interface DataCounts {
+  onlySource: number;
+  onlyTarget: number;
+  different: number;
+  equal: number;
+}
+
+export type DataAction = "insert" | "update" | "delete";
+
+export interface DataStatement {
+  action: DataAction;
+  key: string[];
+  risk: SyncRisk;
+  sql: string;
+}
+
+export interface DataComparison {
+  source: string;
+  target: string;
+  layout: DataLayout;
+  rows: DataRowDiff[];
+  counts: DataCounts;
+  /** Había más diferencias que `maxDiffs`: el informe y el script están incompletos. */
+  truncated: boolean;
+  maxDiffs: number;
+  statements: DataStatement[];
+  warnings: string[];
+}
+
+export type DataCompareEvent = { type: "progress"; sourceRows: number; targetRows: number };
+
+/**
+ * Compara el contenido de dos tablas. Igual que el esquema, no se aplica nada desde acá: el script
+ * se copia o se abre en una consulta contra el destino. `requestId` sirve para `dataCompareCancel`.
+ */
+export const dataCompare = (
+  source: DataSide,
+  target: DataSide,
+  requestId: string,
+  channel: Channel<DataCompareEvent>,
+  maxDiffs?: number,
+) =>
+  invoke<DataComparison>("data_compare", {
+    source,
+    target,
+    maxDiffs: maxDiffs ?? null,
+    requestId,
+    channel,
+  });
+
+/** Aborta una comparación de datos en curso, en los dos servidores. */
+export const dataCompareCancel = (requestId: string) =>
+  invoke<void>("data_compare_cancel", { requestId });
