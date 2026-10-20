@@ -7,12 +7,13 @@
   import { envLook, envWash, lookOf, READ_ONLY_LOOK, serverColorLook, tagLook } from "./badges";
   import { bookmarks } from "./bookmarks.svelte";
   import { explorer, visibleRows, type Row } from "./explorer.svelte";
-  import { describeError, folderOf, type CompareSide } from "./ipc";
+  import { describeError, folderOf, type CompareSide, type DataSide } from "./ipc";
   import {
     bookmarkTargetOf,
     connectionUrl,
     dataTargetOf,
     schemaTargetOf,
+    tableTargetOf,
     roleTargetOf,
     qualifiedNameOf,
     queryTargetOf,
@@ -33,6 +34,7 @@
     ondata,
     onerd,
     oncompare,
+    oncomparedata,
     onmatrix,
     onrolecapabilities,
   }: {
@@ -52,6 +54,8 @@
     onerd: (profileId: string, database: string, schema: string) => void;
     /** Pide comparar este esquema contra otro; el otro lado lo elige un diálogo de `App`. */
     oncompare: (source: CompareSide) => void;
+    /** Pide comparar los datos de esta tabla contra los de otra; el otro lado lo elige un diálogo. */
+    oncomparedata: (source: DataSide) => void;
     /** Abre la matriz de permisos de un esquema. */
     onmatrix: (profileId: string, database: string, schema: string) => void;
     /** Abre "qué puede hacer" un rol. */
@@ -300,6 +304,7 @@
   const menuQuery = $derived(menu ? queryTargetOf(menu.row, menuProfile) : null);
   const menuData = $derived(menu ? dataTargetOf(menu.row.node) : null);
   const menuSchema = $derived(menu ? schemaTargetOf(menu.row.node) : null);
+  const menuTable = $derived(menu ? tableTargetOf(menu.row.node) : null);
   const menuRole = $derived(menu ? roleTargetOf(menu.row.node) : null);
   const menuName = $derived(menu ? qualifiedNameOf(menu.row.node) : null);
   const menuBookmark = $derived(menu ? bookmarkTargetOf(menu.row) : null);
@@ -376,6 +381,13 @@
     if (row && target) {
       oncompare({ id: row.profileId, database: target.database, schema: target.schema });
     }
+  }
+
+  function compareData() {
+    const row = menu?.row;
+    const target = menuTable;
+    menu = null;
+    if (row && target) oncomparedata({ id: row.profileId, ...target });
   }
 
   function openMatrix() {
@@ -1476,6 +1488,14 @@
     {#if menuQuery && menuData !== null}
       <button class="row-menu" onclick={openData}>
         <span class="flex items-center gap-2"><Icon name="table" size={13} /> Ver los datos</span>
+      </button>
+    {/if}
+
+    {#if menuTable}
+      <button class="row-menu" onclick={compareData}>
+        <span class="flex items-center gap-2">
+          <Icon name="compare" size={13} /> Comparar datos con otra tabla
+        </span>
       </button>
     {/if}
 

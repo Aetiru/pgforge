@@ -22,6 +22,7 @@ export type TabKind =
   | "data"
   | "erd"
   | "compare"
+  | "dataCompare"
   | "monitor"
   | "config"
   | "permissionMatrix"

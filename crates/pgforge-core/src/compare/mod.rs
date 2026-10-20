@@ -15,6 +15,7 @@
 //! una función difiere por un espacio y el informe se llena de ruido que tapa lo que importa.
 //! También quedan afuera los datos: esto compara formas, no filas.
 
+pub mod data;
 pub mod diff;
 pub mod file;
 pub mod render;
