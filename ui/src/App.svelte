@@ -4,6 +4,7 @@
   import Confirm from "./lib/Confirm.svelte";
   import CompareDialog from "./lib/CompareDialog.svelte";
   import ComparePanel from "./lib/ComparePanel.svelte";
+  import MigrationsPanel from "./lib/MigrationsPanel.svelte";
   import ConnectionDialog from "./lib/ConnectionDialog.svelte";
   import GroupDialog from "./lib/GroupDialog.svelte";
   import ImportServersDialog from "./lib/ImportServersDialog.svelte";
@@ -35,6 +36,7 @@
   import { openDataCompare, DataCompareTab } from "./lib/data-compare.svelte";
   import DataCompareDialog from "./lib/DataCompareDialog.svelte";
   import DataComparePanel from "./lib/DataComparePanel.svelte";
+  import { openMigrations, MigrationsTab } from "./lib/migrations.svelte";
   import { openConfig, ConfigTab } from "./lib/config.svelte";
   import { dock, INSPECTOR_DEFAULT, SIDEBAR_DEFAULT } from "./lib/dock.svelte";
   import { openMonitor, MonitorTab } from "./lib/monitor.svelte";
@@ -183,6 +185,7 @@
     config: "sliders",
     permissionMatrix: "role",
     roleCapabilities: "role",
+    migrations: "sql",
   };
 
   $effect(() => {
@@ -554,6 +557,12 @@
 
   function showConfig() {
     if (contextServer) openConfig(contextServer);
+  }
+
+  function showMigrations() {
+    if (!contextServer) return;
+    const profile = profileOf(contextServer);
+    if (profile) void openMigrations(profile.id, queryTarget?.database ?? profile.database);
   }
 
   /** Lo que dice la barra de estado: dónde está parado el usuario ahora mismo. */
@@ -1031,6 +1040,8 @@
           <ComparePanel {tab} />
         {:else if tab instanceof DataCompareTab}
           <DataComparePanel {tab} />
+        {:else if tab instanceof MigrationsTab}
+          <MigrationsPanel {tab} />
         {:else if tab instanceof PermissionMatrixTab}
           <PermissionMatrixPanel {tab} />
         {:else if tab instanceof RoleCapabilitiesTab}
@@ -1235,6 +1246,7 @@
     onmonitor={showMonitor}
     onconfig={showConfig}
     onshortcuts={() => (shortcutsOpen = true)}
+    onmigrations={showMigrations}
     onconnect={connectById}
     onclose={() => (paletteOpen = false)}
   />

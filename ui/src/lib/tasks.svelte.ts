@@ -31,6 +31,8 @@ import {
   dataImportRun,
   describeError,
   indexCreate,
+  migrationApply,
+  type MigrationDirection,
   maintenanceRun,
   processCancel,
   processClear,
@@ -309,6 +311,33 @@ class Tasks {
     onDone?: () => void;
   }) {
     await this.launch(() => indexCreate(init.profileId, init.def, init.database), init.onDone);
+  }
+
+  /**
+   * Aplica o deshace una migración. `checksum` es la huella que mostró la vista previa: si el
+   * archivo cambió desde entonces, el lado de Rust no la ejecuta.
+   */
+  async migration(init: {
+    profileId: string;
+    database: string;
+    folder: string;
+    version: number;
+    direction: MigrationDirection;
+    checksum: string;
+    onDone?: () => void;
+  }) {
+    await this.launch(
+      () =>
+        migrationApply(
+          init.profileId,
+          init.database,
+          init.folder,
+          init.version,
+          init.direction,
+          init.checksum,
+        ),
+      init.onDone,
+    );
   }
 
   async backup(init: { profileId: string; options: BackupOptions }) {

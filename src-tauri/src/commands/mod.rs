@@ -4,12 +4,14 @@
 //! haya que pensar vive en el núcleo, donde `pgforge-cli` también lo usa y los tests lo ejercitan
 //! sin necesidad de una ventana.
 
+pub mod audit;
 pub mod backup;
 pub mod bookmarks;
 pub mod compare;
 pub mod data;
 pub mod ddl;
 pub mod dialogs;
+pub mod migrations;
 pub mod monitoring;
 pub mod query;
 pub mod schema;
@@ -22,7 +24,7 @@ pub mod workspaces;
 
 use pgforge_core::caps::MIN_SUPPORTED_VERSION_NUM;
 use pgforge_core::ddl::table::Statement;
-use pgforge_core::sql::history::{NewEntry, Source};
+use pgforge_core::sql::history::{Actor, NewEntry, Source};
 use pgforge_core::{ProfileId, Result, ServerVersion};
 use serde::Serialize;
 
@@ -64,6 +66,7 @@ pub async fn record_applied<T>(
 
     let entry = NewEntry {
         source: Source::Dialog,
+        actor: actor_of(state, id).await,
         profile_id: id.to_string(),
         database: database.to_owned(),
         // `HistoryStore::record` redacta las contraseñas; lo que se ejecutó ya salió con el valor real.
@@ -78,6 +81,18 @@ pub async fn record_applied<T>(
     let _ = state.history.lock().await.record(&entry);
 
     outcome
+}
+
+/// Quién es el perfil ahora mismo, para anotarlo junto a lo que ejecutó.
+///
+/// Se copia al anotar (ver `sql::history::Actor`). Si el servidor ya no está conectado —se cayó
+/// entre que se ejecutó y se anota— queda vacío: es preferible una fila sin atribuir a perder la
+/// fila.
+pub async fn actor_of(state: &AppState, id: ProfileId) -> Actor {
+    match state.manager.require(id).await {
+        Ok(handle) => Actor::of(&handle.profile),
+        Err(_) => Actor::default(),
+    }
 }
 
 /// Lo que tienen en común las sentencias que arman los distintos módulos del núcleo.

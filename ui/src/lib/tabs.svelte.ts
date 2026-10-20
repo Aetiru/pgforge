@@ -26,7 +26,8 @@ export type TabKind =
   | "monitor"
   | "config"
   | "permissionMatrix"
-  | "roleCapabilities";
+  | "roleCapabilities"
+  | "migrations";
 
 export abstract class Tab {
   /** Identificador local. Existe desde antes que cualquier conexión, que puede tardar o fallar. */

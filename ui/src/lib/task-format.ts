@@ -15,6 +15,7 @@ export type TaskKind = ProcessKind;
 const KIND_LABEL: Record<TaskKind, string> = {
   maintenance: "Mantenimiento",
   index: "Índice",
+  migration: "Migración",
   backup: "Backup",
   restore: "Restore",
   export: "Exportación",

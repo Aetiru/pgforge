@@ -280,8 +280,10 @@ pub async fn query_run(
 
     // Se registra lo que el usuario mandó a ejecutar, no cada sentencia por separado: es lo que va
     // a querer recuperar del historial, y es lo que reconoce cuando lo ve.
+    let actor = super::actor_of(&state, profile).await;
     let recorded = state.history.lock().await.record(&NewEntry {
         source: HistorySource::Editor,
+        actor,
         profile_id: profile.to_string(),
         database,
         sql,
