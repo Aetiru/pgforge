@@ -14,6 +14,7 @@ pub mod explain;
 pub mod format;
 pub mod history;
 pub(crate) mod lex;
+pub mod rehearsal;
 pub mod saved;
 pub mod snippet;
 pub mod split;
@@ -24,6 +25,7 @@ pub use exec::{ColumnType, Limits, Outcome, QuerySession, TxStatus, DEFAULT_MAX_
 pub use explain::{ExplainOptions, Plan, PlanNode};
 pub use format::format;
 pub use history::{HistoryStore, NewEntry};
+pub use rehearsal::{RehearsalOptions, Report as RehearsalReport};
 pub use saved::{NewQuery, SavedQuery, SavedStore};
 pub use snippet::{Snippet, SnippetId, SnippetStore};
 pub use split::{at_cursor, missing_separator, split, Statement};
