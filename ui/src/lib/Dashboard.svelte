@@ -1,6 +1,7 @@
 <script lang="ts">
   import type uPlot from "uplot";
   import Alert from "./Alert.svelte";
+  import AlertsPanel from "./AlertsPanel.svelte";
   import Chart from "./Chart.svelte";
   import Confirm from "./Confirm.svelte";
   import DataGrid, { type Column } from "./DataGrid.svelte";
@@ -234,6 +235,9 @@
       // Sin `localStorage` no se recuerda esta vez.
     }
   }
+
+  /** El panel de alertas empieza plegado: es configuración, no lo primero que se mira. */
+  let showAlerts = $state(false);
 
   const health = $derived(metrics ? assessHealth(metrics) : { level: "ok" as const, issues: [] });
 
@@ -779,6 +783,16 @@
 
     <span class="toolbar-sep"></span>
 
+    <button
+      class="btn btn-sm"
+      aria-pressed={showAlerts}
+      title="Reglas de alerta con aviso del sistema; solo corren mientras este monitoreo está abierto"
+      onclick={() => (showAlerts = !showAlerts)}
+    >
+      <Icon name="warn" size={12} />
+      Alertas
+    </button>
+
     <label class="check">
       <Icon name="refresh" size={11} />
       <select
@@ -832,6 +846,9 @@
           Gráficos
         </button>
       </div>
+      {#if showAlerts}
+        <AlertsPanel {profileId} />
+      {/if}
       <!-- Una sola tira de seis lecturas, con tendencia donde hay muestras. Las fichas de antes
            ocupaban casi 250 px de alto antes de llegar a la primera sesión. El motivo de un color
            viaja en el `title`: el veredicto de arriba ya lo dice con palabras. -->

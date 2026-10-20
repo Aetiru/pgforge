@@ -268,6 +268,36 @@ pub async fn locks(client: &Client, pid: i32) -> Result<Vec<Lock>> {
         .collect())
 }
 
+/// Hace cuánto espera la sesión bloqueada que lleva más tiempo esperando, o `None` si ninguna.
+///
+/// Se calcula sobre todas las sesiones y no sobre las que deja ver el filtro de la lista: una
+/// alerta que dependiera de qué casillas tiene tildadas la pantalla dejaría de avisar al ocultar
+/// algo. La espera se mide desde que empezó la consulta, que para una sesión bloqueada es lo que
+/// lleva esperando el candado.
+pub fn longest_blocked_seconds(backends: &[Backend]) -> Option<f64> {
+    backends
+        .iter()
+        .filter(|b| !b.is_monitor && !b.blocked_by.is_empty())
+        .filter_map(|b| b.query_seconds.or(b.state_seconds))
+        .max_by(|a, b| a.total_cmp(b))
+}
+
+/// Cuánto lleva en `idle in transaction` la sesión que más tiempo lleva así. Cuenta también la
+/// variante abortada: retiene lo mismo hasta que alguien cierre la transacción.
+pub fn longest_idle_in_transaction_seconds(backends: &[Backend]) -> Option<f64> {
+    backends
+        .iter()
+        .filter(|b| {
+            !b.is_monitor
+                && matches!(
+                    b.state.as_deref(),
+                    Some("idle in transaction") | Some("idle in transaction (aborted)")
+                )
+        })
+        .filter_map(|b| b.state_seconds)
+        .max_by(|a, b| a.total_cmp(b))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -360,5 +390,51 @@ mod tests {
         assert!(activity_sql(&caps(130_000)).contains("NULL::int8"));
         assert!(!activity_sql(&caps(130_000)).contains("a.query_id"));
         assert!(activity_sql(&caps(140_000)).contains("a.query_id"));
+    }
+
+    #[test]
+    fn la_espera_mas_larga_ignora_sesiones_libres_y_al_propio_monitor() {
+        let mut espera_corta = backend(40, vec![1]);
+        espera_corta.query_seconds = Some(5.0);
+        let mut espera_larga = backend(41, vec![1]);
+        espera_larga.query_seconds = Some(95.0);
+        let mut libre = backend(42, vec![]);
+        libre.query_seconds = Some(9_999.0);
+        let mut monitor = backend(43, vec![1]);
+        monitor.is_monitor = true;
+        monitor.query_seconds = Some(9_999.0);
+
+        let todas = [espera_corta, espera_larga, libre, monitor];
+        assert_eq!(longest_blocked_seconds(&todas), Some(95.0));
+        assert_eq!(longest_blocked_seconds(&[backend(44, vec![])]), None);
+    }
+
+    #[test]
+    fn una_bloqueada_sin_duracion_cae_al_tiempo_en_el_estado() {
+        let mut b = backend(45, vec![1]);
+        b.state_seconds = Some(12.0);
+        assert_eq!(longest_blocked_seconds(&[b]), Some(12.0));
+    }
+
+    #[test]
+    fn la_transaccion_ociosa_mas_larga_cuenta_tambien_la_abortada() {
+        let mut ociosa = backend(50, vec![]);
+        ociosa.state = Some("idle in transaction".into());
+        ociosa.state_seconds = Some(60.0);
+        let mut abortada = backend(51, vec![]);
+        abortada.state = Some("idle in transaction (aborted)".into());
+        abortada.state_seconds = Some(300.0);
+        let mut activa = backend(52, vec![]);
+        activa.state_seconds = Some(9_999.0);
+        // Sin permiso para ver el estado no se puede afirmar nada: no cuenta.
+        let mut oculta = backend(53, vec![]);
+        oculta.state = None;
+        oculta.state_seconds = Some(9_999.0);
+
+        assert_eq!(
+            longest_idle_in_transaction_seconds(&[ociosa, abortada, activa, oculta]),
+            Some(300.0)
+        );
+        assert_eq!(longest_idle_in_transaction_seconds(&[]), None);
     }
 }

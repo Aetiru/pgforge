@@ -12,6 +12,9 @@ const calm: Metrics = {
   transactionsPerSecond: 12,
   cacheHitRatio: 0.99,
   longestTransactionSeconds: 1,
+  longestBlockedSeconds: null,
+  longestIdleInTransactionSeconds: null,
+  replication: { kind: "none" },
 };
 
 describe("assessHealth", () => {

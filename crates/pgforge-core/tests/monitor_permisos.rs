@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use pgforge_core::conn::{ConnectionManager, ConnectionProfile, ServerHandle};
 use pgforge_core::monitor::activity::{self, ActivityFilter};
+use pgforge_core::monitor::stats::{self, ReplicationLag};
 
 fn test_urls() -> Vec<String> {
     std::env::var("PGFORGE_TEST_URLS")
@@ -109,6 +110,72 @@ async fn lee_las_sesiones_con_un_rol_sin_permiso_de_ver_estadisticas() {
                     !visibles.is_empty(),
                     "el filtro por omisión no tiene que vaciar la lista por falta de permisos"
                 );
+            })
+            .await
+        };
+
+        teardown(&handle, &role).await;
+
+        if let Err(join) = outcome {
+            std::panic::resume_unwind(join.into_panic());
+        }
+        eprintln!("ok contra PostgreSQL {version} ({url})");
+    }
+}
+
+/// Sin réplicas conectadas —lo habitual en estos servidores de prueba— lo que se verifica es que
+/// leer el retraso no falle con un rol sin privilegios ni con el superusuario, y que el resultado
+/// sea uno de los dos que corresponden: nunca `Restricted` sin filas que no se puedan ver.
+#[tokio::test]
+async fn lee_el_retraso_de_replicacion_con_y_sin_permisos() {
+    let urls = test_urls();
+    if urls.is_empty() {
+        eprintln!(
+            "AVISO: PGFORGE_TEST_URLS no está definida, no se verificó nada contra un servidor real."
+        );
+        return;
+    }
+
+    for url in urls {
+        let handle = connect(&url).await;
+        let version = handle.caps.version;
+        let role = role_name();
+        setup(&handle, &role).await;
+
+        let outcome = {
+            let handle = Arc::clone(&handle);
+            let role = role.clone();
+            tokio::spawn(async move {
+                let session = handle
+                    .open_session(handle.default_database(), None)
+                    .await
+                    .expect("no se pudo abrir la sesión");
+
+                let completo = stats::replication_lag(session.client())
+                    .await
+                    .expect("leer el retraso como superusuario no tiene que fallar");
+
+                session
+                    .client()
+                    .batch_execute(&format!("SET ROLE {role}"))
+                    .await
+                    .expect("no se pudo cambiar de rol");
+                let sin_permisos = stats::replication_lag(session.client())
+                    .await
+                    .expect("leer el retraso sin permisos no tiene que fallar");
+
+                // Sin réplicas (o con rol sin permisos) las dos lecturas pueden diferir solo en
+                // `None` frente a `Restricted`; lo que no puede pasar es que el rol sin permisos
+                // vea un retraso medido que el superusuario no vio.
+                if completo == ReplicationLag::None {
+                    assert!(
+                        matches!(
+                            sin_permisos,
+                            ReplicationLag::None | ReplicationLag::Restricted
+                        ),
+                        "sin permisos no se puede ver más que con ellos: {sin_permisos:?}"
+                    );
+                }
             })
             .await
         };

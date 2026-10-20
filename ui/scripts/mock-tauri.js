@@ -79,7 +79,7 @@
       const blocking = [{ pid: 4121, blocking: [{ pid: 4188, blocking: [{ pid: 4190, blocking: [] }] }] }];
       for (let i = 0; i < 24; i++) {
         const total = 52 + Math.round(26 * Math.min(1, i / 18) + 3 * Math.sin(i));
-        send({ type: "snapshot", snapshot: { backends, blocking, metrics: { totalConnections: total, activeConnections: 6 + Math.round(4 * Math.abs(Math.sin(i / 3))), idleInTransaction: 1, waitingConnections: 2, maxConnections: 100, transactionsPerSecond: 120 + 60 * Math.sin(i / 2) + i * 4, cacheHitRatio: 0.972, longestTransactionSeconds: 421 } } }, i);
+        send({ type: "snapshot", snapshot: { backends, blocking, metrics: { totalConnections: total, activeConnections: 6 + Math.round(4 * Math.abs(Math.sin(i / 3))), idleInTransaction: 1, waitingConnections: 2, maxConnections: 100, transactionsPerSecond: 120 + 60 * Math.sin(i / 2) + i * 4, cacheHitRatio: 0.972, longestTransactionSeconds: 421, longestBlockedSeconds: 12, longestIdleInTransactionSeconds: 95, replication: { kind: "none" } } } }, i);
       }
     },
     backend_locks: () => [{ lockType: "transactionid", relation: null, mode: "ExclusiveLock", granted: true }, { lockType: "relation", relation: "pedidos", mode: "RowExclusiveLock", granted: true }],
