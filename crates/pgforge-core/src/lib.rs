@@ -15,6 +15,7 @@ pub mod data;
 pub mod ddl;
 pub mod error;
 pub mod introspect;
+pub mod migrations;
 pub mod monitor;
 mod private;
 pub mod scripts;
@@ -31,4 +32,5 @@ pub use conn::{
 pub use error::{Error, Result};
 pub use introspect::{TreeNode, TreeOptions};
 pub use scripts::{ImportReport, ScriptEntry, ScriptFolder};
+pub use migrations::MigrationStore;
 pub use workspace::{Workspace, WorkspaceId, WorkspaceSource, WorkspaceStore};
