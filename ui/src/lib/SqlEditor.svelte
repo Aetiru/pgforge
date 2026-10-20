@@ -10,12 +10,13 @@
   import { searchPanelOpen } from "@codemirror/search";
   import { PostgreSQL, sql, type SQLNamespace } from "@codemirror/lang-sql";
   import { Compartment, EditorState, Prec } from "@codemirror/state";
-  import { EditorView, hoverTooltip, keymap } from "@codemirror/view";
+  import { EditorView, hoverTooltip, keymap, type KeyBinding } from "@codemirror/view";
   import { basicSetup } from "codemirror";
   import { untrack } from "svelte";
   import { sqlHighlight } from "./sql-highlight";
   import { sqlNesting } from "./sql-nested";
   import { errorMarkField, markOf, setErrorMark } from "./sql-error-mark";
+  import { shortcutStore } from "./shortcuts.svelte";
   import SnippetVarsDialog from "./SnippetVarsDialog.svelte";
   import type { SnippetVariable } from "./snippet-vars";
   import { expandBinding, snippetCompletions, type AskVariables } from "./sql-snippet";
@@ -163,7 +164,19 @@
     return [...text.slice(0, index)].length;
   }
 
-  const shortcuts = Prec.highest(
+  /** Un atajo reasignable del editor; sin combinación (desasignado) no genera ninguna entrada. */
+  function bound(id: string, binding: Omit<KeyBinding, "key">): KeyBinding[] {
+    const key = shortcutStore.combo(id);
+    return key === null ? [] : [{ key, ...binding }];
+  }
+
+  // Va en un `Compartment` y se rearma cuando cambian los atajos (`shortcuts.svelte.ts`): el keymap
+  // sigue en `Prec.highest` y cada entrada sigue devolviendo `false` cuando no le toca. Las que no
+  // se reasignan (Tab, Escape, el zoom) se escriben a mano porque tienen más de un caso.
+  const keys = new Compartment();
+
+  function buildShortcuts() {
+    return Prec.highest(
     keymap.of([
       // Primero de la lista, pero devuelve `false` cuando no le toca (ver `sql-snippet`): así el
       // tabulador sigue saltando entre los huecos de una expansión ya abierta.
@@ -187,8 +200,7 @@
           return indentLess(target);
         },
       },
-      {
-        key: "Mod-Enter",
+      ...bound("editor.run", {
         preventDefault: true,
         run: (target) => {
           const { from, to } = target.state.selection.main;
@@ -196,15 +208,14 @@
           onrun?.(text.slice(from, to), toCharOffset(text, from));
           return true;
         },
-      },
-      {
-        key: "Mod-Shift-Enter",
+      }),
+      ...bound("editor.runScript", {
         preventDefault: true,
         run: () => {
           onrunScript?.();
           return true;
         },
-      },
+      }),
       {
         // Este keymap es `Prec.highest`, así que sin la guarda se comía el Escape que cierra el
         // autocompletado y el panel de búsqueda: cancelaba la consulta y la lista quedaba abierta.
@@ -217,24 +228,21 @@
           return true;
         },
       },
-      {
-        key: "Mod-s",
+      ...bound("app.save", {
         preventDefault: true,
         run: () => {
           onsave?.(false);
           return true;
         },
-      },
-      {
-        key: "Mod-Shift-s",
+      }),
+      ...bound("app.saveAs", {
         preventDefault: true,
         run: () => {
           onsave?.(true);
           return true;
         },
-      },
-      {
-        key: "Mod-Shift-f",
+      }),
+      ...bound("editor.format", {
         preventDefault: true,
         run: (target) => {
           const { from, to } = target.state.selection.main;
@@ -242,7 +250,7 @@
           onformat?.(text.slice(from, to), toCharOffset(text, from));
           return true;
         },
-      },
+      }),
       // El zoom del SQL con los atajos de siempre. Van acá y no en la ventana porque `Ctrl -` sobre
       // un editor con foco lo tiene que atender el editor; el resto de la aplicación no cambia de
       // tamaño con ellos.
@@ -279,7 +287,14 @@
         },
       },
     ]),
-  );
+    );
+  }
+
+  // Se reasignó un atajo: el editor abierto toma el keymap nuevo sin recrearse.
+  $effect(() => {
+    void shortcutStore.bindings;
+    view?.dispatch({ effects: keys.reconfigure(buildShortcuts()) });
+  });
 
   /**
    * `Ctrl`+clic sobre una tabla del `FROM`/`JOIN` la revela en el árbol.
@@ -374,7 +389,7 @@
         doc: startDoc,
         selection,
         extensions: [
-          shortcuts,
+          keys.of(untrack(() => buildShortcuts())),
           basicSetup,
           language.of(sqlExtension(untrack(() => schema))),
           errorMarkField,

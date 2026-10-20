@@ -26,6 +26,7 @@
   import { count, decimal } from "./format";
   import { planText } from "./plan-text";
   import { resultLabel } from "./result-tabs";
+  import { shortcutStore } from "./shortcuts.svelte";
   import { saveQueryTab, type QueryTab } from "./query.svelte";
   import {
     dataShapeNamed,
@@ -477,7 +478,7 @@
           class="btn btn-ghost btn-icon text-emerald-600 dark:text-emerald-400"
           disabled={tab.tabId === null}
           aria-label="Ejecutar"
-          title="Ejecuta la selección, o la sentencia donde está el cursor (Ctrl+Enter)"
+          title={shortcutStore.hint("Ejecuta la selección, o la sentencia donde está el cursor", "editor.run")}
           onclick={() => {
             const { text, cursor } = here();
             run(text, cursor);
@@ -489,7 +490,7 @@
           class="btn btn-ghost btn-icon"
           disabled={tab.tabId === null}
           aria-label="Ejecutar el script entero"
-          title="Ejecuta todas las sentencias del editor (Ctrl+Mayús+Enter)"
+          title={shortcutStore.hint("Ejecuta todas las sentencias del editor", "editor.runScript")}
           onclick={runWholeScript}
         >
           <Icon name="play-all" size={16} />
@@ -576,8 +577,8 @@
         class="btn btn-ghost btn-icon"
         aria-label="Guardar como archivo .sql"
         title={tab.filePath
-          ? `Guarda en ${tab.filePath} (Ctrl+S; Ctrl+Mayús+S para elegir otro archivo)`
-          : "Guarda el texto como archivo .sql (Ctrl+S)"}
+          ? `Guarda en ${tab.filePath} (${shortcutStore.label("app.save")}; ${shortcutStore.label("app.saveAs")} para elegir otro archivo)`
+          : shortcutStore.hint("Guarda el texto como archivo .sql", "app.save")}
         onclick={() => saveQueryTab(tab, false)}
       >
         <Icon name="save" size={16} />
@@ -600,7 +601,7 @@
       <button
         class="btn btn-ghost btn-icon"
         aria-label="Formatear el SQL"
-        title="Ordena el SQL: la selección si hay una, si no el documento entero (Ctrl+Mayús+F)"
+        title={shortcutStore.hint("Ordena el SQL: la selección si hay una, si no el documento entero", "editor.format")}
         onclick={() => {
           const { text, cursor } = here();
           doFormat(text, cursor);
@@ -1043,7 +1044,7 @@
           <Empty
             icon="sql"
             title="Todavía no ejecutaste nada"
-            hint="Escribí una consulta y ejecutala con Ctrl+Enter. Si hay varias sentencias, se ejecuta la del cursor; si hay una selección, se ejecuta la selección."
+            hint={`Escribí una consulta y ejecutala con ${shortcutStore.label("editor.run")}. Si hay varias sentencias, se ejecuta la del cursor; si hay una selección, se ejecuta la selección.`}
           />
         {/if}
       {:else if tab.view === "plan"}
