@@ -31,8 +31,10 @@ async fn connect(url: &str) -> Arc<ServerHandle> {
         .unwrap_or_else(|e| panic!("no se pudo conectar a {url}: {e}"))
 }
 
-fn role_name() -> String {
-    format!("pgforge_sin_stats_{}", std::process::id())
+/// Cada test lleva su propio rol: cargo los corre en paralelo, y con un nombre compartido uno borraba
+/// el rol (`DROP ROLE`) mientras el otro todavía lo usaba.
+fn role_name(test: &str) -> String {
+    format!("pgforge_sin_stats_{test}_{}", std::process::id())
 }
 
 /// El rol va sin `LOGIN` a propósito: no hace falta conectarse con él, alcanza con `SET ROLE` sobre
@@ -68,7 +70,7 @@ async fn lee_las_sesiones_con_un_rol_sin_permiso_de_ver_estadisticas() {
     for url in urls {
         let handle = connect(&url).await;
         let version = handle.caps.version;
-        let role = role_name();
+        let role = role_name("sesiones");
         setup(&handle, &role).await;
 
         let outcome = {
@@ -139,7 +141,7 @@ async fn lee_el_retraso_de_replicacion_con_y_sin_permisos() {
     for url in urls {
         let handle = connect(&url).await;
         let version = handle.caps.version;
-        let role = role_name();
+        let role = role_name("replicacion");
         setup(&handle, &role).await;
 
         let outcome = {
