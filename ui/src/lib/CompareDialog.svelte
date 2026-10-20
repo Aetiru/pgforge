@@ -5,6 +5,7 @@
   import Modal from "./Modal.svelte";
   import type { CompareSource } from "./compare.svelte";
   import { explorer } from "./explorer.svelte";
+  import { COMPARE_SCOPE as SCOPE } from "./compare-kinds";
   import {
     describeError,
     schemaNames,
@@ -242,6 +243,16 @@
         <Alert tone="warn" box>Los dos lados son el mismo esquema: no hay nada que comparar.</Alert>
       {/if}
     {/if}
+
+    <!-- Qué entra: sin esto, que falten datos o dueños parece un olvido y no una decisión. -->
+    <p class="text-xs muted">
+      Se comparan {SCOPE.join(", ")}. No se comparan los datos, los dueños ni los permisos por
+      columna.
+      {#if mode === "file"}
+        Una instantánea tomada con una versión anterior de pgforge no trae funciones, disparadores,
+        políticas ni permisos: hay que volver a tomarla.
+      {/if}
+    </p>
 
     {#if saved}
       <Alert tone="ok" box>Instantánea guardada en {saved}</Alert>

@@ -24,11 +24,35 @@ export type CompareObject =
   | "domain"
   | "range";
 
+/**
+ * Todo lo que puede aparecer en el informe: los objetos de arriba más la lógica y el acceso que
+ * cuelgan de ellos. Espejo de `compare::ObjectKind`.
+ *
+ * Va aparte de `CompareObject` porque ese es el que entiende `badges.ts` (ícono y nombre de los
+ * objetos del árbol); lo nuevo se resuelve en `compare-kinds.ts`.
+ */
+export type CompareKind =
+  | CompareObject
+  | "function"
+  | "procedure"
+  | "trigger"
+  | "policy"
+  /** El `ENABLE`/`FORCE ROW LEVEL SECURITY` de una tabla, aparte de sus políticas. */
+  | "rowSecurity"
+  /** Los permisos (`GRANT`) de un objeto. */
+  | "grant";
+
 /** De qué lado está lo que se encontró. */
 export type DiffStatus = "onlySource" | "onlyTarget" | "different";
 
 /** Qué parte de un objeto difiere. */
-export type DiffDetailKind = "column" | "constraint" | "index" | "member" | "property";
+export type DiffDetailKind =
+  | "column"
+  | "constraint"
+  | "index"
+  | "member"
+  | "privilege"
+  | "property";
 
 export interface DiffDetail {
   kind: DiffDetailKind;
@@ -40,7 +64,7 @@ export interface DiffDetail {
 }
 
 export interface DiffEntry {
-  kind: CompareObject;
+  kind: CompareKind;
   name: string;
   status: DiffStatus;
   /** El objeto entero de cada lado, para mostrarlos enfrentados. */
@@ -71,7 +95,7 @@ export type SyncRisk = "safe" | "review" | "destructive";
 export type SyncAction = "create" | "alter" | "drop";
 
 export interface SyncStatement {
-  object: CompareObject;
+  object: CompareKind;
   /** Objeto al que pertenece, el mismo nombre con el que aparece en el informe. */
   name: string;
   action: SyncAction;

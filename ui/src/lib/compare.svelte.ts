@@ -37,7 +37,7 @@ export class CompareTab extends Tab {
 
   /** Qué entra en el script. Vive en la pestaña y no en el panel para sobrevivir a un refresco. */
   risks = $state<RiskFilter>({ ...DEFAULT_RISKS });
-  /** Nombre del objeto cuyo detalle está abierto en el informe, o `null`. */
+  /** Clave (`clase:nombre`) del objeto cuyo detalle está abierto en el informe, o `null`. */
   opened = $state<string | null>(null);
 
   constructor(source: CompareSource, target: CompareSide) {
