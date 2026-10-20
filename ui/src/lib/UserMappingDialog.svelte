@@ -123,7 +123,7 @@
   {/if}
 
   {#if preview}
-    <SqlPreview sql={preview} />
+    <SqlPreview sql={preview} {profileId} {database} />
   {/if}
 
   {#snippet footer()}

@@ -38,6 +38,7 @@
     | "sliders"
     | "plus"
     | "play"
+    | "flask"
     | "play-all"
     | "plan"
     | "sql"
@@ -117,6 +118,7 @@
     plus: '<path d="M12 5v14M5 12h14"/>',
     // Macizo y no de contorno: es el botón que se aprieta todo el tiempo, y a 14 píxeles un
     // triángulo hueco se confunde con una flecha.
+    flask: '<path d="M9.5 3h5M10.5 3v6.5L4.5 19a1.2 1.2 0 0 0 1 1.8h13a1.2 1.2 0 0 0 1-1.8l-6-9.5V3"/><path d="M7.5 15h9"/>',
     play: '<path d="M7 4.8l12 7.2-12 7.2z" fill="currentColor" stroke="none"/>',
     // Dos triangulos: ejecutar el script entero y no la sentencia del cursor. Antes era el icono
     // `sql`, que en una barra de consultas no distingue nada: todo ahi es SQL.

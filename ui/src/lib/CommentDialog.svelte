@@ -52,9 +52,19 @@
     }
   }
 
+  /**
+   * El SQL que se va a ejecutar, para que la confirmación de producción sepa si trae algo
+   * destructivo. Se pide solo si hace falta y reutiliza la vista previa si ya está a la vista.
+   */
+  async function sqlToApply(): Promise<string> {
+    if (preview) return preview;
+    const statements = await commentPreview(changes());
+    return statements.map((statement) => statement.sql).join(";\n\n");
+  }
+
   async function submit() {
     error = null;
-    if (!(await confirmMutation(profileId, "Se va a cambiar un comentario."))) return;
+    if (!(await confirmMutation(profileId, "Se va a cambiar un comentario.", sqlToApply))) return;
 
     saving = true;
     try {
@@ -80,7 +90,7 @@
   {/if}
 
   {#if preview}
-    <SqlPreview sql={preview} />
+    <SqlPreview sql={preview} {profileId} {database} />
   {/if}
 
   {#snippet footer()}
