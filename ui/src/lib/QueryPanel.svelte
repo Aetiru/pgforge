@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import Alert from "./Alert.svelte";
   import Confirm from "./Confirm.svelte";
   import Empty from "./Empty.svelte";
   import ExportDialog from "./ExportDialog.svelte";
@@ -9,7 +10,9 @@
   import HistoryPanel from "./HistoryPanel.svelte";
   import Icon from "./Icon.svelte";
   import IndexDialog from "./IndexDialog.svelte";
+  import Modal from "./Modal.svelte";
   import PlanAdvice from "./PlanAdvice.svelte";
+  import RehearsalResult from "./RehearsalResult.svelte";
   import PlanTree from "./PlanTree.svelte";
   import { planHeat } from "./plan-heat";
   import ResultGrid from "./ResultGrid.svelte";
@@ -276,6 +279,15 @@
     const { text, cursor } = here();
     doFormat(text, cursor);
   });
+
+  /**
+   * «Ensayar»: la selección si hay, y si no el script entero. Al revés que «Ejecutar», que toma la
+   * sentencia del cursor: lo que se ensaya es casi siempre un script, y ensayar una sola sentencia
+   * suelta de un script de cinco da un recuento que no es el de la corrida de verdad.
+   */
+  async function rehearse(selection: string) {
+    await tab.rehearse(selection.trim() !== "" ? selection : tab.sql);
+  }
 
   async function explain(selection: string, cursor: number, options: ExplainOptions) {
     const target = await resolve(selection, cursor);
@@ -569,6 +581,18 @@
         }}
       >
         <Icon name="gauge" size={16} />
+      </button>
+
+      <button
+        class="btn btn-ghost btn-icon"
+        disabled={tab.tabId === null || tab.running || tab.rehearsing || tab.txStatus !== "idle"}
+        aria-label="Ensayar"
+        title={tab.txStatus !== "idle"
+          ? "Hay una transacción abierta: confirmala o revertila para ensayar"
+          : "Ensaya la selección, o el script entero: lo corre adentro de BEGIN … ROLLBACK y muestra filas afectadas, errores y locks, sin dejar nada aplicado"}
+        onclick={() => rehearse(here().text)}
+      >
+        <Icon name="flask" size={16} />
       </button>
 
       <span class="rail-sep"></span>
@@ -1220,4 +1244,20 @@
     }}
     onclose={() => (pending = null)}
   />
+{/if}
+
+{#if tab.rehearsalOpen}
+  <Modal title="Ensayo" subtitle="BEGIN … ROLLBACK: no queda nada aplicado" size="xl" busy={tab.rehearsing} onclose={() => (tab.rehearsalOpen = false)}>
+    {#if tab.rehearsing}
+      <p class="muted flex items-center gap-2 text-sm"><span class="spinner"></span> Ensayando…</p>
+    {:else if tab.rehearsalError}
+      <Alert box tone="bad">{tab.rehearsalError}</Alert>
+    {:else if tab.rehearsal}
+      <RehearsalResult report={tab.rehearsal} />
+    {/if}
+
+    {#snippet footer()}
+      <button class="btn ml-auto" disabled={tab.rehearsing} onclick={() => (tab.rehearsalOpen = false)}>Cerrar</button>
+    {/snippet}
+  </Modal>
 {/if}

@@ -128,6 +128,8 @@ pub fn run() {
             commands::query::query_tx_status,
             commands::query::query_column_types,
             commands::query::query_explain,
+            commands::query::query_rehearse,
+            commands::query::rehearsal_run,
             commands::query::statement_at_cursor,
             commands::query::sql_format,
             commands::dialogs::dialog_open,

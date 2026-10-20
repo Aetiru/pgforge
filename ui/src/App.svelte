@@ -40,6 +40,7 @@
   import { openPermissionMatrix, PermissionMatrixTab } from "./lib/permission-matrix.svelte";
   import { openRoleCapabilities, RoleCapabilitiesTab } from "./lib/role-capabilities.svelte";
   import { environmentOf, guard } from "./lib/access.svelte";
+  import { RISK_LABEL } from "./lib/statement-risk";
   import { tabAccent } from "./lib/badges";
   import EnvFrame from "./lib/EnvFrame.svelte";
   import Breadcrumb from "./lib/Breadcrumb.svelte";
@@ -1389,14 +1390,29 @@
   detrás con todo lo que el usuario escribió.
 -->
 {#if guard.pending}
-  <Confirm
-    title="Modificar producción"
-    message="«{guard.pending.profile.name}» está marcado como servidor de producción. {guard.pending
-      .action}"
-    confirmLabel="Modificar igual"
-    onconfirm={() => guard.answer(true)}
-    onclose={() => guard.answer(false)}
-  />
+  {#key guard.pending}
+    {@const pending = guard.pending}
+    {@const strong = pending.risks.length > 0}
+    <Confirm
+      title={strong ? "Operación destructiva en producción" : "Modificar producción"}
+      message="«{pending.profile.name}» está marcado como servidor de producción. {pending.action}"
+      confirmLabel={strong ? "Ejecutar igual" : "Modificar igual"}
+      requireText={strong ? pending.profile.name : undefined}
+      onconfirm={() => guard.answer(true)}
+      onclose={() => guard.answer(false)}
+    >
+      {#if strong}
+        <ul class="max-h-40 space-y-1 overflow-auto text-xs">
+          {#each pending.risks as risk (risk.index + risk.kind)}
+            <li>
+              <span class="font-medium text-red-600 dark:text-red-400">{RISK_LABEL[risk.kind]}</span>
+              <code class="select-text block truncate font-mono text-zinc-500">{risk.statement}</code>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </Confirm>
+  {/key}
 {/if}
 
 <Toast />

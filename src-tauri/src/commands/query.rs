@@ -13,7 +13,7 @@ use pgforge_core::error::ErrorPayload;
 use pgforge_core::sql::{
     self, completion, explain, history::Entry as HistoryEntry, history::Source as HistorySource,
     ColumnType, ExplainOptions, Limits, NewEntry, NewQuery, Outcome, Plan, QuerySession,
-    SavedQuery, SchemaSnapshot, Snippet, SnippetId, TxStatus,
+    RehearsalOptions, RehearsalReport, SavedQuery, SchemaSnapshot, Snippet, SnippetId, TxStatus,
 };
 use pgforge_core::{Error, ProfileId, Result};
 use serde::Serialize;
@@ -487,6 +487,44 @@ pub async fn query_autocommit(
 async fn session_of(state: &State<'_, AppState>, tab_id: &str) -> Result<Arc<Mutex<QuerySession>>> {
     let tabs = state.queries.lock().await;
     Ok(require(&tabs, tab_id)?.session.clone())
+}
+
+/// Ensaya el script en la sesión de la pestaña: corre adentro de `BEGIN … ROLLBACK` y cuenta qué
+/// habría pasado. No se registra en el historial: no se ejecutó nada de verdad.
+///
+/// Usa la sesión de la pestaña y no una nueva para que valgan su `search_path` y sus tablas
+/// temporales, que es contra lo que el usuario escribió el script.
+#[tauri::command]
+pub async fn query_rehearse(
+    state: State<'_, AppState>,
+    tab_id: String,
+    sql: String,
+    lock_timeout_ms: Option<u64>,
+) -> Result<RehearsalReport> {
+    let session = session_of(&state, &tab_id).await?;
+    let session = session.lock().await;
+    sql::rehearsal::rehearse(&session, &sql, rehearsal_options(lock_timeout_ms)).await
+}
+
+/// Ensaya un script desde un diálogo, que no tiene pestaña: abre una sesión propia y la suelta.
+#[tauri::command]
+pub async fn rehearsal_run(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    sql: String,
+    lock_timeout_ms: Option<u64>,
+) -> Result<RehearsalReport> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+    let session = QuerySession::open(&handle, &database).await?;
+    sql::rehearsal::rehearse(&session, &sql, rehearsal_options(lock_timeout_ms)).await
+}
+
+fn rehearsal_options(lock_timeout_ms: Option<u64>) -> RehearsalOptions {
+    RehearsalOptions {
+        lock_timeout_ms: lock_timeout_ms.unwrap_or(sql::rehearsal::DEFAULT_LOCK_TIMEOUT_MS),
+    }
 }
 
 /// Plan de ejecución de una sentencia.

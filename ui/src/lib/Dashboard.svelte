@@ -475,7 +475,8 @@
    */
   async function dropRedundant(target: Redundancy) {
     droppingIndex = null;
-    if (!(await confirmMutation(profileId, "Se va a borrar un índice del servidor."))) return;
+    if (!(await confirmMutation(profileId, "Se va a borrar un índice del servidor.", target.dropSql)))
+      return;
     try {
       const concurrently = target.dropSql.includes("CONCURRENTLY");
       await indexDrop(
@@ -505,7 +506,14 @@
    */
   async function dropStat(target: IndexStat) {
     droppingStat = null;
-    if (!(await confirmMutation(profileId, "Se va a borrar un índice del servidor."))) return;
+    if (
+      !(await confirmMutation(
+        profileId,
+        "Se va a borrar un índice del servidor.",
+        target.dropSql ?? `DROP INDEX ${target.schema}.${target.index}`,
+      ))
+    )
+      return;
     try {
       await indexDrop(profileId, target.schema, target.index, false, true, database ?? undefined);
       const key = `${target.schema}.${target.index}`;

@@ -265,3 +265,66 @@ export const sqlWriteFile = (path: string, sql: string) =>
   invoke<void>("sql_write_file", { path, sql });
 
 export const sqlReadFile = (path: string) => invoke<string>("sql_read_file", { path });
+// ---------------------------------------------------------------------------
+// Ensayo
+// ---------------------------------------------------------------------------
+
+/** Una sentencia que no se puede ensayar, y por qué. Con alguna, no se ejecutó nada. */
+export interface RehearsalBlocker {
+  index: number;
+  line: number;
+  statement: string;
+  reason: string;
+}
+
+/** Un efecto que el `ROLLBACK` no deshace. */
+export interface RehearsalCaveat {
+  kind: "sequence" | "external" | "session";
+  index: number;
+  message: string;
+}
+
+export interface RehearsalLock {
+  /** `esquema.tabla`; `null` en los locks que no son de una relación. */
+  relation: string | null;
+  lockType: string;
+  mode: string;
+  granted: boolean;
+}
+
+export interface RehearsalStep {
+  index: number;
+  line: number;
+  statement: string;
+  /** `null` si falló. */
+  outcome: Outcome | null;
+  error: CoreError | null;
+}
+
+/** Refleja `pgforge_core::sql::rehearsal::Report`. */
+export interface RehearsalReport {
+  /** Cuántas sentencias tenía el script, hayan corrido o no. */
+  total: number;
+  steps: RehearsalStep[];
+  locks: RehearsalLock[];
+  /** `false` si una sentencia falló: en una transacción abortada no se pueden leer los locks. */
+  locksAvailable: boolean;
+  caveats: RehearsalCaveat[];
+  blocked: RehearsalBlocker[];
+  rolledBack: boolean;
+  rollbackError: string | null;
+  seconds: number;
+}
+
+/** Ensaya en la sesión de la pestaña: valen su `search_path` y sus tablas temporales. */
+export const queryRehearse = (tabId: string, sql: string, lockTimeoutMs?: number) =>
+  invoke<RehearsalReport>("query_rehearse", { tabId, sql, lockTimeoutMs: lockTimeoutMs ?? null });
+
+/** Ensaya desde un diálogo, que no tiene pestaña: el núcleo abre una sesión propia y la suelta. */
+export const rehearsalRun = (id: string, database: string | undefined, sql: string) =>
+  invoke<RehearsalReport>("rehearsal_run", {
+    id,
+    database: database ?? null,
+    sql,
+    lockTimeoutMs: null,
+  });

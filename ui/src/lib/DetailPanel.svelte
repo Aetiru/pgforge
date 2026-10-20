@@ -1130,7 +1130,9 @@
 
   async function confirmDrop() {
     if (!dropTarget || !selected || !node) return;
-    if (!(await confirmMutation(selected.profileId, "Se va a eliminar un objeto del servidor.")))
+    // El SQL real lo arma `runDrop`; acá solo hace falta que la guarda de producción vea el `DROP`.
+    const sql = `DROP ${dropTarget.kind} ${"label" in dropTarget ? dropTarget.label : dropTarget.name}`;
+    if (!(await confirmMutation(selected.profileId, "Se va a eliminar un objeto del servidor.", sql)))
       return;
     dropping = true;
     dropError = null;
