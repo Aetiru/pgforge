@@ -13,6 +13,8 @@
   import PlanTree from "./PlanTree.svelte";
   import { planHeat } from "./plan-heat";
   import ResultGrid from "./ResultGrid.svelte";
+  import ResultCompareDialog, { type CompareSource } from "./ResultCompareDialog.svelte";
+  import ResultFileDialog from "./ResultFileDialog.svelte";
   import SaveQueryDialog from "./SaveQueryDialog.svelte";
   import SavedPanel from "./SavedPanel.svelte";
   import GridSize from "./GridSize.svelte";
@@ -120,6 +122,41 @@
     }
     tab.pin(sql, item.outcome, tab.showTypes ? tab.columnTypes : null);
   }
+
+  let fileExportOpen = $state(false);
+  let compareOpen = $state(false);
+
+  /**
+   * Los resultados con filas que se pueden comparar: los en vivo del último script y los anclados.
+   * Comparar un resultado con el de antes de un cambio es para lo que sirve anclar.
+   */
+  const compareSources = $derived.by<CompareSource[]>(() => {
+    const out: CompareSource[] = [];
+    tab.results.forEach((item, index) => {
+      if (item.outcome.kind !== "rows") return;
+      out.push({
+        id: `live:${index}`,
+        label: `En vivo #${index + 1} · ${count(item.outcome.rowCount)} filas`,
+        columns: item.outcome.columns,
+        rows: item.outcome.rows,
+        truncated: item.outcome.truncated,
+      });
+    });
+    for (const item of tab.pinned) {
+      if (item.outcome.kind !== "rows") continue;
+      out.push({
+        id: `pin:${item.id}`,
+        label: `Anclado · ${item.label}`,
+        columns: item.outcome.columns,
+        rows: item.outcome.rows,
+        truncated: item.outcome.truncated,
+      });
+    }
+    return out;
+  });
+  const compareFrom = $derived(
+    tab.pinnedShown !== null ? `pin:${tab.pinnedShown}` : `live:${tab.shown}`,
+  );
 
   let saveOpen = $state(false);
   let snippetsOpen = $state(false);
@@ -861,9 +898,30 @@
               >
                 <Icon name="download" size={13} />
               </button>
+              <button
+                class="btn btn-ghost btn-icon"
+                aria-label="Exportar a JSON o Markdown"
+                title="Escribe las filas cargadas como JSON o Markdown (respeta el máximo de filas)"
+                onclick={() => (fileExportOpen = true)}
+              >
+                <Icon name="sql" size={13} />
+              </button>
             {/if}
 
           {/if}
+
+          <!-- Fuera del bloque de arriba: comparar contra un ancla se hace mirando el ancla. -->
+          <button
+            class="btn btn-ghost btn-icon"
+            disabled={compareSources.length < 2}
+            aria-label="Comparar resultados"
+            title={compareSources.length < 2
+              ? "Hacen falta dos resultados con filas: anclá uno y ejecutá de nuevo"
+              : "Compara dos resultados celda por celda"}
+            onclick={() => (compareOpen = true)}
+          >
+            <Icon name="compare" size={13} />
+          </button>
 
           <!-- El tamaño de letra de la grilla va al final: se toca una vez y no se vuelve a mirar,
                al revés de todo lo que tiene a la izquierda. Y va afuera del `{#if}` de arriba: la
@@ -1081,6 +1139,24 @@
     </div>
   </div>
 </div>
+
+{#if compareOpen}
+  <ResultCompareDialog
+    sources={compareSources}
+    initialLeft={compareFrom}
+    onclose={() => (compareOpen = false)}
+  />
+{/if}
+
+{#if fileExportOpen && withRows}
+  <ResultFileDialog
+    columns={withRows.columns}
+    rows={withRows.rows}
+    types={tab.showTypes ? tab.columnTypes : null}
+    truncated={withRows.truncated}
+    onclose={() => (fileExportOpen = false)}
+  />
+{/if}
 
 {#if exportOpen}
   <ExportDialog

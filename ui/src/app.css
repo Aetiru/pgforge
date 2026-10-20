@@ -769,3 +769,27 @@ input[type="password"]::-ms-clear {
 
   --grid-range-edge: var(--color-blue-400);
 }
+
+/* --------------------------------------------------------------------------
+   Comparación de resultados (ResultCompareDialog)
+   -------------------------------------------------------------------------- */
+
+.diff-cell-changed {
+  @apply bg-amber-100 dark:bg-amber-500/20;
+}
+
+.diff-row-added {
+  @apply bg-emerald-50 dark:bg-emerald-500/10;
+}
+
+.diff-row-removed {
+  @apply bg-rose-50 dark:bg-rose-500/10;
+}
+
+.diff-old {
+  @apply text-rose-700 line-through dark:text-rose-300;
+}
+
+.diff-new {
+  @apply text-emerald-700 dark:text-emerald-300;
+}
