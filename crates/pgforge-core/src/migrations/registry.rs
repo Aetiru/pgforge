@@ -184,7 +184,8 @@ mod tests {
     }
 
     fn temp_path(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("pgforge-migrations-{}-{name}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("pgforge-migrations-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir.join("migrations.db")
@@ -194,7 +195,9 @@ mod tests {
     fn guarda_y_lista_por_servidor_y_base() {
         let store = MigrationStore::in_memory();
         store.record(&new_record("a", "app", 1, None)).unwrap();
-        store.record(&new_record("a", "app", 2, Some("boom"))).unwrap();
+        store
+            .record(&new_record("a", "app", 2, Some("boom")))
+            .unwrap();
         store.record(&new_record("a", "otra", 1, None)).unwrap();
         store.record(&new_record("b", "app", 1, None)).unwrap();
 

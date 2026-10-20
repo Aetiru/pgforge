@@ -96,6 +96,47 @@ pub async fn spawn_statement(
     target: String,
     sql: String,
 ) -> Result<String> {
+    spawn_steps(
+        app,
+        state,
+        kind,
+        id,
+        database,
+        target,
+        sql.clone(),
+        vec![sql],
+        None,
+    )
+    .await
+}
+
+/// Qué hacer cuando la tarea termina, con cuántos segundos tardó o con el texto del error.
+///
+/// Existe para lo que tiene que anotarse **recién cuando se sabe cómo terminó** (el registro de
+/// migraciones): el comando que lanza la tarea ya respondió hace rato, así que no puede hacerlo él.
+pub type Done = Box<
+    dyn FnOnce(
+            std::result::Result<f64, String>,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+        + Send,
+>;
+
+/// Como [`spawn_statement`], pero con varios viajes al servidor, uno tras otro y en la misma sesión.
+///
+/// `command` es lo que se muestra en la vista de procesos (el SQL tal cual lo vio el usuario en la
+/// vista previa) y `steps` lo que se manda. Si un paso falla, los siguientes no corren.
+#[allow(clippy::too_many_arguments)]
+pub async fn spawn_steps(
+    app: AppHandle,
+    state: &AppState,
+    kind: ProcessKind,
+    id: ProfileId,
+    database: String,
+    target: String,
+    command: String,
+    steps: Vec<String>,
+    done: Option<Done>,
+) -> Result<String> {
     let handle = state.manager.require(id).await?;
     // Estas sentencias (`VACUUM`, `REINDEX`, `CREATE INDEX CONCURRENTLY`) corren fuera de una
     // transacción, donde `default_transaction_read_only` no las frena.
@@ -113,7 +154,7 @@ pub async fn spawn_statement(
             id,
             database,
             target,
-            sql.clone(),
+            command,
             Cancel::Server { profile: id, token },
         )
         .await;
@@ -138,7 +179,24 @@ pub async fn spawn_statement(
             }
 
             let started = Instant::now();
-            let result = session.execute_batch(&sql).await;
+            let mut result = Ok(());
+            for step in &steps {
+                result = session.execute_batch(step).await;
+                if result.is_err() {
+                    break;
+                }
+            }
+            let seconds = started.elapsed().as_secs_f64();
+
+            // Antes de avisar que terminó: quien mira la lista de procesos y relee el registro al
+            // ver «Listo» tiene que encontrar ya la fila.
+            if let Some(done) = done {
+                done(match &result {
+                    Ok(()) => Ok(seconds),
+                    Err(error) => Err(error.to_string()),
+                })
+                .await;
+            }
 
             let state = app.state::<AppState>();
             match result {
@@ -148,7 +206,7 @@ pub async fn spawn_statement(
                         .finish(
                             &task_id,
                             Outcome {
-                                seconds: started.elapsed().as_secs_f64(),
+                                seconds,
                                 ..Outcome::default()
                             },
                         )

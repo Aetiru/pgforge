@@ -199,6 +199,12 @@ export interface HistoryEntry {
   rowCount: number | null;
   succeeded: boolean;
   error: string | null;
+  /** Nombre del servidor al momento de ejecutar; `null` en lo anotado antes de que se guardara. */
+  serverName: string | null;
+  /** El rol con el que se conectó el perfil. */
+  dbUser: string | null;
+  /** `dev` / `test` / `prod` tal como estaba marcado el servidor, o `null`. */
+  environment: string | null;
 }
 
 export const historyRecent = (id?: string, limit?: number) =>

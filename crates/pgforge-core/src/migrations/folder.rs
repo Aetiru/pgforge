@@ -235,7 +235,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(second.version, 2);
-        assert_eq!(second.down_file.as_deref(), Some("U002__anadir_telefono.sql"));
+        assert_eq!(
+            second.down_file.as_deref(),
+            Some("U002__anadir_telefono.sql")
+        );
 
         let scan = scan(&dir).unwrap();
         assert_eq!(scan.files.len(), 2);

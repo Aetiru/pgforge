@@ -2,6 +2,7 @@
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
+  import MigrationSaveDialog from "./MigrationSaveDialog.svelte";
   import Sql from "./Sql.svelte";
   import { compareLabel, compareLook } from "./badges";
   import { countEntries, countRisks, filterStatements, scriptOf } from "./compare-script";
@@ -20,6 +21,7 @@
 
   let view = $state<"report" | "sql">("report");
   let copied = $state(false);
+  let savingMigration = $state(false);
 
   const diff = $derived(tab.result?.diff ?? null);
   const counts = $derived(diff ? countEntries(diff.entries) : null);
@@ -276,6 +278,15 @@
         <Icon name="sql" size={13} />
         Abrir en consulta
       </button>
+      <button
+        class="btn btn-sm"
+        disabled={!script}
+        title="Guarda el script como archivo de migración numerado (V012__…sql)"
+        onclick={() => (savingMigration = true)}
+      >
+        <Icon name="save" size={13} />
+        Guardar como migración
+      </button>
     </div>
 
     <div class="min-h-0 flex-1 overflow-auto p-3">
@@ -304,3 +315,13 @@
     </div>
   {/if}
 </div>
+
+{#if savingMigration}
+  <MigrationSaveDialog
+    sql={script}
+    profileId={tab.target.id}
+    database={tab.target.database}
+    schema={tab.target.schema}
+    onclose={() => (savingMigration = false)}
+  />
+{/if}

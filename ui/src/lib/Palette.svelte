@@ -25,6 +25,7 @@
     onnewserver,
     onmonitor,
     onconfig,
+    onmigrations,
     onconnect,
     onclose,
   }: {
@@ -34,6 +35,7 @@
     /** Abre el dashboard del servidor en contexto, que lo decide `App`. */
     onmonitor: () => void;
     onconfig: () => void;
+    onmigrations: () => void;
     onconnect: (profileId: string) => void;
     onclose: () => void;
   } = $props();
@@ -80,6 +82,7 @@
       { id: "server", label: "Nuevo servidor", group: "acción", run: onnewserver },
       { id: "monitor", label: "Monitoreo del servidor", group: "acción", run: onmonitor },
       { id: "config", label: "Configuración del servidor", group: "acción", run: onconfig },
+      { id: "migrations", label: "Migraciones del servidor", group: "acción", run: onmigrations },
       {
         id: "theme",
         label: "Cambiar el tema",

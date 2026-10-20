@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -113,6 +113,12 @@ pub struct AppState {
     /// Archivo aparte (`bookmarks.db`), mismo motivo que `saved`: el `user_version` del esquema es
     /// del archivo.
     pub bookmarks: Mutex<pgforge_core::BookmarkStore>,
+    /// Lo aplicado por migraciones, por servidor y base. Archivo aparte (`migrations.db`): decide
+    /// qué falta aplicar, y vaciarlo haría reaplicar todo (ver `migrations::registry`).
+    pub migrations: Mutex<pgforge_core::MigrationStore>,
+    /// Bases con una migración corriendo. Evita que dos aplicaciones simultáneas lean el mismo
+    /// registro y corran la misma versión dos veces.
+    pub migrating: Mutex<HashSet<(ProfileId, String)>>,
     /// Directorio de configuración de la aplicación. Se guarda entero (no solo lo que ya se usó
     /// para abrir los stores de arriba) porque `scripts_root` cuelga de acá.
     pub config_dir: PathBuf,
@@ -139,6 +145,10 @@ impl AppState {
             bookmarks: Mutex::new(pgforge_core::BookmarkStore::open(
                 config_dir.join("bookmarks.db"),
             )?),
+            migrations: Mutex::new(pgforge_core::MigrationStore::open(
+                config_dir.join("migrations.db"),
+            )?),
+            migrating: Mutex::new(HashSet::new()),
             monitors: Mutex::new(HashMap::new()),
             processes: Processes::default(),
             queries: Mutex::new(HashMap::new()),

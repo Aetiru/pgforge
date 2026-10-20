@@ -31,6 +31,6 @@ pub use conn::{
 };
 pub use error::{Error, Result};
 pub use introspect::{TreeNode, TreeOptions};
-pub use scripts::{ImportReport, ScriptEntry, ScriptFolder};
 pub use migrations::MigrationStore;
+pub use scripts::{ImportReport, ScriptEntry, ScriptFolder};
 pub use workspace::{Workspace, WorkspaceId, WorkspaceSource, WorkspaceStore};

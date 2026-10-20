@@ -333,7 +333,8 @@ impl Report {
                     )));
                 }
                 if let Some(later) = self.items.iter().find(|other| {
-                    other.version > version && matches!(other.state, State::Applied | State::Changed)
+                    other.version > version
+                        && matches!(other.state, State::Applied | State::Changed)
                 }) {
                     return Err(Error::Conflict(format!(
                         "V{:03} se aplicó después: deshacer de a una, empezando por la última",
@@ -490,9 +491,87 @@ pub fn plan(item: &Item, direction: Direction, sql: &str, report: &Report) -> Pl
     }
 }
 
+/// Lo que muestra la pantalla de migraciones de un servidor y una base.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Overview {
+    pub report: Report,
+    pub orphan_downs: Vec<String>,
+    /// Todos los intentos, del más viejo al más nuevo: el estado de arriba sale de la última fila
+    /// de cada versión, pero quien audita quiere ver también los que fallaron.
+    pub records: Vec<Record>,
+}
+
+pub fn overview(dir: &std::path::Path, records: Vec<Record>) -> Result<Overview> {
+    let scan = folder::scan(dir)?;
+    Ok(Overview {
+        report: status(&scan.files, &records),
+        orphan_downs: scan.orphan_downs,
+        records,
+    })
+}
+
+/// La vista previa de aplicar (o deshacer) `version`: relee la carpeta, verifica que se pueda y
+/// arma lo que se ejecutaría. Es lo mismo que corre [`prepare`] al aplicar, por eso es una sola
+/// función: lo que se ve es lo que se ejecuta.
+pub fn prepare(
+    dir: &std::path::Path,
+    records: &[Record],
+    version: u32,
+    direction: Direction,
+) -> Result<Plan> {
+    let scan = folder::scan(dir)?;
+    let report = status(&scan.files, records);
+    report.check(version, direction)?;
+    let file = scan
+        .files
+        .iter()
+        .find(|file| file.version == version)
+        .ok_or_else(|| Error::Config(format!("no hay una migración V{version:03}")))?;
+    let sql = folder::read_sql(dir, file, direction)?;
+    Ok(plan(report.item(version)?, direction, &sql, &report))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prepara_lo_que_se_ejecuta_desde_la_carpeta_y_el_registro() {
+        let dir = std::env::temp_dir().join(format!("pgforge-mig-prepare-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        folder::save(
+            &dir,
+            "uno",
+            "CREATE TABLE a (id int);",
+            Some("DROP TABLE a;"),
+        )
+        .unwrap();
+        folder::save(&dir, "dos", "CREATE TABLE b (id int);", None).unwrap();
+
+        let plan = prepare(&dir, &[], 1, Direction::Up).unwrap();
+        assert_eq!(plan.execution.mode, Mode::Atomic);
+        assert_eq!(plan.checksum, checksum("CREATE TABLE a (id int);\n"));
+        // La 2 no puede ir antes que la 1, ni se puede deshacer lo que no se aplicó.
+        assert!(prepare(&dir, &[], 2, Direction::Up).is_err());
+        assert!(prepare(&dir, &[], 1, Direction::Down).is_err());
+
+        let applied = [record(
+            1,
+            1,
+            Direction::Up,
+            "CREATE TABLE a (id int);\n",
+            true,
+        )];
+        assert!(prepare(&dir, &applied, 2, Direction::Up).is_ok());
+        let down = prepare(&dir, &applied, 1, Direction::Down).unwrap();
+        assert_eq!(down.execution.steps[0], "BEGIN;\nDROP TABLE a;\nCOMMIT");
+
+        let view = overview(&dir, applied.to_vec()).unwrap();
+        assert_eq!(view.report.pending().len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn file(version: u32, sql: &str, down: bool) -> MigrationFile {
         MigrationFile {
@@ -571,7 +650,11 @@ mod tests {
 
     #[test]
     fn distingue_pendiente_aplicada_y_cambiada() {
-        let files = [file(1, "A", false), file(2, "B2", false), file(3, "C", false)];
+        let files = [
+            file(1, "A", false),
+            file(2, "B2", false),
+            file(3, "C", false),
+        ];
         let records = [
             record(1, 1, Direction::Up, "A", true),
             record(2, 2, Direction::Up, "B", true),
@@ -611,7 +694,11 @@ mod tests {
 
     #[test]
     fn solo_se_aplica_en_orden() {
-        let files = [file(1, "A", false), file(2, "B", false), file(3, "C", false)];
+        let files = [
+            file(1, "A", false),
+            file(2, "B", false),
+            file(3, "C", false),
+        ];
         let report = status(&files, &[]);
         assert!(report.check(1, Direction::Up).is_ok());
         assert!(matches!(
