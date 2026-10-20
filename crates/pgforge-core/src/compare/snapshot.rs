@@ -11,6 +11,17 @@
 //! - Las **secuencias de una columna** (`serial` o `identity`) tampoco. Son parte de la definición
 //!   de esa columna, y ya se comparan con ella; listarlas aparte sería contar dos veces lo mismo.
 //!
+//! - Las **funciones de una extensión** (`pg_depend` con `deptype = 'e'`) tampoco: las trae
+//!   `CREATE EXTENSION`, y compararlas haría que cada versión de la extensión se viera como cambio.
+//! - Los **disparadores internos** (`tgisinternal`) son los que PostgreSQL arma para las claves
+//!   foráneas; el usuario no los escribió y se recrean con la restricción.
+//!
+//! Los permisos se leen con `acldefault` de respaldo: una ACL en `NULL` no significa «sin permisos»
+//! sino «los de fábrica» (el dueño con todo, y `EXECUTE` para `PUBLIC` en las funciones), y sin
+//! expandirla un `REVOKE` explícito de un lado se vería igual a no haber tocado nada del otro. El
+//! dueño se descarta: sus privilegios son suyos por serlo, y el rol dueño puede llamarse distinto
+//! en cada servidor.
+//!
 //! Tampoco se leen datos: `last_value` de una secuencia es estado, no estructura, y traerlo haría
 //! que dos esquemas idénticos aparezcan distintos por el solo hecho de que uno se usó.
 
@@ -41,6 +52,18 @@ pub struct SchemaSnapshot {
     pub views: Vec<View>,
     pub sequences: Vec<Sequence>,
     pub types: Vec<TypeDef>,
+    /// Funciones y procedimientos. Las agregaciones quedan afuera: `pg_get_functiondef` no las
+    /// escribe.
+    pub functions: Vec<Function>,
+    pub triggers: Vec<Trigger>,
+    pub policies: Vec<Policy>,
+    /// Solo las tablas con seguridad por filas encendida o forzada; que una no figure significa
+    /// que tiene las dos apagadas.
+    pub row_security: Vec<RowSecurity>,
+    /// Los permisos de cada tabla, vista, secuencia y función. Figuran **todos**, también los que
+    /// no tienen ningún permiso para otro rol: saber que el objeto existe es lo que permite decidir
+    /// si sus permisos viajan con él o hay que compararlos.
+    pub acls: Vec<ObjectAcl>,
 }
 
 /// Un objeto cuyo texto ya lo escribe el servidor: una restricción o un índice.
@@ -217,6 +240,11 @@ pub async fn read(handle: &ServerHandle, database: &str, schema: &str) -> Result
         views,
         sequences: sequences(&client, schema).await?,
         types: types(&client, schema).await?,
+        functions: functions(&client, schema).await?,
+        triggers: triggers(&client, schema).await?,
+        policies: policies(&client, schema).await?,
+        row_security: row_security(&client, schema).await?,
+        acls: acls(&client, schema).await?,
     })
 }
 
@@ -516,6 +544,413 @@ async fn composite_fields(
         });
     }
     Ok(map)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FunctionKind {
+    /// Función normal, de ventana o de disparador: se escriben igual.
+    Function,
+    Procedure,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Function {
+    pub name: String,
+    /// Los tipos de los argumentos de entrada (`oidvectortypes`), sin sus nombres. Junto con el
+    /// nombre es la identidad de la función: PostgreSQL permite varias con el mismo nombre y
+    /// argumentos distintos, y compararlas por nombre solo las mezclaría. Los nombres de los
+    /// argumentos no cuentan para la identidad: `f(a int)` y `f(b int)` son la misma función.
+    pub arguments: String,
+    pub kind: FunctionKind,
+    /// Tal cual la escribe `pg_get_functiondef`: un `CREATE OR REPLACE` completo.
+    pub definition: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TriggerEnabled {
+    /// Dispara con la replicación en modo normal (`origin`): el estado de fábrica.
+    Origin,
+    Disabled,
+    Replica,
+    Always,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Trigger {
+    /// Tabla o vista de la que cuelga.
+    pub table: String,
+    pub name: String,
+    /// De `pg_get_triggerdef`.
+    pub definition: String,
+    pub enabled: TriggerEnabled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PolicyCommand {
+    All,
+    Select,
+    Insert,
+    Update,
+    Delete,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Policy {
+    pub table: String,
+    pub name: String,
+    pub command: PolicyCommand,
+    pub permissive: bool,
+    /// Ordenados; `PUBLIC` si es para todos. Un rol que ya no existe no figura.
+    pub roles: Vec<String>,
+    /// Las dos expresiones salen de `pg_get_expr` y son `None` cuando la política no las tiene.
+    pub using: Option<String>,
+    pub with_check: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RowSecurity {
+    pub table: String,
+    pub enabled: bool,
+    /// `FORCE`: vale también para el dueño de la tabla.
+    pub forced: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AclKind {
+    /// Tabla, vista o vista materializada: todas se otorgan con `ON TABLE`.
+    Table,
+    Sequence,
+    Function,
+    Procedure,
+}
+
+/// El permiso de un rol sobre un objeto, ya desarmado de la ACL.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Grant {
+    /// Nombre del rol, o `PUBLIC`. Un rol no puede llamarse así, así que no hay ambigüedad.
+    pub grantee: String,
+    pub privilege: String,
+    /// `WITH GRANT OPTION`: puede dárselo a otros.
+    pub grantable: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ObjectAcl {
+    pub kind: AclKind,
+    pub name: String,
+    /// Solo en funciones y procedimientos, con el mismo sentido que [`Function::arguments`].
+    pub arguments: Option<String>,
+    /// Sin los del dueño.
+    pub grants: Vec<Grant>,
+}
+
+/// Los privilegios que puede traer una ACL. Lo usa la validación de una instantánea guardada, que
+/// interpola el nombre del privilegio sin comillas.
+pub const PRIVILEGES: &[&str] = &[
+    "SELECT",
+    "INSERT",
+    "UPDATE",
+    "DELETE",
+    "TRUNCATE",
+    "REFERENCES",
+    "TRIGGER",
+    "MAINTAIN",
+    "USAGE",
+    "EXECUTE",
+];
+
+async fn functions(client: &tokio_postgres::Client, schema: &str) -> Result<Vec<Function>> {
+    let rows = client
+        .query(
+            "SELECT p.proname::text,
+                    pg_catalog.oidvectortypes(p.proargtypes),
+                    p.prokind::text,
+                    pg_catalog.pg_get_functiondef(p.oid)
+               FROM pg_catalog.pg_proc p
+               JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = $1
+                -- Funciones, procedimientos y de ventana. Las agregaciones ('a') hacen fallar a
+                -- `pg_get_functiondef`.
+                AND p.prokind IN ('f', 'p', 'w')
+                AND NOT EXISTS (SELECT 1
+                                  FROM pg_catalog.pg_depend d
+                                 WHERE d.classid = 'pg_catalog.pg_proc'::regclass
+                                   AND d.objid = p.oid
+                                   AND d.deptype = 'e')
+              ORDER BY p.proname, p.oid",
+            &[&schema],
+        )
+        .await?;
+
+    Ok(rows
+        .iter()
+        .filter_map(|row| {
+            let kind: String = row.get(2);
+            // Sin texto no hay nada que comparar ni que emitir: se omite en vez de inventar una
+            // definición vacía que después pasaría por «distinta» de todas.
+            let definition: Option<String> = row.get(3);
+            Some(Function {
+                name: row.get(0),
+                arguments: row.get(1),
+                kind: if kind == "p" {
+                    FunctionKind::Procedure
+                } else {
+                    FunctionKind::Function
+                },
+                definition: definition?,
+            })
+        })
+        .collect())
+}
+
+async fn triggers(client: &tokio_postgres::Client, schema: &str) -> Result<Vec<Trigger>> {
+    let rows = client
+        .query(
+            "SELECT c.relname::text,
+                    t.tgname::text,
+                    pg_catalog.pg_get_triggerdef(t.oid, true),
+                    t.tgenabled::text
+               FROM pg_catalog.pg_trigger t
+               JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid
+               JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = $1
+                AND NOT t.tgisinternal
+                -- Las particiones no se leen como tablas: sus disparadores son copias de los de la
+                -- madre y aparecerían repetidos.
+                AND NOT c.relispartition
+                AND c.relkind IN ('r', 'p', 'f', 'v')
+              ORDER BY c.relname, t.tgname",
+            &[&schema],
+        )
+        .await?;
+
+    Ok(rows
+        .iter()
+        .filter_map(|row| {
+            let enabled: String = row.get(3);
+            let definition: Option<String> = row.get(2);
+            Some(Trigger {
+                table: row.get(0),
+                name: row.get(1),
+                definition: definition?,
+                enabled: match enabled.as_str() {
+                    "D" => TriggerEnabled::Disabled,
+                    "R" => TriggerEnabled::Replica,
+                    "A" => TriggerEnabled::Always,
+                    _ => TriggerEnabled::Origin,
+                },
+            })
+        })
+        .collect())
+}
+
+async fn policies(client: &tokio_postgres::Client, schema: &str) -> Result<Vec<Policy>> {
+    let rows = client
+        .query(
+            "SELECT c.relname::text,
+                    pol.polname::text,
+                    pol.polcmd::text,
+                    pol.polpermissive,
+                    -- 0 es PUBLIC; un rol borrado deja un NULL que se descarta abajo.
+                    ARRAY(SELECT CASE WHEN r = 0 THEN 'PUBLIC'
+                                      ELSE (SELECT ro.rolname::text
+                                              FROM pg_catalog.pg_roles ro
+                                             WHERE ro.oid = r) END
+                            FROM pg_catalog.unnest(pol.polroles) AS r)::text[],
+                    pg_catalog.pg_get_expr(pol.polqual, pol.polrelid),
+                    pg_catalog.pg_get_expr(pol.polwithcheck, pol.polrelid)
+               FROM pg_catalog.pg_policy pol
+               JOIN pg_catalog.pg_class c ON c.oid = pol.polrelid
+               JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = $1
+                AND NOT c.relispartition
+              ORDER BY c.relname, pol.polname",
+            &[&schema],
+        )
+        .await?;
+
+    Ok(rows
+        .iter()
+        .map(|row| {
+            let command: String = row.get(2);
+            let roles: Vec<Option<String>> = row.get(4);
+            let mut roles: Vec<String> = roles.into_iter().flatten().collect();
+            roles.sort();
+            Policy {
+                table: row.get(0),
+                name: row.get(1),
+                command: match command.as_str() {
+                    "r" => PolicyCommand::Select,
+                    "a" => PolicyCommand::Insert,
+                    "w" => PolicyCommand::Update,
+                    "d" => PolicyCommand::Delete,
+                    _ => PolicyCommand::All,
+                },
+                permissive: row.get(3),
+                roles,
+                using: row.get(5),
+                with_check: row.get(6),
+            }
+        })
+        .collect())
+}
+
+async fn row_security(client: &tokio_postgres::Client, schema: &str) -> Result<Vec<RowSecurity>> {
+    let rows = client
+        .query(
+            "SELECT c.relname::text, c.relrowsecurity, c.relforcerowsecurity
+               FROM pg_catalog.pg_class c
+               JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = $1
+                AND c.relkind IN ('r', 'p')
+                AND NOT c.relispartition
+                AND (c.relrowsecurity OR c.relforcerowsecurity)
+              ORDER BY c.relname",
+            &[&schema],
+        )
+        .await?;
+
+    Ok(rows
+        .iter()
+        .map(|row| RowSecurity {
+            table: row.get(0),
+            enabled: row.get(1),
+            forced: row.get(2),
+        })
+        .collect())
+}
+
+/// Un permiso suelto, si la fila de la consulta trae uno.
+///
+/// Las consultas de [`acls`] devuelven además una fila con todo en `NULL` para el objeto que no
+/// tiene ningún permiso (`LEFT JOIN LATERAL`): sin ella el objeto no figuraría y no habría cómo
+/// distinguir «existe sin permisos» de «no existe». Por eso las tres columnas se leen como `Option`.
+fn grant_of(
+    grantee: Option<String>,
+    privilege: Option<String>,
+    grantable: Option<bool>,
+) -> Option<Grant> {
+    Some(Grant {
+        grantee: grantee?,
+        privilege: privilege?,
+        grantable: grantable.unwrap_or(false),
+    })
+}
+
+/// Permisos de tablas, vistas, secuencias, funciones y procedimientos.
+async fn acls(client: &tokio_postgres::Client, schema: &str) -> Result<Vec<ObjectAcl>> {
+    let relations = client
+        .query(
+            "SELECT c.relname::text,
+                    c.relkind::text,
+                    CASE a.grantee WHEN 0 THEN 'PUBLIC' ELSE r.rolname::text END,
+                    a.privilege_type::text,
+                    a.is_grantable
+               FROM pg_catalog.pg_class c
+               JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+               LEFT JOIN LATERAL pg_catalog.aclexplode(
+                         COALESCE(c.relacl,
+                                  -- El CASE da `text` y `acldefault` pide `\"char\"`.
+                                  pg_catalog.acldefault((CASE WHEN c.relkind = 'S'
+                                                              THEN 's' ELSE 'r' END)::\"char\",
+                                                        c.relowner))) AS a
+                      ON a.grantee <> c.relowner
+               LEFT JOIN pg_catalog.pg_roles r ON r.oid = a.grantee
+              WHERE n.nspname = $1
+                AND c.relkind IN ('r', 'p', 'f', 'v', 'm', 'S')
+                AND NOT c.relispartition
+              ORDER BY c.relname, 3, 4",
+            &[&schema],
+        )
+        .await?;
+
+    let routines = client
+        .query(
+            "SELECT p.proname::text,
+                    p.prokind::text,
+                    pg_catalog.oidvectortypes(p.proargtypes),
+                    CASE a.grantee WHEN 0 THEN 'PUBLIC' ELSE r.rolname::text END,
+                    a.privilege_type::text,
+                    a.is_grantable
+               FROM pg_catalog.pg_proc p
+               JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+               LEFT JOIN LATERAL pg_catalog.aclexplode(
+                         COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) AS a
+                      ON a.grantee <> p.proowner
+               LEFT JOIN pg_catalog.pg_roles r ON r.oid = a.grantee
+              WHERE n.nspname = $1
+                AND p.prokind IN ('f', 'p', 'w')
+                AND NOT EXISTS (SELECT 1
+                                  FROM pg_catalog.pg_depend d
+                                 WHERE d.classid = 'pg_catalog.pg_proc'::regclass
+                                   AND d.objid = p.oid
+                                   AND d.deptype = 'e')
+              ORDER BY p.proname, p.oid, 4, 5",
+            &[&schema],
+        )
+        .await?;
+
+    let mut out: Vec<ObjectAcl> = Vec::new();
+
+    // Las filas de un mismo objeto vienen seguidas (por el ORDER BY): se abre uno nuevo cuando
+    // cambia la clave y se le suman los permisos mientras no cambie. Dos funciones con el mismo
+    // nombre y argumentos distintos tienen claves distintas.
+    let mut push =
+        |kind: AclKind, name: String, arguments: Option<String>, grant: Option<Grant>| {
+            let same = out.last().is_some_and(|last| {
+                last.kind == kind && last.name == name && last.arguments == arguments
+            });
+            if !same {
+                out.push(ObjectAcl {
+                    kind,
+                    name,
+                    arguments,
+                    grants: Vec::new(),
+                });
+            }
+            if let (Some(grant), Some(last)) = (grant, out.last_mut()) {
+                last.grants.push(grant);
+            }
+        };
+
+    for row in &relations {
+        let relkind: String = row.get(1);
+        push(
+            if relkind == "S" {
+                AclKind::Sequence
+            } else {
+                AclKind::Table
+            },
+            row.get(0),
+            None,
+            grant_of(row.get(2), row.get(3), row.get(4)),
+        );
+    }
+    for row in &routines {
+        let prokind: String = row.get(1);
+        push(
+            if prokind == "p" {
+                AclKind::Procedure
+            } else {
+                AclKind::Function
+            },
+            row.get(0),
+            Some(row.get(2)),
+            grant_of(row.get(3), row.get(4), row.get(5)),
+        );
+    }
+
+    Ok(out)
 }
 
 async fn domain_checks(

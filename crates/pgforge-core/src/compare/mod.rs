@@ -10,17 +10,32 @@
 //! llevada hasta el final: acá no hay un `compare_apply`.
 //!
 //! Lo que entra en la comparación es la **estructura**: tablas con sus columnas, restricciones e
-//! índices; vistas y vistas materializadas; secuencias; y tipos —enumeraciones, compuestos,
-//! dominios y rangos—. Quedan afuera funciones, disparadores, políticas y permisos: el cuerpo de
-//! una función difiere por un espacio y el informe se llena de ruido que tapa lo que importa.
-//! También quedan afuera los datos: esto compara formas, no filas.
+//! índices; vistas y vistas materializadas; secuencias; tipos —enumeraciones, compuestos, dominios
+//! y rangos—; y la lógica y el acceso que cuelgan de eso: funciones y procedimientos (por firma,
+//! porque hay sobrecarga), disparadores, seguridad por filas con sus políticas, y los permisos
+//! (`GRANT`) de tablas, vistas, secuencias y funciones. También quedan afuera los datos: esto
+//! compara formas, no filas.
+//!
+//! El cuerpo de una función se compara **sin el formato** (espacios, saltos de línea, sangría) pero
+//! no sin el contenido: lo que está entre comillas se respeta tal cual. Lo que sigue sin entrar:
+//! dueños, permisos por columna, `ALTER DEFAULT PRIVILEGES`, agregaciones, y los comentarios de los
+//! objetos.
+//!
+//! Disparadores, políticas, seguridad por filas y permisos **cuelgan de un objeto**: si ese objeto
+//! falta en el otro lado, el informe lo muestra una sola vez (el objeto) y el script los crea
+//! después de él, pero no los lista aparte. Si no, una tabla nueva con tres disparadores sería
+//! cuatro filas en vez de una.
 
+mod acl;
 pub mod data;
 pub mod diff;
 pub mod file;
 pub mod render;
 pub mod snapshot;
 pub mod sync;
+
+#[cfg(test)]
+mod logic_tests;
 
 pub use diff::{Detail, DetailKind, DiffEntry, ObjectKind, SchemaDiff, SideInfo, Status};
 pub use snapshot::SchemaSnapshot;
@@ -131,12 +146,28 @@ pub(crate) fn pair<'a, T>(
     target: &'a [T],
     name: impl Fn(&T) -> &str,
 ) -> Vec<(String, Option<&'a T>, Option<&'a T>)> {
+    pair_by(
+        source,
+        target,
+        |item| name(item).to_owned(),
+        |item| name(item).to_owned(),
+    )
+}
+
+/// Lo mismo que [`pair`] cuando la clave se arma (una firma, `tabla.disparador`) y puede depender
+/// del lado: la firma de una función se escribe sin el nombre del esquema de ese lado.
+pub(crate) fn pair_by<'a, T>(
+    source: &'a [T],
+    target: &'a [T],
+    source_key: impl Fn(&T) -> String,
+    target_key: impl Fn(&T) -> String,
+) -> Vec<(String, Option<&'a T>, Option<&'a T>)> {
     let mut map: BTreeMap<String, (Option<&T>, Option<&T>)> = BTreeMap::new();
     for item in source {
-        map.entry(name(item).to_owned()).or_default().0 = Some(item);
+        map.entry(source_key(item)).or_default().0 = Some(item);
     }
     for item in target {
-        map.entry(name(item).to_owned()).or_default().1 = Some(item);
+        map.entry(target_key(item)).or_default().1 = Some(item);
     }
     map.into_iter()
         .map(|(key, (source, target))| (key, source, target))

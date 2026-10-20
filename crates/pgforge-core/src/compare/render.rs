@@ -10,7 +10,11 @@
 use crate::ddl::quote_ident;
 use crate::ddl::table::Identity;
 
-use super::snapshot::{Column, NamedDef, Sequence, Table, TypeDef, TypeKind, View};
+use super::acl::{self, grantee_sql};
+use super::snapshot::{
+    AclKind, Column, Function, FunctionKind, NamedDef, ObjectAcl, Policy, PolicyCommand, Sequence,
+    Table, Trigger, TriggerEnabled, TypeDef, TypeKind, View,
+};
 
 /// `esquema.nombre`, con cada mitad citada solo si hace falta.
 pub fn qualified(schema: &str, name: &str) -> String {
@@ -178,6 +182,222 @@ pub fn describe_table(schema: &str, table: &Table) -> String {
     parts.join("\n")
 }
 
+/// La función tal como la escribió el servidor, con un `;` al final para poder pegarla en un script.
+///
+/// Ya viene como `CREATE OR REPLACE`, con el esquema adentro; reescribirlo hacia el destino es cosa
+/// de quien la emite (`Builder::sql`), igual que con el cuerpo de una vista.
+pub fn create_function(function: &Function) -> String {
+    format!(
+        "{};",
+        function
+            .definition
+            .trim_end()
+            .trim_end_matches(';')
+            .trim_end()
+    )
+}
+
+/// `DROP FUNCTION` o `DROP PROCEDURE` por firma. Sin `IF EXISTS` ni `CASCADE` a propósito: si algo
+/// depende de la función tiene que fallar, no llevarse puesto lo que la usa.
+pub fn drop_function(schema: &str, function: &Function) -> String {
+    let keyword = match function.kind {
+        FunctionKind::Function => "FUNCTION",
+        FunctionKind::Procedure => "PROCEDURE",
+    };
+    format!(
+        "DROP {keyword} {}({});",
+        qualified(schema, &function.name),
+        function.arguments
+    )
+}
+
+fn trigger_state(enabled: TriggerEnabled) -> &'static str {
+    match enabled {
+        TriggerEnabled::Origin => "ENABLE",
+        TriggerEnabled::Disabled => "DISABLE",
+        TriggerEnabled::Replica => "ENABLE REPLICA",
+        TriggerEnabled::Always => "ENABLE ALWAYS",
+    }
+}
+
+pub fn alter_trigger_state(schema: &str, trigger: &Trigger) -> String {
+    format!(
+        "ALTER TABLE {} {} TRIGGER {};",
+        qualified(schema, &trigger.table),
+        trigger_state(trigger.enabled),
+        quote_ident(&trigger.name)
+    )
+}
+
+pub fn drop_trigger(schema: &str, trigger: &Trigger) -> String {
+    format!(
+        "DROP TRIGGER {} ON {};",
+        quote_ident(&trigger.name),
+        qualified(schema, &trigger.table)
+    )
+}
+
+/// El disparador y, si no está en el estado de fábrica, lo que lo deja como está.
+pub fn describe_trigger(schema: &str, trigger: &Trigger) -> String {
+    let mut sql = format!("{};", trigger.definition.trim_end().trim_end_matches(';'));
+    if trigger.enabled != TriggerEnabled::Origin {
+        sql.push('\n');
+        sql.push_str(&alter_trigger_state(schema, trigger));
+    }
+    sql
+}
+
+pub fn command_label(command: PolicyCommand) -> &'static str {
+    match command {
+        PolicyCommand::All => "ALL",
+        PolicyCommand::Select => "SELECT",
+        PolicyCommand::Insert => "INSERT",
+        PolicyCommand::Update => "UPDATE",
+        PolicyCommand::Delete => "DELETE",
+    }
+}
+
+fn roles_sql(roles: &[String]) -> String {
+    if roles.is_empty() {
+        return "PUBLIC".to_owned();
+    }
+    roles
+        .iter()
+        .map(|role| grantee_sql(role))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// `CREATE POLICY` completa. `AS PERMISSIVE` va siempre explícito: es lo que hace que el texto diga
+/// lo que es y no lo que PostgreSQL supone cuando falta.
+pub fn create_policy(schema: &str, policy: &Policy) -> String {
+    let mut sql = format!(
+        "CREATE POLICY {} ON {}\n    AS {}\n    FOR {}\n    TO {}",
+        quote_ident(&policy.name),
+        qualified(schema, &policy.table),
+        if policy.permissive {
+            "PERMISSIVE"
+        } else {
+            "RESTRICTIVE"
+        },
+        command_label(policy.command),
+        roles_sql(&policy.roles)
+    );
+    if let Some(using) = &policy.using {
+        sql.push_str(&format!("\n    USING ({using})"));
+    }
+    if let Some(check) = &policy.with_check {
+        sql.push_str(&format!("\n    WITH CHECK ({check})"));
+    }
+    sql.push(';');
+    sql
+}
+
+/// `ALTER POLICY` con solo las cláusulas que se pasan. Las expresiones llegan ya reescritas.
+pub fn alter_policy(
+    schema: &str,
+    policy: &Policy,
+    roles: bool,
+    using: Option<&str>,
+    with_check: Option<&str>,
+) -> String {
+    let mut clauses = Vec::new();
+    if roles {
+        clauses.push(format!("TO {}", roles_sql(&policy.roles)));
+    }
+    if let Some(using) = using {
+        clauses.push(format!("USING ({using})"));
+    }
+    if let Some(check) = with_check {
+        clauses.push(format!("WITH CHECK ({check})"));
+    }
+    format!(
+        "ALTER POLICY {} ON {}\n    {};",
+        quote_ident(&policy.name),
+        qualified(schema, &policy.table),
+        clauses.join("\n    ")
+    )
+}
+
+pub fn drop_policy(schema: &str, policy: &Policy) -> String {
+    format!(
+        "DROP POLICY {} ON {};",
+        quote_ident(&policy.name),
+        qualified(schema, &policy.table)
+    )
+}
+
+/// Las sentencias que dejan la seguridad por filas de la tabla como está. Con las dos apagadas, un
+/// comentario: un lado vacío sin explicación parece un error de la pantalla.
+pub fn describe_row_security(schema: &str, table: &str, enabled: bool, forced: bool) -> String {
+    let table = qualified(schema, table);
+    let mut lines = Vec::new();
+    if enabled {
+        lines.push(format!("ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;"));
+    }
+    if forced {
+        lines.push(format!("ALTER TABLE {table} FORCE ROW LEVEL SECURITY;"));
+    }
+    if lines.is_empty() {
+        return "-- sin seguridad por filas".to_owned();
+    }
+    lines.join("\n")
+}
+
+/// El objeto al que apunta un `GRANT`: `TABLE esquema.t`, `FUNCTION esquema.f(tipos)`…
+///
+/// Los argumentos llegan ya escritos contra el esquema que corresponda; acá solo se pegan.
+pub fn acl_target(schema: &str, kind: AclKind, name: &str, arguments: Option<&str>) -> String {
+    let qualified_name = qualified(schema, name);
+    match kind {
+        AclKind::Table => format!("TABLE {qualified_name}"),
+        AclKind::Sequence => format!("SEQUENCE {qualified_name}"),
+        AclKind::Function => format!("FUNCTION {qualified_name}({})", arguments.unwrap_or("")),
+        AclKind::Procedure => format!("PROCEDURE {qualified_name}({})", arguments.unwrap_or("")),
+    }
+}
+
+/// `GRANT` de lo que tiene cada rol sobre el objeto, para mostrar lado a lado.
+pub fn describe_grants(schema: &str, object: &ObjectAcl) -> String {
+    let target = acl_target(
+        schema,
+        object.kind,
+        &object.name,
+        object.arguments.as_deref(),
+    );
+    let mut lines = Vec::new();
+    for (grantee, privileges) in acl::by_grantee(&object.grants) {
+        let simple: Vec<&str> = privileges
+            .iter()
+            .filter(|(_, grantable)| !**grantable)
+            .map(|(privilege, _)| privilege.as_str())
+            .collect();
+        let with_option: Vec<&str> = privileges
+            .iter()
+            .filter(|(_, grantable)| **grantable)
+            .map(|(privilege, _)| privilege.as_str())
+            .collect();
+        if !simple.is_empty() {
+            lines.push(format!(
+                "GRANT {} ON {target} TO {};",
+                simple.join(", "),
+                grantee_sql(&grantee)
+            ));
+        }
+        if !with_option.is_empty() {
+            lines.push(format!(
+                "GRANT {} ON {target} TO {} WITH GRANT OPTION;",
+                with_option.join(", "),
+                grantee_sql(&grantee)
+            ));
+        }
+    }
+    if lines.is_empty() {
+        return "-- sin permisos para otros roles".to_owned();
+    }
+    lines.join("\n")
+}
+
 pub fn describe_view(schema: &str, view: &View) -> String {
     let mut parts = vec![create_view(schema, view, false)];
     for index in &view.indexes {
@@ -285,6 +505,90 @@ mod tests {
         assert_eq!(
             create_type("app", &definition),
             "CREATE TYPE app.direccion AS (\n    calle text,\n    numero integer\n);"
+        );
+    }
+
+    #[test]
+    fn la_funcion_termina_en_un_solo_punto_y_coma() {
+        let function = Function {
+            name: "f".to_owned(),
+            arguments: "integer".to_owned(),
+            kind: FunctionKind::Function,
+            definition: "CREATE OR REPLACE FUNCTION app.f(integer)\n RETURNS integer\n \
+                         LANGUAGE sql\nAS $function$ SELECT 1 $function$\n"
+                .to_owned(),
+        };
+        let sql = create_function(&function);
+        assert!(sql.ends_with("$function$;"));
+        // Si ya traía uno, no se duplica.
+        let con_punto = Function {
+            definition: format!("{};\n", sql.trim_end_matches(';')),
+            ..function.clone()
+        };
+        assert_eq!(create_function(&con_punto), sql);
+        assert_eq!(
+            drop_function("app", &function),
+            "DROP FUNCTION app.f(integer);"
+        );
+    }
+
+    #[test]
+    fn una_politica_escribe_roles_comando_y_condiciones() {
+        let policy = Policy {
+            table: "pedidos".to_owned(),
+            name: "por tenant".to_owned(),
+            command: PolicyCommand::Update,
+            permissive: false,
+            roles: vec!["PUBLIC".to_owned(), "Ana".to_owned()],
+            using: Some("(t = 1)".to_owned()),
+            with_check: Some("(t = 1)".to_owned()),
+        };
+        assert_eq!(
+            create_policy("app", &policy),
+            "CREATE POLICY \"por tenant\" ON app.pedidos\n    AS RESTRICTIVE\n    FOR UPDATE\n    \
+             TO PUBLIC, \"Ana\"\n    USING ((t = 1))\n    WITH CHECK ((t = 1));"
+        );
+    }
+
+    #[test]
+    fn los_permisos_se_describen_por_rol() {
+        let object = ObjectAcl {
+            kind: AclKind::Function,
+            name: "f".to_owned(),
+            arguments: Some("integer".to_owned()),
+            grants: vec![
+                crate::compare::snapshot::Grant {
+                    grantee: "PUBLIC".to_owned(),
+                    privilege: "EXECUTE".to_owned(),
+                    grantable: false,
+                },
+                crate::compare::snapshot::Grant {
+                    grantee: "ana".to_owned(),
+                    privilege: "EXECUTE".to_owned(),
+                    grantable: true,
+                },
+            ],
+        };
+        assert_eq!(
+            describe_grants("app", &object),
+            "GRANT EXECUTE ON FUNCTION app.f(integer) TO PUBLIC;\n\
+             GRANT EXECUTE ON FUNCTION app.f(integer) TO ana WITH GRANT OPTION;"
+        );
+        let vacia = ObjectAcl {
+            grants: Vec::new(),
+            ..object
+        };
+        assert!(describe_grants("app", &vacia).starts_with("--"));
+    }
+
+    #[test]
+    fn la_seguridad_por_filas_sin_nada_encendido_lo_dice() {
+        assert!(describe_row_security("app", "t", false, false).starts_with("--"));
+        assert_eq!(
+            describe_row_security("app", "t", true, true)
+                .lines()
+                .count(),
+            2
         );
     }
 

@@ -20,10 +20,14 @@ use serde::Serialize;
 
 use crate::ddl::quote_ident;
 
+use crate::sql::lex::{lex, TokenKind};
+
+use super::acl::{self, privileges_text, signature};
 use super::snapshot::{
-    Column, NamedDef, RelationKind, SchemaSnapshot, Sequence, Table, TypeDef, TypeKind, View,
+    AclKind, Column, Function, FunctionKind, NamedDef, ObjectAcl, Policy, RelationKind,
+    SchemaSnapshot, Sequence, Table, Trigger, TriggerEnabled, TypeDef, TypeKind, View,
 };
-use super::{pair, render};
+use super::{pair, pair_by, render};
 
 /// De dónde salió cada lado, para que la interfaz pueda decirlo sin volver a preguntar.
 #[derive(Debug, Clone, Serialize)]
@@ -50,6 +54,14 @@ pub enum ObjectKind {
     Composite,
     Domain,
     Range,
+    Function,
+    Procedure,
+    Trigger,
+    Policy,
+    /// El `ENABLE`/`FORCE ROW LEVEL SECURITY` de una tabla, aparte de sus políticas.
+    RowSecurity,
+    /// Los permisos (`GRANT`) de un objeto.
+    Grant,
 }
 
 /// De qué lado está lo que se encontró.
@@ -73,6 +85,8 @@ pub enum DetailKind {
     Index,
     /// Un valor de una enumeración o un campo de un tipo compuesto.
     Member,
+    /// Lo que un rol puede hacer sobre el objeto.
+    Privilege,
     /// Cualquier otra cosa del objeto mismo: el cuerpo de una vista, el incremento de una
     /// secuencia, la clave de particionado de una tabla.
     Property,
@@ -152,7 +166,7 @@ pub fn retarget(sql: &str, from: &str, to: &str) -> String {
 }
 
 /// Compara sin tener en cuenta espacios de más ni el nombre del esquema.
-fn same_sql(source: &str, target: &str, from: &str, to: &str) -> bool {
+pub(crate) fn same_sql(source: &str, target: &str, from: &str, to: &str) -> bool {
     collapse(&retarget(source, from, to)) == collapse(target)
 }
 
@@ -160,6 +174,50 @@ fn same_sql(source: &str, target: &str, from: &str, to: &str) -> bool {
 /// acá.
 fn collapse(sql: &str) -> String {
     sql.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Compara el texto de una función ignorando el formato, pero **no** lo que está entre comillas.
+///
+/// `collapse` no sirve acá: el cuerpo de una función es una cadena entre `$$`, y juntar los espacios
+/// de todo el texto también cambiaría los de un literal (`RAISE 'dos  espacios'`) o los de un
+/// identificador entre comillas, dando por iguales dos funciones que no lo son. Se parte el texto en
+/// tokens y solo se tocan los espacios **entre** ellos; el cuerpo de un `$$ … $$` se parte de nuevo
+/// por dentro, porque es código y el formato de adentro es tan ruido como el de afuera.
+pub(crate) fn same_routine(left: &str, right: &str, from: &str, to: &str) -> bool {
+    layout(&retarget(left, from, to)) == layout(right)
+}
+
+/// El texto sin sangría, sin espacios de más y sin finales de línea que distingan plataformas.
+fn layout(sql: &str) -> String {
+    let mut out = String::with_capacity(sql.len());
+    for token in lex(sql) {
+        match token.kind {
+            TokenKind::Whitespace => out.push(' '),
+            TokenKind::Dollar => out.push_str(&layout_dollar(&token.text)),
+            // Un comentario no es contenido que se ejecute, pero sí se compara: el final de línea
+            // de Windows no tiene que hacerlo distinto.
+            TokenKind::LineComment | TokenKind::BlockComment => {
+                out.push_str(&token.text.replace("\r\n", "\n"))
+            }
+            _ => out.push_str(&token.text),
+        }
+    }
+    out.trim().to_owned()
+}
+
+/// `$tag$ … $tag$`: el interior se normaliza como código y las marcas se dejan como están. Si el
+/// token no cierra (texto cortado), se deja tal cual.
+fn layout_dollar(text: &str) -> String {
+    let Some(tag_end) = text[1..].find('$').map(|at| at + 2) else {
+        return text.to_owned();
+    };
+    let tag = &text[..tag_end];
+    match text.len().checked_sub(tag.len()) {
+        Some(close) if close >= tag.len() && text.ends_with(tag) => {
+            format!("{tag}{}{tag}", layout(&text[tag.len()..close]))
+        }
+        _ => text.to_owned(),
+    }
 }
 
 /// Compara el cuerpo de una vista, que es lo único que cambia de forma según la versión.
@@ -287,6 +345,54 @@ pub fn diff(
             view_entry(&name, left, right, source, target),
         );
     }
+
+    // La lógica y el acceso van después de lo que tocan, en el orden en que se aplicarían: la
+    // función antes del disparador que la llama, y los permisos al final, cuando ya existe todo
+    // aquello sobre lo que se otorgan.
+    for (name, left, right) in pair_by(
+        &source.functions,
+        &target.functions,
+        |f| signature(&f.name, &f.arguments, &source.schema),
+        |f| signature(&f.name, &f.arguments, &target.schema),
+    ) {
+        push(
+            &mut entries,
+            &mut equal,
+            function_entry(&name, left, right, source, target),
+        );
+    }
+    for (name, left, right) in pair_by(&source.triggers, &target.triggers, trigger_key, trigger_key)
+    {
+        // Un disparador cuelga de su tabla: si la tabla falta del otro lado, viaja con ella.
+        let parent = left.or(right).map(|t| t.table.as_str()).unwrap_or_default();
+        if left.is_some() != right.is_some()
+            && !parent_on_other_side(parent, left.is_some(), source, target, true)
+        {
+            continue;
+        }
+        push(
+            &mut entries,
+            &mut equal,
+            trigger_entry(&name, left, right, source, target),
+        );
+    }
+    for (name, left, right) in pair_by(&source.policies, &target.policies, policy_key, policy_key) {
+        let parent = left.or(right).map(|p| p.table.as_str()).unwrap_or_default();
+        if left.is_some() != right.is_some()
+            && !parent_on_other_side(parent, left.is_some(), source, target, false)
+        {
+            continue;
+        }
+        push(
+            &mut entries,
+            &mut equal,
+            policy_entry(&name, left, right, source, target),
+        );
+    }
+    // Los permisos y la seguridad por filas son atributos de objetos que ya se contaron arriba:
+    // sumarlos otra vez a los iguales inflaría el número.
+    entries.extend(row_security_entries(source, target));
+    entries.extend(grant_entries(source, target));
 
     SchemaDiff {
         source: side(source_server, source),
@@ -776,6 +882,415 @@ fn type_entry(
 
 /// Los valores de una enumeración se comparan como conjunto y además en su orden: agregar uno al
 /// final se puede hacer con un `ALTER TYPE`, pero tenerlos en otro orden no.
+/// Si el objeto del que cuelga algo (un disparador, una política) existe del otro lado.
+///
+/// `only_in_source` dice de qué lado está lo que se pregunta, y por lo tanto cuál es «el otro».
+fn parent_on_other_side(
+    table: &str,
+    only_in_source: bool,
+    source: &SchemaSnapshot,
+    target: &SchemaSnapshot,
+    include_views: bool,
+) -> bool {
+    let other = if only_in_source { target } else { source };
+    other.tables.iter().any(|t| t.name == table)
+        || (include_views && other.views.iter().any(|v| v.name == table))
+}
+
+/// Clave de un disparador: su tabla y su nombre, que es lo que lo identifica (el nombre solo se
+/// repite entre tablas).
+pub(crate) fn trigger_key(trigger: &Trigger) -> String {
+    format!(
+        "{}.{}",
+        quote_ident(&trigger.table),
+        quote_ident(&trigger.name)
+    )
+}
+
+pub(crate) fn policy_key(policy: &Policy) -> String {
+    format!(
+        "{}.{}",
+        quote_ident(&policy.table),
+        quote_ident(&policy.name)
+    )
+}
+
+/// Dos expresiones opcionales son iguales si faltan las dos o si dicen lo mismo.
+pub(crate) fn same_expression(
+    left: &Option<String>,
+    right: &Option<String>,
+    from: &str,
+    to: &str,
+) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(left), Some(right)) => same_sql(left, right, from, to),
+        _ => false,
+    }
+}
+
+fn routine_kind(function: &Function) -> ObjectKind {
+    match function.kind {
+        FunctionKind::Function => ObjectKind::Function,
+        FunctionKind::Procedure => ObjectKind::Procedure,
+    }
+}
+
+fn function_entry(
+    name: &str,
+    source_function: Option<&Function>,
+    target_function: Option<&Function>,
+    source: &SchemaSnapshot,
+    target: &SchemaSnapshot,
+) -> Option<DiffEntry> {
+    match (source_function, target_function) {
+        (Some(function), None) => Some(DiffEntry {
+            kind: routine_kind(function),
+            name: name.to_owned(),
+            status: Status::OnlySource,
+            source_ddl: Some(render::create_function(function)),
+            target_ddl: None,
+            details: Vec::new(),
+        }),
+        (None, Some(function)) => Some(DiffEntry {
+            kind: routine_kind(function),
+            name: name.to_owned(),
+            status: Status::OnlyTarget,
+            source_ddl: None,
+            target_ddl: Some(render::create_function(function)),
+            details: Vec::new(),
+        }),
+        (Some(left), Some(right)) => {
+            if same_routine(
+                &left.definition,
+                &right.definition,
+                &source.schema,
+                &target.schema,
+            ) {
+                return None;
+            }
+            Some(DiffEntry {
+                kind: routine_kind(left),
+                name: name.to_owned(),
+                status: Status::Different,
+                source_ddl: Some(render::create_function(left)),
+                target_ddl: Some(render::create_function(right)),
+                details: vec![Detail {
+                    kind: DetailKind::Property,
+                    name: "definición".to_owned(),
+                    status: Status::Different,
+                    source: Some(left.definition.trim().to_owned()),
+                    target: Some(right.definition.trim().to_owned()),
+                }],
+            })
+        }
+        (None, None) => None,
+    }
+}
+
+fn trigger_state_label(enabled: TriggerEnabled) -> &'static str {
+    match enabled {
+        TriggerEnabled::Origin => "habilitado",
+        TriggerEnabled::Disabled => "deshabilitado",
+        TriggerEnabled::Replica => "solo en réplica",
+        TriggerEnabled::Always => "siempre",
+    }
+}
+
+fn trigger_entry(
+    name: &str,
+    source_trigger: Option<&Trigger>,
+    target_trigger: Option<&Trigger>,
+    source: &SchemaSnapshot,
+    target: &SchemaSnapshot,
+) -> Option<DiffEntry> {
+    match (source_trigger, target_trigger) {
+        (Some(trigger), None) => Some(DiffEntry {
+            kind: ObjectKind::Trigger,
+            name: name.to_owned(),
+            status: Status::OnlySource,
+            source_ddl: Some(render::describe_trigger(&source.schema, trigger)),
+            target_ddl: None,
+            details: Vec::new(),
+        }),
+        (None, Some(trigger)) => Some(DiffEntry {
+            kind: ObjectKind::Trigger,
+            name: name.to_owned(),
+            status: Status::OnlyTarget,
+            source_ddl: None,
+            target_ddl: Some(render::describe_trigger(&target.schema, trigger)),
+            details: Vec::new(),
+        }),
+        (Some(left), Some(right)) => {
+            let mut details = Vec::new();
+            if !same_sql(
+                &left.definition,
+                &right.definition,
+                &source.schema,
+                &target.schema,
+            ) {
+                details.push(Detail {
+                    kind: DetailKind::Property,
+                    name: "definición".to_owned(),
+                    status: Status::Different,
+                    source: Some(left.definition.trim().to_owned()),
+                    target: Some(right.definition.trim().to_owned()),
+                });
+            }
+            if left.enabled != right.enabled {
+                details.push(Detail {
+                    kind: DetailKind::Property,
+                    name: "estado".to_owned(),
+                    status: Status::Different,
+                    source: Some(trigger_state_label(left.enabled).to_owned()),
+                    target: Some(trigger_state_label(right.enabled).to_owned()),
+                });
+            }
+            (!details.is_empty()).then(|| DiffEntry {
+                kind: ObjectKind::Trigger,
+                name: name.to_owned(),
+                status: Status::Different,
+                source_ddl: Some(render::describe_trigger(&source.schema, left)),
+                target_ddl: Some(render::describe_trigger(&target.schema, right)),
+                details,
+            })
+        }
+        (None, None) => None,
+    }
+}
+
+fn policy_entry(
+    name: &str,
+    source_policy: Option<&Policy>,
+    target_policy: Option<&Policy>,
+    source: &SchemaSnapshot,
+    target: &SchemaSnapshot,
+) -> Option<DiffEntry> {
+    match (source_policy, target_policy) {
+        (Some(policy), None) => Some(DiffEntry {
+            kind: ObjectKind::Policy,
+            name: name.to_owned(),
+            status: Status::OnlySource,
+            source_ddl: Some(render::create_policy(&source.schema, policy)),
+            target_ddl: None,
+            details: Vec::new(),
+        }),
+        (None, Some(policy)) => Some(DiffEntry {
+            kind: ObjectKind::Policy,
+            name: name.to_owned(),
+            status: Status::OnlyTarget,
+            source_ddl: None,
+            target_ddl: Some(render::create_policy(&target.schema, policy)),
+            details: Vec::new(),
+        }),
+        (Some(left), Some(right)) => {
+            let mut details = Vec::new();
+            let mut property = |name: &str, left: Option<String>, right: Option<String>| {
+                details.push(Detail {
+                    kind: DetailKind::Property,
+                    name: name.to_owned(),
+                    status: Status::Different,
+                    source: left,
+                    target: right,
+                });
+            };
+
+            if left.command != right.command {
+                property(
+                    "comando",
+                    Some(render::command_label(left.command).to_owned()),
+                    Some(render::command_label(right.command).to_owned()),
+                );
+            }
+            if left.permissive != right.permissive {
+                let label = |permissive: bool| {
+                    Some(
+                        if permissive {
+                            "permisiva"
+                        } else {
+                            "restrictiva"
+                        }
+                        .to_owned(),
+                    )
+                };
+                property("tipo", label(left.permissive), label(right.permissive));
+            }
+            if left.roles != right.roles {
+                property(
+                    "roles",
+                    Some(left.roles.join(", ")),
+                    Some(right.roles.join(", ")),
+                );
+            }
+            if !same_expression(&left.using, &right.using, &source.schema, &target.schema) {
+                property("USING", left.using.clone(), right.using.clone());
+            }
+            if !same_expression(
+                &left.with_check,
+                &right.with_check,
+                &source.schema,
+                &target.schema,
+            ) {
+                property(
+                    "WITH CHECK",
+                    left.with_check.clone(),
+                    right.with_check.clone(),
+                );
+            }
+
+            (!details.is_empty()).then(|| DiffEntry {
+                kind: ObjectKind::Policy,
+                name: name.to_owned(),
+                status: Status::Different,
+                source_ddl: Some(render::create_policy(&source.schema, left)),
+                target_ddl: Some(render::create_policy(&target.schema, right)),
+                details,
+            })
+        }
+        (None, None) => None,
+    }
+}
+
+/// Si la seguridad por filas de una tabla está encendida o forzada, en cada lado.
+pub(crate) fn security_flags(snapshot: &SchemaSnapshot, table: &str) -> (bool, bool) {
+    snapshot
+        .row_security
+        .iter()
+        .find(|r| r.table == table)
+        .map(|r| (r.enabled, r.forced))
+        .unwrap_or((false, false))
+}
+
+/// Las tablas cuya seguridad por filas está distinta. Solo las que existen de los dos lados: en una
+/// tabla que falta, el `ENABLE` viaja con ella.
+fn row_security_entries(source: &SchemaSnapshot, target: &SchemaSnapshot) -> Vec<DiffEntry> {
+    let mut names: Vec<&str> = source
+        .row_security
+        .iter()
+        .chain(&target.row_security)
+        .map(|r| r.table.as_str())
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+
+    let mut entries = Vec::new();
+    for table in names {
+        let in_both = source.tables.iter().any(|t| t.name == table)
+            && target.tables.iter().any(|t| t.name == table);
+        let (left, right) = (security_flags(source, table), security_flags(target, table));
+        if !in_both || left == right {
+            continue;
+        }
+
+        let state = |on: bool| Some(if on { "activada" } else { "desactivada" }.to_owned());
+        let mut details = Vec::new();
+        for (label, left, right) in [
+            ("habilitada", left.0, right.0),
+            ("forzada", left.1, right.1),
+        ] {
+            if left != right {
+                details.push(Detail {
+                    kind: DetailKind::Property,
+                    name: label.to_owned(),
+                    status: Status::Different,
+                    source: state(left),
+                    target: state(right),
+                });
+            }
+        }
+        entries.push(DiffEntry {
+            kind: ObjectKind::RowSecurity,
+            name: quote_ident(table),
+            status: Status::Different,
+            source_ddl: Some(render::describe_row_security(
+                &source.schema,
+                table,
+                left.0,
+                left.1,
+            )),
+            target_ddl: Some(render::describe_row_security(
+                &target.schema,
+                table,
+                right.0,
+                right.1,
+            )),
+            details,
+        });
+    }
+    entries
+}
+
+/// Cómo se nombra un objeto con permisos en el informe y en el emparejamiento.
+pub(crate) fn acl_key(object: &ObjectAcl, schema: &str) -> String {
+    match object.kind {
+        AclKind::Function | AclKind::Procedure => signature(
+            &object.name,
+            object.arguments.as_deref().unwrap_or_default(),
+            schema,
+        ),
+        AclKind::Table | AclKind::Sequence => quote_ident(&object.name),
+    }
+}
+
+/// Los permisos que difieren, de los objetos que existen de los dos lados. De un objeto que falta,
+/// los permisos viajan con él.
+fn grant_entries(source: &SchemaSnapshot, target: &SchemaSnapshot) -> Vec<DiffEntry> {
+    let mut entries = Vec::new();
+    for (name, left, right) in pair_by(
+        &source.acls,
+        &target.acls,
+        |a| acl_key(a, &source.schema),
+        |a| acl_key(a, &target.schema),
+    ) {
+        let (Some(left), Some(right)) = (left, right) else {
+            continue;
+        };
+        let (wanted, current) = (
+            acl::by_grantee(&left.grants),
+            acl::by_grantee(&right.grants),
+        );
+
+        let mut grantees: Vec<&String> = wanted.keys().chain(current.keys()).collect();
+        grantees.sort();
+        grantees.dedup();
+
+        let mut details = Vec::new();
+        for grantee in grantees {
+            let (status, source_text, target_text) =
+                match (wanted.get(grantee), current.get(grantee)) {
+                    (Some(a), Some(b)) if a != b => (
+                        Status::Different,
+                        Some(privileges_text(a)),
+                        Some(privileges_text(b)),
+                    ),
+                    (Some(a), None) => (Status::OnlySource, Some(privileges_text(a)), None),
+                    (None, Some(b)) => (Status::OnlyTarget, None, Some(privileges_text(b))),
+                    _ => continue,
+                };
+            details.push(Detail {
+                kind: DetailKind::Privilege,
+                name: grantee.clone(),
+                status,
+                source: source_text,
+                target: target_text,
+            });
+        }
+
+        if details.is_empty() {
+            continue;
+        }
+        entries.push(DiffEntry {
+            kind: ObjectKind::Grant,
+            name,
+            status: Status::Different,
+            source_ddl: Some(render::describe_grants(&source.schema, left)),
+            target_ddl: Some(render::describe_grants(&target.schema, right)),
+            details,
+        });
+    }
+    entries
+}
+
 fn labels_detail(details: &mut Vec<Detail>, source: &[String], target: &[String]) {
     for label in source {
         if !target.contains(label) {
@@ -829,6 +1344,11 @@ mod tests {
             views: Vec::new(),
             sequences: Vec::new(),
             types: Vec::new(),
+            functions: Vec::new(),
+            triggers: Vec::new(),
+            policies: Vec::new(),
+            row_security: Vec::new(),
+            acls: Vec::new(),
         }
     }
 
@@ -1074,6 +1594,39 @@ mod tests {
             &pg17,
             " SELECT id FROM app.clientes;",
             " SELECT id FROM otro.clientes;"
+        ));
+    }
+
+    #[test]
+    fn el_formato_se_normaliza_pero_no_los_literales_ni_los_identificadores() {
+        let igual = |a: &str, b: &str| layout(a) == layout(b);
+        assert!(igual("SELECT   1", "SELECT 1"));
+        assert!(igual("a\r\n\tb", "a b"));
+        // Adentro de un `$$` el formato también es ruido; el tag se respeta.
+        assert!(igual("AS $f$  x  +  1 $f$", "AS $f$ x + 1 $f$"));
+        assert!(!igual("AS $f$ x $f$", "AS $g$ x $g$"));
+        // Un literal y un identificador entre comillas no.
+        assert!(!igual("RAISE 'a  b'", "RAISE 'a b'"));
+        assert!(!igual("\"a  b\"", "\"a b\""));
+        // Un literal dentro del cuerpo tampoco.
+        assert!(!igual("$f$ RAISE 'a  b' $f$", "$f$ RAISE 'a b' $f$"));
+        // Un tag sin cerrar no rompe nada.
+        assert_eq!(layout("$f$ sin cerrar"), "$f$ sin cerrar");
+    }
+
+    #[test]
+    fn una_funcion_se_reescribe_hacia_el_esquema_del_destino_antes_de_comparar() {
+        assert!(same_routine(
+            "SELECT dev.f(1)",
+            "SELECT   prod.f(1)",
+            "dev",
+            "prod"
+        ));
+        assert!(!same_routine(
+            "SELECT dev.f(1)",
+            "SELECT prod.f(2)",
+            "dev",
+            "prod"
         ));
     }
 
