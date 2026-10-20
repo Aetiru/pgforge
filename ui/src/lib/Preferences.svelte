@@ -5,7 +5,7 @@
   import SqlColors from "./SqlColors.svelte";
   import { theme, type ThemePreference } from "./theme.svelte";
 
-  let { onclose }: { onclose: () => void } = $props();
+  let { onclose, onshortcuts }: { onclose: () => void; onshortcuts?: () => void } = $props();
 
   const OPTIONS: FontChoice[] = ["source-code-pro", "jetbrains-mono"];
 
@@ -71,6 +71,17 @@
   <div class="divider-t my-4"></div>
 
   <SqlColors />
+
+  {#if onshortcuts}
+    <div class="divider-t my-4"></div>
+    <div class="flex items-center gap-3">
+      <div class="min-w-0 flex-1">
+        <span class="label">Atajos de teclado</span>
+        <p class="text-xs muted">Ver la lista completa y reasignar los que se pueden.</p>
+      </div>
+      <button class="btn" onclick={onshortcuts}>Abrir…</button>
+    </div>
+  {/if}
 
   <div class="divider-t my-4"></div>
 

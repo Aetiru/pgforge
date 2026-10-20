@@ -21,6 +21,8 @@
   import Modal from "./lib/Modal.svelte";
   import Palette from "./lib/Palette.svelte";
   import Preferences from "./lib/Preferences.svelte";
+  import ShortcutsDialog from "./lib/ShortcutsDialog.svelte";
+  import { shortcutStore } from "./lib/shortcuts.svelte";
   import SearchModal from "./lib/SearchModal.svelte";
   import Rail from "./lib/Rail.svelte";
   import LibraryPanel from "./lib/LibraryPanel.svelte";
@@ -162,6 +164,8 @@
   let treeMenu = $state(false);
   let banner = $state<string | null>(null);
   let preferences = $state(false);
+  /** La chuleta de atajos (F1 de fábrica; reasignable). */
+  let shortcutsOpen = $state(false);
   const TAB_ICON: Record<TabKind, IconName> = {
     query: "sql",
     data: "table",
@@ -484,7 +488,7 @@
   }
 
   function onKeydown(event: KeyboardEvent) {
-    // `F2` no lleva `Ctrl`, así que se atiende aparte y antes de la guarda de abajo. Si algo con el
+    // `F2` es fijo (no está en la tabla reasignable), así que se atiende aparte y antes. Si algo con el
     // foco ya lo atendió —el árbol renombra la carpeta o el servidor elegido, ver `TreePanel`—, ese
     // manejador corrió primero en la fase de burbuja y ya llamó a `preventDefault()`: se respeta y
     // no se abren las dos cosas a la vez.
@@ -496,46 +500,39 @@
       return;
     }
 
-    if (!(event.ctrlKey || event.metaKey)) return;
-
-    switch (event.key.toLowerCase()) {
-      case "b":
-        event.preventDefault();
-        dock.toggleSidebar();
-        break;
-      case "i":
-        // El inspector es el antiguo panel de Detalle. Se pliega porque contra una pantalla de
-        // portátil, mirar el árbol y escribir SQL a la vez ya se lleva todo el ancho.
-        event.preventDefault();
-        dock.toggleInspector();
-        break;
-      case "k":
-        // La misma tecla abre y cierra: es lo que uno intenta cuando se abrió sin querer.
-        event.preventDefault();
-        paletteOpen = !paletteOpen;
-        break;
-      case "p":
-        // A diferencia de Ctrl+K, esta pregunta al servidor —no solo lo que el árbol ya trajo—, así
-        // que hace falta contra qué base preguntar: la misma que usaría "Nueva consulta".
-        if (!event.shiftKey) return;
-        event.preventDefault();
+    // Las combinaciones salen de `shortcutStore` (reasignables), no de teclas escritas acá. La
+    // tabla va por id y no por `switch` porque ahora una misma tecla puede estar en cualquier
+    // atajo, y lo que no coincide con ninguno se deja pasar sin tocar.
+    const actions: Record<string, () => void> = {
+      "app.sidebar": () => dock.toggleSidebar(),
+      // El inspector es el antiguo panel de Detalle. Se pliega porque contra una pantalla de
+      // portátil, mirar el árbol y escribir SQL a la vez ya se lleva todo el ancho.
+      "app.inspector": () => dock.toggleInspector(),
+      // La misma tecla abre y cierra: es lo que uno intenta cuando se abrió sin querer.
+      "app.palette": () => (paletteOpen = !paletteOpen),
+      // A diferencia de la paleta, esta pregunta al servidor —no solo lo que el árbol ya trajo—,
+      // así que hace falta contra qué base preguntar: la misma que usaría "Nueva consulta".
+      "app.search": () => {
         if (searchOpen) searchOpen = false;
         else if (explorer.selected && queryTarget) searchOpen = true;
-        break;
-      case "q":
-        event.preventDefault();
-        newQuery();
-        break;
-      case "s":
-        // Con el editor enfocado lo atiende su propio keymap; esto cubre el resto de la ventana,
-        // donde `Ctrl+S` si no lo tomaría el navegador que hay debajo de la ventana de Tauri.
-        event.preventDefault();
-        if (tabs.current instanceof QueryTab) saveQueryTab(tabs.current, event.shiftKey);
-        break;
-      case "o":
-        event.preventDefault();
-        openSqlDialog();
-        break;
+      },
+      "app.newQuery": () => newQuery(),
+      // Con el editor enfocado lo atiende su propio keymap; esto cubre el resto de la ventana,
+      // donde `Ctrl+S` si no lo tomaría el navegador que hay debajo de la ventana de Tauri.
+      "app.save": () => {
+        if (tabs.current instanceof QueryTab) saveQueryTab(tabs.current, false);
+      },
+      "app.saveAs": () => {
+        if (tabs.current instanceof QueryTab) saveQueryTab(tabs.current, true);
+      },
+      "app.open": () => void openSqlDialog(),
+      "app.shortcuts": () => (shortcutsOpen = !shortcutsOpen),
+    };
+    for (const [id, run] of Object.entries(actions)) {
+      if (!shortcutStore.matches(event, id)) continue;
+      event.preventDefault();
+      run();
+      return;
     }
   }
 
@@ -939,7 +936,7 @@
             disabled={queryTarget === null}
             aria-label="Nueva consulta"
             title={queryTarget
-              ? `Nueva consulta contra ${queryTarget.database} (Ctrl+Q)`
+              ? `Nueva consulta contra ${queryTarget.database} (${shortcutStore.label("app.newQuery")})`
               : "Elegí una base o un objeto de un servidor conectado"}
             onclick={newQuery}
           >
@@ -954,7 +951,7 @@
             disabled={sqlTarget === null}
             aria-label="Abrir un archivo SQL"
             title={sqlTarget
-              ? `Abrir un archivo .sql contra ${sqlTarget.database} (Ctrl+O)`
+              ? `Abrir un archivo .sql contra ${sqlTarget.database} (${shortcutStore.label("app.open")})`
               : "Elegí una base o un objeto de un servidor conectado"}
             onclick={openSqlDialog}
           >
@@ -997,8 +994,8 @@
             aria-label="Inspector"
             aria-pressed={dock.inspectorOpen}
             title={dock.inspectorOpen
-              ? "Ocultar el inspector (Ctrl+I)"
-              : "Mostrar el inspector (Ctrl+I)"}
+              ? shortcutStore.hint("Ocultar el inspector", "app.inspector")
+              : shortcutStore.hint("Mostrar el inspector", "app.inspector")}
             onclick={() => dock.toggleInspector()}
           >
             <Icon name="compass" size={13} />
@@ -1134,7 +1131,7 @@
           <button
             class="btn btn-ghost btn-icon ml-auto"
             aria-label="Ocultar el inspector"
-            title="Ocultar el inspector (Ctrl+I)"
+            title={shortcutStore.hint("Ocultar el inspector", "app.inspector")}
             onclick={() => dock.setInspector(false)}
           >
             <Icon name="close" size={11} />
@@ -1225,6 +1222,7 @@
     onnewserver={() => (dialog = { profile: null })}
     onmonitor={showMonitor}
     onconfig={showConfig}
+    onshortcuts={() => (shortcutsOpen = true)}
     onconnect={connectById}
     onclose={() => (paletteOpen = false)}
   />
@@ -1269,7 +1267,17 @@
 {/if}
 
 {#if preferences}
-  <Preferences onclose={() => (preferences = false)} />
+  <Preferences
+    onclose={() => (preferences = false)}
+    onshortcuts={() => {
+      preferences = false;
+      shortcutsOpen = true;
+    }}
+  />
+{/if}
+
+{#if shortcutsOpen}
+  <ShortcutsDialog onclose={() => (shortcutsOpen = false)} />
 {/if}
 
 {#if importDialog}

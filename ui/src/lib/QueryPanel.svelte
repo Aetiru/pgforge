@@ -13,6 +13,8 @@
   import PlanTree from "./PlanTree.svelte";
   import { planHeat } from "./plan-heat";
   import ResultGrid from "./ResultGrid.svelte";
+  import ResultCompareDialog, { type CompareSource } from "./ResultCompareDialog.svelte";
+  import ResultFileDialog from "./ResultFileDialog.svelte";
   import SaveQueryDialog from "./SaveQueryDialog.svelte";
   import SavedPanel from "./SavedPanel.svelte";
   import GridSize from "./GridSize.svelte";
@@ -24,6 +26,7 @@
   import { count, decimal } from "./format";
   import { planText } from "./plan-text";
   import { resultLabel } from "./result-tabs";
+  import { shortcutStore } from "./shortcuts.svelte";
   import { saveQueryTab, type QueryTab } from "./query.svelte";
   import {
     dataShapeNamed,
@@ -120,6 +123,41 @@
     }
     tab.pin(sql, item.outcome, tab.showTypes ? tab.columnTypes : null);
   }
+
+  let fileExportOpen = $state(false);
+  let compareOpen = $state(false);
+
+  /**
+   * Los resultados con filas que se pueden comparar: los en vivo del último script y los anclados.
+   * Comparar un resultado con el de antes de un cambio es para lo que sirve anclar.
+   */
+  const compareSources = $derived.by<CompareSource[]>(() => {
+    const out: CompareSource[] = [];
+    tab.results.forEach((item, index) => {
+      if (item.outcome.kind !== "rows") return;
+      out.push({
+        id: `live:${index}`,
+        label: `En vivo #${index + 1} · ${count(item.outcome.rowCount)} filas`,
+        columns: item.outcome.columns,
+        rows: item.outcome.rows,
+        truncated: item.outcome.truncated,
+      });
+    });
+    for (const item of tab.pinned) {
+      if (item.outcome.kind !== "rows") continue;
+      out.push({
+        id: `pin:${item.id}`,
+        label: `Anclado · ${item.label}`,
+        columns: item.outcome.columns,
+        rows: item.outcome.rows,
+        truncated: item.outcome.truncated,
+      });
+    }
+    return out;
+  });
+  const compareFrom = $derived(
+    tab.pinnedShown !== null ? `pin:${tab.pinnedShown}` : `live:${tab.shown}`,
+  );
 
   let saveOpen = $state(false);
   let snippetsOpen = $state(false);
@@ -440,7 +478,7 @@
           class="btn btn-ghost btn-icon text-emerald-600 dark:text-emerald-400"
           disabled={tab.tabId === null}
           aria-label="Ejecutar"
-          title="Ejecuta la selección, o la sentencia donde está el cursor (Ctrl+Enter)"
+          title={shortcutStore.hint("Ejecuta la selección, o la sentencia donde está el cursor", "editor.run")}
           onclick={() => {
             const { text, cursor } = here();
             run(text, cursor);
@@ -452,7 +490,7 @@
           class="btn btn-ghost btn-icon"
           disabled={tab.tabId === null}
           aria-label="Ejecutar el script entero"
-          title="Ejecuta todas las sentencias del editor (Ctrl+Mayús+Enter)"
+          title={shortcutStore.hint("Ejecuta todas las sentencias del editor", "editor.runScript")}
           onclick={runWholeScript}
         >
           <Icon name="play-all" size={16} />
@@ -539,8 +577,8 @@
         class="btn btn-ghost btn-icon"
         aria-label="Guardar como archivo .sql"
         title={tab.filePath
-          ? `Guarda en ${tab.filePath} (Ctrl+S; Ctrl+Mayús+S para elegir otro archivo)`
-          : "Guarda el texto como archivo .sql (Ctrl+S)"}
+          ? `Guarda en ${tab.filePath} (${shortcutStore.label("app.save")}; ${shortcutStore.label("app.saveAs")} para elegir otro archivo)`
+          : shortcutStore.hint("Guarda el texto como archivo .sql", "app.save")}
         onclick={() => saveQueryTab(tab, false)}
       >
         <Icon name="save" size={16} />
@@ -563,7 +601,7 @@
       <button
         class="btn btn-ghost btn-icon"
         aria-label="Formatear el SQL"
-        title="Ordena el SQL: la selección si hay una, si no el documento entero (Ctrl+Mayús+F)"
+        title={shortcutStore.hint("Ordena el SQL: la selección si hay una, si no el documento entero", "editor.format")}
         onclick={() => {
           const { text, cursor } = here();
           doFormat(text, cursor);
@@ -861,9 +899,30 @@
               >
                 <Icon name="download" size={13} />
               </button>
+              <button
+                class="btn btn-ghost btn-icon"
+                aria-label="Exportar a JSON o Markdown"
+                title="Escribe las filas cargadas como JSON o Markdown (respeta el máximo de filas)"
+                onclick={() => (fileExportOpen = true)}
+              >
+                <Icon name="sql" size={13} />
+              </button>
             {/if}
 
           {/if}
+
+          <!-- Fuera del bloque de arriba: comparar contra un ancla se hace mirando el ancla. -->
+          <button
+            class="btn btn-ghost btn-icon"
+            disabled={compareSources.length < 2}
+            aria-label="Comparar resultados"
+            title={compareSources.length < 2
+              ? "Hacen falta dos resultados con filas: anclá uno y ejecutá de nuevo"
+              : "Compara dos resultados celda por celda"}
+            onclick={() => (compareOpen = true)}
+          >
+            <Icon name="compare" size={13} />
+          </button>
 
           <!-- El tamaño de letra de la grilla va al final: se toca una vez y no se vuelve a mirar,
                al revés de todo lo que tiene a la izquierda. Y va afuera del `{#if}` de arriba: la
@@ -985,7 +1044,7 @@
           <Empty
             icon="sql"
             title="Todavía no ejecutaste nada"
-            hint="Escribí una consulta y ejecutala con Ctrl+Enter. Si hay varias sentencias, se ejecuta la del cursor; si hay una selección, se ejecuta la selección."
+            hint={`Escribí una consulta y ejecutala con ${shortcutStore.label("editor.run")}. Si hay varias sentencias, se ejecuta la del cursor; si hay una selección, se ejecuta la selección.`}
           />
         {/if}
       {:else if tab.view === "plan"}
@@ -1081,6 +1140,24 @@
     </div>
   </div>
 </div>
+
+{#if compareOpen}
+  <ResultCompareDialog
+    sources={compareSources}
+    initialLeft={compareFrom}
+    onclose={() => (compareOpen = false)}
+  />
+{/if}
+
+{#if fileExportOpen && withRows}
+  <ResultFileDialog
+    columns={withRows.columns}
+    rows={withRows.rows}
+    types={tab.showTypes ? tab.columnTypes : null}
+    truncated={withRows.truncated}
+    onclose={() => (fileExportOpen = false)}
+  />
+{/if}
 
 {#if exportOpen}
   <ExportDialog

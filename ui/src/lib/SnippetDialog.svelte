@@ -102,6 +102,11 @@
         salta al siguiente. El nombre de adentro —<code>{"${tabla}"}</code>— es el texto con el que
         aparece. Un <code>$1</code> sin llaves es un parámetro de PostgreSQL y se inserta tal cual.
       </p>
+      <p class="text-xs muted">
+        Con <strong>variables</strong> —<code>{"${tabla:clientes}"}</code>, nombre y valor por omisión
+        separados por dos puntos— se abre antes de insertar un diálogo para completarlas; si el
+        nombre se repite se pregunta una vez y rellena todas.
+      </p>
     </div>
   {:else if snippets.items.length === 0}
     <Empty icon="sql" title="No hay abreviaturas" hint="Creá una, o volvé a las de fábrica." />

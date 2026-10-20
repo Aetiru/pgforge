@@ -20,8 +20,41 @@ import {
   type CompletionContext,
   type CompletionResult,
 } from "@codemirror/autocomplete";
-import type { KeyBinding } from "@codemirror/view";
+import type { EditorView, KeyBinding } from "@codemirror/view";
 import type { Snippet } from "./ipc";
+import { fillVariables, variablesOf, type SnippetVariable } from "./snippet-vars";
+
+/**
+ * Pide los valores de las variables (`${nombre:valor}`) y llama a `done` con ellos; si se cancela,
+ * `done` no se llama y no se inserta nada. Lo implementa quien tiene un lugar donde mostrar el
+ * diálogo —`SqlEditor`—, para que este módulo siga siendo CodeMirror y texto, sin componentes.
+ */
+export type AskVariables = (
+  snippet: { abbreviation: string; description: string },
+  variables: SnippetVariable[],
+  done: (values: Record<string, string>) => void,
+) => void;
+
+/** Inserta el cuerpo en `[from, to]`, preguntando antes por las variables si las tiene. */
+export function insertSnippet(
+  view: EditorView,
+  item: Pick<Snippet, "abbreviation" | "body" | "description">,
+  from: number,
+  to: number,
+  ask?: AskVariables,
+) {
+  const variables = variablesOf(item.body);
+  if (variables.length === 0 || !ask) {
+    // Sin donde preguntar, las variables valen su valor por omisión: mejor eso que dejar el
+    // `${nombre:valor}` escrito a la vista.
+    snippet(fillVariables(item.body, {}))(view, null, from, to);
+    return;
+  }
+  ask(item, variables, (values) => {
+    snippet(fillVariables(item.body, values))(view, null, from, to);
+    view.focus();
+  });
+}
 
 /** Lo que puede formar una abreviatura: lo mismo que un identificador de SQL sin comillas. */
 const WORD = /[\p{L}\p{N}_]/u;
@@ -82,7 +115,10 @@ export function preview(body: string): string {
  * cuyo texto por omisión es una palabra (`${tabla}`), así que sin esa guarda un hueco que se llame
  * como una abreviatura volvería a expandirse en vez de saltar al siguiente.
  */
-export function expandBinding(snippets: () => readonly Snippet[]): KeyBinding {
+export function expandBinding(
+  snippets: () => readonly Snippet[],
+  ask?: AskVariables,
+): KeyBinding {
   return {
     key: "Tab",
     run: (view) => {
@@ -100,7 +136,7 @@ export function expandBinding(snippets: () => readonly Snippet[]): KeyBinding {
       // La lista de sugerencias puede haber quedado abierta sobre la abreviatura: expandir por
       // debajo dejaría el popup flotando contra un texto que ya no existe.
       closeCompletion(view);
-      snippet(found.body)(view, null, at.from, at.to);
+      insertSnippet(view, found, at.from, at.to, ask);
       return true;
     },
   };
@@ -112,20 +148,26 @@ export function expandBinding(snippets: () => readonly Snippet[]): KeyBinding {
  * Que además aparezcan en la lista es lo que las hace descubribles: con solo el tabulador hay que
  * acordarse de cuáles existen, y una función que se olvida no se usa.
  */
-export function snippetCompletions(snippets: () => readonly Snippet[]) {
+export function snippetCompletions(snippets: () => readonly Snippet[], ask?: AskVariables) {
   return (context: CompletionContext): CompletionResult | null => {
     const word = context.matchBefore(/[\p{L}\p{N}_]+/u);
     if (!word || (word.from === word.to && !context.explicit)) return null;
 
     const options: Completion[] = snippets().map((item) =>
-      snippetCompletion(item.body, {
-        label: item.abbreviation,
-        detail: item.description || preview(item.body),
-        type: "keyword",
-        // Por encima de las tablas y las palabras clave: quien escribió `sf` y lo definió como
-        // abreviatura quiso eso y no una columna que empiece igual.
-        boost: 50,
-      }),
+      ({
+        ...snippetCompletion(item.body, {
+          label: item.abbreviation,
+          detail: item.description || preview(item.body),
+          type: "keyword",
+          // Por encima de las tablas y las palabras clave: quien escribió `sf` y lo definió como
+          // abreviatura quiso eso y no una columna que empiece igual.
+          boost: 50,
+        }),
+        // Elegirla de la lista pasa por el mismo camino que el tabulador, o las variables solo
+        // se preguntarían por uno de los dos.
+        apply: (view: EditorView, _completion: Completion, from: number, to: number) =>
+          insertSnippet(view, item, from, to, ask),
+      }) as Completion,
     );
 
     return { from: word.from, options, validFor: /^[\p{L}\p{N}_]*$/u };

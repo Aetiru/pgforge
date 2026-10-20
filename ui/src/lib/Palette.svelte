@@ -3,6 +3,7 @@
   import { explorer, type Row } from "./explorer.svelte";
   import { rank, type Command, type CommandGroup } from "./palette";
   import { QueryTab } from "./query.svelte";
+  import { shortcutStore } from "./shortcuts.svelte";
   import { tabs } from "./tabs.svelte";
   import { theme } from "./theme.svelte";
   import { view, type SidePane } from "./view.svelte";
@@ -25,6 +26,7 @@
     onnewserver,
     onmonitor,
     onconfig,
+    onshortcuts,
     onconnect,
     onclose,
   }: {
@@ -34,6 +36,7 @@
     /** Abre el dashboard del servidor en contexto, que lo decide `App`. */
     onmonitor: () => void;
     onconfig: () => void;
+    onshortcuts: () => void;
     onconnect: (profileId: string) => void;
     onclose: () => void;
   } = $props();
@@ -77,11 +80,18 @@
       {
         id: "query",
         label: "Nueva consulta",
-        hint: "Ctrl+Q",
+        hint: shortcutStore.label("app.newQuery"),
         group: "acción",
         run: onnewquery,
       },
-      { id: "sql", label: "Abrir un archivo SQL", hint: "Ctrl+O", group: "acción", run: onopensql },
+      { id: "sql", label: "Abrir un archivo SQL", hint: shortcutStore.label("app.open"), group: "acción", run: onopensql },
+      {
+        id: "shortcuts",
+        label: "Atajos de teclado",
+        hint: shortcutStore.label("app.shortcuts"),
+        group: "acción",
+        run: onshortcuts,
+      },
       { id: "server", label: "Nuevo servidor", group: "acción", run: onnewserver },
       { id: "monitor", label: "Monitoreo del servidor", group: "acción", run: onmonitor },
       { id: "config", label: "Configuración del servidor", group: "acción", run: onconfig },
@@ -101,7 +111,7 @@
       out.push({
         id: "format",
         label: "Formatear el SQL",
-        hint: "Ctrl+Mayús+F",
+        hint: shortcutStore.label("editor.format"),
         group: "acción",
         run: () => current.requestFormat(),
       });
