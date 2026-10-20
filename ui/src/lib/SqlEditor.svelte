@@ -16,7 +16,9 @@
   import { sqlHighlight } from "./sql-highlight";
   import { sqlNesting } from "./sql-nested";
   import { errorMarkField, markOf, setErrorMark } from "./sql-error-mark";
-  import { expandBinding, snippetCompletions } from "./sql-snippet";
+  import SnippetVarsDialog from "./SnippetVarsDialog.svelte";
+  import type { SnippetVariable } from "./snippet-vars";
+  import { expandBinding, snippetCompletions, type AskVariables } from "./sql-snippet";
   import { snippets } from "./snippets.svelte";
   import {
     columnCompletion,
@@ -90,6 +92,22 @@
 
   const language = new Compartment();
 
+  /**
+   * La abreviatura con variables que espera sus valores. El diálogo vive acá y no en `QueryPanel`
+   * porque quien lo pide es el editor (tabulador o lista de sugerencias) y hay un editor por
+   * pestaña: así cada uno muestra el suyo.
+   */
+  let asking = $state<{
+    title: string;
+    description: string;
+    variables: SnippetVariable[];
+    done: (values: Record<string, string>) => void;
+  } | null>(null);
+
+  const askVariables: AskVariables = (item, variables, done) => {
+    asking = { title: `«${item.abbreviation}»`, description: item.description, variables, done };
+  };
+
   const theme = EditorView.theme({
     // El tamaño sale de la variable que maneja `sqlFont`: lo cambia el usuario y vale para todo el
     // SQL de la aplicación, no solo para este editor.
@@ -149,7 +167,7 @@
     keymap.of([
       // Primero de la lista, pero devuelve `false` cuando no le toca (ver `sql-snippet`): así el
       // tabulador sigue saltando entre los huecos de una expansión ya abierta.
-      expandBinding(() => snippets.items),
+      expandBinding(() => snippets.items, askVariables),
       // Sin esto nadie atiende el tabulador —`basicSetup` no trae `indentWithTab`— y el navegador
       // se lo lleva al siguiente elemento enfocable, que es la grilla de resultados. Antes de
       // indentar cede ante lo que el tabulador ya significaba donde el cursor está parado: adentro
@@ -421,7 +439,7 @@
       // Las relaciones se leen por función para que el cambio de base no exija reconfigurar.
       PostgreSQL.language.data.of({ autocomplete: columnCompletion(() => relations) }),
       // Y las abreviaturas, que si no habría que recordar de memoria.
-      PostgreSQL.language.data.of({ autocomplete: snippetCompletions(() => snippets.items) }),
+      PostgreSQL.language.data.of({ autocomplete: snippetCompletions(() => snippets.items, askVariables) }),
     ];
   }
 
@@ -510,3 +528,16 @@
     else sqlFont.smaller();
   }}
 ></div>
+
+{#if asking}
+  <SnippetVarsDialog
+    title={asking.title}
+    description={asking.description}
+    variables={asking.variables}
+    onsubmit={asking.done}
+    onclose={() => {
+      asking = null;
+      view?.focus();
+    }}
+  />
+{/if}
