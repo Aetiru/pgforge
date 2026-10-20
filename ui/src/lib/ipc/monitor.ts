@@ -32,6 +32,16 @@ export interface BlockNode {
   blocking: BlockNode[];
 }
 
+/**
+ * Retraso de la replicación. `restricted` no es «sin retraso»: el rol ve que hay réplicas pero no su
+ * progreso, y el núcleo lo distingue de `none` justo para que nadie lo lea como tranquilidad.
+ */
+export type ReplicationLag =
+  | { kind: "none" }
+  | { kind: "restricted" }
+  | { kind: "primary"; replicas: number; seconds: number | null; bytes: number | null }
+  | { kind: "standby"; seconds: number | null; bytes: number | null };
+
 export interface Metrics {
   totalConnections: number;
   activeConnections: number;
@@ -41,6 +51,11 @@ export interface Metrics {
   transactionsPerSecond: number | null;
   cacheHitRatio: number | null;
   longestTransactionSeconds: number | null;
+  /** Cuánto lleva esperando la sesión bloqueada más antigua; sobre todas las sesiones. */
+  longestBlockedSeconds: number | null;
+  /** Cuánto lleva la sesión más antigua en `idle in transaction`; sobre todas las sesiones. */
+  longestIdleInTransactionSeconds: number | null;
+  replication: ReplicationLag;
 }
 
 export interface Snapshot {

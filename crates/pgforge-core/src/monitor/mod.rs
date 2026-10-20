@@ -15,8 +15,8 @@ pub mod stats;
 pub use activity::{ActivityFilter, Backend, BlockNode, Lock};
 pub use maintenance::{Operation, Target};
 pub use stats::{
-    Guards, IndexShape, IndexStat, Redundancy, RedundancyKind, StatementStat, StatsWindow,
-    TableBloat, TableStat,
+    Guards, IndexShape, IndexStat, Redundancy, RedundancyKind, ReplicationLag, StatementStat,
+    StatsWindow, TableBloat, TableStat,
 };
 
 use std::time::Instant;
@@ -46,6 +46,13 @@ pub struct Metrics {
     pub transactions_per_second: Option<f64>,
     pub cache_hit_ratio: Option<f64>,
     pub longest_transaction_seconds: Option<f64>,
+    /// Cuánto lleva esperando la sesión bloqueada más antigua. Sobre todas las sesiones, no sobre
+    /// las que deja ver el filtro de la lista.
+    pub longest_blocked_seconds: Option<f64>,
+    /// Cuánto lleva la sesión más antigua en `idle in transaction`, con el mismo alcance.
+    pub longest_idle_in_transaction_seconds: Option<f64>,
+    /// Retraso de la replicación; ver [`ReplicationLag`] para lo que distingue cada caso.
+    pub replication: ReplicationLag,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -92,6 +99,7 @@ impl Monitor {
         let client = self.session.client();
         let all = activity::backends(client, &self.caps).await?;
         let row = client.query_one(SERVER_METRICS_SQL, &[]).await?;
+        let replication = stats::replication_lag(client).await?;
 
         let max_connections: i64 = row.get::<_, Option<i64>>(0).unwrap_or(0);
         let transactions: Option<i64> = row.get(1);
@@ -134,6 +142,11 @@ impl Monitor {
                 .filter(|b| !b.is_background())
                 .filter_map(|b| b.transaction_seconds)
                 .max_by(|a, b| a.total_cmp(b)),
+            longest_blocked_seconds: activity::longest_blocked_seconds(&all),
+            longest_idle_in_transaction_seconds: activity::longest_idle_in_transaction_seconds(
+                &all,
+            ),
+            replication,
         };
 
         // El árbol de bloqueo se arma sobre todas las sesiones: una sesión inactiva que el filtro

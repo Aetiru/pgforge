@@ -156,6 +156,15 @@ class Notify {
   }
 
   /**
+   * Una alerta del monitoreo. Va por el mismo interruptor global que los avisos de procesos, pero
+   * sin el umbral de duración (una alerta no «terminó rápido»: es lo que se quería enterar) y con
+   * `alertId` para que dos ventanas mirando el mismo servidor no muestren dos banners iguales.
+   */
+  async alert(alertId: string, title: string, body: string) {
+    await this.send(Number.POSITIVE_INFINITY, title, body, alertId);
+  }
+
+  /**
    * `taskId` solo lo trae `taskEnded`: una consulta no cruza el registro de procesos de Rust, así
    * que no puede duplicarse entre ventanas de la misma forma. El `claimNotification` va **acá**, ya
    * decidido que esta ventana iba a avisar —después de `enabled` y del umbral—, para no gastar el

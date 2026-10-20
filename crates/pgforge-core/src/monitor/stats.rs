@@ -827,6 +827,126 @@ pub async fn statements(client: &Client, limit: i64) -> Result<Vec<StatementStat
         .collect())
 }
 
+/// Retraso de la replicación visto desde el servidor al que se está conectado.
+///
+/// Una sola forma para los dos lados porque la pregunta de la alerta es la misma: ¿cuánto atrás
+/// está la réplica? Desde una primaria sale de `pg_stat_replication`; desde una réplica, de las
+/// funciones `pg_last_wal_*`. Ninguna de las dos consultas depende de la versión mayor (existen
+/// con estos nombres en todo el rango 13 a 17), así que acá no hay predicado de `ServerCaps`: lo
+/// que cambia entre roles es **qué se ve**, y eso se decide mirando los datos, no el rol.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum ReplicationLag {
+    /// Primaria sin réplicas conectadas (o servidor solo): no hay nada que medir.
+    None,
+    /// Hay réplicas conectadas pero el rol no puede ver su progreso. Sin `pg_read_all_stats`,
+    /// `pg_stat_replication` devuelve las filas con todo en NULL salvo el pid; tomarlo por
+    /// «sin retraso» sería la peor lectura posible, porque taparía el problema que se busca.
+    Restricted,
+    /// Primaria: el peor retraso entre las réplicas cuyo progreso se ve.
+    Primary {
+        replicas: i64,
+        /// `None` si el servidor no lo informa (réplica recién conectada, sin tráfico que medir).
+        seconds: Option<f64>,
+        bytes: Option<i64>,
+    },
+    /// Este servidor es la réplica.
+    Standby {
+        seconds: Option<f64>,
+        bytes: Option<i64>,
+    },
+}
+
+impl ReplicationLag {
+    /// Decide qué se informa desde lo que contó la primaria: `replicas` son las filas de
+    /// `pg_stat_replication` y `visible` las que traen el estado (NULL = el rol no las ve).
+    /// Pura: la diferencia entre «no hay réplicas» y «no puedo verlas» es justo lo que hay que
+    /// probar sin servidor.
+    pub fn from_primary(
+        replicas: i64,
+        visible: i64,
+        seconds: Option<f64>,
+        bytes: Option<i64>,
+    ) -> Self {
+        if replicas <= 0 {
+            Self::None
+        } else if visible <= 0 {
+            Self::Restricted
+        } else {
+            Self::Primary {
+                replicas,
+                seconds: seconds.filter(|s| s.is_finite()).map(|s| s.max(0.0)),
+                bytes: bytes.map(|b| b.max(0)),
+            }
+        }
+    }
+
+    pub fn from_standby(seconds: Option<f64>, bytes: Option<i64>) -> Self {
+        Self::Standby {
+            seconds: seconds.filter(|s| s.is_finite()).map(|s| s.max(0.0)),
+            bytes: bytes.map(|b| b.max(0)),
+        }
+    }
+}
+
+/// Lee el retraso de replicación. Un error de permisos no es un fallo del monitoreo: se informa
+/// como [`ReplicationLag::Restricted`] y el resto de la muestra sigue valiendo.
+pub async fn replication_lag(client: &Client) -> Result<ReplicationLag> {
+    match read_replication_lag(client).await {
+        Err(Error::Permission(_)) => Ok(ReplicationLag::Restricted),
+        other => other,
+    }
+}
+
+async fn read_replication_lag(client: &Client) -> Result<ReplicationLag> {
+    let in_recovery: bool = client
+        .query_one("SELECT pg_catalog.pg_is_in_recovery()", &[])
+        .await?
+        .get(0);
+
+    if in_recovery {
+        // Con todo lo recibido ya aplicado el retraso es cero aunque el último commit sea viejo:
+        // sin esa guarda, una primaria quieta se leería como una réplica atrasada.
+        let row = client
+            .query_one(
+                "SELECT pg_catalog.pg_wal_lsn_diff(pg_catalog.pg_last_wal_receive_lsn(),
+                                                   pg_catalog.pg_last_wal_replay_lsn())::int8,
+                        (CASE WHEN pg_catalog.pg_last_wal_receive_lsn()
+                                 = pg_catalog.pg_last_wal_replay_lsn() THEN 0
+                              ELSE extract(epoch from pg_catalog.now()
+                                           - pg_catalog.pg_last_xact_replay_timestamp())
+                         END)::float8",
+                &[],
+            )
+            .await?;
+        return Ok(ReplicationLag::from_standby(row.get(1), row.get(0)));
+    }
+
+    // Las filas ajenas sin permiso vienen con `state` NULL: contarlas aparte es lo que permite
+    // distinguir «sin réplicas» de «réplicas que este rol no ve».
+    let row = client
+        .query_one(
+            "SELECT count(*)::int8,
+                    count(state)::int8,
+                    max((CASE WHEN replay_lsn = pg_catalog.pg_current_wal_lsn() THEN 0
+                              ELSE extract(epoch from replay_lag) END)::float8),
+                    max(pg_catalog.pg_wal_lsn_diff(pg_catalog.pg_current_wal_lsn(), replay_lsn))::int8
+               FROM pg_catalog.pg_stat_replication",
+            &[],
+        )
+        .await?;
+    Ok(ReplicationLag::from_primary(
+        row.get(0),
+        row.get(1),
+        row.get(2),
+        row.get(3),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1126,5 +1246,73 @@ mod tests {
         // servidor del rango soportado.
         assert!(uses_exec_time("2"));
         assert!(uses_exec_time("vaya a saber"));
+    }
+
+    #[test]
+    fn sin_filas_de_replicacion_no_hay_nada_que_medir() {
+        assert_eq!(
+            ReplicationLag::from_primary(0, 0, None, None),
+            ReplicationLag::None
+        );
+    }
+
+    #[test]
+    fn filas_sin_estado_son_replicas_que_el_rol_no_ve() {
+        assert_eq!(
+            ReplicationLag::from_primary(2, 0, None, None),
+            ReplicationLag::Restricted
+        );
+    }
+
+    #[test]
+    fn con_replicas_visibles_informa_el_peor_retraso() {
+        assert_eq!(
+            ReplicationLag::from_primary(2, 2, Some(3.5), Some(1024)),
+            ReplicationLag::Primary {
+                replicas: 2,
+                seconds: Some(3.5),
+                bytes: Some(1024)
+            }
+        );
+    }
+
+    #[test]
+    fn una_replica_visible_sin_retraso_informado_conserva_el_vacio() {
+        // `replay_lag` es NULL en una réplica recién conectada: no es cero ni es un error.
+        assert_eq!(
+            ReplicationLag::from_primary(1, 1, None, Some(0)),
+            ReplicationLag::Primary {
+                replicas: 1,
+                seconds: None,
+                bytes: Some(0)
+            }
+        );
+    }
+
+    #[test]
+    fn el_retraso_nunca_sale_negativo_ni_infinito() {
+        assert_eq!(
+            ReplicationLag::from_standby(Some(-0.2), Some(-5)),
+            ReplicationLag::Standby {
+                seconds: Some(0.0),
+                bytes: Some(0)
+            }
+        );
+        assert_eq!(
+            ReplicationLag::from_standby(Some(f64::INFINITY), None),
+            ReplicationLag::Standby {
+                seconds: None,
+                bytes: None
+            }
+        );
+    }
+
+    #[test]
+    fn el_retraso_viaja_etiquetado_en_camel_case() {
+        let json =
+            serde_json::to_value(ReplicationLag::from_primary(1, 1, Some(2.0), Some(8))).unwrap();
+        assert_eq!(json["kind"], "primary");
+        assert_eq!(json["replicas"], 1);
+        assert_eq!(json["seconds"], 2.0);
     }
 }
