@@ -107,6 +107,7 @@
     type ColumnGrant,
     type CommentTarget,
     type CompareSide,
+    type DataSide,
     type ConstraintInfo,
     type Ddl,
     type DefaultGrant,
@@ -138,6 +139,7 @@
     ondata,
     onerd,
     oncompare,
+    oncomparedata,
     onmatrix,
     onrolecapabilities,
   }: {
@@ -152,6 +154,8 @@
     onerd: (profileId: string, database: string, schema: string) => void;
     /** Pide comparar este esquema contra otro; el otro lado lo elige un diálogo de `App`. */
     oncompare: (source: CompareSide) => void;
+    /** Pide comparar los datos de esta tabla contra los de otra; el otro lado lo elige un diálogo. */
+    oncomparedata: (source: DataSide) => void;
     /** Abre la matriz de permisos de un esquema. */
     onmatrix: (profileId: string, database: string, schema: string) => void;
     /** Abre "qué puede hacer" un rol, contra el esquema por omisión. */
@@ -772,6 +776,14 @@
           schema: current!.label,
         });
         break;
+      case "compareData":
+        oncomparedata({
+          id: selected.profileId,
+          database: current!.database,
+          schema: current!.schema!,
+          table: current!.label,
+        });
+        break;
       case "openPermissionMatrix":
         onmatrix(selected.profileId, current!.database, current!.label);
         break;
@@ -1130,7 +1142,9 @@
 
   async function confirmDrop() {
     if (!dropTarget || !selected || !node) return;
-    if (!(await confirmMutation(selected.profileId, "Se va a eliminar un objeto del servidor.")))
+    // El SQL real lo arma `runDrop`; acá solo hace falta que la guarda de producción vea el `DROP`.
+    const sql = `DROP ${dropTarget.kind} ${"label" in dropTarget ? dropTarget.label : dropTarget.name}`;
+    if (!(await confirmMutation(selected.profileId, "Se va a eliminar un objeto del servidor.", sql)))
       return;
     dropping = true;
     dropError = null;

@@ -12,10 +12,11 @@ use std::path::Path;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
+use crate::conn::profile::{ConnectionProfile, Environment};
 use crate::error::{Error, Result};
 
 /// Versión del esquema del archivo. Subirla obliga a agregar el paso de migración de abajo.
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 const SCHEMA: &str = "
     CREATE TABLE IF NOT EXISTS history (
@@ -28,7 +29,10 @@ const SCHEMA: &str = "
         row_count  INTEGER,
         succeeded  INTEGER NOT NULL,
         error      TEXT,
-        source     TEXT    NOT NULL DEFAULT 'editor'
+        source     TEXT    NOT NULL DEFAULT 'editor',
+        server_name TEXT,
+        db_user     TEXT,
+        environment TEXT
     );
     CREATE INDEX IF NOT EXISTS history_reciente ON history (started_at DESC);
 ";
@@ -48,7 +52,7 @@ pub enum Source {
 }
 
 impl Source {
-    fn as_str(self) -> &'static str {
+    pub(super) fn as_str(self) -> &'static str {
         match self {
             Source::Editor => "editor",
             Source::Dialog => "dialog",
@@ -63,6 +67,43 @@ impl Source {
     }
 }
 
+/// Quién ejecutó y contra qué servidor, **tal como estaba el perfil en ese momento**.
+///
+/// Se guarda copiado y no se resuelve por `profile_id` al listar: el perfil puede renombrarse,
+/// pasar de `dev` a `prod` o borrarse, y un registro de auditoría que cambia con el perfil deja de
+/// decir lo que pasó. Vacío en lo anotado antes de que existiera (`user_version` 3).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Actor {
+    /// Nombre del servidor en el perfil.
+    #[serde(default)]
+    pub server_name: Option<String>,
+    /// El rol con el que se conectó el perfil: lo que el servidor ve como `current_user`, y por
+    /// tanto lo que su propio registro atribuiría. La aplicación no tiene otra noción de usuario.
+    #[serde(default, rename = "dbUser")]
+    pub user: Option<String>,
+    /// `dev` / `test` / `prod`, o `None` si el servidor no estaba marcado.
+    #[serde(default)]
+    pub environment: Option<String>,
+}
+
+impl Actor {
+    pub fn of(profile: &ConnectionProfile) -> Self {
+        Self {
+            server_name: Some(profile.name.clone()),
+            user: Some(profile.user.clone()),
+            environment: profile.environment.map(|environment| {
+                match environment {
+                    Environment::Dev => "dev",
+                    Environment::Test => "test",
+                    Environment::Prod => "prod",
+                }
+                .to_owned()
+            }),
+        }
+    }
+}
+
 /// Lo que se registra al terminar una ejecución.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,6 +112,8 @@ pub struct NewEntry {
     /// diálogos empezaran a anotar lo suyo.
     #[serde(default = "editor_source")]
     pub source: Source,
+    #[serde(default, flatten)]
+    pub actor: Actor,
     pub profile_id: String,
     pub database: String,
     pub sql: String,
@@ -87,6 +130,8 @@ pub struct Entry {
     pub id: i64,
     /// De dónde salió: el editor o un diálogo de la aplicación.
     pub source: Source,
+    #[serde(flatten)]
+    pub actor: Actor,
     pub profile_id: String,
     pub database: String,
     pub sql: String,
@@ -271,8 +316,9 @@ pub struct HistoryStore {
     connection: Connection,
 }
 
-const SELECT: &str = "SELECT id, profile_id, database, sql, started_at, seconds, row_count,
-                             succeeded, error, source
+pub(super) const SELECT: &str =
+    "SELECT id, profile_id, database, sql, started_at, seconds, row_count,
+                             succeeded, error, source, server_name, db_user, environment
                         FROM history";
 
 impl HistoryStore {
@@ -306,6 +352,13 @@ impl HistoryStore {
                     [],
                 )?;
             }
+            // Versión 3: quién y contra qué servidor. Nulas en lo anterior, que no lo anotó.
+            for column in ["server_name", "db_user", "environment"] {
+                if !self.has_column("history", column)? {
+                    self.connection
+                        .execute(&format!("ALTER TABLE history ADD COLUMN {column} TEXT"), [])?;
+                }
+            }
             self.connection
                 .pragma_update(None, "user_version", SCHEMA_VERSION)?;
         }
@@ -334,8 +387,8 @@ impl HistoryStore {
         self.connection.execute(
             "INSERT INTO history
                  (profile_id, database, sql, started_at, seconds, row_count, succeeded, error,
-                  source)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                  source, server_name, db_user, environment)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 entry.profile_id,
                 entry.database,
@@ -346,6 +399,9 @@ impl HistoryStore {
                 entry.error.is_none(),
                 entry.error,
                 entry.source.as_str(),
+                entry.actor.server_name,
+                entry.actor.user,
+                entry.actor.environment,
             ],
         )?;
 
@@ -374,13 +430,7 @@ impl HistoryStore {
 
     /// Busca por texto dentro de las consultas.
     pub fn search(&self, text: &str, limit: i64) -> Result<Vec<Entry>> {
-        // `escape` para que quien busque `100%` no termine buscando cualquier cosa.
-        let pattern = format!(
-            "%{}%",
-            text.replace('\\', "\\\\")
-                .replace('%', "\\%")
-                .replace('_', "\\_")
-        );
+        let pattern = like_pattern(text);
 
         self.query(
             &format!("{SELECT} WHERE sql LIKE ?1 ESCAPE '\\' ORDER BY started_at DESC LIMIT ?2"),
@@ -393,7 +443,11 @@ impl HistoryStore {
         Ok(())
     }
 
-    fn query(&self, sql: &str, params: impl rusqlite::Params) -> Result<Vec<Entry>> {
+    pub(super) fn connection(&self) -> &Connection {
+        &self.connection
+    }
+
+    pub(super) fn query(&self, sql: &str, params: impl rusqlite::Params) -> Result<Vec<Entry>> {
         let mut statement = self.connection.prepare(sql)?;
         let rows = statement.query_map(params, |row| {
             Ok(Entry {
@@ -407,11 +461,28 @@ impl HistoryStore {
                 succeeded: row.get(7)?,
                 error: row.get(8)?,
                 source: Source::from_str(&row.get::<_, String>(9)?),
+                actor: Actor {
+                    server_name: row.get(10)?,
+                    user: row.get(11)?,
+                    environment: row.get(12)?,
+                },
             })
         })?;
 
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
+}
+
+/// El patrón de `LIKE` que busca `text` como texto literal.
+///
+/// Con `escape`, para que quien busque `100%` no termine buscando cualquier cosa.
+pub(super) fn like_pattern(text: &str) -> String {
+    format!(
+        "%{}%",
+        text.replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
+    )
 }
 
 impl From<rusqlite::Error> for Error {
@@ -427,6 +498,7 @@ mod tests {
     fn entry(sql: &str) -> NewEntry {
         NewEntry {
             source: Source::Editor,
+            actor: Actor::default(),
             profile_id: "servidor-1".into(),
             database: "app".into(),
             sql: sql.into(),

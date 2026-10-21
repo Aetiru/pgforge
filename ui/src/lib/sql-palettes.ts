@@ -28,6 +28,8 @@ export interface SqlPalette {
   description: string;
   light: SqlColors;
   dark: SqlColors;
+  /** Solo si el tema «Papel» necesita colores propios; sin esto usa los del claro. */
+  paper?: SqlColors;
 }
 
 export const PALETTES: SqlPalette[] = [
@@ -65,6 +67,15 @@ export const PALETTES: SqlPalette[] = [
     description: "Naranja para las palabras clave, al estilo de los IDE de escritorio.",
     light: { keyword: "#a8480f", string: "#3a7a2c", number: "#1a62a0", type: "#7d4a9c", function: "#8c6400", operator: "#6b6254", comment: "#8f8a7f", ident: "#5a4a34" },
     dark: { keyword: "#e8915a", string: "#a9c97a", number: "#6fb3e8", type: "#c79be0", function: "#e5c45f", operator: "#a39d8f", comment: "#7a766b", ident: "#e2cdb0" },
+  },
+  {
+    id: "papel",
+    name: "Papel",
+    description: "Tonos de tierra apagados para el tema Papel: pizarra, salvia, terracota y ocre.",
+    light: { keyword: "#3f5f8a", string: "#4f6f45", number: "#9a5b2e", type: "#6e5681", function: "#7f5d1c", operator: "#6a6256", comment: "#6f6657", ident: "#3b4a63" },
+    dark: { keyword: "#7fb0d8", string: "#9bbf94", number: "#d0a070", type: "#b9a3cf", function: "#d9bd6a", operator: "#7d8596", comment: "#5f6778", ident: "#a8c3dc" },
+    // Comentarios y operadores a 4,5:1 o más contra el crema: el gris de la paleta clara se perdía.
+    paper: { keyword: "#3f5f8a", string: "#4f6f45", number: "#9a5b2e", type: "#6e5681", function: "#7f5d1c", operator: "#6a6256", comment: "#6f6657", ident: "#3b4a63" },
   },
 ];
 
@@ -134,8 +145,15 @@ export function colorsOf(prefs: SqlThemePrefs, theme: "light" | "dark"): SqlColo
   return (PALETTES.find((p) => p.id === prefs.palette) ?? PALETTES[0])[theme];
 }
 
-function block(prefs: SqlThemePrefs, theme: "light" | "dark"): string {
-  const c = colorsOf(prefs, theme);
+/** Papel no tiene colores personalizables aparte: «Personalizada» usa los del claro. */
+function paperColors(prefs: SqlThemePrefs): SqlColors {
+  if (prefs.palette === CUSTOM_ID) return prefs.custom.light;
+  const palette = PALETTES.find((p) => p.id === prefs.palette) ?? PALETTES[0];
+  return palette.paper ?? palette.light;
+}
+
+function block(prefs: SqlThemePrefs, theme: "light" | "dark" | "paper"): string {
+  const c = theme === "paper" ? paperColors(prefs) : colorsOf(prefs, theme);
   return [
     `--cm-keyword: ${c.keyword}`,
     `--cm-string: ${c.string}`,
@@ -155,5 +173,5 @@ function block(prefs: SqlThemePrefs, theme: "light" | "dark"): string {
  */
 export function paletteCss(prefs: SqlThemePrefs): string {
   const shared = `--cm-keyword-weight: ${prefs.keywordWeight}; --cm-comment-style: ${prefs.commentItalic ? "italic" : "normal"}`;
-  return `html:root { ${block(prefs, "light")}; ${shared} }\nhtml[data-theme="dark"] { ${block(prefs, "dark")} }\n`;
+  return `html:root { ${block(prefs, "light")}; ${shared} }\nhtml[data-theme="dark"] { ${block(prefs, "dark")} }\nhtml[data-theme="paper"] { ${block(prefs, "paper")} }\n`;
 }

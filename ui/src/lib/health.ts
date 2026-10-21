@@ -20,11 +20,22 @@ export interface Health {
   issues: HealthIssue[];
 }
 
-/** De qué tan llena está la tabla de conexiones. Lo comparte la ficha de «Conexiones». */
-export function connectionLevel(total: number, max: number): HealthLevel {
+/** Desde qué fracción de `max_connections` las conexiones son «rojo». Las alertas arrancan de acá. */
+export const CONNECTIONS_BAD_ABOVE = 0.9;
+
+/**
+ * De qué tan llena está la tabla de conexiones. Lo comparten la ficha de «Conexiones» y la alerta
+ * de conexiones, que pasa su propio umbral en `badAbove`: con el valor por omisión las dos dicen
+ * rojo en el mismo momento, y si alguien lo sube o lo baja es una decisión suya, no un desacuerdo.
+ */
+export function connectionLevel(
+  total: number,
+  max: number,
+  badAbove = CONNECTIONS_BAD_ABOVE,
+): HealthLevel {
   if (max <= 0) return "ok";
   const ratio = total / max;
-  if (ratio > 0.9) return "bad";
+  if (ratio > badAbove) return "bad";
   if (ratio > 0.7) return "warn";
   return "ok";
 }

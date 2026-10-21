@@ -18,6 +18,8 @@ export * from "./servers";
 export * from "./schema";
 export * from "./scripts";
 export * from "./compare";
+export * from "./migrations";
+export * from "./audit";
 export * from "./monitor";
 export * from "./tasks";
 export * from "./backup";

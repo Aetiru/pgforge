@@ -8,6 +8,9 @@
  */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* «Papel» no es oscuro, así que `dark:` no lo cubre; esta variante deja ajustar un componente solo ahí. */
+@custom-variant paper (&:where([data-theme="paper"], [data-theme="paper"] *));
+
 @theme {
   /* Sans para la interfaz (menús, rótulos, diálogos) y monoespaciada para lo que es dato o código
      (SQL, nombres de objetos, celdas). La monoespaciada en todo ocupaba mucho ancho en cada menú y
@@ -59,6 +62,113 @@
   --shadow-md: 0 2px 6px rgb(15 18 26 / 0.08);
   --shadow-lg: 0 8px 24px rgb(15 18 26 / 0.16);
   --shadow-xl: 0 12px 32px rgb(15 18 26 / 0.2);
+}
+
+/**
+ * Tema «Papel»: claro de fondos crema y grises cálidos, con el marino como tinta y el verde azulado
+ * como acento. Es un tercer valor de `data-theme` y no un eje aparte como el contraste, porque
+ * reemplaza la paleta entera en vez de ajustarla. Redefine la misma escala que usan los
+ * componentes, así que ninguno se entera; `--color-white` incluido, que es el fondo de tarjetas,
+ * campos y del cuerpo. Los escalones 400 y 500 conservan el piso de contraste de la escala base
+ * (3,5:1 y 4,5:1) medido contra el crema, y el 600 del acento da 4,8:1 con el texto blanco del botón
+ * primario. No es oscuro: `color-scheme` sigue en `light` y la variante `dark:` no se activa.
+ */
+html[data-theme="paper"] {
+  --color-white: #f4ebda;
+  --color-zinc-50: #ece1ce;
+  --color-zinc-100: #e4d7c2;
+  --color-zinc-200: #d3c5ae;
+  --color-zinc-300: #bfae96;
+  --color-zinc-400: #72695b;
+  --color-zinc-500: #645c50;
+  --color-zinc-600: #565a63;
+  --color-zinc-700: #444b60;
+  --color-zinc-800: #363e58;
+  --color-zinc-900: #2b3350;
+  --color-zinc-950: #1c2440;
+
+  --color-blue-50: #e3ede8;
+  --color-blue-100: #d3e2db;
+  --color-blue-200: #b1cfc6;
+  --color-blue-300: #78bfbd;
+  --color-blue-400: #4fb0ae;
+  --color-blue-500: #1aa3a1;
+  --color-blue-600: #137274;
+  --color-blue-700: #105f61;
+  --color-blue-800: #11595b;
+  --color-blue-900: #0f4749;
+  --color-blue-950: #0a2e30;
+
+
+  --cm-gutter: #756b5c;
+  --cm-selection: color-mix(in srgb, var(--color-amber-500) 26%, transparent);
+}
+
+/* Semánticos apagados del tema Papel: el rojo, verde y ámbar de Tailwind son saturados y sobre el crema se ven
+   fosforescentes. */
+html[data-theme="paper"] {
+  /* Semánticos apagados: el rojo, verde y ámbar de Tailwind son saturados y sobre el crema se ven
+     fosforescentes —el tinte de producción pasaba a rosa chicle—. Mismo orden de luminosidad que la
+     escala base, con tonos de tierra (ladrillo, salvia, ocre, ciruela, pizarra). */
+  --color-rose-50: #f5f0ef;
+  --color-rose-100: #ece1df;
+  --color-rose-200: #e1c5c1;
+  --color-rose-300: #d1a59e;
+  --color-rose-400: #c47a6e;
+  --color-rose-500: #b5584a;
+  --color-rose-600: #984a3e;
+  --color-rose-700: #7f3e34;
+  --color-rose-800: #653129;
+  --color-rose-900: #502721;
+  --color-rose-950: #331915;
+
+  --color-emerald-50: #f0f4f2;
+  --color-emerald-100: #e2e9e4;
+  --color-emerald-200: #c7dbce;
+  --color-emerald-300: #a8c7b2;
+  --color-emerald-400: #7eb490;
+  --color-emerald-500: #5ea174;
+  --color-emerald-600: #3b6f4e;
+  --color-emerald-700: #427052;
+  --color-emerald-800: #355a41;
+  --color-emerald-900: #2a4733;
+  --color-emerald-950: #1a2d21;
+
+  --color-amber-50: #f7f4ee;
+  --color-amber-100: #efe8dc;
+  --color-amber-200: #e9d8b9;
+  --color-amber-300: #ddc292;
+  --color-amber-400: #d8aa5a;
+  --color-amber-500: #cf9530;
+  --color-amber-600: #ae7d29;
+  --color-amber-700: #916822;
+  --color-amber-800: #74531b;
+  --color-amber-900: #5b4115;
+  --color-amber-950: #3a2a0e;
+
+  --color-violet-50: #f3f0f4;
+  --color-violet-100: #e7e2e9;
+  --color-violet-200: #d4c7db;
+  --color-violet-300: #bda8c7;
+  --color-violet-400: #a27eb4;
+  --color-violet-500: #8b5ea1;
+  --color-violet-600: #744f87;
+  --color-violet-700: #614270;
+  --color-violet-800: #4e355a;
+  --color-violet-900: #3d2a47;
+  --color-violet-950: #271a2d;
+
+  --color-sky-50: #eff3f5;
+  --color-sky-100: #e0e6eb;
+  --color-sky-200: #c3d3df;
+  --color-sky-300: #a2bbcd;
+  --color-sky-400: #749fbe;
+  --color-sky-500: #5287ad;
+  --color-sky-600: #457292;
+  --color-sky-700: #395f79;
+  --color-sky-800: #2e4c61;
+  --color-sky-900: #243b4c;
+  --color-sky-950: #172631;
 }
 
 /**
@@ -768,4 +878,28 @@ input[type="password"]::-ms-clear {
   --erd-accent: var(--color-blue-400);
 
   --grid-range-edge: var(--color-blue-400);
+}
+
+/* --------------------------------------------------------------------------
+   Comparación de resultados (ResultCompareDialog)
+   -------------------------------------------------------------------------- */
+
+.diff-cell-changed {
+  @apply bg-amber-100 dark:bg-amber-500/20;
+}
+
+.diff-row-added {
+  @apply bg-emerald-50 dark:bg-emerald-500/10;
+}
+
+.diff-row-removed {
+  @apply bg-rose-50 dark:bg-rose-500/10;
+}
+
+.diff-old {
+  @apply text-rose-700 line-through dark:text-rose-300;
+}
+
+.diff-new {
+  @apply text-emerald-700 dark:text-emerald-300;
 }

@@ -1,4 +1,4 @@
-// Capturas de las pantallas principales en claro, oscuro y oscuro con alto contraste.
+// Capturas de las pantallas principales en claro, oscuro, oscuro con alto contraste y papel.
 //
 // No compara píxeles: es una prueba de humo visual. Falla si alguna pantalla lanza una excepción y
 // deja las imágenes en `ui/capturas/` para mirarlas. Contra una interfaz con datos inventados
@@ -23,6 +23,7 @@ const VARIANTS = [
   { name: "claro", theme: "light", contrast: false },
   { name: "oscuro", theme: "dark", contrast: false },
   { name: "oscuro-contraste", theme: "dark", contrast: true },
+  { name: "papel", theme: "paper", contrast: false },
 ];
 
 fs.mkdirSync(out, { recursive: true });

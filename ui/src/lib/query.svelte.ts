@@ -1,5 +1,6 @@
 import type { SQLNamespace } from "@codemirror/lang-sql";
 import { pickSave } from "./ipc";
+import { confirmScript } from "./access.svelte";
 import { changesCatalog } from "./ddl-tags";
 import { autoFormat } from "./editor.svelte";
 import { explorer } from "./explorer.svelte";
@@ -19,6 +20,7 @@ import {
   queryCommit,
   queryExplain,
   queryOpen,
+  queryRehearse,
   queryRollback,
   queryRun,
   queryTxStatus,
@@ -35,6 +37,7 @@ import {
   type Outcome,
   type Plan,
   type QueryEvent,
+  type RehearsalReport,
   type SchemaRelation,
   type TxStatus,
 } from "./ipc";
@@ -140,6 +143,12 @@ export class QueryTab extends Tab {
 
   /** Arranca con el valor del perfil; el interruptor de la barra lo cambia solo para esta pestaña. */
   autocommit = $state(true);
+
+  /** Último ensayo de esta pestaña, o el error que lo impidió. Se muestra en un diálogo. */
+  rehearsal = $state<RehearsalReport | null>(null);
+  rehearsalError = $state<string | null>(null);
+  rehearsing = $state(false);
+  rehearsalOpen = $state(false);
   /** Lo dice el servidor después de cada ejecución, no se deduce del SQL escrito. */
   txStatus = $state<TxStatus>("idle");
 
@@ -411,6 +420,10 @@ export class QueryTab extends Tab {
   async run(sql: string, base = 0) {
     if (!this.tabId || this.running || sql.trim() === "") return;
 
+    // En producción, un `DROP`, un `TRUNCATE` o un `DELETE`/`UPDATE` sin `WHERE` piden escribir el
+    // nombre del servidor. El resto del script corre sin preguntar, como siempre.
+    if (!(await confirmScript(this.profileId, sql))) return;
+
     // Lo último que se mandó, para poder exportarlo sin volver a ejecutarlo. La grilla tiene solo
     // las filas que entraron en el techo; exportar tiene que ir de nuevo al servidor con la consulta.
     this.ranSql = sql;
@@ -631,6 +644,26 @@ export class QueryTab extends Tab {
       this.view = "messages";
       // Un `COMMIT` que falla igual termina la transacción: se vuelve a preguntar en vez de suponer.
       this.txStatus = await queryTxStatus(this.tabId).catch(() => this.txStatus);
+    }
+  }
+
+  /**
+   * Ensaya el script: lo corre adentro de `BEGIN … ROLLBACK` y muestra qué habría pasado. No pasa
+   * por la confirmación de producción ni por el historial porque no deja nada aplicado.
+   */
+  async rehearse(sql: string) {
+    if (!this.tabId || this.running || this.rehearsing || sql.trim() === "") return;
+
+    this.rehearsing = true;
+    this.rehearsal = null;
+    this.rehearsalError = null;
+    this.rehearsalOpen = true;
+    try {
+      this.rehearsal = await queryRehearse(this.tabId, sql);
+    } catch (error) {
+      this.rehearsalError = describeError(error);
+    } finally {
+      this.rehearsing = false;
     }
   }
 

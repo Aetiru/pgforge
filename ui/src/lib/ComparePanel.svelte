@@ -2,8 +2,16 @@
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
+  import MigrationSaveDialog from "./MigrationSaveDialog.svelte";
   import Sql from "./Sql.svelte";
-  import { compareLabel, compareLook } from "./badges";
+  import {
+    COMPARE_CATEGORIES,
+    compareKindLabel,
+    compareKindLook,
+    countCategories,
+    filterByCategory,
+    type CompareCategory,
+  } from "./compare-kinds";
   import { countEntries, countRisks, filterStatements, scriptOf } from "./compare-script";
   import { openQuery } from "./query.svelte";
   import type { CompareTab } from "./compare.svelte";
@@ -20,6 +28,7 @@
 
   let view = $state<"report" | "sql">("report");
   let copied = $state(false);
+  let savingMigration = $state(false);
 
   const diff = $derived(tab.result?.diff ?? null);
   const counts = $derived(diff ? countEntries(diff.entries) : null);
@@ -35,7 +44,20 @@
     onlyTarget: true,
     different: true,
   });
-  const entries = $derived(diff ? diff.entries.filter((entry) => shown[entry.status]) : []);
+  /**
+   * Y qué categorías: estructura, lógica y acceso. Con las funciones y los permisos en el mismo
+   * informe, una diferencia de estructura se pierde entre cincuenta de permisos; así se miran por
+   * separado. Tampoco toca el script —eso lo filtra el riesgo—.
+   */
+  let categories = $state<Record<CompareCategory, boolean>>({
+    structure: true,
+    logic: true,
+    access: true,
+  });
+  const categoryCounts = $derived(diff ? countCategories(diff.entries) : null);
+  const entries = $derived(
+    diff ? filterByCategory(diff.entries, categories).filter((entry) => shown[entry.status]) : [],
+  );
 
   const RISK_CHIPS = [
     { key: "safe", label: "Seguro", tone: "text-emerald-700 dark:text-emerald-300", title: "Todo lo que solo agrega: no puede perder nada" },
@@ -64,11 +86,18 @@
     constraint: "restricción",
     index: "índice",
     member: "valor",
+    privilege: "permiso",
     property: "propiedad",
   } as const;
 
+  /**
+   * Con qué se identifica una fila abierta. El nombre solo no alcanza: una tabla y sus permisos o su
+   * seguridad por filas se llaman igual y se abrirían juntas.
+   */
+  const rowKey = (entry: DiffEntry) => `${entry.kind}:${entry.name}`;
+
   function toggle(entry: DiffEntry) {
-    tab.opened = tab.opened === entry.name ? null : entry.name;
+    tab.opened = tab.opened === rowKey(entry) ? null : rowKey(entry);
   }
 
   /**
@@ -178,8 +207,23 @@
           <span class="text-[11px] muted">{diff.equal} iguales</span>
         </div>
 
+        <!-- Las categorías: solo las que tienen algo, para no ofrecer un filtro que no filtra. -->
+        <div class="flex flex-wrap items-center gap-2 px-3 pb-2">
+          {#each COMPARE_CATEGORIES.filter((c) => (categoryCounts?.[c.key] ?? 0) > 0) as category (category.key)}
+            <button
+              class="chip-toggle"
+              aria-pressed={categories[category.key]}
+              title={category.title}
+              onclick={() => (categories[category.key] = !categories[category.key])}
+            >
+              {categoryCounts?.[category.key]}
+              {category.label}
+            </button>
+          {/each}
+        </div>
+
         {#each entries as entry (entry.kind + entry.name)}
-          {@const look = compareLook(entry.kind)}
+          {@const look = compareKindLook(entry.kind)}
           <div class="divider-b">
             <button
               class="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-zinc-100
@@ -190,7 +234,7 @@
                     title={MARK[entry.status].title}>{MARK[entry.status].text}</span>
               <Icon name={look.icon} size={13} class={look.tone} />
               <span class="text-sm select-text">{entry.name}</span>
-              <span class="muted text-[11px]">{compareLabel(entry.kind)}</span>
+              <span class="muted text-[11px]">{compareKindLabel(entry.kind)}</span>
               <span class="flex-1"></span>
               {#if entry.details.length > 0}
                 <span class="muted text-[11px]">{entry.details.length} diferencias</span>
@@ -198,7 +242,7 @@
               <Icon
                 name="chevron"
                 size={12}
-                class="opacity-60 transition-transform {tab.opened === entry.name ? 'rotate-90' : ''}"
+                class="opacity-60 transition-transform {tab.opened === rowKey(entry) ? 'rotate-90' : ''}"
               />
             </button>
 
@@ -218,7 +262,7 @@
               </div>
             {/if}
 
-            {#if tab.opened === entry.name}
+            {#if tab.opened === rowKey(entry)}
               <div class="grid gap-3 px-3 pb-3 pl-12 lg:grid-cols-2">
                 <div class="card p-2">
                   <div class="label mb-1">Origen · {diff.source.schema}</div>
@@ -276,6 +320,15 @@
         <Icon name="sql" size={13} />
         Abrir en consulta
       </button>
+      <button
+        class="btn btn-sm"
+        disabled={!script}
+        title="Guarda el script como archivo de migración numerado (V012__…sql)"
+        onclick={() => (savingMigration = true)}
+      >
+        <Icon name="save" size={13} />
+        Guardar como migración
+      </button>
     </div>
 
     <div class="min-h-0 flex-1 overflow-auto p-3">
@@ -304,3 +357,13 @@
     </div>
   {/if}
 </div>
+
+{#if savingMigration}
+  <MigrationSaveDialog
+    sql={script}
+    profileId={tab.target.id}
+    database={tab.target.database}
+    schema={tab.target.schema}
+    onclose={() => (savingMigration = false)}
+  />
+{/if}

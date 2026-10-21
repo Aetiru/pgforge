@@ -43,6 +43,7 @@ const KEEP_FINISHED: usize = 50;
 pub enum ProcessKind {
     Maintenance,
     Index,
+    Migration,
     Backup,
     Restore,
     Export,

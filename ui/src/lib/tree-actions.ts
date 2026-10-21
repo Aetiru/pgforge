@@ -54,6 +54,18 @@ export function schemaTargetOf(node: TreeNode | null): { database: string; schem
   return { database: node.database, schema: node.label };
 }
 
+/**
+ * La tabla cuyos datos se pueden comparar contra otra. Solo tablas (ordinarias o particionadas):
+ * una vista no tiene clave con la que emparejar filas. `null` para cualquier otra fila.
+ */
+export function tableTargetOf(
+  node: TreeNode | null,
+): { database: string; schema: string; table: string } | null {
+  if (!node || !node.schema) return null;
+  if (node.kind !== "table" && node.kind !== "partitionedTable") return null;
+  return { database: node.database, schema: node.schema, table: node.label };
+}
+
 /** El rol sobre el que trabaja "qué puede hacer este rol". `null` para cualquier otra fila. */
 export function roleTargetOf(node: TreeNode | null): { database: string; role: string } | null {
   if (!node || node.kind !== "role") return null;

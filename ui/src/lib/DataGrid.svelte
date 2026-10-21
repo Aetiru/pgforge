@@ -37,7 +37,9 @@
 <script lang="ts" generics="T">
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
+  import JsonTree from "./JsonTree.svelte";
   import Modal from "./Modal.svelte";
+  import { parseJsonTree } from "./json-tree";
   import { asJson, delimited, parseDelimited, pretty } from "./grid-copy";
   import { columnRange } from "./grid-window";
   import { gridZoom } from "./grid.svelte";
@@ -57,6 +59,7 @@
     sortable = false,
     serverSort = false,
     onsort,
+    onfilter,
   }: {
     columns: Column<T>[];
     rows: T[];
@@ -82,6 +85,13 @@
      */
     serverSort?: boolean;
     onsort?: (column: Column<T> | null, descending: boolean) => void;
+    /**
+     * Filtrar por una columna, desde el menú del encabezado o el de una celda. Solo lo pasan las
+     * grillas cuyo filtro lo resuelve el servidor (la pestaña de datos): sobre las demás ya
+     * está el filtro rápido de `Ctrl+F`. Con `preset` el diálogo abre ya armado («igual a este
+     * valor»).
+     */
+    onfilter?: (column: Column<T>, preset?: { op: "eq" | "isNull"; value?: string }) => void;
   } = $props();
 
   /**
@@ -782,6 +792,20 @@
   }
 
   const viewerText = $derived(viewer?.text ? pretty(viewer.text) : "");
+  /** Si el valor es un JSON de objeto o arreglo, el visor ofrece el árbol además del texto. */
+  const viewerJson = $derived(viewer?.text ? parseJsonTree(viewer.text) : null);
+  let viewerAs = $state<"tree" | "text">("tree");
+
+  /** «Filtrar por este valor» desde el menú de la celda con el foco. */
+  function filterByCell() {
+    if (!cursor || !onfilter) return;
+    const row = ordered[cursor.row];
+    const column = active[cursor.column];
+    if (!row || !column) return;
+    menu = null;
+    const value = rawOf(row, column);
+    onfilter(column, value === null ? { op: "isNull" } : { op: "eq", value });
+  }
 
   function onCellMenu(event: MouseEvent, row: number, column: number) {
     event.preventDefault();
@@ -1199,6 +1223,9 @@
     <button class="row-menu" onclick={openFilter}>
       Filtrar las filas <span class="muted">Ctrl+F</span>
     </button>
+    {#if onfilter && active[cursor?.column ?? -1]?.orderBy}
+      <button class="row-menu" onclick={filterByCell}>Filtrar por este valor</button>
+    {/if}
   </div>
 {/if}
 
@@ -1219,6 +1246,17 @@
     <button class="row-menu" onclick={() => pinTo(headerMenu!.index)}>
       {pinned === headerMenu.index + 1 ? "No fijar ninguna" : "Fijar hasta esta columna"}
     </button>
+    {#if onfilter && column.orderBy}
+      <button
+        class="row-menu"
+        onclick={() => {
+          headerMenu = null;
+          onfilter(column);
+        }}
+      >
+        Filtrar esta columna…
+      </button>
+    {/if}
     <button class="row-menu" disabled={active.length <= 1} onclick={() => hide(column)}>
       Ocultar esta columna
     </button>
@@ -1247,9 +1285,19 @@
     {#if viewer.text === null}
       <p class="italic muted">NULL — la fila no tiene valor en esta columna.</p>
     {:else}
-      <pre
-        class="max-h-[60vh] overflow-auto rounded bg-zinc-50 p-3 font-mono text-xs break-words
-               whitespace-pre-wrap select-text dark:bg-zinc-800/60">{viewerText}</pre>
+      {#if viewerJson?.ok}
+        <div class="seg mb-2" role="tablist">
+          <button class="seg-item" role="tab" aria-selected={viewerAs === "tree"} onclick={() => (viewerAs = "tree")}>Árbol</button>
+          <button class="seg-item" role="tab" aria-selected={viewerAs === "text"} onclick={() => (viewerAs = "text")}>Texto</button>
+        </div>
+      {/if}
+      {#if viewerJson?.ok && viewerAs === "tree"}
+        {#key viewer.text}<JsonTree value={viewerJson.value} />{/key}
+      {:else}
+        <pre
+          class="max-h-[60vh] overflow-auto rounded bg-zinc-50 p-3 font-mono text-xs break-words
+                 whitespace-pre-wrap select-text dark:bg-zinc-800/60">{viewerText}</pre>
+      {/if}
     {/if}
 
     {#snippet footer()}

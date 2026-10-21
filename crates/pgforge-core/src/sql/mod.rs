@@ -8,22 +8,26 @@
 //! ejecución a la siguiente.
 
 pub mod advice;
+pub mod audit;
 pub mod completion;
 pub mod exec;
 pub mod explain;
 pub mod format;
 pub mod history;
 pub(crate) mod lex;
+pub mod rehearsal;
 pub mod saved;
 pub mod snippet;
 pub mod split;
 
 pub use advice::{Advice, AdviceKind, Severity};
+pub use audit::{AuditFacets, AuditFilter, AuditPage, ExportFormat};
 pub use completion::{Relation, SchemaSnapshot};
 pub use exec::{ColumnType, Limits, Outcome, QuerySession, TxStatus, DEFAULT_MAX_ROWS};
 pub use explain::{ExplainOptions, Plan, PlanNode};
 pub use format::format;
-pub use history::{HistoryStore, NewEntry};
+pub use history::{Actor, HistoryStore, NewEntry};
+pub use rehearsal::{RehearsalOptions, Report as RehearsalReport};
 pub use saved::{NewQuery, SavedQuery, SavedStore};
 pub use snippet::{Snippet, SnippetId, SnippetStore};
 pub use split::{at_cursor, missing_separator, split, Statement};

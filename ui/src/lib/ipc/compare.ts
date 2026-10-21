@@ -9,6 +9,7 @@
  * pestaña de consulta, y quien lo corre es el usuario.
  */
 
+import { Channel } from "@tauri-apps/api/core";
 import { invoke } from "./core";
 
 /** Qué clase de objeto difiere. Espejo de `compare::ObjectKind`. */
@@ -24,11 +25,35 @@ export type CompareObject =
   | "domain"
   | "range";
 
+/**
+ * Todo lo que puede aparecer en el informe: los objetos de arriba más la lógica y el acceso que
+ * cuelgan de ellos. Espejo de `compare::ObjectKind`.
+ *
+ * Va aparte de `CompareObject` porque ese es el que entiende `badges.ts` (ícono y nombre de los
+ * objetos del árbol); lo nuevo se resuelve en `compare-kinds.ts`.
+ */
+export type CompareKind =
+  | CompareObject
+  | "function"
+  | "procedure"
+  | "trigger"
+  | "policy"
+  /** El `ENABLE`/`FORCE ROW LEVEL SECURITY` de una tabla, aparte de sus políticas. */
+  | "rowSecurity"
+  /** Los permisos (`GRANT`) de un objeto. */
+  | "grant";
+
 /** De qué lado está lo que se encontró. */
 export type DiffStatus = "onlySource" | "onlyTarget" | "different";
 
 /** Qué parte de un objeto difiere. */
-export type DiffDetailKind = "column" | "constraint" | "index" | "member" | "property";
+export type DiffDetailKind =
+  | "column"
+  | "constraint"
+  | "index"
+  | "member"
+  | "privilege"
+  | "property";
 
 export interface DiffDetail {
   kind: DiffDetailKind;
@@ -40,7 +65,7 @@ export interface DiffDetail {
 }
 
 export interface DiffEntry {
-  kind: CompareObject;
+  kind: CompareKind;
   name: string;
   status: DiffStatus;
   /** El objeto entero de cada lado, para mostrarlos enfrentados. */
@@ -71,7 +96,7 @@ export type SyncRisk = "safe" | "review" | "destructive";
 export type SyncAction = "create" | "alter" | "drop";
 
 export interface SyncStatement {
-  object: CompareObject;
+  object: CompareKind;
   /** Objeto al que pertenece, el mismo nombre con el que aparece en el informe. */
   name: string;
   action: SyncAction;
@@ -121,3 +146,91 @@ export const schemaCompareFile = (path: string, target: CompareSide) =>
 /** Los esquemas de una base, para elegir contra cuál comparar sin desplegar el árbol. */
 export const schemaNames = (id: string, database: string) =>
   invoke<string[]>("schema_names", { id, database });
+
+// --- Comparación de datos -------------------------------------------------------------------------
+
+/** Una tabla de un lado de la comparación de datos. */
+export interface DataSide {
+  id: string;
+  database: string;
+  schema: string;
+  table: string;
+}
+
+/**
+ * Una diferencia entre las dos tablas. Los valores son `string | null`: `null` es el NULL de la base,
+ * distinto de la cadena vacía. `changed` son posiciones dentro de `DataLayout.columns`.
+ */
+export type DataRowDiff =
+  | { kind: "onlySource"; key: string[]; values: (string | null)[] }
+  | { kind: "onlyTarget"; key: string[]; values: (string | null)[] }
+  | {
+      kind: "different";
+      key: string[];
+      source: (string | null)[];
+      target: (string | null)[];
+      changed: number[];
+    };
+
+export interface DataLayout {
+  keyColumns: string[];
+  /** Las columnas comparadas que no son la clave, en el orden de `values`. */
+  columns: string[];
+  /** Existen de un solo lado o las calcula el servidor: no se comparan. */
+  skipped: string[];
+  keyGenerated: boolean;
+}
+
+export interface DataCounts {
+  onlySource: number;
+  onlyTarget: number;
+  different: number;
+  equal: number;
+}
+
+export type DataAction = "insert" | "update" | "delete";
+
+export interface DataStatement {
+  action: DataAction;
+  key: string[];
+  risk: SyncRisk;
+  sql: string;
+}
+
+export interface DataComparison {
+  source: string;
+  target: string;
+  layout: DataLayout;
+  rows: DataRowDiff[];
+  counts: DataCounts;
+  /** Había más diferencias que `maxDiffs`: el informe y el script están incompletos. */
+  truncated: boolean;
+  maxDiffs: number;
+  statements: DataStatement[];
+  warnings: string[];
+}
+
+export type DataCompareEvent = { type: "progress"; sourceRows: number; targetRows: number };
+
+/**
+ * Compara el contenido de dos tablas. Igual que el esquema, no se aplica nada desde acá: el script
+ * se copia o se abre en una consulta contra el destino. `requestId` sirve para `dataCompareCancel`.
+ */
+export const dataCompare = (
+  source: DataSide,
+  target: DataSide,
+  requestId: string,
+  channel: Channel<DataCompareEvent>,
+  maxDiffs?: number,
+) =>
+  invoke<DataComparison>("data_compare", {
+    source,
+    target,
+    maxDiffs: maxDiffs ?? null,
+    requestId,
+    channel,
+  });
+
+/** Aborta una comparación de datos en curso, en los dos servidores. */
+export const dataCompareCancel = (requestId: string) =>
+  invoke<void>("data_compare_cancel", { requestId });

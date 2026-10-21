@@ -1,5 +1,6 @@
 <script lang="ts">
   import Alert from "./Alert.svelte";
+  import AuditDialog from "./AuditDialog.svelte";
   import Confirm from "./Confirm.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
@@ -27,6 +28,7 @@
   let error = $state<string | null>(null);
   let onlyThisServer = $state(true);
   let confirmClear = $state(false);
+  let auditOpen = $state(false);
   /** La entrada elegida: se ve entera abajo, antes de decidir si se trae al editor. */
   let selectedId = $state<number | null>(null);
   const selected = $derived(entries.find((entry) => entry.id === selectedId) ?? null);
@@ -125,6 +127,15 @@
       <input type="checkbox" bind:checked={onlyThisServer} disabled={search.trim() !== ""} />
       Solo este servidor
     </label>
+
+    <button
+      class="btn btn-sm btn-ghost"
+      title="Filtrar por servidor, base, fechas y origen, y exportar a CSV o JSON"
+      onclick={() => (auditOpen = true)}
+    >
+      <Icon name="clock" size={11} />
+      Auditoría…
+    </button>
 
     <button class="btn btn-sm btn-danger-ghost" onclick={() => (confirmClear = true)}>
       <Icon name="trash" size={11} />
@@ -227,4 +238,8 @@
     }}
     onclose={() => (confirmClear = false)}
   />
+{/if}
+
+{#if auditOpen}
+  <AuditDialog onclose={() => (auditOpen = false)} />
 {/if}

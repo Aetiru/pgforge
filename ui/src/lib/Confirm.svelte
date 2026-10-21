@@ -2,6 +2,7 @@
   import type { Snippet } from "svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
+  import { typedMatches } from "./statement-risk";
 
   /**
    * La confirmación de una acción que no se deshace.
@@ -17,6 +18,7 @@
     danger = true,
     busy = false,
     error = null,
+    requireText = undefined,
     onconfirm,
     onclose,
     children = undefined,
@@ -28,11 +30,19 @@
     danger?: boolean;
     busy?: boolean;
     error?: string | null;
+    /**
+     * Si viene, el botón queda apagado hasta escribir exactamente este texto. Es la confirmación
+     * escalonada de producción: apretar «Aceptar» de memoria no alcanza.
+     */
+    requireText?: string;
     onconfirm: () => void;
     onclose: () => void;
     /** Opciones extra del comando: van debajo del texto y arriba del error. */
     children?: Snippet;
   } = $props();
+
+  let typed = $state("");
+  const allowed = $derived(requireText === undefined || typedMatches(typed, requireText));
 </script>
 
 <Modal {title} size="sm" {busy} {onclose}>
@@ -40,6 +50,23 @@
 
   {#if children}
     <div class="mt-3">{@render children()}</div>
+  {/if}
+
+  {#if requireText !== undefined}
+    <label class="mt-3 block">
+      <span class="label">Para continuar, escribí <strong class="select-text">{requireText}</strong></span>
+      <input
+        class="field mt-1 w-full font-mono"
+        bind:value={typed}
+        autocomplete="off"
+        spellcheck="false"
+        aria-label="Nombre del servidor"
+        data-autofocus
+        onkeydown={(event) => {
+          if (event.key === "Enter" && allowed && !busy) onconfirm();
+        }}
+      />
+    </label>
   {/if}
 
   {#if error}
@@ -50,8 +77,8 @@
     <button class="btn ml-auto" disabled={busy} onclick={onclose}>Cancelar</button>
     <button
       class="btn {danger ? 'btn-danger' : 'btn-primary'}"
-      disabled={busy}
-      data-autofocus
+      disabled={busy || !allowed}
+      data-autofocus={requireText === undefined ? true : undefined}
       onclick={onconfirm}
     >
       {#if busy}<span class="spinner"></span>{/if}

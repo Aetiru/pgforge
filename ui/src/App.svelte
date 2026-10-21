@@ -4,6 +4,7 @@
   import Confirm from "./lib/Confirm.svelte";
   import CompareDialog from "./lib/CompareDialog.svelte";
   import ComparePanel from "./lib/ComparePanel.svelte";
+  import MigrationsPanel from "./lib/MigrationsPanel.svelte";
   import ConnectionDialog from "./lib/ConnectionDialog.svelte";
   import GroupDialog from "./lib/GroupDialog.svelte";
   import ImportServersDialog from "./lib/ImportServersDialog.svelte";
@@ -21,6 +22,8 @@
   import Modal from "./lib/Modal.svelte";
   import Palette from "./lib/Palette.svelte";
   import Preferences from "./lib/Preferences.svelte";
+  import ShortcutsDialog from "./lib/ShortcutsDialog.svelte";
+  import { shortcutStore } from "./lib/shortcuts.svelte";
   import SearchModal from "./lib/SearchModal.svelte";
   import Rail from "./lib/Rail.svelte";
   import LibraryPanel from "./lib/LibraryPanel.svelte";
@@ -30,6 +33,10 @@
   import TreePanel from "./lib/TreePanel.svelte";
   import UpdateDialog from "./lib/UpdateDialog.svelte";
   import { openCompare, CompareTab } from "./lib/compare.svelte";
+  import { openDataCompare, DataCompareTab } from "./lib/data-compare.svelte";
+  import DataCompareDialog from "./lib/DataCompareDialog.svelte";
+  import DataComparePanel from "./lib/DataComparePanel.svelte";
+  import { openMigrations, MigrationsTab } from "./lib/migrations.svelte";
   import { openConfig, ConfigTab } from "./lib/config.svelte";
   import { dock, INSPECTOR_DEFAULT, SIDEBAR_DEFAULT } from "./lib/dock.svelte";
   import { openMonitor, MonitorTab } from "./lib/monitor.svelte";
@@ -38,6 +45,7 @@
   import { openPermissionMatrix, PermissionMatrixTab } from "./lib/permission-matrix.svelte";
   import { openRoleCapabilities, RoleCapabilitiesTab } from "./lib/role-capabilities.svelte";
   import { environmentOf, guard } from "./lib/access.svelte";
+  import { RISK_LABEL } from "./lib/statement-risk";
   import { tabAccent } from "./lib/badges";
   import EnvFrame from "./lib/EnvFrame.svelte";
   import Breadcrumb from "./lib/Breadcrumb.svelte";
@@ -63,6 +71,7 @@
     workspaceDelete,
     type AppInfo,
     type CompareSide,
+    type DataSide,
     type ConnectionProfile,
     type Workspace,
   } from "./lib/ipc";
@@ -75,6 +84,8 @@
   let confirmDelete = $state<ConnectionProfile | null>(null);
   /** Esquema desde el que se pidió comparar; el otro lado lo elige el diálogo. */
   let compareSource = $state<CompareSide | null>(null);
+  /** Tabla desde la que se pidió comparar datos; la otra la elige el diálogo. */
+  let dataCompareSource = $state<DataSide | null>(null);
   /**
    * Pestaña que se quiere cerrar con una transacción abierta. La pregunta va acá y no en
    * `QueryTab.dispose()`, que corre cuando la pestaña ya se cerró y no puede preguntar nada.
@@ -162,15 +173,19 @@
   let treeMenu = $state(false);
   let banner = $state<string | null>(null);
   let preferences = $state(false);
+  /** La chuleta de atajos (F1 de fábrica; reasignable). */
+  let shortcutsOpen = $state(false);
   const TAB_ICON: Record<TabKind, IconName> = {
     query: "sql",
     data: "table",
     erd: "diagram",
     compare: "compare",
+    dataCompare: "compare",
     monitor: "chart",
     config: "sliders",
     permissionMatrix: "role",
     roleCapabilities: "role",
+    migrations: "sql",
   };
 
   $effect(() => {
@@ -484,7 +499,7 @@
   }
 
   function onKeydown(event: KeyboardEvent) {
-    // `F2` no lleva `Ctrl`, así que se atiende aparte y antes de la guarda de abajo. Si algo con el
+    // `F2` es fijo (no está en la tabla reasignable), así que se atiende aparte y antes. Si algo con el
     // foco ya lo atendió —el árbol renombra la carpeta o el servidor elegido, ver `TreePanel`—, ese
     // manejador corrió primero en la fase de burbuja y ya llamó a `preventDefault()`: se respeta y
     // no se abren las dos cosas a la vez.
@@ -496,46 +511,39 @@
       return;
     }
 
-    if (!(event.ctrlKey || event.metaKey)) return;
-
-    switch (event.key.toLowerCase()) {
-      case "b":
-        event.preventDefault();
-        dock.toggleSidebar();
-        break;
-      case "i":
-        // El inspector es el antiguo panel de Detalle. Se pliega porque contra una pantalla de
-        // portátil, mirar el árbol y escribir SQL a la vez ya se lleva todo el ancho.
-        event.preventDefault();
-        dock.toggleInspector();
-        break;
-      case "k":
-        // La misma tecla abre y cierra: es lo que uno intenta cuando se abrió sin querer.
-        event.preventDefault();
-        paletteOpen = !paletteOpen;
-        break;
-      case "p":
-        // A diferencia de Ctrl+K, esta pregunta al servidor —no solo lo que el árbol ya trajo—, así
-        // que hace falta contra qué base preguntar: la misma que usaría "Nueva consulta".
-        if (!event.shiftKey) return;
-        event.preventDefault();
+    // Las combinaciones salen de `shortcutStore` (reasignables), no de teclas escritas acá. La
+    // tabla va por id y no por `switch` porque ahora una misma tecla puede estar en cualquier
+    // atajo, y lo que no coincide con ninguno se deja pasar sin tocar.
+    const actions: Record<string, () => void> = {
+      "app.sidebar": () => dock.toggleSidebar(),
+      // El inspector es el antiguo panel de Detalle. Se pliega porque contra una pantalla de
+      // portátil, mirar el árbol y escribir SQL a la vez ya se lleva todo el ancho.
+      "app.inspector": () => dock.toggleInspector(),
+      // La misma tecla abre y cierra: es lo que uno intenta cuando se abrió sin querer.
+      "app.palette": () => (paletteOpen = !paletteOpen),
+      // A diferencia de la paleta, esta pregunta al servidor —no solo lo que el árbol ya trajo—,
+      // así que hace falta contra qué base preguntar: la misma que usaría "Nueva consulta".
+      "app.search": () => {
         if (searchOpen) searchOpen = false;
         else if (explorer.selected && queryTarget) searchOpen = true;
-        break;
-      case "q":
-        event.preventDefault();
-        newQuery();
-        break;
-      case "s":
-        // Con el editor enfocado lo atiende su propio keymap; esto cubre el resto de la ventana,
-        // donde `Ctrl+S` si no lo tomaría el navegador que hay debajo de la ventana de Tauri.
-        event.preventDefault();
-        if (tabs.current instanceof QueryTab) saveQueryTab(tabs.current, event.shiftKey);
-        break;
-      case "o":
-        event.preventDefault();
-        openSqlDialog();
-        break;
+      },
+      "app.newQuery": () => newQuery(),
+      // Con el editor enfocado lo atiende su propio keymap; esto cubre el resto de la ventana,
+      // donde `Ctrl+S` si no lo tomaría el navegador que hay debajo de la ventana de Tauri.
+      "app.save": () => {
+        if (tabs.current instanceof QueryTab) saveQueryTab(tabs.current, false);
+      },
+      "app.saveAs": () => {
+        if (tabs.current instanceof QueryTab) saveQueryTab(tabs.current, true);
+      },
+      "app.open": () => void openSqlDialog(),
+      "app.shortcuts": () => (shortcutsOpen = !shortcutsOpen),
+    };
+    for (const [id, run] of Object.entries(actions)) {
+      if (!shortcutStore.matches(event, id)) continue;
+      event.preventDefault();
+      run();
+      return;
     }
   }
 
@@ -549,6 +557,12 @@
 
   function showConfig() {
     if (contextServer) openConfig(contextServer);
+  }
+
+  function showMigrations() {
+    if (!contextServer) return;
+    const profile = profileOf(contextServer);
+    if (profile) void openMigrations(profile.id, queryTarget?.database ?? profile.database);
   }
 
   /** Lo que dice la barra de estado: dónde está parado el usuario ahora mismo. */
@@ -774,6 +788,7 @@
                 ondata={openData}
                 onerd={openErd}
                 oncompare={(source) => (compareSource = source)}
+                oncomparedata={(source) => (dataCompareSource = source)}
                 onmatrix={openPermissionMatrix}
                 onrolecapabilities={openRoleCapabilities}
               />
@@ -939,7 +954,7 @@
             disabled={queryTarget === null}
             aria-label="Nueva consulta"
             title={queryTarget
-              ? `Nueva consulta contra ${queryTarget.database} (Ctrl+Q)`
+              ? `Nueva consulta contra ${queryTarget.database} (${shortcutStore.label("app.newQuery")})`
               : "Elegí una base o un objeto de un servidor conectado"}
             onclick={newQuery}
           >
@@ -954,7 +969,7 @@
             disabled={sqlTarget === null}
             aria-label="Abrir un archivo SQL"
             title={sqlTarget
-              ? `Abrir un archivo .sql contra ${sqlTarget.database} (Ctrl+O)`
+              ? `Abrir un archivo .sql contra ${sqlTarget.database} (${shortcutStore.label("app.open")})`
               : "Elegí una base o un objeto de un servidor conectado"}
             onclick={openSqlDialog}
           >
@@ -997,8 +1012,8 @@
             aria-label="Inspector"
             aria-pressed={dock.inspectorOpen}
             title={dock.inspectorOpen
-              ? "Ocultar el inspector (Ctrl+I)"
-              : "Mostrar el inspector (Ctrl+I)"}
+              ? shortcutStore.hint("Ocultar el inspector", "app.inspector")
+              : shortcutStore.hint("Mostrar el inspector", "app.inspector")}
             onclick={() => dock.toggleInspector()}
           >
             <Icon name="compass" size={13} />
@@ -1023,6 +1038,10 @@
           <ErdPanel {tab} />
         {:else if tab instanceof CompareTab}
           <ComparePanel {tab} />
+        {:else if tab instanceof DataCompareTab}
+          <DataComparePanel {tab} />
+        {:else if tab instanceof MigrationsTab}
+          <MigrationsPanel {tab} />
         {:else if tab instanceof PermissionMatrixTab}
           <PermissionMatrixPanel {tab} />
         {:else if tab instanceof RoleCapabilitiesTab}
@@ -1134,7 +1153,7 @@
           <button
             class="btn btn-ghost btn-icon ml-auto"
             aria-label="Ocultar el inspector"
-            title="Ocultar el inspector (Ctrl+I)"
+            title={shortcutStore.hint("Ocultar el inspector", "app.inspector")}
             onclick={() => dock.setInspector(false)}
           >
             <Icon name="close" size={11} />
@@ -1151,6 +1170,7 @@
             ondata={openData}
             onerd={openErd}
             oncompare={(source) => (compareSource = source)}
+            oncomparedata={(source) => (dataCompareSource = source)}
             onmatrix={openPermissionMatrix}
             onrolecapabilities={openRoleCapabilities}
           />
@@ -1225,6 +1245,8 @@
     onnewserver={() => (dialog = { profile: null })}
     onmonitor={showMonitor}
     onconfig={showConfig}
+    onshortcuts={() => (shortcutsOpen = true)}
+    onmigrations={showMigrations}
     onconnect={connectById}
     onclose={() => (paletteOpen = false)}
   />
@@ -1264,12 +1286,30 @@
   />
 {/if}
 
+{#if dataCompareSource}
+  <DataCompareDialog
+    source={dataCompareSource}
+    onclose={() => (dataCompareSource = null)}
+    oncompare={(source, target) => void openDataCompare(source, target)}
+  />
+{/if}
+
 {#if updates.showing && info}
   <UpdateDialog current={info.version} onclose={() => (updates.showing = false)} />
 {/if}
 
 {#if preferences}
-  <Preferences onclose={() => (preferences = false)} />
+  <Preferences
+    onclose={() => (preferences = false)}
+    onshortcuts={() => {
+      preferences = false;
+      shortcutsOpen = true;
+    }}
+  />
+{/if}
+
+{#if shortcutsOpen}
+  <ShortcutsDialog onclose={() => (shortcutsOpen = false)} />
 {/if}
 
 {#if importDialog}
@@ -1381,14 +1421,29 @@
   detrás con todo lo que el usuario escribió.
 -->
 {#if guard.pending}
-  <Confirm
-    title="Modificar producción"
-    message="«{guard.pending.profile.name}» está marcado como servidor de producción. {guard.pending
-      .action}"
-    confirmLabel="Modificar igual"
-    onconfirm={() => guard.answer(true)}
-    onclose={() => guard.answer(false)}
-  />
+  {#key guard.pending}
+    {@const pending = guard.pending}
+    {@const strong = pending.risks.length > 0}
+    <Confirm
+      title={strong ? "Operación destructiva en producción" : "Modificar producción"}
+      message="«{pending.profile.name}» está marcado como servidor de producción. {pending.action}"
+      confirmLabel={strong ? "Ejecutar igual" : "Modificar igual"}
+      requireText={strong ? pending.profile.name : undefined}
+      onconfirm={() => guard.answer(true)}
+      onclose={() => guard.answer(false)}
+    >
+      {#if strong}
+        <ul class="max-h-40 space-y-1 overflow-auto text-xs">
+          {#each pending.risks as risk (risk.index + risk.kind)}
+            <li>
+              <span class="font-medium text-red-600 dark:text-red-400">{RISK_LABEL[risk.kind]}</span>
+              <code class="select-text block truncate font-mono text-zinc-500">{risk.statement}</code>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </Confirm>
+  {/key}
 {/if}
 
 <Toast />

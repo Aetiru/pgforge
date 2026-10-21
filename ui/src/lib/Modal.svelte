@@ -29,7 +29,7 @@
   }: {
     title: string;
     subtitle?: string;
-    size?: "sm" | "md" | "lg" | "xl";
+    size?: "sm" | "md" | "lg" | "xl" | "2xl";
     busy?: boolean;
     onclose: () => void;
     children: Snippet;
@@ -41,6 +41,7 @@
     md: "max-w-lg",
     lg: "max-w-2xl",
     xl: "max-w-3xl",
+    "2xl": "max-w-6xl",
   } as const;
 
   let panel = $state<HTMLDivElement | null>(null);

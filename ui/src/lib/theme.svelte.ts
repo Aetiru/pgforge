@@ -1,5 +1,5 @@
 /**
- * Tema claro u oscuro.
+ * Tema claro, oscuro o «Papel» (claro de fondos crema).
  *
  * Por omisión sigue al sistema, que es lo que espera cualquiera que ya eligió su preferencia en
  * Windows. Pero un cliente de base de datos se usa horas seguidas y muchas veces junto a otras
@@ -9,8 +9,8 @@
  * Tailwind, CodeMirror y los gráficos lean un único atributo en vez de repetir la decisión.
  */
 
-export type ThemePreference = "system" | "light" | "dark";
-export type ResolvedTheme = "light" | "dark";
+export type ThemePreference = "system" | "light" | "dark" | "paper";
+export type ResolvedTheme = "light" | "dark" | "paper";
 
 const KEY = "pgforge.theme";
 
@@ -40,7 +40,7 @@ function get(): string | null {
 
 function stored(): ThemePreference {
   const value = get();
-  return value === "light" || value === "dark" || value === "system" ? value : "system";
+  return value === "light" || value === "dark" || value === "paper" || value === "system" ? value : "system";
 }
 
 function resolve(preference: ThemePreference): ResolvedTheme {
@@ -97,9 +97,9 @@ class Theme {
     else delete document.documentElement.dataset.contrast;
   }
 
-  /** Recorre los tres estados en orden; es lo que hace el botón de la barra. */
+  /** Recorre los estados en orden; es lo que hace el botón de la barra. */
   cycle() {
-    const order: ThemePreference[] = ["system", "light", "dark"];
+    const order: ThemePreference[] = ["system", "light", "dark", "paper"];
     this.set(order[(order.indexOf(this.preference) + 1) % order.length]);
   }
 }

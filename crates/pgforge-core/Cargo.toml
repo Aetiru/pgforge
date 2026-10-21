@@ -37,6 +37,8 @@ rustls-pki-types = "1.15.1"
 russh = { version = "0.62", default-features = false, features = ["ring", "flate2", "rsa"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+# Huella de las migraciones guardadas. Ya estaba en el árbol por debajo de russh.
+sha2 = "0.10.9"
 thiserror = "2.0.19"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util", "fs"] }
 tokio-postgres = "0.7.13"

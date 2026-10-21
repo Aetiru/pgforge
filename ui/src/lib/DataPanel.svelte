@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ColumnFilterDialog from "./ColumnFilterDialog.svelte";
+  import { addToWhere, type FilterOp } from "./column-filter";
   import { untrack } from "svelte";
   import { environmentOf, readOnlyReason } from "./access.svelte";
   import { envBar, envLook } from "./badges";
@@ -172,6 +174,22 @@
       guardar una fila cambia datos, y saber dónde no puede depender de recordar de qué servidor se
       abrió la grilla. */
   const environment = $derived(environmentOf(tab.profileId));
+
+  /** El filtro por columna que se está armando, o `null` si el diálogo está cerrado. */
+  let columnFilter = $state<{ column: string; preset?: { op: FilterOp; value?: string } } | null>(
+    null,
+  );
+
+  function askColumnFilter(column: Column<Row>, preset?: { op: FilterOp; value?: string }) {
+    if (pendingBlocks !== null || !column.orderBy) return;
+    columnFilter = { column: column.orderBy, preset };
+  }
+
+  /** Suma la condición al `WHERE` escrito y vuelve a leer, igual que Enter en la caja. */
+  function applyColumnFilter(sql: string) {
+    draftFilter = addToWhere(draftFilter, sql);
+    tab.applyFilter(draftFilter);
+  }
 
   /** La fila sobre la que actúan los botones de la barra. */
   let selected = $state<number | null>(null);
@@ -427,6 +445,7 @@
         onnearend={() => tab.moreAuto()}
         sortable={pendingBlocks === null}
         serverSort
+        onfilter={pendingBlocks === null ? askColumnFilter : undefined}
         onsort={(column, descending) => tab.setOrder(column?.orderBy ?? null, descending)}
         rowClass={(row) =>
           row.deleted
@@ -482,4 +501,15 @@
       </button>
     {/snippet}
   </Modal>
+{/if}
+
+{#if columnFilter && shape}
+  <ColumnFilterDialog
+    column={columnFilter.column}
+    columns={shape.columns.map((item) => item.name)}
+    types={shape.columns.map((item) => item.typeName)}
+    preset={columnFilter.preset}
+    onapply={applyColumnFilter}
+    onclose={() => (columnFilter = null)}
+  />
 {/if}

@@ -21,6 +21,7 @@
   const KIND_ICON: Record<TaskKind, IconName> = {
     maintenance: "gauge",
     index: "index",
+    migration: "sql",
     backup: "save",
     restore: "undo",
     export: "download",

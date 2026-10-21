@@ -8,6 +8,7 @@ import {
   type MonitorEvent,
   type Snapshot,
 } from "./ipc";
+import { alerts } from "./alerts.svelte";
 import { Tab, tabs } from "./tabs.svelte";
 
 /** Un punto de las series temporales del dashboard. */
@@ -80,6 +81,7 @@ class MonitorStore {
       this.channel.onmessage = () => {};
       this.channel = null;
     }
+    if (previous) alerts.reset(previous);
     this.profileId = null;
     this.database = null;
     this.snapshot = null;
@@ -109,6 +111,16 @@ class MonitorStore {
 
     const history = this.history.concat(sample);
     this.history = history.length > HISTORY_LIMIT ? history.slice(-HISTORY_LIMIT) : history;
+
+    // Solo mientras este monitoreo está abierto: no hay vigilancia en segundo plano. Un fallo de
+    // las alertas no puede cortar la muestra que ya se aplicó arriba.
+    if (this.profileId) {
+      try {
+        alerts.observe(this.profileId, metrics);
+      } catch (error) {
+        console.error("alertas del monitoreo", error);
+      }
+    }
   }
 
   private async configure(options: { intervalMs?: number; paused?: boolean; filter?: ActivityFilter }) {

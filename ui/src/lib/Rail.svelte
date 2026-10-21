@@ -18,9 +18,10 @@
     system: "Tema: el del sistema",
     light: "Tema: claro",
     dark: "Tema: oscuro",
+    paper: "Tema: papel",
   } as const;
 
-  const THEME_ICON = { system: "auto", light: "sun", dark: "moon" } as const;
+  const THEME_ICON = { system: "auto", light: "sun", dark: "moon", paper: "edit" } as const;
 </script>
 
 <!--

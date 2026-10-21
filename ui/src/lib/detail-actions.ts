@@ -57,6 +57,7 @@ export type DetailActionKind =
   | "openQuery"
   | "openErd"
   | "openCompare"
+  | "compareData"
   | "openPermissionMatrix"
   | "openRoleCapabilities"
   | "export"
@@ -299,6 +300,14 @@ export function headerActions(context: ActionContext): DetailAction[] {
       { kind: "export", icon: "download", label: "Exportar", title: `Exporta ${node.label} a un archivo con COPY` },
       { kind: "import", icon: "upload", label: "Importar", title: `Importa un archivo a ${node.label} con COPY`, guarded: true },
     );
+    if (schema) {
+      actions.push({
+        kind: "compareData",
+        icon: "compare",
+        label: "Comparar datos",
+        title: `Compara las filas de ${node.label} contra las de otra tabla y arma el SQL para igualarlas`,
+      });
+    }
   }
   if (flags.isDatabase && node) {
     actions.push(

@@ -8,7 +8,11 @@
 //! se copia o se abre en una pestaña de consulta; quien lo corre es el usuario, mirándolo, contra
 //! el servidor que elija. Por eso cada sentencia viaja con su [`Risk`]: lo que borra datos se ve
 //! distinto de lo que agrega una columna, y el orden en que salen es el orden en que se pueden
-//! correr —tipos, secuencias, tablas, restricciones, índices, vistas, y al final lo destructivo—.
+//! correr —tipos, secuencias, funciones, tablas, restricciones, índices, vistas, disparadores,
+//! políticas, permisos, y al final lo destructivo—. Las funciones van antes que las tablas porque un
+//! `DEFAULT` o un índice por expresión pueden llamarlas; un disparador, después de la función que
+//! ejecuta y de la tabla en que cuelga; y los permisos al final de lo que crea, cuando ya existe
+//! todo sobre lo que se otorgan.
 //!
 //! Lo que PostgreSQL no puede hacer con un `ALTER` no se inventa: va a [`SyncPlan::warnings`] con
 //! el motivo. Cambiar el tipo base de un dominio o reordenar los valores de una enumeración exige
@@ -20,12 +24,17 @@ use serde::Serialize;
 use crate::ddl::quote_ident;
 use crate::ddl::table::Identity;
 
-use super::diff::{retarget, same_view_body, ObjectKind};
-use super::pair;
+use super::acl::{self, grantee_sql, signature};
+use super::diff::{
+    acl_key, policy_key, retarget, same_expression, same_routine, same_sql, same_view_body,
+    trigger_key, ObjectKind,
+};
 use super::render::{self, qualified};
 use super::snapshot::{
-    Column, NamedDef, RelationKind, SchemaSnapshot, Sequence, Table, TypeDef, TypeKind, View,
+    AclKind, Column, Function, FunctionKind, NamedDef, RelationKind, SchemaSnapshot, Sequence,
+    Table, TriggerEnabled, TypeDef, TypeKind, View,
 };
+use super::{pair, pair_by};
 
 /// Qué hace la sentencia con lo que ya existe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -73,6 +82,11 @@ pub struct SyncPlan {
 
 struct Builder<'a> {
     plan: SyncPlan,
+    /// Versión mayor del servidor de destino: el script se escribe para ese, no para el origen.
+    target_major: i32,
+    /// Relaciones que el script borra y vuelve a crear (una vista materializada cuyo cuerpo
+    /// cambió). Al recrearse pierden sus permisos, así que ya no se parte de los que tenían.
+    recreated: Vec<String>,
     /// Esquema del origen: de ahí salen las definiciones que hay que reescribir.
     from: &'a str,
     /// Esquema del destino: contra ese se escribe todo el script.
@@ -113,15 +127,21 @@ impl Builder<'_> {
 pub fn plan(source: &SchemaSnapshot, target: &SchemaSnapshot) -> SyncPlan {
     let mut builder = Builder {
         plan: SyncPlan::default(),
+        target_major: target.version.major(),
+        recreated: Vec::new(),
         from: &source.schema,
         to: &target.schema,
     };
 
     types(&mut builder, source, target);
     sequences(&mut builder, source, target);
+    functions(&mut builder, source, target);
     tables(&mut builder, source, target);
     constraints_and_indexes(&mut builder, source, target);
     views(&mut builder, source, target);
+    triggers(&mut builder, source, target);
+    policies(&mut builder, source, target);
+    grants(&mut builder, source, target);
     drops(&mut builder, source, target);
 
     builder.plan
@@ -766,6 +786,7 @@ fn views(builder: &mut Builder, source: &SchemaSnapshot, target: &SchemaSnapshot
                         );
                         let sql = create(builder, false);
                         builder.push(kind, &name, Action::Create, Risk::Safe, sql, None);
+                        builder.recreated.push(name.clone());
                     } else {
                         let sql = create(builder, true);
                         builder.push(
@@ -812,12 +833,436 @@ fn views(builder: &mut Builder, source: &SchemaSnapshot, target: &SchemaSnapshot
     }
 }
 
+fn routine_object(function: &Function) -> ObjectKind {
+    match function.kind {
+        FunctionKind::Function => ObjectKind::Function,
+        FunctionKind::Procedure => ObjectKind::Procedure,
+    }
+}
+
+/// Funciones y procedimientos, emparejados por firma.
+///
+/// Una función cambiada sale como `CREATE OR REPLACE` y se marca `Review`: reemplazarla cambia lo
+/// que hacen todos los que la llaman desde la próxima ejecución, y falla si cambia el tipo de lo que
+/// devuelve o el nombre de un argumento —eso se avisa en la nota, porque la única salida es
+/// borrarla y recrearla—. Borrar una que sobra es `Destructive` (ver [`drops`]).
+fn functions(builder: &mut Builder, source: &SchemaSnapshot, target: &SchemaSnapshot) {
+    for (key, left, right) in pair_by(
+        &source.functions,
+        &target.functions,
+        |f| signature(&f.name, &f.arguments, &source.schema),
+        |f| signature(&f.name, &f.arguments, &target.schema),
+    ) {
+        let Some(left) = left else { continue };
+        let object = routine_object(left);
+
+        match right {
+            None => {
+                let sql = builder.sql(&render::create_function(left));
+                // Una función SQL se revisa contra el catálogo al crearla: si nombra una tabla que
+                // el script crea más abajo, falla. Las de plpgsql no.
+                let note = left
+                    .definition
+                    .to_ascii_lowercase()
+                    .contains("language sql")
+                    .then_some(
+                        "si el cuerpo nombra objetos que el script crea más abajo, correr antes \
+                         SET check_function_bodies = off",
+                    );
+                builder.push(object, &key, Action::Create, Risk::Safe, sql, note);
+            }
+            Some(right) => {
+                if !same_routine(
+                    &left.definition,
+                    &right.definition,
+                    builder.from,
+                    builder.to,
+                ) {
+                    let sql = builder.sql(&render::create_function(left));
+                    builder.push(
+                        object,
+                        &key,
+                        Action::Alter,
+                        Risk::Review,
+                        sql,
+                        Some(
+                            "cambia lo que hace para todo el que la llame; CREATE OR REPLACE falla \
+                             si cambia el tipo que devuelve o el nombre de un argumento, y ahí hay \
+                             que borrarla y crearla de nuevo",
+                        ),
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Crea un disparador del origen en el destino y, si no está en el estado de fábrica, lo deja así.
+fn create_trigger(
+    builder: &mut Builder,
+    key: &str,
+    trigger: &super::snapshot::Trigger,
+    on_view: bool,
+) {
+    let sql = format!(
+        "{};",
+        builder.sql(trigger.definition.trim_end().trim_end_matches(';'))
+    );
+    builder.push(
+        ObjectKind::Trigger,
+        key,
+        Action::Create,
+        Risk::Review,
+        sql,
+        Some("corre en cada escritura que le corresponda desde que se crea"),
+    );
+    if trigger.enabled != TriggerEnabled::Origin {
+        set_trigger_state(builder, key, trigger, on_view);
+    }
+}
+
+fn set_trigger_state(
+    builder: &mut Builder,
+    key: &str,
+    trigger: &super::snapshot::Trigger,
+    on_view: bool,
+) {
+    // PostgreSQL no acepta `ENABLE`/`DISABLE TRIGGER` sobre una vista.
+    if on_view {
+        builder.warn(format!(
+            "el disparador {key} está en una vista y su estado cambia: ALTER TABLE no lo admite \
+             sobre vistas, hay que volver a crearlo en el estado que corresponde"
+        ));
+        return;
+    }
+    builder.push(
+        ObjectKind::Trigger,
+        key,
+        Action::Alter,
+        Risk::Review,
+        render::alter_trigger_state(builder.to, trigger),
+        None,
+    );
+}
+
+/// Disparadores, después de las funciones que ejecutan y de las tablas en que cuelgan.
+///
+/// Uno cuyo texto cambió no se puede alterar: se borra y se vuelve a crear, con el mismo criterio
+/// que una restricción. (`CREATE OR REPLACE TRIGGER` existe desde PG 14, pero el script tiene que
+/// servir también para destinos de 13.)
+fn triggers(builder: &mut Builder, source: &SchemaSnapshot, target: &SchemaSnapshot) {
+    for (key, left, right) in pair_by(&source.triggers, &target.triggers, trigger_key, trigger_key)
+    {
+        let Some(left) = left else { continue };
+        let on_view = source.views.iter().any(|v| v.name == left.table);
+
+        match right {
+            None => create_trigger(builder, &key, left, on_view),
+            Some(right) => {
+                if !same_sql(
+                    &left.definition,
+                    &right.definition,
+                    builder.from,
+                    builder.to,
+                ) {
+                    builder.push(
+                        ObjectKind::Trigger,
+                        &key,
+                        Action::Drop,
+                        Risk::Destructive,
+                        render::drop_trigger(builder.to, left),
+                        Some("el disparador cambió: se borra y se vuelve a crear"),
+                    );
+                    create_trigger(builder, &key, left, on_view);
+                } else if left.enabled != right.enabled {
+                    set_trigger_state(builder, &key, left, on_view);
+                }
+            }
+        }
+    }
+}
+
+/// Una política del origen con sus expresiones escritas contra el esquema del destino.
+fn retargeted(builder: &Builder, policy: &super::snapshot::Policy) -> super::snapshot::Policy {
+    super::snapshot::Policy {
+        using: policy.using.as_deref().map(|e| builder.sql(e)),
+        with_check: policy.with_check.as_deref().map(|e| builder.sql(e)),
+        ..policy.clone()
+    }
+}
+
+/// Políticas y, al final, el encendido de la seguridad por filas.
+///
+/// Las políticas van antes del `ENABLE`: con la seguridad encendida y sin ninguna política que lo
+/// permita, solo el dueño ve la tabla, y no hay motivo para dejarla así ni un instante.
+///
+/// `ALTER POLICY` cambia los roles y las dos expresiones. No cambia el comando ni si es permisiva, ni
+/// puede **quitar** una expresión; en esos casos la política se borra y se crea de nuevo.
+fn policies(builder: &mut Builder, source: &SchemaSnapshot, target: &SchemaSnapshot) {
+    for (key, left, right) in pair_by(&source.policies, &target.policies, policy_key, policy_key) {
+        let Some(left) = left else { continue };
+
+        let Some(right) = right else {
+            let sql = render::create_policy(builder.to, &retargeted(builder, left));
+            builder.push(
+                ObjectKind::Policy,
+                &key,
+                Action::Create,
+                Risk::Review,
+                sql,
+                Some("cambia qué filas ve o escribe cada rol"),
+            );
+            continue;
+        };
+
+        let same_kind = left.command == right.command && left.permissive == right.permissive;
+        let using_same = same_expression(&left.using, &right.using, builder.from, builder.to);
+        let check_same = same_expression(
+            &left.with_check,
+            &right.with_check,
+            builder.from,
+            builder.to,
+        );
+        if same_kind && left.roles == right.roles && using_same && check_same {
+            continue;
+        }
+
+        let loses_expression = (left.using.is_none() && right.using.is_some())
+            || (left.with_check.is_none() && right.with_check.is_some());
+        if same_kind && !loses_expression {
+            let expression = |same: bool, value: &Option<String>| {
+                if same {
+                    None
+                } else {
+                    value.as_deref().map(|e| builder.sql(e))
+                }
+            };
+            let sql = render::alter_policy(
+                builder.to,
+                left,
+                left.roles != right.roles,
+                expression(using_same, &left.using).as_deref(),
+                expression(check_same, &left.with_check).as_deref(),
+            );
+            builder.push(
+                ObjectKind::Policy,
+                &key,
+                Action::Alter,
+                Risk::Review,
+                sql,
+                Some("cambia qué filas ve o escribe cada rol"),
+            );
+        } else {
+            builder.push(
+                ObjectKind::Policy,
+                &key,
+                Action::Drop,
+                Risk::Destructive,
+                render::drop_policy(builder.to, left),
+                Some(
+                    "la política cambió de comando, de tipo o perdió una condición, y ALTER POLICY \
+                     no lo admite: se borra y se vuelve a crear",
+                ),
+            );
+            let sql = render::create_policy(builder.to, &retargeted(builder, left));
+            builder.push(
+                ObjectKind::Policy,
+                &key,
+                Action::Create,
+                Risk::Review,
+                sql,
+                None,
+            );
+        }
+    }
+
+    for table in &source.tables {
+        let (wanted, current) = (
+            super::diff::security_flags(source, &table.name),
+            super::diff::security_flags(target, &table.name),
+        );
+        let name = quote_ident(&table.name);
+        let qualified_table = qualified(builder.to, &table.name);
+
+        if wanted.0 != current.0 {
+            let (verb, note) = if wanted.0 {
+                (
+                    "ENABLE",
+                    "sin una política que lo permita, solo el dueño de la tabla ve filas",
+                )
+            } else {
+                (
+                    "DISABLE",
+                    "quita el filtro: todo rol con permiso sobre la tabla vuelve a ver todas las filas",
+                )
+            };
+            builder.push(
+                ObjectKind::RowSecurity,
+                &name,
+                Action::Alter,
+                Risk::Review,
+                format!("ALTER TABLE {qualified_table} {verb} ROW LEVEL SECURITY;"),
+                Some(note),
+            );
+        }
+        if wanted.1 != current.1 {
+            let verb = if wanted.1 { "FORCE" } else { "NO FORCE" };
+            builder.push(
+                ObjectKind::RowSecurity,
+                &name,
+                Action::Alter,
+                Risk::Review,
+                format!("ALTER TABLE {qualified_table} {verb} ROW LEVEL SECURITY;"),
+                Some("FORCE hace que las políticas valgan también para el dueño de la tabla"),
+            );
+        }
+    }
+}
+
+/// Los privilegios que el destino entiende. `MAINTAIN` nació en PostgreSQL 17: otorgarlo en un
+/// destino anterior falla, y la lista de privilegios de un `GRANT` no admite nada a medias.
+fn usable_privileges(builder: &mut Builder, key: &str, privileges: &[String]) -> Vec<String> {
+    let mut usable = Vec::new();
+    for privilege in privileges {
+        if privilege == "MAINTAIN" && builder.target_major < 17 {
+            builder.warn(format!(
+                "{key} tiene el permiso MAINTAIN en el origen, que PostgreSQL {} no conoce: no se \
+                 otorga",
+                builder.target_major
+            ));
+        } else {
+            usable.push(privilege.clone());
+        }
+    }
+    usable
+}
+
+/// Permisos, al final de lo que crea y antes de lo que borra.
+///
+/// De un objeto que el script crea se parte de lo que PostgreSQL le da de fábrica ([`acl::factory`]);
+/// de uno que ya existe, de los permisos que tiene el destino. Un `GRANT` y un `REVOKE` son siempre
+/// `Review`: ninguno pierde datos, pero ambos cambian quién puede hacer qué —uno puede abrir de más y
+/// el otro dejar sin acceso a una aplicación—, y el rol tiene que existir en el destino.
+fn grants(builder: &mut Builder, source: &SchemaSnapshot, target: &SchemaSnapshot) {
+    for (key, left, right) in pair_by(
+        &source.acls,
+        &target.acls,
+        |a| acl_key(a, &source.schema),
+        |a| acl_key(a, &target.schema),
+    ) {
+        let Some(left) = left else { continue };
+        let recreated = left.kind == AclKind::Table && builder.recreated.contains(&left.name);
+        let baseline = match right {
+            Some(right) if !recreated => right.grants.clone(),
+            _ => acl::factory(left.kind),
+        };
+
+        let arguments = left.arguments.as_deref().map(|a| builder.sql(a));
+        let object = render::acl_target(builder.to, left.kind, &left.name, arguments.as_deref());
+
+        for change in acl::changes(&left.grants, &baseline) {
+            let role = grantee_sql(&change.grantee);
+            let missing_role = (change.grantee != "PUBLIC").then(|| {
+                format!(
+                    "falla si el rol «{}» no existe en el destino",
+                    change.grantee
+                )
+            });
+
+            let grant = usable_privileges(builder, &key, &change.grant);
+            if !grant.is_empty() {
+                builder.push(
+                    ObjectKind::Grant,
+                    &key,
+                    Action::Alter,
+                    Risk::Review,
+                    format!("GRANT {} ON {object} TO {role};", grant.join(", ")),
+                    missing_role.as_deref(),
+                );
+            }
+            let grant_option = usable_privileges(builder, &key, &change.grant_option);
+            if !grant_option.is_empty() {
+                builder.push(
+                    ObjectKind::Grant,
+                    &key,
+                    Action::Alter,
+                    Risk::Review,
+                    format!(
+                        "GRANT {} ON {object} TO {role} WITH GRANT OPTION;",
+                        grant_option.join(", ")
+                    ),
+                    missing_role.as_deref(),
+                );
+            }
+            if !change.revoke.is_empty() {
+                builder.push(
+                    ObjectKind::Grant,
+                    &key,
+                    Action::Alter,
+                    Risk::Review,
+                    format!(
+                        "REVOKE {} ON {object} FROM {role};",
+                        change.revoke.join(", ")
+                    ),
+                    Some("puede dejar sin acceso a quien lo usaba"),
+                );
+            }
+            if !change.revoke_option.is_empty() {
+                builder.push(
+                    ObjectKind::Grant,
+                    &key,
+                    Action::Alter,
+                    Risk::Review,
+                    format!(
+                        "REVOKE GRANT OPTION FOR {} ON {object} FROM {role};",
+                        change.revoke_option.join(", ")
+                    ),
+                    None,
+                );
+            }
+        }
+    }
+}
+
 /// Todo lo que sobra en el destino, al final y junto.
 ///
 /// Va último por dos razones: es lo único que puede perder datos, y así el script se puede cortar
 /// ahí y correr solo la mitad que agrega. El orden interno es el inverso al de creación —vistas,
 /// tablas, secuencias, tipos—, porque lo que se borra primero es lo que depende de lo demás.
 fn drops(builder: &mut Builder, source: &SchemaSnapshot, target: &SchemaSnapshot) {
+    // Lo que cuelga de una tabla o vista que se queda: si la tabla también sobra, el `DROP TABLE` se
+    // lleva sus disparadores y políticas y no hace falta decirlo aparte. Van primero porque pueden
+    // usar funciones y vistas que se borran más abajo.
+    for trigger in &target.triggers {
+        let key = trigger_key(trigger);
+        let kept = source.tables.iter().any(|t| t.name == trigger.table)
+            || source.views.iter().any(|v| v.name == trigger.table);
+        if kept && !source.triggers.iter().any(|t| trigger_key(t) == key) {
+            builder.push(
+                ObjectKind::Trigger,
+                &key,
+                Action::Drop,
+                Risk::Destructive,
+                render::drop_trigger(builder.to, trigger),
+                Some("no existe en el origen"),
+            );
+        }
+    }
+    for policy in &target.policies {
+        let key = policy_key(policy);
+        let kept = source.tables.iter().any(|t| t.name == policy.table);
+        if kept && !source.policies.iter().any(|p| policy_key(p) == key) {
+            builder.push(
+                ObjectKind::Policy,
+                &key,
+                Action::Drop,
+                Risk::Destructive,
+                render::drop_policy(builder.to, policy),
+                Some("no existe en el origen: esas filas quedan visibles o no según las demás"),
+            );
+        }
+    }
+
     for view in &target.views {
         if !source.views.iter().any(|v| v.name == view.name) {
             let keyword = if view.materialized {
@@ -862,6 +1307,26 @@ fn drops(builder: &mut Builder, source: &SchemaSnapshot, target: &SchemaSnapshot
         }
     }
 
+    // Después de las vistas y tablas que pueden llamarlas, antes de los tipos que usan de argumento.
+    // Sin `CASCADE`: si algo que se queda todavía la usa, tiene que fallar y no llevárselo puesto.
+    for function in &target.functions {
+        let key = signature(&function.name, &function.arguments, &target.schema);
+        let kept = source
+            .functions
+            .iter()
+            .any(|f| signature(&f.name, &f.arguments, &source.schema) == key);
+        if !kept {
+            builder.push(
+                routine_object(function),
+                &key,
+                Action::Drop,
+                Risk::Destructive,
+                render::drop_function(builder.to, function),
+                Some("no existe en el origen: lo que la llame deja de funcionar"),
+            );
+        }
+    }
+
     for definition in &target.types {
         if !source.types.iter().any(|t| t.name == definition.name) {
             builder.push(
@@ -896,6 +1361,11 @@ mod tests {
             views: Vec::new(),
             sequences: Vec::new(),
             types: Vec::new(),
+            functions: Vec::new(),
+            triggers: Vec::new(),
+            policies: Vec::new(),
+            row_security: Vec::new(),
+            acls: Vec::new(),
         }
     }
 
