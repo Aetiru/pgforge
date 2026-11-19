@@ -1,4 +1,4 @@
-import type { Backend } from "./ipc";
+import type { Backend, Lock } from "./ipc";
 
 /**
  * Cómo se ordenan, filtran y agrupan las sesiones del monitoreo.
@@ -149,4 +149,37 @@ export function barShare(seconds: number, longest: number): number {
 /** `threshold` en segundos; `0` es «no resaltar». */
 export function isLong(backend: Backend, threshold: number): boolean {
   return threshold > 0 && backend.state === "active" && secondsOf(backend) >= threshold;
+}
+
+export interface LockGroup {
+  mode: string;
+  lockType: string;
+  granted: boolean;
+  count: number;
+  /** Hasta tres relaciones de ejemplo: lo que sirve para ubicar el candado sin listarlos todos. */
+  relations: string[];
+}
+
+/**
+ * Junta los candados por modo, tipo y si se otorgó. Una transacción grande llega a tener decenas de
+ * `ExclusiveLock` idénticos y listarlos uno por uno empujaba la consulta fuera del panel. Lo que
+ * está esperando va primero: es lo único que explica una sesión bloqueada.
+ */
+export function groupLocks(locks: Lock[]): LockGroup[] {
+  const groups = new Map<string, LockGroup>();
+  for (const lock of locks) {
+    const key = `${lock.granted}|${lock.lockType}|${lock.mode}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = { mode: lock.mode, lockType: lock.lockType, granted: lock.granted, count: 0, relations: [] };
+      groups.set(key, group);
+    }
+    group.count += 1;
+    if (lock.relation && group.relations.length < 3 && !group.relations.includes(lock.relation)) {
+      group.relations.push(lock.relation);
+    }
+  }
+  return [...groups.values()].sort(
+    (a, b) => Number(a.granted) - Number(b.granted) || b.count - a.count || a.mode.localeCompare(b.mode),
+  );
 }

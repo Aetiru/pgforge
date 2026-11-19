@@ -23,6 +23,7 @@ export type FolderKind =
   | "triggers"
   | "policies"
   | "roles"
+  | "databases"
   | "extensions"
   | "fdws"
   | "fservers";
@@ -51,7 +52,15 @@ export type NodeKind =
   | { folder: FolderKind };
 
 /** Rasgo de un objeto que se muestra como etiqueta junto al nombre en el árbol. */
-export type NodeTag = "login" | "group" | "superuser" | "partition" | "rowSecurity";
+export type NodeTag =
+  | "login"
+  | "group"
+  | "superuser"
+  | "partition"
+  | "rowSecurity"
+  | "noPrimaryKey"
+  | "invalid"
+  | "notPopulated";
 
 export interface TreeNode {
   id: string;
@@ -65,6 +74,9 @@ export interface TreeNode {
   comment?: string;
   /** Ausente cuando no tiene ninguno. */
   tags?: NodeTag[];
+  /** Filas estimadas y tamaño en disco de una relación, para ordenar sin leer `detail`. */
+  rows?: number;
+  sizeBytes?: number;
 }
 
 export interface TreeOptions {
@@ -100,6 +112,8 @@ export interface GraphColumn {
   primaryKey: boolean;
   /** Participa de alguna clave foránea saliente. */
   foreignKey: boolean;
+  /** El comentario de la columna, si tiene. */
+  comment?: string | null;
 }
 
 export interface GraphTable {
@@ -143,6 +157,19 @@ export const treeChildren = (
   requestId?: string,
 ) => invoke<TreeNode[]>("tree_children", { id, parent, options, requestId: requestId ?? null });
 
+/**
+ * Los nombres de las bases del servidor. Cuelgan de la carpeta «Bases de datos» de la raíz, no de la
+ * raíz misma: quien solo necesita la lista —elegir contra qué base comparar o consultar— no tiene
+ * por qué saber cómo se agrupa el árbol. Si el servidor devuelve las bases sueltas (un núcleo
+ * anterior), las toma de ahí.
+ */
+export async function databaseNames(id: string, options: TreeOptions): Promise<string[]> {
+  const root = await treeChildren(id, null, options);
+  const folder = root.find((node) => folderOf(node.kind) === "databases");
+  const nodes = folder ? await treeChildren(id, folder, options) : root;
+  return nodes.filter((node) => node.kind === "database").map((node) => node.label);
+}
+
 /** Aborta una lectura en curso. Si ya terminó no hace nada, y eso no es un error. */
 export const readCancel = (requestId: string) => invoke<void>("read_cancel", { requestId });
 
@@ -173,3 +200,59 @@ export const erdExportSvg = (path: string, svg: string) =>
 export function folderOf(kind: NodeKind): FolderKind | null {
   return typeof kind === "object" ? kind.folder : null;
 }
+
+// ---------------------------------------------------------------------------
+// Vista de una base
+// ---------------------------------------------------------------------------
+
+/** Espejo de `introspect::DatabaseOverview`. */
+export interface DatabaseDetails {
+  name: string;
+  owner: string;
+  encoding: string;
+  collation: string;
+  ctype: string;
+  tablespace: string;
+  sizeBytes: number;
+  /** `-1` es «sin límite». */
+  connectionLimit: number;
+  isTemplate: boolean;
+  allowConnections: boolean;
+  /** `null` si el rol no puede verlo. */
+  connections: number | null;
+  comment: string | null;
+}
+
+export interface SchemaSummary {
+  name: string;
+  owner: string;
+  tables: number;
+  views: number;
+}
+
+export interface TableSummary {
+  oid: number;
+  schema: string;
+  name: string;
+  /** `r` tabla, `p` particionada, `v` vista, `m` materializada, `f` externa. */
+  kind: string;
+  estimatedRows: number;
+  totalBytes: number;
+}
+
+export interface ExtensionSummary {
+  name: string;
+  version: string;
+  schema: string;
+}
+
+export interface DatabaseOverview {
+  details: DatabaseDetails;
+  schemas: SchemaSummary[];
+  tables: TableSummary[];
+  tablesTruncated: boolean;
+  extensions: ExtensionSummary[];
+}
+
+export const databaseOverview = (id: string, database: string) =>
+  invoke<DatabaseOverview>("database_overview", { id, database });

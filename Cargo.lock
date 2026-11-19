@@ -3514,6 +3514,7 @@ name = "pgforge-core"
 version = "0.11.0"
 dependencies = [
  "bytes",
+ "crc32fast",
  "deadpool-postgres",
  "futures-util",
  "iana-time-zone",

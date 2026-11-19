@@ -203,6 +203,9 @@ pub struct TriggerInfo {
     pub when: Option<String>,
     pub function_schema: String,
     pub function_name: String,
+    /// `pg_proc.oid` de la función que ejecuta: con el nombre solo no se la puede abrir, porque una
+    /// función sobrecargada comparte nombre con otras y `tgfoid` es la única que este trigger llama.
+    pub function_oid: u32,
 }
 
 // Bits de `pg_trigger.tgtype`, estables en el catálogo de Postgres desde hace muchas versiones. No
@@ -215,13 +218,21 @@ const TRIGGER_TYPE_UPDATE: i16 = 1 << 4;
 const TRIGGER_TYPE_TRUNCATE: i16 = 1 << 5;
 const TRIGGER_TYPE_INSTEAD: i16 = 1 << 6;
 
+// La condición `WHEN` sale de `pg_get_triggerdef` y no de `pg_get_expr(tgqual, tgrelid)`: un `WHEN
+// (OLD.x IS DISTINCT FROM NEW.x)` guarda `OLD` y `NEW` como `varno` 1 y 2, y `pg_get_expr` con una sola
+// relación falla con «bogus varno: 2» —con ese error la lista de triggers de la tabla no cargaba
+// entera, aunque solo uno tuviera condición—.
 const TRIGGERS_SQL: &str = "
     SELECT t.oid,
            t.tgname::text,
            t.tgtype,
-           pg_catalog.pg_get_expr(t.tgqual, t.tgrelid),
+           CASE WHEN t.tgqual IS NULL THEN NULL
+                ELSE substring(pg_catalog.pg_get_triggerdef(t.oid, true)
+                               from ' WHEN \\((.*)\\) EXECUTE (?:FUNCTION|PROCEDURE) ')
+           END,
            p.proname::text,
-           n2.nspname::text
+           n2.nspname::text,
+           p.oid
       FROM pg_catalog.pg_trigger t
       JOIN pg_catalog.pg_proc p ON p.oid = t.tgfoid
       JOIN pg_catalog.pg_namespace n2 ON n2.oid = p.pronamespace
@@ -277,6 +288,7 @@ pub async fn triggers(handle: &ServerHandle, database: &str, oid: u32) -> Result
                 when: row.get(3),
                 function_name: row.get(4),
                 function_schema: row.get(5),
+                function_oid: row.get(6),
             }
         })
         .collect())

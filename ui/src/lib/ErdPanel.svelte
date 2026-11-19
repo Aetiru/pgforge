@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from "./Skeleton.svelte";
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
@@ -421,6 +422,6 @@
       </g>
     </svg>
   {:else}
-    <Empty icon="schema" title="Cargando el diagrama…" />
+    <Skeleton rows={8} label="Cargando el diagrama…" />
   {/if}
 </div>

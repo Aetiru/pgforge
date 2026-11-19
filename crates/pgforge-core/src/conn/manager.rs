@@ -438,6 +438,17 @@ impl ServerHandle {
         Ok(start.elapsed().as_millis() as u64)
     }
 
+    /// Sesiones bloqueadas y transacción abierta más vieja, para el árbol. Usa una conexión del pool
+    /// y no la del monitoreo, que puede no estar abierto.
+    pub async fn activity_brief(&self) -> Result<crate::monitor::activity::Brief> {
+        let client = self.client(self.default_database()).await?;
+        let backends = crate::monitor::activity::backends(&client, &self.caps).await?;
+        Ok(crate::monitor::activity::brief(
+            &backends,
+            self.caps.can_read_all_stats,
+        ))
+    }
+
     /// Bases del servidor a las que el usuario puede conectarse.
     pub async fn databases(&self) -> Result<Vec<DatabaseInfo>> {
         let client = self.client(self.default_database()).await?;

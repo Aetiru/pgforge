@@ -366,6 +366,8 @@ mod tests {
                 columns: vec!["id".into()],
             }),
             read_only: None,
+            foreign_keys: vec![],
+            referenced_by: vec![],
         }
     }
 

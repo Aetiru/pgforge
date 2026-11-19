@@ -3,7 +3,9 @@
   import Icon from "./Icon.svelte";
   import { font, FONT_LABELS, type FontChoice } from "./font.svelte";
   import SqlColors from "./SqlColors.svelte";
+  import { accent, ACCENTS } from "./accent.svelte";
   import { theme, type ThemePreference } from "./theme.svelte";
+  import { editorPrefs } from "./editor/editor-prefs.svelte";
 
   let { onclose, onshortcuts }: { onclose: () => void; onshortcuts?: () => void } = $props();
 
@@ -33,6 +35,30 @@
     </div>
     <p class="text-xs muted">
       «Papel» es un claro de fondos crema y acento verde azulado, más cálido que el claro común.
+    </p>
+  </div>
+
+  <div class="divider-t my-4"></div>
+
+  <div class="flex flex-col gap-1.5">
+    <span class="label">Color de acento</span>
+    <div class="flex items-center gap-2" role="group" aria-label="Color de acento">
+      {#each ACCENTS as option (option.id)}
+        <button
+          class="size-7 rounded-full border-2 border-white shadow-sm ring-1 ring-zinc-300
+                 transition-transform hover:scale-110 dark:border-zinc-900 dark:ring-zinc-600
+                 {accent.choice === option.id ? 'ring-2 ring-zinc-900 dark:ring-zinc-100' : ''}"
+          style="background-color: {option.swatch}"
+          aria-pressed={accent.choice === option.id}
+          aria-label={option.label}
+          title={option.label}
+          onclick={() => accent.set(option.id)}
+        ></button>
+      {/each}
+    </div>
+    <p class="text-xs muted">
+      Cambia pestañas activas, selección y enlaces. El rojo de producción, el ámbar de la transacción
+      y el verde de ejecutar no cambian nunca.
     </p>
   </div>
 
@@ -97,4 +123,51 @@
     Oscurece textos secundarios y bordes (o los aclara en el tema oscuro). Se combina con el tema
     que elijas.
   </p>
+
+  <div class="divider-t my-4"></div>
+
+  <span class="label">Ayudas del editor de SQL</span>
+  <div class="mt-1.5 flex flex-col gap-2">
+    <div>
+      <label class="check">
+        <input
+          type="checkbox"
+          checked={editorPrefs.check}
+          onchange={(event) => editorPrefs.set("check", event.currentTarget.checked)}
+        />
+        <span>Subrayar errores mientras escribo</span>
+      </label>
+      <p class="ml-6 text-xs muted">
+        El servidor revisa la sentencia sin ejecutarla. Se salta con una transacción abierta y no
+        toca nada.
+      </p>
+    </div>
+    <div>
+      <label class="check">
+        <input
+          type="checkbox"
+          checked={editorPrefs.lint}
+          onchange={(event) => editorPrefs.set("lint", event.currentTarget.checked)}
+        />
+        <span>Avisar de consultas riesgosas</span>
+      </label>
+      <p class="ml-6 text-xs muted">
+        <span class="font-mono">= NULL</span>, <span class="font-mono">NOT IN</span> con
+        subconsulta, <span class="font-mono">SELECT *</span> sin límite…
+      </p>
+    </div>
+    <div>
+      <label class="check">
+        <input
+          type="checkbox"
+          checked={editorPrefs.ghost}
+          onchange={(event) => editorPrefs.set("ghost", event.currentTarget.checked)}
+        />
+        <span>Sugerir desde mi historial</span>
+      </label>
+      <p class="ml-6 text-xs muted">
+        Un texto gris continúa con lo que ya ejecutaste; <span class="font-mono">Tab</span> lo acepta.
+      </p>
+    </div>
+  </div>
 </Modal>

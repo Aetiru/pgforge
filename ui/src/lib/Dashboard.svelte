@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from "./Skeleton.svelte";
   import type uPlot from "uplot";
   import Alert from "./Alert.svelte";
   import AlertsPanel from "./AlertsPanel.svelte";
@@ -7,6 +8,12 @@
   import DataGrid, { type Column } from "./DataGrid.svelte";
   import Empty from "./Empty.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
+  import CachePanel from "./diagnose/CachePanel.svelte";
+  import ConnectionsPanel from "./diagnose/ConnectionsPanel.svelte";
+  import PreventPanel from "./diagnose/PreventPanel.svelte";
+  import ReportDialog from "./diagnose/ReportDialog.svelte";
+  import ServerPanel from "./diagnose/ServerPanel.svelte";
+  import SpacePanel from "./diagnose/SpacePanel.svelte";
   import SessionsPanel from "./SessionsPanel.svelte";
   import { needsValues, withValuesHint } from "./statement-explain";
   import Spark from "./Spark.svelte";
@@ -27,7 +34,7 @@
     tableBloat,
     tableStats,
     terminateBackend,
-    treeChildren,
+    databaseNames,
     type IndexStat,
     type Lock,
     type Redundancy,
@@ -56,10 +63,10 @@
   $effect(() => {
     const id = profileId;
     let cancelled = false;
-    treeChildren(id, null, { showSystemSchemas: false })
-      .then((nodes) => {
+    databaseNames(id, { showSystemSchemas: false })
+      .then((names) => {
         if (cancelled) return;
-        databases = nodes.filter((node) => node.kind === "database").map((node) => node.label);
+        databases = names;
         // Si la base con la que se conectó el perfil no aparece en la lista, se cae a la primera,
         // para que el selector nunca quede mostrando una opción vacía.
         if (!database || !databases.includes(database)) database = databases[0] ?? database;
@@ -81,7 +88,16 @@
     | "indices"
     | "duplicados"
     | "bloat"
-    | "consultas";
+    | "consultas"
+    | "prevencion"
+    | "espacio"
+    | "cache"
+    | "conexiones"
+    | "servidor";
+
+  /** Las pestañas que traen sus propios datos (ver `diagnose/`): `loadStats` no las toca. */
+  const OWN_TABS: Tab[] = ["prevencion", "espacio", "cache", "conexiones", "servidor"];
+  let reporting = $state(false);
 
   let tab = $state<Tab>("sesiones");
   let selectedPid = $state<number | null>(null);
@@ -139,12 +155,6 @@
   });
 
   $effect(() => monitor.watchVisibility());
-
-  /** Con estos dos permisos apagados, lo que se ve es una parte de lo que hay: conviene decirlo. */
-  const limitedStats = $derived.by(() => {
-    const caps = explorer.caps[profileId];
-    return caps ? !caps.isSuperuser && !caps.canReadAllStats : false;
-  });
 
   const snapshot = $derived(monitor.snapshot);
   const metrics = $derived(snapshot?.metrics ?? null);
@@ -294,6 +304,107 @@
     };
   });
 
+  /**
+   * Las estadísticas de tablas e índices no llegan por el monitor (que muestrea cada pocos segundos):
+   * se leen al abrir la pestaña, al cambiar de base y cuando se aprieta «Actualizar». Cada lectura
+   * lleva un número de corrida: si se pide otra antes de que vuelva la anterior —cambiar de pestaña
+   * o de base rápido—, la respuesta vieja se descarta en vez de pisar a la nueva.
+   */
+  let statsRun = 0;
+  let statsDb: string | null = null;
+  let statsLoading = $state(false);
+  let statsLoadedAt = $state<number | null>(null);
+  let now = $state(Date.now());
+  let tablesError = $state<string | null>(null);
+  let indexesError = $state<string | null>(null);
+
+  // Solo late mientras se mira una pestaña de estadísticas: es el «Actualizado hace …».
+  $effect(() => {
+    if (tab === "sesiones") return;
+    const timer = setInterval(() => (now = Date.now()), 1000);
+    return () => clearInterval(timer);
+  });
+
+  /** Tras releer, la selección apunta a la fila nueva —con los números de ahora— o se suelta. */
+  function reselect<T>(selected: T | null, rows: T[], key: (row: T) => string): T | null {
+    if (!selected) return null;
+    const id = key(selected);
+    return rows.find((row) => key(row) === id) ?? null;
+  }
+
+  async function loadStats(current: Tab) {
+    if (current === "sesiones" || OWN_TABS.includes(current)) return;
+    const run = ++statsRun;
+    const stale = () => run !== statsRun;
+
+    // Lo leído de otra base no vale para esta: mejor una lista vacía que tablas ajenas.
+    if (statsDb !== monitor.database) {
+      statsDb = monitor.database;
+      tables = [];
+      indexes = [];
+      redundant = [];
+      bloat = [];
+      statements = [];
+      selectedTable = selectedIndex = selectedRedundant = selectedBloat = selectedStatement = null;
+      statsLoadedAt = null;
+    }
+
+    statsLoading = true;
+    dropError = null;
+    try {
+      if (current === "tablas") {
+        tablesError = null;
+        const result = await tableStats(profileId);
+        if (stale()) return;
+        tables = result;
+        selectedTable = reselect(selectedTable, result, (t) => `${t.schema}.${t.table}`);
+      } else if (current === "indices") {
+        indexesError = null;
+        // Si no se puede leer, la grilla igual sirve: solo falta el «desde cuándo».
+        const sincePromise = statsWindow(profileId).catch(() => null);
+        const result = await indexStats(profileId);
+        const since = await sincePromise;
+        if (stale()) return;
+        indexes = result;
+        usageWindow = since;
+        selectedIndex = reselect(selectedIndex, result, (i) => `${i.schema}.${i.index}`);
+      } else if (current === "duplicados") {
+        redundantError = null;
+        const result = await redundantIndexes(profileId);
+        if (stale()) return;
+        redundant = result;
+        selectedRedundant = reselect(selectedRedundant, result, keyOf);
+      } else if (current === "bloat") {
+        bloatError = null;
+        const available = await hasBloatStats(profileId);
+        const result = available ? await tableBloat(profileId) : [];
+        if (stale()) return;
+        bloatAvailable = available;
+        bloat = result;
+        selectedBloat = reselect(selectedBloat, result, (t) => `${t.schema}.${t.table}`);
+      } else if (current === "consultas") {
+        statementsError = null;
+        const available = await hasStatementStats(profileId);
+        const result = available ? await statementStats(profileId) : [];
+        if (stale()) return;
+        statementsAvailable = available;
+        statements = result;
+      }
+      statsLoadedAt = Date.now();
+      now = statsLoadedAt;
+    } catch (error) {
+      if (stale()) return;
+      const message = describeError(error);
+      if (current === "tablas") tablesError = message;
+      else if (current === "indices") indexesError = message;
+      else if (current === "duplicados") redundantError = message;
+      else if (current === "bloat") bloatError = message;
+      else statementsError = message;
+    } finally {
+      if (!stale()) statsLoading = false;
+    }
+  }
+
   $effect(() => {
     const current = tab;
     // Se recargan al cambiar de pestaña y cuando el monitor queda listo en otra base: leer
@@ -301,42 +412,11 @@
     // por null), y saltea el hueco entre parar y arrancar en el que el monitor no está activo.
     void monitor.database;
     if (!monitor.profileId) return;
-    if (current === "tablas") {
-      tableStats(profileId)
-        .then((result) => (tables = result))
-        .catch((error) => (actionMessage = describeError(error)));
-    } else if (current === "indices") {
-      dropError = null;
-      indexStats(profileId)
-        .then((result) => (indexes = result))
-        .catch((error) => (actionMessage = describeError(error)));
-      // Si no se puede leer, la grilla igual sirve: solo falta el «desde cuándo».
-      statsWindow(profileId)
-        .then((result) => (usageWindow = result))
-        .catch(() => (usageWindow = null));
-    } else if (current === "duplicados") {
-      redundantError = null;
-      dropError = null;
-      redundantIndexes(profileId)
-        .then((result) => (redundant = result))
-        .catch((error) => (redundantError = describeError(error)));
-    } else if (current === "bloat") {
-      bloatError = null;
-      hasBloatStats(profileId)
-        .then(async (available) => {
-          bloatAvailable = available;
-          if (available) bloat = await tableBloat(profileId);
-        })
-        .catch((error) => (bloatError = describeError(error)));
-    } else if (current === "consultas") {
-      hasStatementStats(profileId)
-        .then(async (available) => {
-          statementsAvailable = available;
-          if (available) statements = await statementStats(profileId);
-        })
-        .catch((error) => (statementsError = describeError(error)));
-    }
+    // Sin untrack, loadStats leería las listas y el efecto se reiniciaría con cada respuesta.
+    untrack(() => loadStats(current));
   });
+
+  let sessionsPanel = $state<ReturnType<typeof SessionsPanel> | null>(null);
 
   async function act(pids: number[], kind: "cancel" | "terminate") {
     confirming = null;
@@ -357,6 +437,14 @@
         failure = describeError(error);
         break;
       }
+    }
+    // La lista congelada sigue mostrando la sesión recién terminada, que es justo lo que ya no
+    // está: se suelta la elegida y, pasado el tiempo de la próxima muestra, se toma otra foto.
+    if (done > 0) {
+      if (kind === "terminate" && selectedPid !== null && pids.includes(selectedPid)) {
+        selectedPid = null;
+      }
+      setTimeout(() => sessionsPanel?.refresh(), 2500);
     }
     const verb = kind === "cancel" ? "cancelar la consulta de" : "terminar";
     actionFailed = failure !== null || (done === 0 && missing > 0);
@@ -673,6 +761,11 @@
     { value: "duplicados", label: "Índices de más", icon: "compare" },
     { value: "bloat", label: "Bloat", icon: "warn" },
     { value: "consultas", label: "Consultas lentas", icon: "sql" },
+    { value: "prevencion", label: "Prevención", icon: "lock" },
+    { value: "espacio", label: "Espacio", icon: "database" },
+    { value: "cache", label: "Caché", icon: "chart" },
+    { value: "conexiones", label: "Conexiones", icon: "plug" },
+    { value: "servidor", label: "Servidor", icon: "sliders" },
   ];
 
   const bloatColumns: Column<TableBloat>[] = [
@@ -717,6 +810,30 @@
   /** Cuántas sesiones esperan a otra: el número que decide si hay que mirar la pestaña. */
   const blocked = $derived(backends.filter((backend) => backend.blockedBy.length > 0).length);
 </script>
+
+{#snippet refreshControl()}
+  <span class="text-[11px] muted" aria-live="polite">
+    {#if statsLoading}
+      Actualizando…
+    {:else if statsLoadedAt}
+      {@const seconds = Math.max(0, Math.round((now - statsLoadedAt) / 1000))}
+      {seconds < 5 ? "Actualizado ahora" : `Actualizado ${ago(seconds)}`}
+    {/if}
+  </span>
+  <button
+    class="btn btn-sm"
+    disabled={statsLoading}
+    title="Volver a leer estas estadísticas del servidor: no se actualizan solas"
+    onclick={() => loadStats(tab)}
+  >
+    {#if statsLoading}
+      <span class="spinner"></span>
+    {:else}
+      <Icon name="refresh" size={12} />
+    {/if}
+    Actualizar
+  </button>
+{/snippet}
 
 <div class="flex h-full flex-col">
   <div class="toolbar">
@@ -769,6 +886,18 @@
 
     <span class="ml-auto"></span>
 
+    <button
+      class="btn btn-sm"
+      title="Guarda un informe de salud del servidor para pasarlo al equipo o adjuntarlo a un ticket"
+      onclick={() => (reporting = true)}
+    >
+      <Icon name="download" size={12} />
+      Informe
+    </button>
+
+    <!-- Filtros e intervalo son de la muestra en vivo: en las pestañas de estadísticas no hacen nada,
+         y el ícono de refrescar junto al intervalo se leía como «actualizar» estas listas. -->
+    {#if tab === "sesiones"}
     <label class="check">
       <input
         type="checkbox"
@@ -788,6 +917,7 @@
       />
       Procesos internos
     </label>
+    {/if}
 
     <span class="toolbar-sep"></span>
 
@@ -801,11 +931,12 @@
       Alertas
     </button>
 
+    {#if tab === "sesiones"}
     <label class="check">
-      <Icon name="refresh" size={11} />
+      <Icon name="clock" size={11} />
       <select
         class="field py-0.5 text-xs"
-        title="Cada cuánto se toma una muestra"
+        title="Cada cuánto se toma una muestra de las sesiones y las métricas"
         value={monitor.intervalMs}
         onchange={(event) => monitor.setInterval(Number(event.currentTarget.value))}
       >
@@ -815,20 +946,11 @@
         <option value={15000}>15 s</option>
       </select>
     </label>
+    {/if}
   </div>
 
   {#if monitor.error}
     <Alert tone="bad">{monitor.error}</Alert>
-  {/if}
-
-  <!-- Sin este aviso, media tabla en blanco parece un error de la aplicación y no lo que es: el
-       servidor esconde el detalle de las sesiones ajenas a quien no puede verlas. -->
-  {#if limitedStats}
-    <Alert tone="warn">
-      El rol conectado no es superusuario ni miembro de <code>pg_read_all_stats</code>: de las
-      sesiones de otros usuarios solo se ve el PID, y las estadísticas por tabla e índice pueden
-      venir incompletas.
-    </Alert>
   {/if}
 
   <div class="bg-zinc-50/70 dark:bg-black/15">
@@ -881,9 +1003,7 @@
         {/each}
       </div>
     {:else}
-      <div class="flex items-center gap-2 px-4 py-4 text-sm muted">
-        <span class="spinner"></span> Tomando la primera muestra…
-      </div>
+      <Skeleton rows={6} label="Tomando la primera muestra…" />
     {/if}
 
     {#if tab === "sesiones" && showCharts}
@@ -931,6 +1051,7 @@
     {/if}
 
     <SessionsPanel
+      bind:this={sessionsPanel}
       {backends}
       blocking={snapshot?.blocking ?? []}
       bind:selectedPid
@@ -947,7 +1068,10 @@
             <Icon name="table" size={13} />
             Estadísticas de tablas
           </span>
-          <span class="tag tag-neutral font-mono">{count(tables.length)}</span>
+          <div class="flex items-center gap-2">
+            {@render refreshControl()}
+            <span class="tag tag-neutral font-mono">{count(tables.length)}</span>
+          </div>
         </div>
         <div class="toolbar divider-b">
           <span class="text-xs muted">
@@ -972,6 +1096,9 @@
             Mantenimiento
           </button>
         </div>
+        {#if tablesError}
+          <Alert tone="bad">{tablesError}</Alert>
+        {/if}
         <div class="min-h-0 flex-1">
           <DataGrid
             columns={tableColumns}
@@ -993,7 +1120,10 @@
             <Icon name="index" size={13} />
             Estadísticas de índices
           </span>
-          <span class="tag tag-neutral font-mono">{count(indexes.length)}</span>
+          <div class="flex items-center gap-2">
+            {@render refreshControl()}
+            <span class="tag tag-neutral font-mono">{count(indexes.length)}</span>
+          </div>
         </div>
         <div class="toolbar divider-b">
           <span class="text-xs muted">
@@ -1036,6 +1166,9 @@
             {countingSince}
           </div>
         {/if}
+        {#if indexesError}
+          <Alert tone="bad">{indexesError}</Alert>
+        {/if}
         {#if dropError}
           <Alert tone="bad">{dropError}</Alert>
         {/if}
@@ -1060,7 +1193,10 @@
             <Icon name="compare" size={13} />
             Índices que sobran
           </span>
-          <span class="tag tag-neutral font-mono">{count(redundant.length)}</span>
+          <div class="flex items-center gap-2">
+            {@render refreshControl()}
+            <span class="tag tag-neutral font-mono">{count(redundant.length)}</span>
+          </div>
         </div>
         <div class="toolbar divider-b">
           <span class="text-xs muted">
@@ -1108,7 +1244,10 @@
             <Icon name="warn" size={13} />
             Bloat estimado
           </span>
-          <span class="tag tag-neutral font-mono">{count(bloat.length)}</span>
+          <div class="flex items-center gap-2">
+            {@render refreshControl()}
+            <span class="tag tag-neutral font-mono">{count(bloat.length)}</span>
+          </div>
         </div>
         <div class="toolbar divider-b">
           <span class="text-xs muted">
@@ -1156,6 +1295,16 @@
         </div>
       </div>
     </div>
+  {:else if tab === "prevencion"}
+    {#key monitor.database}<PreventPanel {profileId} database={monitor.database} />{/key}
+  {:else if tab === "espacio"}
+    {#key monitor.database}<SpacePanel {profileId} database={monitor.database} />{/key}
+  {:else if tab === "cache"}
+    {#key monitor.database}<CachePanel {profileId} database={monitor.database} />{/key}
+  {:else if tab === "conexiones"}
+    {#key monitor.database}<ConnectionsPanel {profileId} database={monitor.database} />{/key}
+  {:else if tab === "servidor"}
+    {#key monitor.database}<ServerPanel {profileId} database={monitor.database} />{/key}
   {:else}
     <div class="flex min-h-0 flex-1 flex-col bg-zinc-50/70 px-4 py-4 dark:bg-black/15">
       <div class="card flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl shadow-sm">
@@ -1164,7 +1313,10 @@
             <Icon name="sql" size={13} />
             Consultas más lentas
           </span>
-          <span class="tag tag-neutral font-mono">{count(statements.length)}</span>
+          <div class="flex items-center gap-2">
+            {@render refreshControl()}
+            <span class="tag tag-neutral font-mono">{count(statements.length)}</span>
+          </div>
         </div>
         <div class="toolbar divider-b">
           <span class="text-xs muted">
@@ -1269,6 +1421,16 @@
     danger
     onconfirm={() => droppingStat && dropStat(droppingStat)}
     onclose={() => (droppingStat = null)}
+  />
+{/if}
+
+{#if reporting}
+  <ReportDialog
+    {profileId}
+    server={explorer.profiles.find((p) => p.id === profileId)?.name ?? "servidor"}
+    database={monitor.database ?? database ?? ""}
+    metrics={monitor.snapshot?.metrics ?? null}
+    onclose={() => (reporting = false)}
   />
 {/if}
 

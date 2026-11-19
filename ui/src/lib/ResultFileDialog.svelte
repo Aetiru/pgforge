@@ -3,7 +3,7 @@
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
   import { count } from "./format";
-  import { describeError, pickSave, sqlWriteFile } from "./ipc";
+  import { describeError, pickSave, resultExportXlsx, sqlWriteFile } from "./ipc";
   import { toJson, toMarkdown } from "./result-export";
 
   let { columns, rows, types, truncated, onclose }: {
@@ -17,6 +17,12 @@
   const FORMATS = [
     { value: "json", label: "JSON", extension: "json", hint: "un arreglo de objetos, uno por fila" },
     { value: "markdown", label: "Markdown", extension: "md", hint: "una tabla lista para pegar" },
+    {
+      value: "xlsx",
+      label: "Excel",
+      extension: "xlsx",
+      hint: "un libro de una hoja; los números como número y los textos, como el 00123, intactos",
+    },
   ] as const;
 
   let format = $state<(typeof FORMATS)[number]["value"]>("json");
@@ -38,7 +44,8 @@
       });
       if (!path) return;
       const data = { columns, rows };
-      await sqlWriteFile(path, format === "json" ? toJson(data, types) : toMarkdown(data));
+      if (format === "xlsx") await resultExportXlsx(path, columns, rows);
+      else await sqlWriteFile(path, format === "json" ? toJson(data, types) : toMarkdown(data));
       saved = path;
     } catch (e) {
       error = describeError(e);
@@ -48,7 +55,7 @@
   }
 </script>
 
-<Modal title="Exportar a JSON o Markdown" size="sm" {busy} {onclose}>
+<Modal title="Exportar el resultado" size="sm" {busy} {onclose}>
   <div class="seg" role="tablist">
     {#each FORMATS as item (item.value)}
       <button

@@ -1,11 +1,16 @@
 # CLAUDE.md
 
-Guía para Claude Code (claude.ai/code) en este repositorio.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Búsqueda de código: usar tgrep
 
 Este repo tiene un índice tgrep. Usa `tgrep` en vez de grep/ripgrep nativo
 para buscar en el código; es mucho más rápido en este árbol.
+
+```bash
+tgrep serve . &                      # una vez por sesión; mantiene el índice al día (.tgrep/ ya está en .gitignore)
+tgrep -F -- "texto literal" .        # `--` antes del patrón, o `serve`/`index`/`status` se leen como subcomando
+```
 
 @AGENTS.md
 
@@ -57,8 +62,10 @@ cargo run -p pgforge-cli -- data  --url postgres://postgres@localhost:5432/postg
 
 Tests de `crates/pgforge-core/tests/` necesitan servidores reales. Se ejecutan contra **todas** las URLs de `PGFORGE_TEST_URLS` (separadas por coma). Gracia: apuntar a dos versiones distintas de PostgreSQL a la vez — eso valida que gating por versión esté bien. Sin esa variable **no verifican nada** y avisan por stderr: test "verde" sin la variable no prueba nada.
 
-```powershell
-$env:PGFORGE_TEST_URLS = ((Get-Content .env.local) -match 'PGFORGE_TEST_URLS=') -replace '^[^=]*='
+```bash
+# Linux/macOS. En PowerShell:
+#   $env:PGFORGE_TEST_URLS = ((Get-Content .env.local) -match 'PGFORGE_TEST_URLS=') -replace '^[^=]*='
+export PGFORGE_TEST_URLS=$(grep '^PGFORGE_TEST_URLS=' .env.local | cut -d= -f2-)
 cargo test -p pgforge-core
 cargo test -p pgforge-core --test ddl_table                 # un archivo
 cargo test -p pgforge-core --test ddl_table crea_cambia     # un test suelto
@@ -192,6 +199,42 @@ Leer el catálogo y decidir están separados a propósito: `index_shapes` trae l
 El test contra servidores reales (`tests/monitor_indices.rs`) arma el caso completo —los duplicados, el prefijo, el parcial, el gin, el único, las cinco escrituras iguales, cada guarda y la partitionada— y verifica en las cinco versiones que solo aparezcan los que sobran. Lo que la interfaz agrega: la lista se identifica por esquema y nombre —el de un índice solo es único adentro de su esquema— y el error de un borrado va aparte del de la lectura, que reemplaza la grilla entera.
 
 **Retraso de réplica y esperas en `Metrics`.** `monitor::stats::replication_lag` devuelve un `ReplicationLag` (`None` / `Restricted` / `Primary` / `Standby`) que viaja en cada muestra, y `activity::longest_blocked_seconds` / `longest_idle_in_transaction_seconds` calculan las esperas más largas sobre **todas** las sesiones, no sobre las que deja ver el filtro de la lista. Lo importante es `Restricted`: sin `pg_read_all_stats`, `pg_stat_replication` devuelve las filas con todo en NULL, y se distingue de «sin réplicas» contando las filas con `state` (la decisión sale de los datos y no del rol, porque `SET ROLE` cambia lo que se ve sin cambiar `ServerCaps`). Las funciones existen con el mismo nombre en PG 13 a 17, así que no hay predicado nuevo. `ReplicationLag::from_primary` es pura y tiene sus tests; `tests/monitor_permisos.rs` cubre que leerlo con un rol sin privilegios no falla.
+
+### Diagnósticos del monitoreo (`monitor::diagnose`, `config_review`, `trend`)
+
+Lo que no se ve mirando una sesión: secuencias por agotarse, edad de las transacciones, cuándo le toca el autovacuum a cada tabla, caché por tabla e índice, quién usa las conexiones, mapa de espacio, checkpoints/WAL y revisión de configuración. Mismo reparto de siempre: leer el catálogo es lo único que habla con el servidor y **decidir** vive en funciones puras con tests (`sequence_position`, `age_level`, `autovacuum_plan`, `cache_level`, `group_connections`, `checkpoint_advice`, `config_review::review`, `trend::forecast`). `Level` (`ok`/`info`/`review`/`attention`) es el vocabulario común, con umbrales altos a propósito. **Nada de esto aplica cambios**: la configuración termina en un `ALTER SYSTEM` para copiar o abrir en una consulta.
+
+Version gating por `ServerCaps`: `has_pg_stat_checkpointer()` (PG 17 movió los contadores de `pg_stat_bgwriter` a `pg_stat_checkpointer` con otros nombres) y `has_pg_stat_wal()` (no existe en PG 13; `CheckpointReport::wal` es `None` ahí). Lo que depende del rol: `connections` reutiliza `activity::backends`, así que sin `pg_read_all_stats` las sesiones ajenas caen todas en un grupo sin nombre; un parámetro de `pg_settings` que el rol no ve llega con `value: None` y se lista aparte (`ConfigReview::hidden`), nunca se interpreta como vacío.
+
+Dos decisiones que no se ven en el código: **la RAM no está en el catálogo**, así que `config_review` solo sugiere tamaños (`shared_buffers` ≈ 1/4, `effective_cache_size` ≈ 3/4, `maintenance_work_mem`) si el usuario la indica (`ram_bytes`, guardada en la interfaz por servidor); y `work_mem` solo se menciona con evidencia (la base ya escribió ≥ 1 GB de temporales). Sin `reltuples` confiable (vale -1 en una tabla nunca limpiada) el umbral de autovacuum cuenta 0 filas.
+
+**Tendencias** (`trend.rs`, `trends.db`, archivo aparte como el historial: se puede borrar entero y solo reinicia el cálculo). El servidor solo conoce el tamaño de hoy, así que `space_overview` y `sequence_usage` anotan una muestra al abrirse (como mucho una por hora **por tipo**: la primera muestra del lote decide el intervalo) y `forecast` ajusta una recta por mínimos cuadrados; con menos de tres muestras o menos de seis horas devuelve `None` y la interfaz dice «faltan muestras». Fallar al anotar no tapa la lectura. Retención 400 días. Tests contra servidores reales en `tests/monitor_diagnose.rs`.
+
+### Ayudas del editor de SQL en el núcleo
+
+Todo lo que el editor pregunta al servidor para ayudar a escribir. **Es una ayuda, jamás un cartel**: ninguno de estos caminos muestra un error si falla.
+
+**`QuerySession::check`** (comando `query_check`) valida con `prepare` —el `Parse` del protocolo, que no ejecuta nada— y devuelve `Check::{Ok, Error, Skipped}`. `position` es base 0, en caracteres Unicode, dentro del texto enviado. Salta (`Skipped`) con **transacción abierta o fallida** —`prepare` toma `ACCESS SHARE` sobre lo que nombra y lo retiene hasta el `COMMIT`; con autocommit apagado cada sentencia ya está dentro de una transacción, así que ahí casi nunca corre—, con varias sentencias y con texto vacío. Pone `lock_timeout` en 300 ms y **siempre** lo restaura al valor que tenía el usuario, también si `prepare` falla. `query_check` usa `try_lock`: si la pestaña está ejecutando devuelve `Skipped("ocupada")` en vez de esperar. Un error de conexión no es un error de sintaxis y se propaga como siempre.
+
+**`introspect::values::column_values`**: etiquetas de `pg_enum` o `pg_stats.most_common_vals` con sus frecuencias. **No recorre la tabla**: sin `ANALYZE` (o sin permiso) devuelve `none`. **`introspect::routines::signatures`**: hasta 20 sobrecargas con `pg_get_function_arguments`/`_result`, incluido `pg_catalog`. **`HistoryStore::suggest`**: solo lo exitoso y que no viene de diálogos (es SQL generado), más largo que el prefijo, comparado con `substr` porque el `LIKE` de SQLite ignora mayúsculas.
+
+**Opciones del formateador** (`FormatOptions`: caso de palabras clave, sangría, líneas entre sentencias, coma al principio): solo cambian espacios y mayúsculas de palabras clave, así que la guarda de equivalencia del formateador sigue valiendo. `format()` conserva su salida de siempre. **Versiones del texto** (`sql::versions`, `versions.db`): tope de 50 copias por clave, 60 días y 2 MB; no guarda lo idéntico a la última ni lo vacío. Archivo aparte, como `trends.db`: se puede borrar sin perder nada más.
+
+### Abreviaturas del editor (`sql::snippet`)
+
+`Snippet` lleva `category`, `scope {profile_ids, databases}` y `shortcut`, todos con `#[serde(default)]`: un `snippets.json` viejo sigue abriendo. El alcance suma perfiles y bases con **AND** (ambas vacías = vale en todos lados) y el atajo —estilo CodeMirror, con `Mod`, `Ctrl` o `Alt` más una tecla— es único entre abreviaturas (`Conflict`). **El contador de usos vive en `snippet-usage.json`, aparte**: es del equipo y no debe viajar al exportar; un archivo corrupto se ignora (es un contador, no un dato) y borrar o restablecer olvida los usos.
+
+**Exportar/importar** (`snippets_export`/`snippets_import`, rutas por `state.paths.check`): el archivo es `{kind:"pgforge-snippets", version:1, snippets}` **sin ids ni `scope.profile_ids`** —son de esa máquina—. `parse_import` lo trata como entrada no confiable: tope de 1 MB, 500 abreviaturas y 50 000 caracteres por cuerpo, valida `kind` y versión **antes** de leer el resto, y omite (anotando el motivo) cada abreviatura inválida en vez de abortar todo. Choque = misma abreviatura sin distinguir mayúsculas, con modo `skip` o `replace` (conserva el id); un atajo importado que choca se limpia sin descartar la abreviatura.
+
+### Copiar una tabla a otro servidor (`data::transfer`)
+
+El `COPY … TO STDOUT` de un servidor alimenta directo al `COPY … FROM STDIN` del otro, sin archivo y sin acumular filas: se reenvían los trozos. Mismo reparto que el resto: `plan` es **puro** y arma las sentencias (la vista previa es lo que se ejecuta), `prepare` lee el catálogo de origen y `run` ejecuta. Todo lo del destino —crear, vaciar, cargar, índices— va en **una** transacción: una cancelación o un error no dejan una tabla a medio crear ni vaciada sin recargar. Tres modos: `create` (falla con `Conflict` si ya existe), `append` y `truncate` (fallan si no existe). **Qué no se copia, y se avisa en `warnings`:** claves foráneas, disparadores, permisos, comentarios y secuencias (un `serial`/identidad queda como columna común con sus valores). Las restricciones y los índices se recrean **sin nombre**, para que PostgreSQL les ponga uno libre: copiar dentro de un mismo esquema chocaría. Las columnas generadas se recrean pero no se copian. El `WHERE` opcional va crudo —misma frontera que el editor— pero rechaza `;` y `--`. Corre como proceso (`ProcessKind::Transfer`, anotado contra el servidor de destino) y también deja su entrada en el historial del destino.
+
+### Saltos por clave foránea y edición de resultados
+
+`TableShape` trae `foreign_keys` y `referenced_by` (`data::shape::Link`, con `#[serde(default)]` porque la interfaz devuelve la forma entera en cada página). `columns` son siempre las de **esta** tabla y `other_columns` las de la otra, así que el salto arma el mismo `WHERE` en los dos sentidos (`fk-nav.ts`, puro). `sql::completion::snapshot` suma `foreign_keys` para proponer el `ON` de un `JOIN`.
+
+Editar un resultado de consulta: `QuerySession::edit_source` **prepara** la sentencia y lee `table_oid`/`column_id` de cada columna, en vez de deducir la tabla del `FROM`; `single_origin` rechaza lo que sale de varias tablas o de ninguna. La interfaz (`result-edit.ts`) exige la clave **entera** en el resultado y arma los mismos `Change` de `data::edit`, con valores originales para detectar conflictos. La escritura va por otra conexión, así que con una transacción abierta en la pestaña no se ofrece.
 
 ### Errores
 

@@ -13,6 +13,8 @@
   import RestoreDialog from "./RestoreDialog.svelte";
   import ExportDialog from "./ExportDialog.svelte";
   import ImportDialog from "./ImportDialog.svelte";
+  import TransferDialog from "./TransferDialog.svelte";
+  import ObjectNote from "./ObjectNote.svelte";
   import ColumnDialog from "./ColumnDialog.svelte";
   import Confirm from "./Confirm.svelte";
   import ConstraintDialog from "./ConstraintDialog.svelte";
@@ -73,6 +75,7 @@
     type PrivilegeGroup,
   } from "./detail-node";
   import { explorer, type Row } from "./explorer.svelte";
+  import { openDatabase } from "./database.svelte";
   import { bookmarkTargetOf, dataTargetOf, queryTargetOf } from "./tree-actions";
   import {
     dataOpen,
@@ -662,6 +665,7 @@
     current: string | null;
   } | null>(null);
   let exportDialog = $state(false);
+  let transferDialog = $state(false);
   let importDialog = $state(false);
   let revokeTarget = $state<{ grantee: string; privileges: string[] } | null>(null);
   let revokeCascade = $state(false);
@@ -763,6 +767,9 @@
       case "openData":
         ondata(selected.profileId, queryTarget!.database, queryTarget!.title, dataTarget!);
         break;
+      case "openDatabase":
+        void openDatabase(selected.profileId, current!.label);
+        break;
       case "openQuery":
         onquery(selected.profileId, queryTarget!.database, queryTarget!.title);
         break;
@@ -795,6 +802,9 @@
         break;
       case "import":
         importDialog = true;
+        break;
+      case "transfer":
+        transferDialog = true;
         break;
       case "backup":
         backupDialog = true;
@@ -1282,6 +1292,15 @@
         </div>
       {/if}
 
+      {#if node && node.schema && node.database && !flags.isFolder}
+        <ObjectNote
+          profileId={selected.profileId}
+          database={node.database}
+          schema={node.schema}
+          name={node.label}
+        />
+      {/if}
+
       <div class="min-h-0 flex-1 overflow-auto p-2 @md/detail:p-4">
         {#if section === "info"}
           <Properties rows={properties} />
@@ -1759,6 +1778,16 @@
     database={node.database}
     source={{ kind: "table", schema: node.schema, table: node.label, columns: [] }}
     onclose={() => (exportDialog = false)}
+  />
+{/if}
+
+{#if transferDialog && selected && node && node.schema && node.database}
+  <TransferDialog
+    profileId={selected.profileId}
+    database={node.database}
+    schema={node.schema}
+    table={node.label}
+    onclose={() => (transferDialog = false)}
   />
 {/if}
 

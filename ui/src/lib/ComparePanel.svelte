@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from "./Skeleton.svelte";
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
@@ -174,8 +175,9 @@
   </div>
 
   {#if tab.loading}
-    <div class="flex flex-1 items-center justify-center gap-2 muted text-sm">
-      <span class="spinner"></span> Leyendo los dos esquemas…
+    <div class="flex-1 overflow-hidden">
+      <p class="px-4 pt-4 text-sm muted">Leyendo los dos esquemas…</p>
+      <Skeleton rows={8} label="Leyendo los dos esquemas…" />
     </div>
   {:else if tab.error}
     <div class="p-3"><Alert tone="bad">{tab.error}</Alert></div>

@@ -203,12 +203,28 @@ body,
   height: 100%;
 }
 
+/* `clip` y no `hidden`: un contenedor `hidden` sigue siendo desplazable por código, y el
+   `scrollIntoView` de CodeMirror al restaurar la posición de un editor recién montado —todavía sin
+   medir, más alto que la ventana— corría la aplicación entera hacia arriba. `clip` no es un
+   contenedor de desplazamiento, así que no hay nada que correr. */
+#app {
+  overflow: clip;
+}
+
 html {
   color-scheme: light;
 }
 
 html[data-theme="dark"] {
   color-scheme: dark;
+}
+
+/* Texto claro sobre fondo oscuro: con el suavizado en escala de grises que fuerza `antialiased` las
+   letras se ven más finas y «rasposas» que en el tema claro. Se deja al motor elegir. */
+html[data-theme="dark"] body {
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+  text-rendering: optimizeLegibility;
 }
 
 body {
@@ -244,6 +260,97 @@ body {
 
 :focus-visible {
   @apply outline-2 outline-offset-1 outline-blue-500 dark:outline-blue-400;
+}
+
+
+/* --------------------------------------------------------------------------
+   Color de acento
+
+   Todo el azul de la interfaz sale de la paleta `blue` de Tailwind, así que cambiar de acento es
+   reasignar esas variables: cada utilidad (`bg-blue-600`, `ring-blue-500/20`…) las lee en el
+   momento. Los colores de estado —el rojo de producción, el ámbar de la transacción, el verde de
+   ejecutar— no salen de acá y no cambian nunca. El azul es el valor de fábrica y no se redefine.
+   -------------------------------------------------------------------------- */
+
+html[data-accent="violet"] {
+  --color-blue-50: oklch(0.969 0.016 293.756);
+  --color-blue-100: oklch(0.943 0.029 294.588);
+  --color-blue-200: oklch(0.894 0.057 293.283);
+  --color-blue-300: oklch(0.811 0.111 293.571);
+  --color-blue-400: oklch(0.702 0.183 293.541);
+  --color-blue-500: oklch(0.606 0.25 292.717);
+  --color-blue-600: oklch(0.541 0.281 293.009);
+  --color-blue-700: oklch(0.491 0.27 292.581);
+  --color-blue-800: oklch(0.432 0.232 292.759);
+  --color-blue-900: oklch(0.38 0.189 293.745);
+  --color-blue-950: oklch(0.283 0.141 291.089);
+}
+
+html[data-accent="teal"] {
+  --color-blue-50: oklch(0.984 0.014 180.72);
+  --color-blue-100: oklch(0.953 0.051 180.801);
+  --color-blue-200: oklch(0.91 0.096 180.426);
+  --color-blue-300: oklch(0.855 0.138 181.071);
+  --color-blue-400: oklch(0.777 0.152 181.912);
+  --color-blue-500: oklch(0.704 0.14 182.503);
+  --color-blue-600: oklch(0.6 0.118 184.704);
+  --color-blue-700: oklch(0.511 0.096 186.391);
+  --color-blue-800: oklch(0.437 0.078 188.216);
+  --color-blue-900: oklch(0.386 0.063 188.416);
+  --color-blue-950: oklch(0.277 0.046 192.524);
+}
+
+html[data-accent="orange"] {
+  --color-blue-50: oklch(0.98 0.016 73.684);
+  --color-blue-100: oklch(0.954 0.038 75.164);
+  --color-blue-200: oklch(0.901 0.076 70.697);
+  --color-blue-300: oklch(0.837 0.128 66.29);
+  --color-blue-400: oklch(0.75 0.183 55.934);
+  --color-blue-500: oklch(0.705 0.213 47.604);
+  --color-blue-600: oklch(0.646 0.222 41.116);
+  --color-blue-700: oklch(0.553 0.195 38.402);
+  --color-blue-800: oklch(0.47 0.157 37.304);
+  --color-blue-900: oklch(0.408 0.123 38.172);
+  --color-blue-950: oklch(0.266 0.079 36.259);
+}
+
+/* --------------------------------------------------------------------------
+   Movimiento reducido
+
+   Quien pidió menos movimiento al sistema no tiene por qué ver transiciones ni parpadeos. El
+   `spinner` se queda girando pero más lento: es la única señal de «sigue trabajando» y quitarlo
+   dejaría una rueda quieta que se lee como colgada.
+   -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .spinner {
+    animation: spin 2s linear infinite !important;
+  }
+
+  .skeleton {
+    animation: none !important;
+  }
+}
+
+/* El anillo de foco adentro del elemento en lo que se recorre con flechas: en una lista, un árbol
+   o una grilla con `overflow`, el borde de afuera se recorta contra el contenedor. */
+[role="treeitem"]:focus-visible,
+[role="tab"]:focus-visible,
+[role="grid"]:focus-visible,
+[role="row"]:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: -2px;
 }
 
 /* --------------------------------------------------------------------------
@@ -526,6 +633,35 @@ body {
     dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100 dark:placeholder:text-zinc-500;
 }
 
+/* `<select>`: el control nativo trae su propia flecha, su propia altura y, en cada sistema, un
+   aspecto distinto —al lado de botones de 24px era una caja más grande que todo lo demás—. Se
+   dibuja la flecha a mano para que siga el tema y se deja el desplegable al sistema, que es lo que
+   se ve bien y accesible. Las clases de componente van fuera de `@layer`, así que ganan a las
+   utilidades (`py-0.5 text-xs` en un `<select class="field">` no hacía nada): el tamaño compacto de
+   las barras se declara acá y no en cada uso. */
+select.field {
+  @apply cursor-pointer appearance-none pr-7 hover:border-zinc-300 dark:hover:border-zinc-500;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2371717a' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.45rem center;
+  background-size: 0.8rem;
+}
+
+[data-theme="dark"] select.field {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23a1a1aa' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5l4 4 4-4'/%3E%3C/svg%3E");
+}
+
+/* En una barra o dentro de un `.check` («Agrupar por», «Base») el `<select>` es un control más, del
+   alto de un `btn-sm`. */
+.toolbar select.field,
+.check select.field {
+  @apply py-0.5 pl-2 text-xs leading-5;
+}
+
+[data-theme="dark"] select.field option {
+  @apply bg-zinc-800 text-zinc-100;
+}
+
 /* Los campos de un formulario son texto que se escribe: ahí sí se puede seleccionar. */
 .field,
 input,
@@ -585,7 +721,30 @@ input[type="password"]::-ms-clear {
 
 .seg-item[aria-selected="true"],
 .seg-item[aria-pressed="true"] {
-  @apply bg-white text-zinc-900 shadow-sm dark:bg-zinc-600 dark:text-zinc-50;
+  @apply bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-300/80 dark:bg-zinc-600 dark:text-zinc-50
+    dark:ring-zinc-500;
+}
+
+/* La opción que pide atención (transacción manual): ámbar lleno, se lee sin leer la palabra. */
+.seg-item.seg-warn[aria-pressed="true"] {
+  @apply bg-amber-500 text-white ring-amber-600/40 dark:bg-amber-500 dark:text-zinc-950;
+}
+
+/* En la barra compacta el fondo del grupo tiene que distinguirse del de la barra. */
+.toolbar-compact .seg {
+  @apply bg-zinc-200/80 dark:bg-zinc-700;
+}
+
+/* Un solo botón protagonista en el riel: ejecutar. */
+.btn-run {
+  @apply rounded-md bg-emerald-600 text-white hover:bg-emerald-500 disabled:bg-zinc-300
+    disabled:text-zinc-500 dark:bg-emerald-600 dark:disabled:bg-zinc-700;
+}
+
+/* Dividir y cerrar solo en la pestaña activa o la que tiene el cursor: seis pares de controles a
+   la vista eran ruido. Mantienen su lugar (opacity) para que las pestañas no cambien de ancho. */
+.tab-wrap:not(:hover):not(:focus-within):not(:has([aria-selected="true"])) .tab-close {
+  opacity: 0;
 }
 
 /* Contador al lado del nombre de una sección: cuántas filas hay sin tener que abrirla. */
@@ -609,6 +768,17 @@ input[type="password"]::-ms-clear {
 .kbd {
   @apply rounded border border-zinc-300 bg-zinc-100 px-1 font-sans text-[10px] leading-4
     text-zinc-500 dark:border-zinc-500 dark:bg-zinc-700 dark:text-zinc-400;
+}
+
+/* La tira de pestañas desplaza sin barra: con ocho pestañas la barra de 11px se dibujaba encima de
+   las pestañas —que miden poco más— y tapaba los clics. Se desplaza con la rueda (`App.svelte` la
+   pasa a horizontal) y la pestaña activa se trae a la vista sola. */
+.tab-strip {
+  scrollbar-width: none;
+}
+
+.tab-strip::-webkit-scrollbar {
+  display: none;
 }
 
 /* Pestañas del panel principal: el detalle del objeto y las consultas abiertas. */
@@ -765,12 +935,27 @@ input[type="password"]::-ms-clear {
    Lo que no cambia nunca sale de la plantilla y se escribe una sola vez acá. No es prolijidad sino
    velocidad: al desplazar, la grilla rearma la cadena de clases de cada celda dibujada en cada
    cuadro, y de los ocho pedazos que tenía esa cadena, siete eran siempre los mismos. */
+/* Línea fina entre filas en vez de cebra: la cebra competía con el resaltado de la fila bajo el
+   cursor y de la seleccionada. */
 .grid-row {
-  @apply flex hover:bg-blue-50 dark:hover:bg-zinc-700;
+  @apply flex border-b border-zinc-200/60 hover:bg-blue-50 dark:border-zinc-700/50 dark:hover:bg-zinc-700;
 }
 
 .grid-cell {
   @apply shrink-0 truncate border-r border-zinc-200/70 px-2 py-0.5 dark:border-zinc-700/70;
+}
+
+/* Salto por clave foránea: pegado al borde derecho de la celda, apagado hasta pasar por encima. */
+.fk-link {
+  @apply absolute top-1/2 right-0.5 -translate-y-1/2 cursor-pointer rounded bg-white/80 px-1 text-[11px]
+    leading-4 text-blue-600 opacity-40 dark:bg-zinc-800/80 dark:text-blue-400;
+}
+.grid-cell:hover .fk-link,
+.fk-link:focus-visible {
+  @apply opacity-100;
+}
+.fk-link:hover {
+  @apply bg-blue-100 dark:bg-blue-900/50;
 }
 
 .list-table {
@@ -826,6 +1011,14 @@ input[type="password"]::-ms-clear {
   --cm-caret: var(--color-blue-600);
   --cm-selection: color-mix(in srgb, var(--color-blue-500) 22%, transparent);
   --cm-error: var(--color-rose-500);
+  /* Avisos y notas del editor (`editor/diagnostics.ts`) y el texto fantasma del historial. */
+  --cm-warning: var(--color-amber-600);
+  --cm-info: var(--color-blue-500);
+  --cm-ghost: var(--color-zinc-400);
+  /* Los `${…}` del cuerpo de una abreviatura (`SnippetBodyEditor`): hueco, variable y automática. */
+  --cm-snip-hole: var(--color-violet-600);
+  --cm-snip-var: var(--color-emerald-700);
+  --cm-snip-auto: var(--color-amber-700);
   --cm-tooltip-bg: var(--color-white);
   --cm-tooltip-border: var(--color-zinc-200);
 
@@ -862,6 +1055,12 @@ input[type="password"]::-ms-clear {
   --cm-caret: var(--color-blue-400);
   --cm-selection: color-mix(in srgb, var(--color-blue-400) 28%, transparent);
   --cm-error: var(--color-rose-400);
+  --cm-warning: var(--color-amber-400);
+  --cm-info: var(--color-blue-400);
+  --cm-ghost: var(--color-zinc-500);
+  --cm-snip-hole: var(--color-violet-400);
+  --cm-snip-var: var(--color-emerald-400);
+  --cm-snip-auto: var(--color-amber-400);
   --cm-tooltip-bg: var(--color-zinc-800);
   --cm-tooltip-border: var(--color-zinc-600);
 

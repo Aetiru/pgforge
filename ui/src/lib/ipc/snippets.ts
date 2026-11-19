@@ -15,6 +15,40 @@ export interface Snippet {
   body: string;
   /** Para qué sirve; es lo que la lista de sugerencias muestra al costado. */
   description: string;
+  /** Para agrupar la lista; vacía = sin categoría (máx. 40 caracteres). */
+  category: string;
+  /** Dónde vale. Vacío = en todos lados. */
+  scope: SnippetScope;
+  /** Combinación que la expande sin escribir su nombre, al estilo CodeMirror (`Mod-Alt-1`). */
+  shortcut: string | null;
+}
+
+/**
+ * En qué servidores y bases vale una abreviatura. Las dos condiciones se suman (AND): con perfiles
+ * y bases a la vez hay que estar en uno de esos servidores y en una de esas bases.
+ */
+export interface SnippetScope {
+  profileIds: string[];
+  databases: string[];
+}
+
+/** Cuántas veces se usó una abreviatura. Vive en un archivo aparte: es del equipo, no se exporta. */
+export interface SnippetUse {
+  uses: number;
+  /** Segundos desde el epoch. */
+  lastUsedAt: number | null;
+}
+
+/** Qué hacer con una importada cuya abreviatura ya existe. */
+export type ImportMode = "skip" | "replace";
+
+export interface ImportReport {
+  /** La lista entera después de importar: la interfaz la toma tal cual. */
+  snippets: Snippet[];
+  added: number;
+  replaced: number;
+  /** Lo que no entró y por qué, ya escrito para mostrar. */
+  skipped: string[];
 }
 
 export const snippetsList = () => invoke<Snippet[]>("snippets_list");
@@ -31,3 +65,20 @@ export const snippetDelete = (snippetId: string) =>
   invoke<Snippet[]>("snippet_delete", { snippetId });
 
 export const snippetsReset = () => invoke<Snippet[]>("snippets_reset");
+
+/** Cuántas veces se usó cada abreviatura, por identificador. */
+export const snippetUsage = () => invoke<Record<string, SnippetUse>>("snippet_usage");
+
+/** Anota una expansión. Es un contador: si no se pudo escribir no falla. */
+export const snippetUsed = (snippetId: string) => invoke<void>("snippet_used", { snippetId });
+
+/**
+ * Escribe las abreviaturas elegidas (o todas, con `null`) en un archivo de `pickSave`. No lleva
+ * identificadores ni los servidores del alcance —son de esta máquina— ni el contador de usos.
+ */
+export const snippetsExport = (path: string, snippetIds: string[] | null) =>
+  invoke<number>("snippets_export", { path, snippetIds });
+
+/** Importa un archivo de `pickOpen`. Lo inválido se omite y se informa en `skipped`. */
+export const snippetsImport = (path: string, mode: ImportMode) =>
+  invoke<ImportReport>("snippets_import", { path, mode });

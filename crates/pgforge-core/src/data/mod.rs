@@ -9,6 +9,8 @@ pub mod edit;
 pub mod io;
 pub mod page;
 pub mod shape;
+pub mod transfer;
+pub mod xlsx;
 
 pub use edit::{apply, statements, Applied, Change, Statement, Values};
 pub use io::{
@@ -16,4 +18,9 @@ pub use io::{
     ExportSource, ExportSpec, ImportSpec, Outcome as CopyOutcome, TextOptions,
 };
 pub use page::{page, select, Cursor, Page, PageOrder, PageView, DEFAULT_PAGE_SIZE};
-pub use shape::{shape, shape_by_name, Column, Key, KeyKind, TableShape};
+pub use shape::{shape, shape_by_name, Column, Key, KeyKind, Link, TableShape};
+pub use transfer::{
+    plan as transfer_plan, prepare as transfer_prepare, run as transfer_run,
+    Route as TransferRoute, TransferMode, TransferPlan, TransferSpec,
+};
+pub use xlsx::workbook as xlsx_workbook;

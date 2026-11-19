@@ -108,6 +108,8 @@ export interface TriggerInfo {
   when: string | null;
   functionSchema: string;
   functionName: string;
+  /** `pg_proc.oid` de la función que ejecuta: lo que permite abrir su código. */
+  functionOid: number;
 }
 
 export const triggerPreview = (changes: TriggerChange[]) =>

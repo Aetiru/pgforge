@@ -10,9 +10,8 @@
     describeError,
     schemaNames,
     schemaSnapshotSave,
-    treeChildren,
+    databaseNames,
     type CompareSide,
-    type TreeNode,
   } from "./ipc";
 
   /**
@@ -92,15 +91,14 @@
   let schemas = $state<string[]>([]);
   let error = $state<string | null>(null);
 
-  // Las bases del servidor elegido salen del mismo lugar que la raíz del árbol: con `parent` en
-  // `null`, `treeChildren` devuelve las bases —más la carpeta de roles, que acá no va—.
+  // Las bases del servidor elegido, de la carpeta «Bases de datos» de la raíz del árbol.
   $effect(() => {
     const id = targetId;
     let cancelled = false;
-    treeChildren(id, null, explorer.options)
-      .then((nodes: TreeNode[]) => {
+    databaseNames(id, explorer.options)
+      .then((names) => {
         if (cancelled) return;
-        databases = nodes.filter((node) => node.kind === "database").map((node) => node.label);
+        databases = names;
         if (!databases.includes(targetDatabase)) targetDatabase = databases[0] ?? "";
       })
       .catch((problem) => {

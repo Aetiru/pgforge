@@ -37,6 +37,8 @@ rustls-pki-types = "1.15.1"
 russh = { version = "0.62", default-features = false, features = ["ring", "flate2", "rsa"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+# Suma de verificación de cada archivo del `.xlsx` (un zip). Ya estaba en el árbol por debajo de flate2.
+crc32fast = "1.4"
 # Huella de las migraciones guardadas. Ya estaba en el árbol por debajo de russh.
 sha2 = "0.10.9"
 thiserror = "2.0.19"

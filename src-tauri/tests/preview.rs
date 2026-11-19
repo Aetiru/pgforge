@@ -540,7 +540,7 @@ fn el_cursor_en_la_linea_en_blanco_apunta_a_la_sentencia_de_abajo() {
 
 #[test]
 fn formatear_pone_cada_columna_del_select_en_su_linea() {
-    let out = commands::query::sql_format("select id, nombre from clientes".to_owned());
+    let out = commands::query::sql_format("select id, nombre from clientes".to_owned(), None);
     assert_eq!(out, "SELECT\n    id,\n    nombre\nFROM clientes");
 }
 
@@ -549,7 +549,7 @@ fn formatear_algo_que_no_entiende_lo_devuelve_igual() {
     // Dos punto y coma seguidos: la guarda de equivalencia del núcleo nota el token que la
     // reconstrucción no repuso y devuelve la entrada intacta.
     let raro = "SELECT 1;; SELECT 2".to_owned();
-    assert_eq!(commands::query::sql_format(raro.clone()), raro);
+    assert_eq!(commands::query::sql_format(raro.clone(), None), raro);
 }
 
 #[test]

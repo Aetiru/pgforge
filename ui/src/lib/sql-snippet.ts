@@ -22,7 +22,15 @@ import {
 } from "@codemirror/autocomplete";
 import type { EditorView, KeyBinding } from "@codemirror/view";
 import type { Snippet } from "./ipc";
-import { fillVariables, variablesOf, type SnippetVariable } from "./snippet-vars";
+import { readWithTimeout, withSelection, type ShortcutEntry } from "./editor/snippet-env";
+import {
+  autoVariablesOf,
+  fillAutomatic,
+  fillVariables,
+  variablesOf,
+  type AutoName,
+  type SnippetVariable,
+} from "./snippet-vars";
 
 /**
  * Pide los valores de las variables (`${nombre:valor}`) y llama a `done` con ellos; si se cancela,
@@ -35,23 +43,85 @@ export type AskVariables = (
   done: (values: Record<string, string>) => void,
 ) => void;
 
-/** Inserta el cuerpo en `[from, to]`, preguntando antes por las variables si las tiene. */
+/**
+ * Lo que la expansión necesita saber del lugar donde ocurre. Va aparte del editor para que este
+ * módulo siga siendo CodeMirror y texto: quien lo arma (`SqlEditor`) conoce la pestaña.
+ */
+export interface ExpandEnv {
+  /** Los automáticos conocidos de la pestaña (`${hoy}`, `${base}`…), sin selección ni portapapeles. */
+  auto: () => Partial<Record<AutoName, string>>;
+  /** Lee el portapapeles. Sin esto `${portapapeles}` queda como hueco común. */
+  clipboard?: () => Promise<string>;
+  /** Se llama cuando la abreviatura **se insertó de verdad** —no si se cancela el diálogo—. */
+  used?: (id: string) => void;
+}
+
+/** Cuánto se espera al portapapeles antes de dejar el hueco sin llenar (ver `readWithTimeout`). */
+const CLIPBOARD_WAIT_MS = 400;
+
+/** Lo mínimo de una abreviatura que hace falta para expandirla; el `id` alimenta el contador de usos. */
+export type Expandable = Pick<Snippet, "abbreviation" | "body" | "description"> & { id?: string };
+
+/**
+ * Inserta el cuerpo en `[from, to]`.
+ *
+ * El orden es siempre el mismo: primero los valores automáticos, después las variables que se
+ * preguntan y por último los huecos de CodeMirror (`snippet()`). Los automáticos se llenan primero
+ * porque `${seleccion}` puede traer SQL con `${` adentro y entra ya escapado de llaves, así que ni
+ * las variables ni los huecos lo vuelven a leer.
+ *
+ * `selection` es lo seleccionado **al expandir** (atajo propio de la abreviatura, selector); con el
+ * tabulador no hay ninguna, y `${seleccion}` queda como hueco donde escribir.
+ */
 export function insertSnippet(
   view: EditorView,
-  item: Pick<Snippet, "abbreviation" | "body" | "description">,
+  item: Expandable,
   from: number,
   to: number,
   ask?: AskVariables,
+  env?: ExpandEnv,
+  selection?: string,
 ) {
-  const variables = variablesOf(item.body);
+  const base = withSelection(env?.auto() ?? {}, selection);
+  const go = (context: Partial<Record<AutoName, string>>) =>
+    expand(view, item, from, to, ask, env, fillAutomatic(item.body, context));
+
+  if (!env?.clipboard || !autoVariablesOf(item.body).includes("portapapeles")) {
+    go(base);
+    return;
+  }
+
+  // Solo se toca el portapapeles si el cuerpo lo usa: leerlo puede pedirle permiso al sistema.
+  const original = view.state.sliceDoc(from, to);
+  void readWithTimeout(env.clipboard, CLIPBOARD_WAIT_MS).then((text) => {
+    // Si mientras tanto se tecleó sobre ese lugar, insertar ahí corrompería lo escrito.
+    if (view.state.doc.length < to || view.state.sliceDoc(from, to) !== original) return;
+    go(text === null ? base : { ...base, portapapeles: text });
+  });
+}
+
+function expand(
+  view: EditorView,
+  item: Expandable,
+  from: number,
+  to: number,
+  ask: AskVariables | undefined,
+  env: ExpandEnv | undefined,
+  body: string,
+) {
+  const variables = variablesOf(body);
+  const insert = (text: string) => {
+    snippet(text)(view, null, from, to);
+    if (item.id) env?.used?.(item.id);
+  };
   if (variables.length === 0 || !ask) {
     // Sin donde preguntar, las variables valen su valor por omisión: mejor eso que dejar el
     // `${nombre:valor}` escrito a la vista.
-    snippet(fillVariables(item.body, {}))(view, null, from, to);
+    insert(fillVariables(body, {}));
     return;
   }
   ask(item, variables, (values) => {
-    snippet(fillVariables(item.body, values))(view, null, from, to);
+    insert(fillVariables(body, values));
     view.focus();
   });
 }
@@ -118,6 +188,7 @@ export function preview(body: string): string {
 export function expandBinding(
   snippets: () => readonly Snippet[],
   ask?: AskVariables,
+  env?: ExpandEnv,
 ): KeyBinding {
   return {
     key: "Tab",
@@ -136,7 +207,7 @@ export function expandBinding(
       // La lista de sugerencias puede haber quedado abierta sobre la abreviatura: expandir por
       // debajo dejaría el popup flotando contra un texto que ya no existe.
       closeCompletion(view);
-      insertSnippet(view, found, at.from, at.to, ask);
+      insertSnippet(view, found, at.from, at.to, ask, env);
       return true;
     },
   };
@@ -148,7 +219,11 @@ export function expandBinding(
  * Que además aparezcan en la lista es lo que las hace descubribles: con solo el tabulador hay que
  * acordarse de cuáles existen, y una función que se olvida no se usa.
  */
-export function snippetCompletions(snippets: () => readonly Snippet[], ask?: AskVariables) {
+export function snippetCompletions(
+  snippets: () => readonly Snippet[],
+  ask?: AskVariables,
+  env?: ExpandEnv,
+) {
   return (context: CompletionContext): CompletionResult | null => {
     const word = context.matchBefore(/[\p{L}\p{N}_]+/u);
     if (!word || (word.from === word.to && !context.explicit)) return null;
@@ -166,10 +241,36 @@ export function snippetCompletions(snippets: () => readonly Snippet[], ask?: Ask
         // Elegirla de la lista pasa por el mismo camino que el tabulador, o las variables solo
         // se preguntarían por uno de los dos.
         apply: (view: EditorView, _completion: Completion, from: number, to: number) =>
-          insertSnippet(view, item, from, to, ask),
+          insertSnippet(view, item, from, to, ask, env),
       }) as Completion,
     );
 
     return { from: word.from, options, validFor: /^[\p{L}\p{N}_]*$/u };
   };
+}
+
+/**
+ * Un atajo de teclado por abreviatura: la combinación expande **esa** abreviatura donde está el
+ * cursor, sin escribir su nombre. Con algo seleccionado lo reemplaza y `${seleccion}` lo recibe, que
+ * es para lo que sirve una abreviatura como «envolver».
+ *
+ * Quién gana ante un choque ya está decidido en `shortcutEntries`: acá solo se arma lo que quedó.
+ * Devuelve `false` en un editor de solo lectura, para que la combinación siga su camino.
+ */
+export function snippetShortcutBindings(
+  entries: readonly ShortcutEntry[],
+  ask?: AskVariables,
+  env?: ExpandEnv,
+): KeyBinding[] {
+  return entries.map(({ combo, snippet: item }) => ({
+    key: combo,
+    preventDefault: true,
+    run: (view: EditorView) => {
+      if (view.state.readOnly) return false;
+      const { from, to, empty } = view.state.selection.main;
+      closeCompletion(view);
+      insertSnippet(view, item, from, to, ask, env, empty ? undefined : view.state.sliceDoc(from, to));
+      return true;
+    },
+  }));
 }

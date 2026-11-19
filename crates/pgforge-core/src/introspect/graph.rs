@@ -51,6 +51,9 @@ pub struct GraphColumn {
     pub primary_key: bool,
     /// Participa en alguna clave foránea saliente.
     pub foreign_key: bool,
+    /// El `COMMENT ON COLUMN`, si tiene. Lo usa la documentación del esquema; el diagrama no lo dibuja.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 /// Una clave foránea. El diagrama la dibuja como flecha de la tabla que referencia a la referida.
@@ -240,7 +243,8 @@ async fn columns_by_relation(
                     a.attname::text,
                     pg_catalog.format_type(a.atttypid, a.atttypmod),
                     a.attnotnull,
-                    COALESCE(i.indisprimary, false)
+                    COALESCE(i.indisprimary, false),
+                    pg_catalog.col_description(a.attrelid, a.attnum)
                FROM pg_catalog.pg_attribute a
                LEFT JOIN pg_catalog.pg_index i
                       ON i.indrelid = a.attrelid AND i.indisprimary AND a.attnum = ANY(i.indkey)
@@ -262,6 +266,7 @@ async fn columns_by_relation(
                 not_null: row.get(4),
                 primary_key: row.get(5),
                 foreign_key: false,
+                comment: row.get(6),
             });
     }
 
@@ -324,6 +329,7 @@ mod tests {
             not_null: false,
             primary_key: false,
             foreign_key: false,
+            comment: None,
         }
     }
 }

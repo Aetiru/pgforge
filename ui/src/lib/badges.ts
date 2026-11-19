@@ -117,6 +117,24 @@ const TAGS: Record<NodeTag, { label: string; tone: string; title: string }> = {
     tone: "tag-info",
     title: "Seguridad por fila activa: la tabla puede devolver menos filas de las que tiene",
   },
+  noPrimaryKey: {
+    label: "sin PK",
+    tone: "tag-warn",
+    title:
+      "La tabla no tiene clave primaria: la grilla la abre en solo lectura y la replicación lógica no puede identificar sus filas. Agregarle una la arregla.",
+  },
+  invalid: {
+    label: "inválido",
+    tone: "tag-bad",
+    title:
+      "El índice quedó inválido —un CREATE INDEX CONCURRENTLY que falló—: el planificador no lo usa. Hay que borrarlo y rehacerlo.",
+  },
+  notPopulated: {
+    label: "sin datos",
+    tone: "tag-warn",
+    title:
+      "La vista materializada se creó WITH NO DATA: consultarla falla hasta que se haga un REFRESH.",
+  },
 };
 
 export function tagLook(tag: NodeTag) {
@@ -162,7 +180,7 @@ const ENVIRONMENTS: Record<
     bar: "border-l-[3px] border-l-emerald-500/70 bg-emerald-500/[0.06]",
     accent: "border-t-2 border-t-emerald-500/70",
     wash: "bg-emerald-500/[0.06]",
-    frame: "border-2 border-emerald-500/50",
+    frame: "border-t-2 border-t-emerald-500/70",
     ribbon: "bg-emerald-600 text-white",
     title: "Servidor de desarrollo",
   },
@@ -173,7 +191,7 @@ const ENVIRONMENTS: Record<
     bar: "border-l-[3px] border-l-blue-500/70 bg-blue-500/[0.06]",
     accent: "border-t-2 border-t-blue-500/70",
     wash: "bg-blue-500/[0.06]",
-    frame: "border-2 border-blue-500/50",
+    frame: "border-t-2 border-t-blue-500/70",
     ribbon: "bg-blue-600 text-white",
     title: "Servidor de pruebas",
   },
@@ -186,8 +204,9 @@ const ENVIRONMENTS: Record<
     bar: "border-l-[3px] border-l-rose-500/80 bg-rose-500/[0.10] paper:bg-rose-500/[0.05]",
     accent: "border-t-2 border-t-rose-500/80",
     wash: "bg-rose-500/[0.10] paper:bg-rose-500/[0.05]",
-    frame: "border-[3px] border-rose-500/90 paper:border-2",
-    ribbon: "bg-rose-600 text-white",
+    frame: "border-t-[3px] border-t-rose-500/90",
+    ribbon:
+      "bg-rose-500/10 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400",
     title: "Servidor de producción: cada modificación pide una confirmación de más",
   },
 };
@@ -201,7 +220,25 @@ const ENVIRONMENTS: Record<
  * mismo tinte en dos lugares y no dos decisiones de color por entorno.
  */
 export function envWash(environment: Environment | null): string {
-  return environment === null ? "" : ENVIRONMENTS[environment].wash;
+  // Sin fondo de fila: con veinte conexiones, una fila teñida por entorno convertía la lista en una
+  // paleta y le quitaba fuerza al rojo de producción. El entorno se lee en el borde (`spine`) y en
+  // el ícono del servidor (`envIcon`); el tinte queda para la fila elegida o con el cursor encima.
+  void environment;
+  return "";
+}
+
+/** El fondo del ícono del servidor: ahí es donde el entorno se lee sin teñir toda la fila. */
+export function envIcon(environment: Environment | null): string {
+  switch (environment) {
+    case "prod":
+      return "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400";
+    case "test":
+      return "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400";
+    case "dev":
+      return "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400";
+    default:
+      return "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400";
+  }
 }
 
 export function envLook(environment: Environment) {

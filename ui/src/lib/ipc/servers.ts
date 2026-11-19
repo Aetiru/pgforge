@@ -38,6 +38,8 @@ export interface ConnectionProfile {
   readOnly: boolean;
   /** Valor inicial del autocommit de cada pestaña de consulta. */
   autocommit: boolean;
+  /** Conectar solo al abrir la aplicación, sin pedir contraseña. Ausente en un perfil viejo. */
+  connectOnStart?: boolean;
   color?: ServerColor;
   /** Posición manual dentro de su carpeta. Ausente cae a orden alfabético, igual que el core. */
   order?: number;
@@ -141,6 +143,13 @@ export const sshTest = (profile: ConnectionProfile, sshPassword?: string, trustH
 export const disconnect = (id: string) => invoke<void>("disconnect", { id });
 
 export const connectedServers = () => invoke<string[]>("connected_servers");
+
+/** Sesiones bloqueadas y transacción abierta más vieja, para la insignia del árbol. */
+export const serverActivity = (id: string) =>
+  invoke<{ blocked: number; longestIdleInTransactionSeconds: number | null; restricted: boolean }>(
+    "server_activity",
+    { id },
+  );
 
 /** Milisegundos de ida y vuelta contra el servidor: adquiere una conexión del pool y cronometra un
  * `SELECT 1`, sin contar el tiempo de conseguir la conexión. */

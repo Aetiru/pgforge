@@ -19,15 +19,23 @@ pub mod rehearsal;
 pub mod saved;
 pub mod snippet;
 pub mod split;
+pub mod versions;
+pub mod wait;
 
 pub use advice::{Advice, AdviceKind, Severity};
 pub use audit::{AuditFacets, AuditFilter, AuditPage, ExportFormat};
-pub use completion::{Relation, SchemaSnapshot};
-pub use exec::{ColumnType, Limits, Outcome, QuerySession, TxStatus, DEFAULT_MAX_ROWS};
+pub use completion::{routine_definitions, Relation, SchemaSnapshot};
+pub use exec::{
+    Check, ColumnType, EditSource, Limits, Outcome, QuerySession, TxStatus, DEFAULT_MAX_ROWS,
+};
 pub use explain::{ExplainOptions, Plan, PlanNode};
-pub use format::format;
+pub use format::{format, format_with, FormatOptions, Indent, KeywordCase};
 pub use history::{Actor, HistoryStore, NewEntry};
 pub use rehearsal::{RehearsalOptions, Report as RehearsalReport};
 pub use saved::{NewQuery, SavedQuery, SavedStore};
-pub use snippet::{Snippet, SnippetId, SnippetStore};
+pub use snippet::{
+    ImportMode, ImportReport, Snippet, SnippetId, SnippetScope, SnippetStore, SnippetUsage,
+    SnippetUse,
+};
 pub use split::{at_cursor, missing_separator, split, Statement};
+pub use versions::{VersionMeta, VersionStore};

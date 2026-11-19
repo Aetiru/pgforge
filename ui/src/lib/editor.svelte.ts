@@ -90,6 +90,35 @@ class SqlFont {
 export const sqlFont = new SqlFont();
 
 /**
+ * Interlineado del SQL: «cómodo» es el de siempre y «compacto» deja ver cerca de un tercio más de
+ * líneas. Va por variable CSS, igual que el tamaño de letra, para que valga en todo el SQL a la vez.
+ */
+const DENSITY_KEY = "pgforge.sql.density";
+const LEADING = { comfortable: "1.65", compact: "1.35" } as const;
+
+class SqlDensity {
+  mode = $state<"comfortable" | "compact">(
+    readGlobal(DENSITY_KEY) === "compact" ? "compact" : "comfortable",
+  );
+
+  constructor() {
+    this.apply();
+  }
+
+  private apply() {
+    document.documentElement.style.setProperty("--sql-leading", LEADING[this.mode]);
+  }
+
+  toggle() {
+    this.mode = this.mode === "compact" ? "comfortable" : "compact";
+    writeGlobal(DENSITY_KEY, this.mode);
+    this.apply();
+  }
+}
+
+export const sqlDensity = new SqlDensity();
+
+/**
  * Alto del editor dentro de la pestaña de consulta.
  *
  * Se guarda por la misma razón que el tamaño de letra, y **es una sola preferencia para todas las

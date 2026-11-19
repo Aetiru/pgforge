@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use pgforge_core::conn::CancelSink;
 use pgforge_core::monitor::{ActivityFilter, Monitor};
-use pgforge_core::sql::{HistoryStore, QuerySession, SavedStore, SnippetStore};
+use pgforge_core::sql::{HistoryStore, QuerySession, SavedStore, SnippetStore, SnippetUsage};
 use pgforge_core::{ConnectionManager, ProfileId, ProfileStore, WorkspaceStore};
 use tauri::ipc::Channel;
 use tokio::sync::Mutex;
@@ -65,6 +65,8 @@ pub struct QueryEntry {
     pub database: String,
     pub session: Arc<Mutex<QuerySession>>,
     pub cancel: CancelToken,
+    /// El pid del backend de la sesión: con él se pregunta, desde otra conexión, qué espera.
+    pub pid: i32,
     /// Si cada ejecución se confirma sola. Arranca con el valor del perfil y la pestaña lo alterna.
     /// Vive del lado de Rust y no en la interfaz porque es acá donde se decide si va un `BEGIN`.
     pub autocommit: Arc<AtomicBool>,
@@ -106,6 +108,9 @@ pub struct AppState {
     /// Las abreviaturas del editor. Archivo JSON y no SQLite como las guardadas: es una lista corta
     /// que se edita entera a mano, y poder abrirla con un editor de texto es parte de la gracia.
     pub snippets: Mutex<SnippetStore>,
+    /// Cuántas veces se usó cada abreviatura. Archivo aparte (`snippet-usage.json`): el contador es de
+    /// este equipo y no tiene que viajar al exportar ni al copiar la lista (ver `SnippetUsage`).
+    pub snippet_usage: Mutex<SnippetUsage>,
     /// Los workspaces (ventanas acotadas a una carpeta de servidores). Archivo aparte de
     /// `connections.json`: un workspace no es un perfil, es una vista sobre perfiles ya guardados.
     pub workspaces: Mutex<WorkspaceStore>,
@@ -119,6 +124,12 @@ pub struct AppState {
     /// Bases con una migración corriendo. Evita que dos aplicaciones simultáneas lean el mismo
     /// registro y corran la misma versión dos veces.
     pub migrating: Mutex<HashSet<(ProfileId, String)>>,
+    /// Muestras de tamaño y de secuencias para proyectar hacia adelante. Archivo aparte
+    /// (`trends.db`): se puede borrar entero y solo reinicia el cálculo (ver `monitor::trend`).
+    pub trends: Mutex<pgforge_core::monitor::TrendStore>,
+    /// Copias anteriores del texto de cada pestaña de consulta. Archivo aparte (`versions.db`): se
+    /// puede borrar entero sin perder nada que alguien haya decidido conservar (ver `sql::versions`).
+    pub versions: Mutex<pgforge_core::sql::VersionStore>,
     /// Directorio de configuración de la aplicación. Se guarda entero (no solo lo que ya se usó
     /// para abrir los stores de arriba) porque `scripts_root` cuelga de acá.
     pub config_dir: PathBuf,
@@ -141,6 +152,7 @@ impl AppState {
             history: Mutex::new(HistoryStore::open(config_dir.join("history.db"))?),
             saved: Mutex::new(SavedStore::open(config_dir.join("saved.db"))?),
             snippets: Mutex::new(SnippetStore::load(config_dir.join("snippets.json"))?),
+            snippet_usage: Mutex::new(SnippetUsage::load(config_dir.join("snippet-usage.json"))),
             workspaces: Mutex::new(WorkspaceStore::load(config_dir.join("workspaces.json"))?),
             bookmarks: Mutex::new(pgforge_core::BookmarkStore::open(
                 config_dir.join("bookmarks.db"),
@@ -149,6 +161,12 @@ impl AppState {
                 config_dir.join("migrations.db"),
             )?),
             migrating: Mutex::new(HashSet::new()),
+            trends: Mutex::new(pgforge_core::monitor::TrendStore::open(
+                config_dir.join("trends.db"),
+            )?),
+            versions: Mutex::new(pgforge_core::sql::VersionStore::open(
+                config_dir.join("versions.db"),
+            )?),
             monitors: Mutex::new(HashMap::new()),
             processes: Processes::default(),
             queries: Mutex::new(HashMap::new()),

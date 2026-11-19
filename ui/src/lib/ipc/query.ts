@@ -1,6 +1,7 @@
 import { Channel } from "@tauri-apps/api/core";
 
 import { invoke, type CoreError } from "./core";
+import type { FormatOptions } from "./editor";
 
 // ---------------------------------------------------------------------------
 // Consultas
@@ -139,6 +140,56 @@ export interface ColumnType {
  * Los tipos de las columnas de una sentencia, sin ejecutarla. Cuesta prepararla en el servidor, así
  * que se pide solo cuando el usuario quiere verlos.
  */
+/** De qué tabla sale un resultado: `columns[i]` es el nombre en la tabla de la columna `i`, o `null`. */
+export interface EditSource {
+  oid: number;
+  columns: (string | null)[];
+}
+
+/** Filas que cumple un conteo previo (`SELECT count(*) FROM (…)`), con la sesión de la pestaña. */
+export const queryCount = (tabId: string, sql: string) =>
+  invoke<number>("query_count", { tabId, sql });
+
+/** Las definiciones (`CREATE OR REPLACE …`) de las funciones o procedimientos con ese nombre. */
+export const routineDefinitions = (
+  id: string,
+  schema: string | null,
+  name: string,
+  database?: string,
+) => invoke<string[]>("routine_definitions", { id, database: database ?? null, schema, name });
+
+/** La sesión que tiene parada a otra. Refleja `sql::wait::Blocker`. */
+export interface WaitBlocker {
+  pid: number;
+  user: string | null;
+  state: string | null;
+  transactionSeconds: number | null;
+  query: string | null;
+}
+
+/** Qué espera la consulta en curso. Refleja `sql::wait::WaitInfo`. */
+export interface WaitInfo {
+  waitEventType: string | null;
+  waitEvent: string | null;
+  blockedBy: number;
+  blocker: WaitBlocker | null;
+}
+
+/** Lo que espera la consulta que la pestaña está ejecutando; `null` si ya terminó. */
+export const queryWaitInfo = (tabId: string) =>
+  invoke<WaitInfo | null>("query_wait_info", { tabId });
+
+/** Tiempo máximo por sentencia de la pestaña, en ms: `0` sin límite, `null` el del perfil. */
+export const queryTimeout = (tabId: string, millis: number | null) =>
+  invoke<void>("query_timeout", { tabId, millis });
+
+/** Filas de una tabla según las estadísticas (estimación); `null` si no se sabe. */
+export const queryEstimatedRows = (tabId: string, schema: string | null, table: string) =>
+  invoke<number | null>("query_estimated_rows", { tabId, schema, table });
+
+export const queryEditSource = (tabId: string, sql: string) =>
+  invoke<EditSource>("query_edit_source", { tabId, sql });
+
 export const queryColumnTypes = (tabId: string, sql: string) =>
   invoke<ColumnType[]>("query_column_types", { tabId, sql });
 
@@ -170,10 +221,21 @@ export interface SchemaRelation {
   columns: RelationColumn[];
 }
 
+/** Una clave foránea entre tablas visibles: la i-ésima de `columns` apunta a la i-ésima de `refColumns`. */
+export interface ForeignKeyRef {
+  schema: string;
+  table: string;
+  columns: string[];
+  refSchema: string;
+  refTable: string;
+  refColumns: string[];
+}
+
 export interface SchemaSnapshot {
   database: string;
   schemas: string[];
   relations: SchemaRelation[];
+  foreignKeys: ForeignKeyRef[];
 }
 
 export const schemaSnapshot = (id: string, database?: string) =>
@@ -261,12 +323,17 @@ export const statementAtCursor = (sql: string, cursor: number) =>
  * Formatea un script SQL. Nunca falla: `sql::format` es pura y, si no entiende algo, la guarda de
  * equivalencia del núcleo devuelve el texto tal cual llegó en vez de arriesgarse a romperlo.
  */
-export const sqlFormat = (sql: string) => invoke<string>("sql_format", { sql });
+export const sqlFormat = (sql: string, options?: FormatOptions) =>
+  invoke<string>("sql_format", { sql, options: options ?? null });
 
 export const explainWarning = (sql: string, options?: ExplainOptions) =>
   invoke<string | null>("explain_warning", { sql, options: options ?? null });
 
 /** Guarda el texto de una pestaña de consulta como archivo. */
+/** Escribe un resultado como libro de Excel en una ruta elegida con el diálogo de guardar. */
+export const resultExportXlsx = (path: string, columns: string[], rows: (string | null)[][]) =>
+  invoke<void>("result_export_xlsx", { path, columns, rows });
+
 export const sqlWriteFile = (path: string, sql: string) =>
   invoke<void>("sql_write_file", { path, sql });
 

@@ -10,6 +10,7 @@
     barShare,
     countSessions,
     filterSessions,
+    groupLocks,
     groupSessions,
     isLong,
     kindOf,
@@ -105,6 +106,11 @@
   let frozen = $state.raw<Backend[] | null>(null);
   const source = $derived(frozen ?? backends);
 
+  /** Toma otra foto de la lista sin soltar la sesión elegida. */
+  export function refresh() {
+    frozen = selectedPid !== null && freeze ? backends : null;
+  }
+
   function pick(pid: number | null) {
     selectedPid = pid;
     frozen = pid !== null && freeze ? backends : null;
@@ -123,6 +129,9 @@
 
   const live = $derived(selectedPid === null ? null : backends.find((b) => b.pid === selectedPid) ?? null);
   const selected = $derived(live ?? (selectedPid === null ? null : (frozen ?? []).find((b) => b.pid === selectedPid) ?? null));
+  const LOCKS_SHOWN = 4;
+  let allLocks = $state(false);
+  const lockGroups = $derived(groupLocks(locks));
   const gone = $derived(selectedPid !== null && live === null);
 
   const chain = $derived(blocking);
@@ -305,10 +314,21 @@
       Congelar al elegir
     </label>
 
+    <!-- Siempre a la vista: «actualizar» dentro de una pastilla no se leía como botón. Con la lista
+         congelada es lo que hay que apretar para ver las sesiones de ahora; en vivo no hay nada que
+         refrescar y se dice. -->
     {#if frozen}
-      <button class="tag tag-warn" onclick={() => pick(selectedPid === null ? null : selectedPid)} title="Vuelve a tomar la lista en vivo">
-        lista congelada · actualizar
+      <button
+        class="btn btn-sm border-amber-400 text-amber-800 dark:border-amber-600 dark:text-amber-300"
+        onclick={refresh}
+        title="La lista dejó de reordenarse al elegir una sesión. Vuelve a tomar las sesiones de ahora; la elegida se conserva"
+      >
+        <Icon name="refresh" size={12} />
+        Actualizar lista
+        <span class="text-[10px] opacity-80">· congelada</span>
       </button>
+    {:else}
+      <span class="tag tag-neutral" title="La lista se actualiza sola en cada muestra">En vivo</span>
     {/if}
   </div>
 
@@ -462,15 +482,33 @@
           {/if}
         </dl>
 
-        {#if locks.length > 0}
-          <p class="text-xs muted" title="Candados que tiene o espera esta sesión">
-            Candados: {locks.map((lock) => `${lock.mode}${lock.granted ? "" : " (esperando)"}`).join(", ")}
-          </p>
+        {#if selected.query}
+          <!-- Líneas en blanco fuera: un `\n\n` entre columnas duplicaba el alto de la consulta. -->
+          <div class="max-h-80 min-h-0 overflow-auto rounded-md bg-zinc-50 px-2 py-1.5 select-text dark:bg-zinc-900">
+            <Sql code={selected.query.trim().replace(/\r?\n(?:[ \t]*\r?\n)+/g, "\n")} compact />
+          </div>
         {/if}
 
-        {#if selected.query}
-          <div class="max-h-60 min-h-0 overflow-auto rounded-md bg-zinc-50 px-2 py-1 select-text dark:bg-zinc-900">
-            <Sql code={selected.query} />
+        {#if lockGroups.length > 0}
+          <div class="text-xs" title="Candados que tiene o espera esta sesión">
+            <div class="flex items-center gap-1.5">
+              <span class="muted">Candados ({locks.length})</span>
+              {#if lockGroups.length > LOCKS_SHOWN}
+                <button class="underline muted" onclick={() => (allLocks = !allLocks)}>
+                  {allLocks ? "ver menos" : `ver los ${lockGroups.length} tipos`}
+                </button>
+              {/if}
+            </div>
+            <ul class="mt-0.5 flex flex-col gap-0.5">
+              {#each allLocks ? lockGroups : lockGroups.slice(0, LOCKS_SHOWN) as group (`${group.granted}|${group.lockType}|${group.mode}`)}
+                <li class="font-mono {group.granted ? '' : 'text-rose-600 dark:text-rose-400'}">
+                  {group.mode}{group.count > 1 ? ` ×${group.count}` : ""}
+                  <span class="muted">
+                    · {group.lockType}{group.relations.length ? ` · ${group.relations.join(", ")}` : ""}{group.granted ? "" : " · esperando"}
+                  </span>
+                </li>
+              {/each}
+            </ul>
           </div>
         {/if}
 

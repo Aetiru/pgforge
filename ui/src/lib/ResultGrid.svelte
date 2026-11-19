@@ -4,11 +4,14 @@
   import { geometryText, geometryTextOrNull, isGeometryType } from "./geometry";
   import { columnWidth, gutterWidth } from "./grid-width";
   import { gridZoom } from "./grid.svelte";
+  import { timeZone } from "./tz.svelte";
+  import { numberFormat } from "./numfmt.svelte";
 
   let {
     columns,
     rows,
     types = null,
+    editing = null,
   }: {
     columns: string[];
     rows: (string | null)[][];
@@ -16,6 +19,15 @@
      * en la pestaña de datos: al leer un resultado, saber si eso es un `numeric` o un `text` cambia
      * lo que dice. */
     types?: string[] | null;
+    /**
+     * Modo de edición del resultado: qué columnas se pueden tocar, lo ya cambiado y a quién avisar.
+     * Sin esto la grilla es de solo lectura, que es como se usa casi siempre.
+     */
+    editing?: {
+      editable: boolean[];
+      edits: ReadonlyMap<number, ReadonlyMap<number, string | null>>;
+      onedit: (row: number, column: number, value: string | null) => void;
+    } | null;
   } = $props();
 
   /** Lo que se muestra en lugar de un NULL, que no es lo mismo que una celda vacía. */
@@ -39,6 +51,17 @@
   // un `indexOf` por celda visible recorrería la tabla entera en cada cuadro.
   const numbered = $derived(rows.map((cells, index) => ({ index, cells })));
 
+  /** El valor de una celda: lo editado si se tocó, si no lo que trajo el servidor. */
+  function shown(row: Numbered, index: number): string | null {
+    const cells = editing?.edits.get(row.index);
+    return cells?.has(index) ? (cells.get(index) ?? null) : row.cells[index];
+  }
+
+  /** La clave de las columnas de datos es `<posición>-<nombre>`; la del «#» no tiene posición. */
+  function positionOf(column: Column<Numbered>): number {
+    return Number(column.key.split("-")[0]);
+  }
+
   const definitions = $derived.by<Column<Numbered>[]>(() => {
     const sample = rows.slice(0, SAMPLE);
 
@@ -56,6 +79,9 @@
         name.length,
       );
 
+      // Una columna de puros números: se alinea a la derecha y admite el separador de miles.
+      const numericColumn = numeric(sample, index);
+
       return {
         key: `${index}-${name}`,
         header: name,
@@ -69,9 +95,9 @@
           max: MAX_WIDTH,
           padding: 20,
         }),
-        align: numeric(sample, index) ? "right" : "left",
+        align: numericColumn ? "right" : "left",
         value: (row) => {
-          const value = row.cells[index];
+          const value = shown(row, index);
           if (value === null) return NULL;
           if (bool) return boolText(value);
           if (geometryColumn) return geometryText(value);
@@ -82,13 +108,19 @@
             const decoded = geometryTextOrNull(value);
             if (decoded !== null) return decoded;
           }
-          return oneLine(value);
+          const text = timeZone.show(value);
+          return oneLine(numericColumn ? numberFormat.show(text) : text);
         },
         // Lo que se copia y lo que muestra el visor es el valor como vino, no el de una línea.
-        raw: (row) => row.cells[index],
-        title: (row) => row.cells[index] ?? undefined,
+        raw: (row) => shown(row, index),
+        edit: (row) => shown(row, index),
+        title: (row) => shown(row, index) ?? undefined,
         tone: (row) =>
-          row.cells[index] === null ? "cell-null" : "",
+          editing?.edits.get(row.index)?.has(index)
+            ? "bg-amber-100/70 dark:bg-amber-900/30"
+            : shown(row, index) === null
+              ? "cell-null"
+              : "",
       };
     });
 
@@ -142,5 +174,7 @@
   rows={numbered}
   rowKey={(row) => row.index}
   sortable
+  editable={editing ? (_row, column) => editing.editable[positionOf(column)] === true : undefined}
+  onedit={editing ? (row, column, value) => editing.onedit(row.index, positionOf(column), value) : undefined}
   empty="La consulta no devolvió ninguna fila."
 />

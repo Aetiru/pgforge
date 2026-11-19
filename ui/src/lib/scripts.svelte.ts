@@ -2,19 +2,20 @@
  * El árbol de scripts, del lado de la interfaz: los `.sql` de cada conexión, guardados solos en
  * `<config>/scripts/<conexión>/`.
  *
- * Qué carpetas quedaron colapsadas vive en `localStorage` con el patrón **exacto** de
- * `folders.svelte.ts`: se guarda lo colapsado y no lo abierto, así que una carpeta nueva —o un
- * script recién importado en una subcarpeta que no existía— aparece abierta sin que nadie lo pida.
+ * Qué carpetas están abiertas vive en `localStorage`. Se guarda lo **abierto** y no lo colapsado:
+ * con una carpeta por conexión y decenas de scripts cada una, que todo arrancara desplegado
+ * convertía la lista en un muro; una carpeta nueva aparece cerrada y se abre cuando se la busca.
  */
 
 import { describeError, scriptsTree, type ScriptFolder } from "./ipc";
 import { wGet, wSet } from "./wstorage";
 
-const COLLAPSED_KEY = "pgforge.library.scriptsCollapsed";
+// Clave nueva: la anterior guardaba lo colapsado, y leerla al revés abriría justo lo cerrado.
+const OPEN_KEY = "pgforge.library.scriptsOpen";
 
 function stored(): string[] {
   try {
-    const value = JSON.parse(wGet(COLLAPSED_KEY) ?? "[]");
+    const value = JSON.parse(wGet(OPEN_KEY) ?? "[]");
     return Array.isArray(value) ? value.filter((name) => typeof name === "string") : [];
   } catch {
     // Un valor corrupto no puede impedir que esto se cargue.
@@ -27,8 +28,8 @@ class Scripts {
   loading = $state(false);
   error = $state<string | null>(null);
 
-  /** Carpetas que el usuario dejó cerradas, identificadas por su ruta completa. */
-  private collapsed = $state<string[]>(stored());
+  /** Carpetas que el usuario abrió, identificadas por su ruta completa. */
+  private opened = $state<string[]>(stored());
 
   /**
    * Relee el árbol entero. A diferencia de `Bookmarks.load`, no se guarda una sola vez: renombrar,
@@ -47,15 +48,15 @@ class Scripts {
     }
   }
 
-  /** Si la carpeta tiene que dibujarse abierta. Una carpeta nueva arranca abierta. */
+  /** Si la carpeta tiene que dibujarse abierta. Una carpeta nueva arranca cerrada. */
   isOpen(path: string): boolean {
-    return !this.collapsed.includes(path);
+    return this.opened.includes(path);
   }
 
   setOpen(path: string, open: boolean) {
-    const without = this.collapsed.filter((item) => item !== path);
-    this.collapsed = open ? without : [...without, path];
-    wSet(COLLAPSED_KEY, JSON.stringify(this.collapsed));
+    const without = this.opened.filter((item) => item !== path);
+    this.opened = open ? [...without, path] : without;
+    wSet(OPEN_KEY, JSON.stringify(this.opened));
   }
 }
 

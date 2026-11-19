@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { pickOpen } from "./lib/ipc";
   import Alert from "./lib/Alert.svelte";
   import Confirm from "./lib/Confirm.svelte";
@@ -21,6 +22,15 @@
   import Icon, { type IconName } from "./lib/Icon.svelte";
   import Modal from "./lib/Modal.svelte";
   import Palette from "./lib/Palette.svelte";
+  import GenerateSqlDialog from "./lib/GenerateSqlDialog.svelte";
+  import SchemaDocDialog from "./lib/SchemaDocDialog.svelte";
+  import { schemaDocDialog } from "./lib/schema-doc.svelte";
+  import { generateSqlDialog } from "./lib/generate-sql.svelte";
+  import TxDecision from "./lib/TxDecision.svelte";
+  import Elapsed from "./lib/Elapsed.svelte";
+  import { session } from "./lib/session-restore.svelte";
+  import { uiZoom } from "./lib/ui-zoom.svelte";
+  import TabSwitcher from "./lib/TabSwitcher.svelte";
   import Preferences from "./lib/Preferences.svelte";
   import ShortcutsDialog from "./lib/ShortcutsDialog.svelte";
   import { shortcutStore } from "./lib/shortcuts.svelte";
@@ -42,6 +52,8 @@
   import { openMonitor, MonitorTab } from "./lib/monitor.svelte";
   import { openData, DataTab } from "./lib/data.svelte";
   import { openErd, ErdTab } from "./lib/erd.svelte";
+  import { DatabaseTab } from "./lib/database.svelte";
+  import DatabasePanel from "./lib/DatabasePanel.svelte";
   import { openPermissionMatrix, PermissionMatrixTab } from "./lib/permission-matrix.svelte";
   import { openRoleCapabilities, RoleCapabilitiesTab } from "./lib/role-capabilities.svelte";
   import { environmentOf, guard } from "./lib/access.svelte";
@@ -91,6 +103,7 @@
    * `QueryTab.dispose()`, que corre cuando la pestaña ya se cerró y no puede preguntar nada.
    */
   let closingTab = $state<QueryTab | null>(null);
+  let closingBusy = $state(false);
 
   /**
    * La pestaña que se está renombrando in-place, con doble clic sobre el título o `F2`. Es la única
@@ -98,6 +111,17 @@
    * la abrió, y renombrarla ahí confundiría con «esto pasó a llamarse así en el servidor».
    */
   let renamingTab = $state<string | null>(null);
+  let tabStrip = $state<HTMLDivElement | null>(null);
+
+  // Sin barra de desplazamiento, la pestaña que se activa tiene que traerse sola a la vista: abrir
+  // una consulta nueva con ocho pestañas la dejaría fuera de pantalla.
+  $effect(() => {
+    void tabs.active;
+    void tabs.all.length;
+    tabStrip
+      ?.querySelector('[aria-selected="true"]')
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  });
   let renameValue = $state("");
   let renameInput = $state<HTMLInputElement | null>(null);
   /**
@@ -167,10 +191,13 @@
   let workspaceReload = $state(0);
   /** La paleta de comandos (Ctrl+K). */
   let paletteOpen = $state(false);
+  let tabSwitcherOpen = $state(false);
   /** La búsqueda rápida contra el servidor (Ctrl+Mayús+P). */
   let searchOpen = $state(false);
   /** El menú con lo que no se usa todos los días del árbol. */
   let treeMenu = $state(false);
+  /** Pide confirmación antes de cerrar todas las conexiones: arrastra las pestañas de cada una. */
+  let confirmDisconnectAll = $state(false);
   let banner = $state<string | null>(null);
   let preferences = $state(false);
   /** La chuleta de atajos (F1 de fábrica; reasignable). */
@@ -179,6 +206,7 @@
     query: "sql",
     data: "table",
     erd: "diagram",
+    database: "database",
     compare: "compare",
     dataCompare: "compare",
     monitor: "chart",
@@ -188,9 +216,55 @@
     migrations: "sql",
   };
 
+  // Seguir la pestaña activa en el árbol. Se recuerda: quien lo enciende lo quiere siempre.
+  const FOLLOW_KEY = "pgforge.tree.follow";
+  let followActive = $state(
+    (() => {
+      try {
+        return localStorage.getItem(FOLLOW_KEY) === "1";
+      } catch {
+        return false;
+      }
+    })(),
+  );
+
+  function setFollowActive(on: boolean) {
+    followActive = on;
+    try {
+      localStorage.setItem(FOLLOW_KEY, on ? "1" : "0");
+    } catch {
+      // Sin `localStorage` rige solo esta sesión.
+    }
+  }
+
+  // Lee `shape` además de la pestaña activa: la forma llega después de abrirla, y recién ahí se
+  // sabe a qué esquema pertenece la tabla.
+  $effect(() => {
+    const current = tabs.current;
+    if (!followActive || !(current instanceof DataTab) || !current.shape) return;
+    const { profileId, database, oid } = current;
+    const schema = current.shape.schema;
+    untrack(() => void explorer.revealRelation(profileId, database, schema, oid).catch(() => null));
+  });
+
+  /**
+   * Conecta los servidores marcados «Conectar al abrir la aplicación». En paralelo y sin preguntar
+   * nada: uno que pida contraseña, o que no responda, falla en silencio y queda desconectado, y los
+   * demás siguen. Las pestañas de la sesión anterior se restauran solas cuando cada uno conecta.
+   */
+  async function connectOnStart() {
+    const wanted = explorer.profiles.filter(
+      (profile) => profile.connectOnStart && !explorer.isConnected(profile.id),
+    );
+    await Promise.allSettled(wanted.map((profile) => explorer.connect(profile)));
+  }
+
   $effect(() => {
     appInfo().then((value) => (info = value));
-    explorer.refreshProfiles().catch((error) => (banner = describeError(error)));
+    explorer
+      .refreshProfiles()
+      .then(() => connectOnStart())
+      .catch((error) => (banner = describeError(error)));
     // Engancharse al registro de procesos es lo primero que hace la ventana, y también lo primero
     // que hace después de recargarse: el primer mensaje trae lo que quedó corriendo del otro lado
     // (ver `tasks.svelte.ts`).
@@ -381,6 +455,35 @@
     }
   });
 
+  // Recordar las consultas abiertas. Se escribe a medias de segundo después del último cambio, y
+  // al cerrar la ventana de inmediato: tecleo y cierre seguidos no pueden perder lo último.
+  $effect(() => {
+    for (const tab of tabs.all) {
+      if (tab instanceof QueryTab) {
+        void tab.sql;
+        void tab.title;
+        void tab.database;
+      }
+    }
+    void tabs.all.length;
+    untrack(() => session.save());
+  });
+
+  // Cuando un servidor se conecta, vuelven sus consultas de la vez anterior.
+  $effect(() => {
+    const connected = explorer.servers.filter((row) => row.connected).map((row) => row.profileId);
+    untrack(() => {
+      for (const id of connected) void session.restoreFor(id);
+    });
+  });
+
+  // Lo que esperaba a un servidor que se borró no vuelve nunca: se suelta en vez de acumularse.
+  $effect(() => {
+    if (explorer.profiles.length === 0) return;
+    const known = new Set(explorer.profiles.map((profile) => profile.id));
+    untrack(() => session.prune(known));
+  });
+
   function startResize(event: MouseEvent) {
     event.preventDefault();
     // El ancho se mide contra el borde izquierdo del panel y no contra el de la ventana: el riel
@@ -527,6 +630,18 @@
         if (searchOpen) searchOpen = false;
         else if (explorer.selected && queryTarget) searchOpen = true;
       },
+      "app.zoomIn": () => uiZoom.bigger(),
+      "app.zoomOut": () => uiZoom.smaller(),
+      "app.zoomReset": () => uiZoom.reset(),
+      "app.tabs": () => (tabSwitcherOpen = !tabSwitcherOpen),
+      // Como `Alt+Tab` del sistema pero entre pestañas: la que se usó justo antes de esta.
+      "app.lastTab": () => {
+        const target = tabs.previous;
+        if (target) tabs.activate(target.key);
+      },
+      // Como los botones atrás y adelante de un navegador, sobre las pestañas que se fueron mirando.
+      "app.back": () => void tabs.goBack(),
+      "app.forward": () => void tabs.goForward(),
       "app.newQuery": () => newQuery(),
       // Con el editor enfocado lo atiende su propio keymap; esto cubre el resto de la ventana,
       // donde `Ctrl+S` si no lo tomaría el navegador que hay debajo de la ventana de Tauri.
@@ -590,6 +705,7 @@
 <svelte:window
   onkeydown={onKeydown}
   onclick={() => (treeMenu = false)}
+  onpagehide={() => session.flush()}
   onblur={() => {
     // La ventana entera perdió el foco —se fue a otra aplicación—, uno de los tres momentos en que
     // se vuelca el script pendiente (los otros dos: cambiar de pestaña activa y cerrarla).
@@ -664,6 +780,18 @@
               >
                 <Icon name="compass" />
               </button>
+              <!-- Seguir la pestaña activa: cada vez que cambia, el árbol revela la tabla que muestra. -->
+              <button
+                class="btn btn-ghost btn-icon btn-toggle"
+                aria-pressed={followActive}
+                aria-label="Seguir la pestaña activa en el árbol"
+                title={followActive
+                  ? "El árbol sigue a la pestaña activa (clic para dejar de seguirla)"
+                  : "Hacer que el árbol revele la tabla de la pestaña activa"}
+                onclick={() => setFollowActive(!followActive)}
+              >
+                <Icon name="eye" />
+              </button>
               <button
                 class="btn btn-ghost btn-icon"
                 title="Nuevo servidor"
@@ -732,6 +860,24 @@
                     >
                       <span class="flex items-center gap-2">
                         <Icon name="collapse" size={13} /> Contraer todo
+                      </span>
+                    </button>
+                    <button
+                      class="row-menu"
+                      disabled={explorer.connectedCount === 0}
+                      title={explorer.connectedCount === 0
+                        ? "No hay servidores conectados"
+                        : "Cierra la conexión de todos los servidores y sus pestañas"}
+                      onclick={() => {
+                        treeMenu = false;
+                        confirmDisconnectAll = true;
+                      }}
+                    >
+                      <span class="flex items-center gap-2">
+                        <Icon name="plug" size={13} /> Desconectar todos
+                        {#if explorer.connectedCount > 0}
+                          <span class="seg-count tabular-nums">{explorer.connectedCount}</span>
+                        {/if}
                       </span>
                     </button>
 
@@ -839,9 +985,15 @@
         <!-- `overflow-y-hidden`: sin eso, el subrayado de la pestaña activa desborda un píxel hacia
              abajo y el navegador dibuja una barra de desplazamiento vertical en toda la tira. -->
         <div
-          class="flex min-w-0 flex-1 items-stretch gap-px overflow-x-auto overflow-y-hidden px-1
+          class="tab-strip flex min-w-0 flex-1 items-stretch gap-px overflow-x-auto overflow-y-hidden px-1
                  pt-1"
           role="tablist"
+          bind:this={tabStrip}
+          onwheel={(event) => {
+            // Rueda vertical → desplazamiento horizontal; un trackpad que ya manda deltaX se respeta.
+            if (event.deltaX !== 0 || !tabStrip) return;
+            tabStrip.scrollLeft += event.deltaY;
+          }}
         >
           {#each tabGroups as group (group.profileId)}
             {#if tabGroups.length > 1}
@@ -890,6 +1042,12 @@
                 >
                   {#if tab instanceof QueryTab && tab.running}
                     <span class="spinner"></span>
+                  {:else if tab instanceof QueryTab && tab.dirty}
+                    <!-- Hay un archivo o una consulta con nombre que ya no coincide con lo escrito. -->
+                    <span
+                      class="size-2 shrink-0 rounded-full bg-amber-500"
+                      title="Cambios sin guardar"
+                    ></span>
                   {:else}
                     <!-- El ícono ya no toma color del entorno: queda del mismo tono que el resto de
                          la pestaña (`.tab`), y el entorno se ve en el filete de arriba del `tab-wrap`
@@ -915,6 +1073,9 @@
                   >
                     {tab.title}
                   </span>
+                  {#if tab instanceof QueryTab && tab.running}
+                    <span class="ml-1 shrink-0 text-[10px] muted"><Elapsed since={tab.runStartedAt} /></span>
+                  {/if}
                 </button>
                 <!-- Manda esta pestaña al panel de al lado, o la saca si ya estaba ahí. Deshabilitado
                      sobre la pestaña principal: partirla contra sí misma no significa nada. -->
@@ -1036,6 +1197,8 @@
           <DataPanel {tab} />
         {:else if tab instanceof ErdTab}
           <ErdPanel {tab} />
+        {:else if tab instanceof DatabaseTab}
+          <DatabasePanel {tab} />
         {:else if tab instanceof CompareTab}
           <ComparePanel {tab} />
         {:else if tab instanceof DataCompareTab}
@@ -1197,6 +1360,22 @@
     {/if}
 
     <div class="ml-auto flex shrink-0 items-center gap-3">
+      {#if tabs.current instanceof QueryTab}
+        <!-- Lo que se mira mientras se escribe: dónde está el cursor, cuánto hay seleccionado y si
+             lo que se ejecute se confirma solo. -->
+        <span class="tabular-nums">
+          Ln <strong class="font-semibold">{tabs.current.cursor.line}</strong>, Col
+          <strong class="font-semibold">{tabs.current.cursor.column}</strong>
+        </span>
+        {#if tabs.current.cursor.selected > 0}
+          <span class="tabular-nums">
+            Sel. <strong class="font-semibold">{tabs.current.cursor.selected}</strong> car.
+          </span>
+        {/if}
+        <span class={tabs.current.autocommit ? "" : "font-semibold text-amber-600 dark:text-amber-400"}>
+          {tabs.current.autocommit ? "Auto" : "Manual"}
+        </span>
+      {/if}
       {#if connectedServers.length > 0}
         <span class="flex items-center gap-1.5" title="Servidores conectados">
           <span class="dot dot-on"></span>
@@ -1238,6 +1417,24 @@
   </footer>
 </div>
 
+{#if tabSwitcherOpen}
+{#if schemaDocDialog.target}
+  <SchemaDocDialog target={schemaDocDialog.target} onclose={() => schemaDocDialog.close()} />
+{/if}
+
+{#if generateSqlDialog.target}
+  <GenerateSqlDialog target={generateSqlDialog.target} onclose={() => generateSqlDialog.close()} />
+{/if}
+
+  <TabSwitcher
+    onpick={(key) => {
+      tabSwitcherOpen = false;
+      tabs.activate(key);
+    }}
+    onclose={() => (tabSwitcherOpen = false)}
+  />
+{/if}
+
 {#if paletteOpen}
   <Palette
     onnewquery={newQuery}
@@ -1248,7 +1445,22 @@
     onshortcuts={() => (shortcutsOpen = true)}
     onmigrations={showMigrations}
     onconnect={connectById}
+    ondisconnectall={() => (confirmDisconnectAll = true)}
     onclose={() => (paletteOpen = false)}
+  />
+{/if}
+
+{#if confirmDisconnectAll}
+  <Confirm
+    title="Desconectar todos los servidores"
+    message="Se cierran las {explorer.connectedCount} conexiones abiertas y también todas las pestañas de esos servidores. Las consultas sin guardar de esas pestañas se pierden; las transacciones abiertas se revierten."
+    confirmLabel="Desconectar todos"
+    danger
+    onconfirm={() => {
+      confirmDisconnectAll = false;
+      void explorer.disconnectAll();
+    }}
+    onclose={() => (confirmDisconnectAll = false)}
   />
 {/if}
 
@@ -1384,13 +1596,25 @@
 {/if}
 
 {#if closingTab}
-  <Confirm
+  <TxDecision
     title="Cerrar «{closingTab.title}»"
-    message="La pestaña tiene una transacción abierta. Al cerrarla se suelta la conexión y el servidor revierte todo lo que no esté confirmado."
-    confirmLabel="Cerrar y revertir"
-    onconfirm={() => {
-      if (closingTab) tabs.close(closingTab.key);
-      closingTab = null;
+    message="La pestaña tiene una transacción abierta. Si la cerrás sin decidir, el servidor revierte todo lo que no esté confirmado. ¿Qué hacemos con ella?"
+    busy={closingBusy}
+    onchoose={async (choice) => {
+      const target = closingTab;
+      if (!target) return;
+      closingBusy = true;
+      try {
+        if (choice === "commit") await target.commit();
+        else await target.rollback();
+        // Un commit que falla deja la transacción abierta: la pestaña no se cierra a ciegas.
+        if (target.txStatus === "idle") {
+          tabs.close(target.key);
+          closingTab = null;
+        }
+      } finally {
+        closingBusy = false;
+      }
     }}
     onclose={() => (closingTab = null)}
   />

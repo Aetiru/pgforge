@@ -48,6 +48,7 @@ pub enum ProcessKind {
     Restore,
     Export,
     Import,
+    Transfer,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

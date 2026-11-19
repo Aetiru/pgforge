@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from "./Skeleton.svelte";
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
@@ -159,7 +160,7 @@
       {/if}
 
       {#if tab.loading && tab.overview === null}
-        <p class="p-4 text-sm muted"><span class="spinner"></span> Leyendo la carpeta…</p>
+        <Skeleton rows={5} label="Leyendo la carpeta…" />
       {:else if tab.overview}
         {#if missing.length > 0}
           <Alert tone="warn" box class="mb-3">

@@ -9,15 +9,24 @@
 //! sabe si su ventana está visible. Este módulo solo sabe tomar una muestra.
 
 pub mod activity;
+pub mod config_review;
+pub mod diagnose;
 pub mod maintenance;
 pub mod stats;
+pub mod trend;
 
 pub use activity::{ActivityFilter, Backend, BlockNode, Lock};
+pub use config_review::ConfigReview;
+pub use diagnose::{
+    AutovacuumRow, CacheReport, CheckpointReport, ConnectionReport, Level, SequenceUsage, SpaceMap,
+    Wraparound,
+};
 pub use maintenance::{Operation, Target};
 pub use stats::{
     Guards, IndexShape, IndexStat, Redundancy, RedundancyKind, ReplicationLag, StatementStat,
     StatsWindow, TableBloat, TableStat,
 };
+pub use trend::{Forecast, Sample, TrendStore};
 
 use std::time::Instant;
 
@@ -74,6 +83,8 @@ const SERVER_METRICS_SQL: &str = "
 pub struct Monitor {
     session: Session,
     caps: ServerCaps,
+    /// Base a la que está conectada la sesión: las muestras de tendencia se guardan por base.
+    database: String,
     /// Momento y total de transacciones de la muestra anterior, para derivar la tasa.
     previous_transactions: Option<(Instant, i64)>,
 }
@@ -87,12 +98,17 @@ impl Monitor {
         Ok(Self {
             session,
             caps: handle.caps.clone(),
+            database: database.to_owned(),
             previous_transactions: None,
         })
     }
 
     pub fn caps(&self) -> &ServerCaps {
         &self.caps
+    }
+
+    pub fn database(&self) -> &str {
+        &self.database
     }
 
     pub async fn snapshot(&mut self, filter: &ActivityFilter) -> Result<Snapshot> {
@@ -216,6 +232,40 @@ impl Monitor {
         self.require_stats()?;
         let shapes = stats::index_shapes(self.session.client()).await?;
         Ok(stats::redundancies(&shapes))
+    }
+
+    pub async fn sequences(&self, limit: i64) -> Result<Vec<SequenceUsage>> {
+        diagnose::sequences(self.session.client(), limit).await
+    }
+
+    pub async fn wraparound(&self, limit: i64) -> Result<Wraparound> {
+        diagnose::wraparound(self.session.client(), limit).await
+    }
+
+    pub async fn autovacuum(&self, limit: i64) -> Result<Vec<AutovacuumRow>> {
+        self.require_stats()?;
+        diagnose::autovacuum(self.session.client(), limit).await
+    }
+
+    pub async fn cache(&self, limit: i64) -> Result<CacheReport> {
+        self.require_stats()?;
+        diagnose::cache(self.session.client(), limit).await
+    }
+
+    pub async fn connections(&self) -> Result<ConnectionReport> {
+        diagnose::connections(self.session.client(), &self.caps).await
+    }
+
+    pub async fn space_map(&self, limit: i64) -> Result<SpaceMap> {
+        diagnose::space_map(self.session.client(), limit).await
+    }
+
+    pub async fn checkpoints(&self) -> Result<CheckpointReport> {
+        diagnose::checkpoints(self.session.client(), &self.caps).await
+    }
+
+    pub async fn config_review(&self, ram_bytes: Option<i64>) -> Result<ConfigReview> {
+        config_review::config_review(self.session.client(), ram_bytes).await
     }
 
     pub async fn has_statement_stats(&self) -> Result<bool> {

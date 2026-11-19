@@ -438,6 +438,35 @@ impl HistoryStore {
         )
     }
 
+    /// Consultas ya ejecutadas con éxito que **empiezan** con `prefix`, para completar lo que se
+    /// está escribiendo con algo que ya se escribió.
+    ///
+    /// La comparación es exacta, mayúsculas incluidas: la completación en gris sigue el texto tal
+    /// como está en el editor, y proponer `SELECT` para `select` dejaría el resto de otro estilo.
+    /// Por eso no es un `LIKE`, que en SQLite ignora mayúsculas. Solo entran las **más largas** que el
+    /// prefijo (si no, no completarían nada), las que escribió una persona (`editor`: lo que genera
+    /// un diálogo es SQL armado por la aplicación, no un hábito de quien escribe) y sin repetir:
+    /// la más reciente de cada texto distinto, la más nueva primero.
+    pub fn suggest(&self, prefix: &str, limit: i64) -> Result<Vec<String>> {
+        let length = i64::try_from(prefix.chars().count()).unwrap_or(i64::MAX);
+        if length == 0 {
+            return Ok(Vec::new());
+        }
+        let mut statement = self.connection.prepare(
+            "SELECT sql
+               FROM history
+              WHERE succeeded = 1
+                AND source <> 'dialog'
+                AND length(sql) > ?2
+                AND substr(sql, 1, ?2) = ?1
+              GROUP BY sql
+              ORDER BY max(started_at) DESC, max(id) DESC
+              LIMIT ?3",
+        )?;
+        let rows = statement.query_map(params![prefix, length, limit], |row| row.get(0))?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
     pub fn clear(&self) -> Result<()> {
         self.connection.execute("DELETE FROM history", [])?;
         Ok(())
@@ -507,6 +536,62 @@ mod tests {
             row_count: Some(3),
             error: None,
         }
+    }
+
+    #[test]
+    fn sugiere_lo_que_empieza_igual_y_es_mas_largo() {
+        let store = store();
+        let mut viejo = entry("SELECT id, nombre FROM clientes");
+        viejo.started_at = 10;
+        let mut nuevo = entry("SELECT id FROM pedidos");
+        nuevo.started_at = 20;
+        store.record(&viejo).unwrap();
+        store.record(&nuevo).unwrap();
+        store.record(&entry("DELETE FROM clientes")).unwrap();
+
+        let out = store.suggest("SELECT id", 10).unwrap();
+        assert_eq!(
+            out,
+            vec!["SELECT id FROM pedidos", "SELECT id, nombre FROM clientes"]
+        );
+        // Igual de largo que el prefijo no completa nada.
+        assert!(store
+            .suggest("SELECT id FROM pedidos", 10)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn distingue_mayusculas_y_no_trata_comodines_como_tales() {
+        let store = store();
+        store.record(&entry("SELECT 100% FROM t")).unwrap();
+        store.record(&entry("select 1 from t")).unwrap();
+        assert!(store.suggest("SELECT 1 ", 10).unwrap().is_empty());
+        assert_eq!(
+            store.suggest("select", 10).unwrap(),
+            vec!["select 1 from t"]
+        );
+        assert_eq!(store.suggest("SELECT 100%", 10).unwrap().len(), 1);
+        assert!(store.suggest("SELECT 100_", 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn deja_afuera_lo_fallido_lo_de_dialogos_y_las_repeticiones() {
+        let store = store();
+        let mut roto = entry("SELECT * FROM nada");
+        roto.error = Some("no existe".into());
+        store.record(&roto).unwrap();
+        let mut dialogo = entry("SELECT * FROM generado");
+        dialogo.source = Source::Dialog;
+        store.record(&dialogo).unwrap();
+        store.record(&entry("SELECT * FROM clientes")).unwrap();
+        store.record(&entry("SELECT * FROM clientes")).unwrap();
+
+        assert_eq!(
+            store.suggest("SELECT *", 10).unwrap(),
+            vec!["SELECT * FROM clientes"]
+        );
+        assert!(store.suggest("", 10).unwrap().is_empty());
     }
 
     #[test]

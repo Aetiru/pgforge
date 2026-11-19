@@ -10,6 +10,12 @@ import { invoke } from "./core";
 export interface ScriptEntry {
   name: string;
   path: string;
+  /** Segundos desde la época; 0 si el sistema no lo da. */
+  modified: number;
+  /** Sin nada escrito: la interfaz lo esconde y ofrece limpiarlos. */
+  empty: boolean;
+  /** Primera línea con contenido, recortada. */
+  preview: string;
 }
 
 /** Una carpeta del árbol de scripts: en el primer nivel, una por conexión. */
@@ -20,13 +26,16 @@ export interface ScriptFolder {
   folders: ScriptFolder[];
 }
 
-export interface ImportReport {
+export interface ScriptsImportReport {
   imported: number;
   /** Motivo textual de lo que falló al copiar; lo que entró con otro nombre por chocar no cuenta acá. */
   skipped: string[];
 }
 
 export const scriptsTree = () => invoke<ScriptFolder[]>("scripts_tree");
+
+/** Borra los scripts sin nada escrito de toda la biblioteca. Devuelve cuántos eran. */
+export const scriptsPurgeEmpty = () => invoke<number>("scripts_purge_empty");
 
 /** Dónde está la carpeta raíz de scripts, para el botón «Abrir la carpeta». */
 export const scriptsRootPath = () => invoke<string>("scripts_root_path");
@@ -52,4 +61,4 @@ export const scriptCreateFolder = (path: string) => invoke<void>("script_create_
 
 /** Importa los `.sql` de una carpeta elegida por el usuario hacia la carpeta de una conexión. */
 export const scriptsImportFolder = (profileId: string, src: string) =>
-  invoke<ImportReport>("scripts_import_folder", { profileId, src });
+  invoke<ScriptsImportReport>("scripts_import_folder", { profileId, src });

@@ -29,6 +29,7 @@ import {
   backupRun,
   dataExportRun,
   dataImportRun,
+  tableTransferRun,
   describeError,
   indexCreate,
   migrationApply,
@@ -42,6 +43,7 @@ import {
   type BackupOptions,
   type ExportSpec,
   type ImportSpec,
+  type TransferSpec,
   type IndexDef,
   type Operation,
   type ProcessEvent,
@@ -369,6 +371,22 @@ class Tasks {
   }) {
     await this.launch(
       () => dataImportRun(init.profileId, init.spec, init.path, init.database),
+      init.onDone,
+    );
+  }
+
+  /** Copia una tabla a otro servidor. El proceso se anota contra el servidor de destino. */
+  async transfer(init: {
+    profileId: string;
+    database: string;
+    targetId: string;
+    targetDatabase: string;
+    spec: TransferSpec;
+    onDone?: () => void;
+  }) {
+    await this.launch(
+      () =>
+        tableTransferRun(init.profileId, init.database, init.targetId, init.targetDatabase, init.spec),
       init.onDone,
     );
   }

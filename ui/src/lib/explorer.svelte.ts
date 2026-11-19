@@ -7,6 +7,7 @@ import {
   listProfiles,
   onServerDown,
   pingServer,
+  serverActivity,
   readCancel,
   renameGroup as ipcRenameGroup,
   saveProfile,
@@ -27,6 +28,11 @@ import { recents } from "./recents.svelte";
 import { compareServers, reorderDrop } from "./server-order";
 import { folderForKind } from "./tree-actions";
 import { filterHits, matchesKind, parseQuery } from "./tree-query";
+import { matchesNote, type ObjectNote } from "./notes";
+import { visibleSchemas } from "./hidden-schemas";
+import { hiddenSchemas, treeView } from "./tree-view.svelte";
+import { groupByPrefix, orderNodes } from "./tree-order";
+import type { ActivityBrief } from "./server-activity";
 
 /**
  * Qué representa una fila del árbol.
@@ -73,6 +79,13 @@ export interface Row {
   down?: boolean;
   /** Solo en filas de servidor: el color que eligió el usuario para distinguirlo en el árbol. */
   color?: ServerColor;
+  /**
+   * Una fila que arma el árbol y el servidor no tiene: el grupo por prefijo de una carpeta de
+   * tablas. Sus hijos son los de la carpeta, un nivel más adentro.
+   */
+  synthetic?: boolean;
+  /** En la carpeta de esquemas: cuántos se ocultaron por elección del usuario. */
+  hiddenCount?: number;
 }
 
 /**
@@ -210,6 +223,9 @@ function childRow(parent: Row, node: TreeNode): Row {
 const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" });
 
 /** Los cajones donde puede estar una relación, en el orden en que conviene mirarlos. */
+/** Las carpetas cuyo contenido se puede ordenar y agrupar: las de tablas y vistas, no las secuencias. */
+const ORDERABLE: FolderKind[] = ["tables", "views", "materializedViews", "foreignTables"];
+
 const RELATION_FOLDERS: FolderKind[] = ["tables", "views", "materializedViews", "foreignTables"];
 
 class Explorer {
@@ -340,6 +356,21 @@ class Explorer {
       if (profileId in this.latencies) {
         const { [profileId]: _discarded, ...rest } = this.latencies;
         this.latencies = rest;
+      }
+    }
+  }
+
+  /** Lo último que se supo de la actividad de cada servidor conectado (ver `server-activity.ts`). */
+  activity = $state<Record<string, ActivityBrief>>({});
+
+  /** Pregunta la actividad de un servidor. Un fallo se descarta: es un sondeo de fondo. */
+  async refreshActivity(profileId: string) {
+    try {
+      this.activity = { ...this.activity, [profileId]: await serverActivity(profileId) };
+    } catch {
+      if (profileId in this.activity) {
+        const { [profileId]: _discarded, ...rest } = this.activity;
+        this.activity = rest;
       }
     }
   }
@@ -581,6 +612,10 @@ class Explorer {
       row.expanded = false;
       await this.toggle(row);
       this.refreshGroupDetail(row);
+      // Cada conexión arranca apuntando a la base predeterminada del perfil: queda abierta y elegida,
+      // y no hay que buscarla entre las del servidor. Si ya no existe (la borraron, o el perfil dice
+      // otra cosa) el árbol se queda en la lista de bases: no es un error de conectar.
+      await this.revealDatabase(profile.id, profile.database).catch(() => null);
     }
   }
 
@@ -594,6 +629,10 @@ class Explorer {
       this.refreshGroupDetail(row);
     }
     delete this.caps[profileId];
+    if (profileId in this.activity) {
+      const { [profileId]: _gone, ...rest } = this.activity;
+      this.activity = rest;
+    }
     if (profileId in this.latencies) {
       const { [profileId]: _discarded, ...rest } = this.latencies;
       this.latencies = rest;
@@ -601,6 +640,23 @@ class Explorer {
     if (this.selected?.profileId === profileId) {
       this.selected = null;
     }
+  }
+
+  /** Cuántos servidores hay conectados ahora. */
+  get connectedCount(): number {
+    return this.servers.filter((row) => row.connected).length;
+  }
+
+  /**
+   * Desconecta todos los servidores abiertos y devuelve cuántos eran. En paralelo y sin cortar en el
+   * primer fallo: uno que ya estaba caído no tiene que dejar a los otros seis conectados. Cada
+   * desconexión limpia su propia fila y cierra las pestañas de ese servidor, igual que hacerlo uno
+   * por uno.
+   */
+  async disconnectAll(): Promise<number> {
+    const ids = this.servers.filter((row) => row.connected).map((row) => row.profileId);
+    await Promise.allSettled(ids.map((id) => this.disconnect(id)));
+    return ids.length;
   }
 
   /**
@@ -632,6 +688,17 @@ class Explorer {
     if (!row || !row.connected || row.down) return;
     row.down = true;
     row.error = "sin conexión";
+  }
+
+  /** `true` si el servidor está marcado como caído. */
+  isDown(profileId: string): boolean {
+    return this.rowFor(profileId)?.down === true;
+  }
+
+  /** El texto con que se muestra un servidor caído («reconectando… intento 3»). */
+  setDownNote(profileId: string, note: string) {
+    const row = this.rowFor(profileId);
+    if (row?.down) row.error = note;
   }
 
   /** Lo contrario: algo volvió a funcionar contra ese servidor. */
@@ -675,7 +742,18 @@ class Explorer {
     row.request = crypto.randomUUID();
     try {
       const nodes = await treeChildren(row.profileId, row.node, this.options, row.request);
-      row.children = nodes.map((node) => childRow(row, node));
+      let shown = nodes;
+      if (row.node && folderOf(row.node.kind) === "schemas") {
+        const visible = visibleSchemas(nodes, hiddenSchemas.get(row.profileId, row.node.database));
+        shown = visible.shown;
+        row.hiddenCount = visible.hiddenCount;
+        row.detail =
+          visible.hiddenCount > 0 ? `${shown.length} de ${nodes.length}` : String(nodes.length);
+      }
+      row.children = this.arrange(
+        row,
+        shown.map((node) => childRow(row, node)),
+      );
       // Leer del servidor salió bien: si estaba marcado como caído, ya no lo está.
       this.markUp(row.profileId);
     } catch (error) {
@@ -693,6 +771,80 @@ class Explorer {
       row.loading = false;
       row.request = undefined;
     }
+  }
+
+  /**
+   * Ordena —y si se pidió, agrupa por prefijo— las relaciones de una carpeta de tablas o vistas. En
+   * cualquier otra carpeta devuelve las hojas como llegaron.
+   */
+  private arrange(parent: Row, leaves: Row[]): Row[] {
+    const kind = parent.node ? folderOf(parent.node.kind) : null;
+    if (!kind || !ORDERABLE.includes(kind) || !parent.node) return leaves;
+
+    // Con los valores de fábrica se respeta el orden del servidor, que ya viene por nombre.
+    if (treeView.order === "name" && !treeView.group) return leaves;
+
+    const byNode = new Map(leaves.map((leaf) => [leaf.node!, leaf]));
+    const ordered = orderNodes(leaves.map((leaf) => leaf.node!), treeView.order);
+    const rowOf = (node: TreeNode, level: number) => {
+      const leaf = byNode.get(node)!;
+      leaf.level = level;
+      return leaf;
+    };
+
+    const grouped = treeView.group ? groupByPrefix(ordered) : null;
+    if (!grouped) return ordered.map((node) => rowOf(node, parent.level + 1));
+
+    // Los grupos que ya estaban abiertos se quedan abiertos al reordenar.
+    const wasOpen = new Set(
+      (parent.children ?? []).filter((child) => child.synthetic && child.expanded).map((child) => child.key),
+    );
+
+    const groups: Row[] = grouped.groups.map((group) => {
+      const key = `${parent.key}:prefix:${group.prefix}`;
+      return {
+        kind: "node",
+        key,
+        profileId: parent.profileId,
+        node: {
+          id: `${parent.node!.id}:prefix:${group.prefix}`,
+          label: group.prefix,
+          detail: String(group.nodes.length),
+          kind: parent.node!.kind,
+          hasChildren: true,
+          database: parent.node!.database,
+          schema: parent.node!.schema,
+          oid: parent.node!.oid,
+        },
+        level: parent.level + 1,
+        label: group.prefix,
+        detail: String(group.nodes.length),
+        hasChildren: true,
+        expanded: wasOpen.has(key),
+        loading: false,
+        children: group.nodes.map((node) => rowOf(node, parent.level + 2)),
+        connected: true,
+        synthetic: true,
+      };
+    });
+    return [...groups, ...grouped.loose.map((node) => rowOf(node, parent.level + 1))];
+  }
+
+  /** Vuelve a ordenar lo que ya está cargado, sin pedirle nada al servidor. */
+  rearrange() {
+    const walk = (rows: Row[]) => {
+      for (const row of rows) {
+        if (row.children) {
+          const kind = row.node ? folderOf(row.node.kind) : null;
+          if (kind && ORDERABLE.includes(kind)) {
+            const leaves = row.children.flatMap((child) => (child.synthetic ? (child.children ?? []) : [child]));
+            row.children = this.arrange(row, leaves);
+          }
+          walk(row.children);
+        }
+      }
+    };
+    walk(this.roots);
   }
 
   /** Aborta la lectura de un nodo que está cargando. */
@@ -817,7 +969,18 @@ class Explorer {
   private async descend(row: Row, match: (node: TreeNode) => boolean): Promise<Row | null> {
     if (row.children === null) await this.loadChildren(row);
     row.expanded = true;
-    return row.children?.find((child) => child.node !== null && match(child.node)) ?? null;
+    const direct = row.children?.find((child) => child.node !== null && !child.synthetic && match(child.node));
+    if (direct) return direct;
+
+    // Un objeto dentro de un grupo por prefijo: se abre el grupo que lo tiene.
+    for (const group of row.children?.filter((child) => child.synthetic) ?? []) {
+      const inside = group.children?.find((child) => child.node !== null && match(child.node));
+      if (inside) {
+        group.expanded = true;
+        return inside;
+      }
+    }
+    return null;
   }
 
   /** Abre el camino hasta una base y la deja elegida. `null` si el servidor no está conectado. */
@@ -825,8 +988,11 @@ class Explorer {
     const server = this.rowFor(profileId);
     if (!server?.connected) return null;
 
+    // Las bases cuelgan de su carpeta de la raíz: se baja por ella.
+    const folder = await this.descend(server, (node) => folderOf(node.kind) === "databases");
+    if (!folder) return null;
     const row = await this.descend(
-      server,
+      folder,
       (node) => node.kind === "database" && node.label === database,
     );
     if (row) this.selected = row;
@@ -894,6 +1060,18 @@ class Explorer {
     const schemas = await this.descend(databaseRow, (node) => folderOf(node.kind) === "schemas");
     if (!schemas) return null;
 
+    const found = await this.descend(schemas, (node) => node.kind === "schema" && node.label === schema);
+    if (found) return found;
+
+    // Si el esquema se había ocultado, revelarlo es pedirlo: se saca de la lista y se vuelve a leer.
+    const hidden = hiddenSchemas.get(profileId, database);
+    if (!hidden.includes(schema)) return null;
+    hiddenSchemas.set(
+      profileId,
+      database,
+      hidden.filter((name) => name !== schema),
+    );
+    await this.reload(schemas);
     return await this.descend(schemas, (node) => node.kind === "schema" && node.label === schema);
   }
 
@@ -946,6 +1124,7 @@ class Explorer {
 
   select(row: Row) {
     this.selected = row;
+    this.markedObjects = [];
     // Elegir una fila es empezar de nuevo: lo que estaba marcado deja de estarlo, como en cualquier
     // lista. Marcar es lo que pide la tecla, y para eso están `toggleMark` y `mark`.
     this.marked = [];
@@ -995,6 +1174,52 @@ class Explorer {
 
   clearMarks() {
     this.marked = [];
+    this.markedObjects = [];
+  }
+
+  // -------------------------------------------------------------------------
+  // Selección múltiple de objetos
+  //
+  // Aparte de la de servidores: lo que se hace con varias tablas —copiar sus nombres, mantenimiento,
+  // generar SQL— no se parece a lo que se hace con varios servidores, y mezclarlas haría que la
+  // barra de lo marcado ofreciera «Desconectar» sobre tablas. Solo se marcan relaciones, y todas del
+  // mismo esquema: es lo que hace que «mantenimiento de las marcadas» tenga un solo destino.
+  // -------------------------------------------------------------------------
+
+  /** Las relaciones marcadas, en el orden en que se marcaron. */
+  markedObjects = $state.raw<Row[]>([]);
+
+  isObjectMarked(row: Row): boolean {
+    return this.markedObjects.includes(row);
+  }
+
+  /** De dónde es una relación: marcar una de otro esquema empieza una selección nueva. */
+  private scopeOf(row: Row): string | null {
+    const node = row.node;
+    return node?.schema ? `${row.profileId}\u0001${node.database}\u0001${node.schema}` : null;
+  }
+
+  /** Marca o desmarca una relación sin perder las ya marcadas de su mismo esquema. */
+  toggleObjectMark(row: Row) {
+    const scope = this.scopeOf(row);
+    if (scope === null) return;
+
+    const sameScope = this.markedObjects.filter((item) => this.scopeOf(item) === scope);
+    this.markedObjects = sameScope.includes(row)
+      ? sameScope.filter((item) => item !== row)
+      : [...sameScope, row];
+    this.marked = [];
+    this.selected = row;
+  }
+
+  /** Deja marcadas exactamente esas relaciones (todas del mismo esquema que la última). */
+  markObjects(rows: Row[]) {
+    const last = rows[rows.length - 1];
+    const scope = last ? this.scopeOf(last) : null;
+    if (scope === null) return;
+    this.markedObjects = rows.filter((row) => this.scopeOf(row) === scope);
+    this.marked = [];
+    this.selected = last;
   }
 
   /**
@@ -1040,7 +1265,13 @@ function passesFilter(row: Row, onlyConnected: boolean): boolean {
  * La búsqueda admite el prefijo de tipo (`t:factura`), que acota a una familia de objetos: con él,
  * un `t:` solo ya sirve para listar las tablas de todo lo que esté abierto.
  */
-export function visibleRows(rows: Row[], search = "", onlyConnected = false): Row[] {
+export function visibleRows(
+  rows: Row[],
+  search = "",
+  onlyConnected = false,
+  /** La nota de un objeto, para que `#etiqueta` y el texto de una nota también encuentren. */
+  noteOf?: (row: Row) => ObjectNote | null,
+): Row[] {
   const query = parseQuery(search);
   const needle = query.text.toLowerCase();
   const out: Row[] = [];
@@ -1064,9 +1295,13 @@ export function visibleRows(rows: Row[], search = "", onlyConnected = false): Ro
       const matched: Row[] = [];
       if (row.children) collect(row.children, matched);
 
+      // `#etiqueta` busca solo por etiqueta: el nombre de un objeto rara vez empieza con `#`.
+      const byNote = needle !== "" && noteOf ? matchesNote(noteOf(row), needle) : false;
       const hit =
         matchesKind(query, row.node?.kind) &&
-        (needle === "" || row.label.toLowerCase().includes(needle));
+        (needle === "" ||
+          (!needle.startsWith("#") && row.label.toLowerCase().includes(needle)) ||
+          byNote);
       if (matched.length > 0 || hit) into.push(row, ...matched);
     }
   };

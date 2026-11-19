@@ -275,6 +275,15 @@ pub async fn connected_servers(state: State<'_, AppState>) -> Result<Vec<Profile
     Ok(state.manager.connected().await)
 }
 
+/// Sesiones bloqueadas y transacción abierta más vieja de un servidor, para la insignia del árbol.
+#[tauri::command]
+pub async fn server_activity(
+    state: State<'_, AppState>,
+    id: ProfileId,
+) -> Result<pgforge_core::monitor::activity::Brief> {
+    state.manager.require(id).await?.activity_brief().await
+}
+
 /// Cuánto tarda un viaje de ida y vuelta contra el servidor, en milisegundos: lo que "conectado" no
 /// distingue. El árbol lo pinta junto al punto de conexión, sondeando cada tanto.
 #[tauri::command]

@@ -53,6 +53,14 @@ pub enum NodeTag {
     Partition,
     /// La tabla tiene activada la seguridad por fila.
     RowSecurity,
+    /// Una tabla sin clave primaria: la grilla la abre en solo lectura y la replicación lógica no
+    /// sabe cómo identificar sus filas.
+    NoPrimaryKey,
+    /// Un índice que quedó inválido (un `CREATE INDEX CONCURRENTLY` que falló): no lo usa el
+    /// planificador y hay que rehacerlo.
+    Invalid,
+    /// Una vista materializada sin datos: se creó con `WITH NO DATA` y consultarla falla.
+    NotPopulated,
 }
 
 /// Agrupaciones que se muestran como carpetas.
@@ -73,8 +81,11 @@ pub enum Folder {
     Constraints,
     Triggers,
     Policies,
-    /// Del clúster entero: única carpeta que aparece en la raíz, junto a las bases.
+    /// Del clúster entero: junto con `Databases`, las dos únicas carpetas de la raíz.
     Roles,
+    /// Las bases del servidor. Antes colgaban sueltas de la raíz, al lado de «Roles», mientras que
+    /// adentro de cada base todo iba en carpetas: la raíz era lo único que no estaba agrupado.
+    Databases,
     /// De nivel base: hermana de "Esquemas" bajo cada base.
     Extensions,
     /// De nivel base: los wrappers de datos externos.
@@ -101,6 +112,7 @@ impl Folder {
             Folder::Triggers => "Disparadores",
             Folder::Policies => "Políticas",
             Folder::Roles => "Roles",
+            Folder::Databases => "Bases de datos",
             Folder::Extensions => "Extensiones",
             Folder::ForeignDataWrappers => "Wrappers foráneos",
             Folder::ForeignServers => "Servidores foráneos",
@@ -125,6 +137,7 @@ impl Folder {
             Folder::Triggers => "triggers",
             Folder::Policies => "policies",
             Folder::Roles => "roles",
+            Folder::Databases => "databases",
             Folder::Extensions => "extensions",
             Folder::ForeignDataWrappers => "fdws",
             Folder::ForeignServers => "fservers",
@@ -160,6 +173,13 @@ pub struct TreeNode {
     /// Rasgos del objeto, para mostrar como etiquetas junto al nombre.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<NodeTag>,
+    /// Filas estimadas (`reltuples`) de una relación, para ordenar el árbol por tamaño sin tener que
+    /// leer el texto de `detail`. `None` donde no se sabe o no aplica.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rows: Option<i64>,
+    /// Tamaño en disco de una relación, si se calculó (ver `SIZE_LIMIT`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<i64>,
 }
 
 impl TreeNode {
@@ -176,11 +196,13 @@ impl TreeNode {
             oid: None,
             comment: None,
             tags: Vec::new(),
+            rows: None,
+            size_bytes: None,
         }
     }
 
-    /// Una carpeta sin padre: hace falta para "Roles", que no cuelga de ninguna base sino que es
-    /// hermana de todas ellas en la raíz. `database` es la que se usa para conectar y leer el
+    /// Una carpeta sin padre: hace falta para "Roles" y "Bases de datos", que no cuelgan de ninguna
+    /// base sino de la raíz del servidor. `database` es la que se usa para conectar y leer el
     /// catálogo — cualquiera sirve, `pg_roles` se ve igual desde todas.
     pub(crate) fn root_folder(database: impl Into<String>, folder: Folder, count: i64) -> Self {
         Self {
@@ -194,6 +216,8 @@ impl TreeNode {
             oid: None,
             comment: None,
             tags: Vec::new(),
+            rows: None,
+            size_bytes: None,
         }
     }
 
@@ -211,6 +235,8 @@ impl TreeNode {
             oid: parent.oid,
             comment: None,
             tags: Vec::new(),
+            rows: None,
+            size_bytes: None,
         }
     }
 
@@ -226,6 +252,8 @@ impl TreeNode {
             oid: Some(oid),
             comment: None,
             tags: Vec::new(),
+            rows: None,
+            size_bytes: None,
         }
     }
 
@@ -248,6 +276,8 @@ impl TreeNode {
             oid: Some(oid),
             comment: None,
             tags: Vec::new(),
+            rows: None,
+            size_bytes: None,
         }
     }
 
@@ -270,11 +300,19 @@ impl TreeNode {
             oid: parent.oid,
             comment: None,
             tags: Vec::new(),
+            rows: None,
+            size_bytes: None,
         }
     }
 
     pub(crate) fn with_comment(mut self, comment: Option<String>) -> Self {
         self.comment = comment;
+        self
+    }
+
+    pub(crate) fn with_measures(mut self, rows: Option<i64>, size_bytes: Option<i64>) -> Self {
+        self.rows = rows;
+        self.size_bytes = size_bytes;
         self
     }
 

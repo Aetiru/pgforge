@@ -4,6 +4,7 @@
   import Icon from "./Icon.svelte";
   import { lookOf } from "./badges";
   import { describeError, objectDdl, treeSearch, type SearchHit, type TreeNode } from "./ipc";
+  import { openData } from "./data.svelte";
   import { openQuery } from "./query.svelte";
   import { WITH_ROWS } from "./tree-actions";
   import { filterHits, parseQuery, PREFIX_HELP } from "./tree-query";
@@ -12,8 +13,8 @@
    * Búsqueda rápida contra el catálogo del servidor (Ctrl+Mayús+P), separada de la paleta de
    * comandos (Ctrl+K): esa solo ofrece lo que el árbol ya trajo, y acá la pregunta va al servidor
    * —mismo `tree_search` que usa la caja de búsqueda del árbol, con el mismo vocabulario de
-   * prefijos (`PREFIX_HELP`)—. Elegir un resultado no lo revela en el árbol: abre una pestaña de
-   * consulta nueva, siempre, con el `SELECT *` o el DDL según el tipo de objeto.
+   * prefijos (`PREFIX_HELP`)—. Elegir un resultado no lo revela en el árbol: abre una pestaña
+   * nueva: la de datos para lo que tiene filas, una de consulta con el DDL para el resto.
    */
   let {
     profileId,
@@ -92,22 +93,24 @@
   }
 
   /**
-   * Elegir un resultado abre una pestaña de consulta, siempre —a diferencia de la búsqueda del
-   * árbol, que revela el nodo—: es lo que pidió esta búsqueda, pensada para llegar al SQL y no al
-   * árbol. Tabla, vista o vista materializada nace con un `SELECT *`; el resto —función,
-   * procedimiento, secuencia, tipo— con su DDL, que es lo único que tiene sentido leer.
+   * Elegir un resultado abre una pestaña —a diferencia de la búsqueda del árbol, que revela el
+   * nodo—. Tabla, vista o vista materializada abre su pestaña de datos; el resto —función,
+   * procedimiento, secuencia, tipo— una consulta con su DDL, que es lo único que tiene sentido leer.
    */
   async function pick(hit: SearchHit | undefined) {
     if (!hit || opening) return;
     opening = true;
     try {
-      const tab = await openQuery(profileId, hit.database, qualifiedOf(hit));
-      onclose();
-
+      // Tabla, vista y demás con filas abren la misma pestaña de datos que el árbol: grilla y
+      // pestañas internas (columnas, índices, DDL…), no un editor con un SELECT.
       if (typeof hit.kind === "string" && WITH_ROWS.includes(hit.kind)) {
-        tab.sql = `SELECT * FROM ${qualifiedOf(hit)}`;
+        onclose();
+        await openData(profileId, hit.database, hit.label, hit.oid);
         return;
       }
+
+      const tab = await openQuery(profileId, hit.database, qualifiedOf(hit));
+      onclose();
 
       try {
         const ddl = await objectDdl(profileId, asNode(hit));

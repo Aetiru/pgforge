@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { asJson, delimited, parseDelimited, pretty, quoted } from "./grid-copy";
+import { asInserts, asJson, asMarkdown, delimited, parseDelimited, pretty, quoted } from "./grid-copy";
 
 /**
  * Lo que se copia de la grilla termina pegado en otra herramienta, así que un valor mal encerrado no
@@ -103,5 +103,28 @@ describe("pretty", () => {
   it("no toca lo que no es JSON, ni siquiera si empieza parecido", () => {
     expect(pretty("hola")).toBe("hola");
     expect(pretty("{esto no cierra")).toBe("{esto no cierra");
+  });
+});
+
+
+describe("asMarkdown", () => {
+  it("arma encabezado, separador y filas, con NULL explícito", () => {
+    expect(asMarkdown(["a", "b"], [["1", null]])).toBe("| a | b |\n| --- | --- |\n| 1 | NULL |");
+  });
+
+  it("escapa la barra y convierte los saltos de línea", () => {
+    expect(asMarkdown(["x"], [["a|b\nc"]])).toContain("a\\|b<br>c");
+  });
+});
+
+describe("asInserts", () => {
+  it("cita los textos, duplica las comillas y deja NULL sin comillas", () => {
+    expect(asInserts(["id", "nombre"], [["1", "O'Brien"], ["2", null]], "t")).toBe(
+      "INSERT INTO t (id, nombre) VALUES ('1', 'O''Brien');\nINSERT INTO t (id, nombre) VALUES ('2', NULL);",
+    );
+  });
+
+  it("cita los nombres de columna que lo necesitan", () => {
+    expect(asInserts(["Fecha Alta"], [["x"]])).toContain('("Fecha Alta")');
   });
 });

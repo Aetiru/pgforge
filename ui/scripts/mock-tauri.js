@@ -11,7 +11,8 @@
   const node = (id, label, kind, extra = {}) => ({ id, label, kind, hasChildren: false, database: "ventas", ...extra });
   const folder = (id, label, f, extra = {}) => node(id, label, { folder: f }, { hasChildren: true, ...extra });
   const tree = {
-    root: [folder("roles", "Roles", "roles", { database: "" }), node("db:ventas", "ventas", "database", { hasChildren: true })],
+    root: [folder("databases", "Bases de datos", "databases", { database: "", detail: "1" }), folder("roles", "Roles", "roles", { database: "" })],
+    databases: [node("db:ventas", "ventas", "database", { hasChildren: true })],
     "db:ventas": [folder("schemas", "Esquemas", "schemas")],
     schemas: [node("s:public", "public", "schema", { hasChildren: true, oid: 2200, schema: "public" })],
     "s:public": [folder("tables", "Tablas", "tables", { schema: "public" }), folder("views", "Vistas", "views", { schema: "public" })],
@@ -32,6 +33,55 @@
       { direction: "usedBy", kind: "clave foránea", schema: "public", name: "facturas", detail: "facturas_pedido_fk: FOREIGN KEY (pedido_id) REFERENCES pedidos(id)" },
     ],
     table_stat: () => ({ schema: "public", table: "pedidos", liveTuples: 48213, deadTuples: 21400, deadRatio: 0.307, totalBytes: 73400320, tableBytes: 52428800, indexBytes: 20971520, sequentialScans: 4120, indexScans: 96, lastVacuumSeconds: null, lastAutovacuumSeconds: 1900000, lastAnalyzeSeconds: null }),
+    sequence_usage: () => [
+      { schema: "public", name: "pedidos_id_seq", dataType: "integer", lastValue: 1890000000, maxValue: 2147483647, incrementBy: 1, cycle: false, usedRatio: 0.88, remaining: 257483647, level: "review", perDay: 520000, daysLeft: 495 },
+      { schema: "public", name: "clientes_id_seq", dataType: "bigint", lastValue: 120000, maxValue: 9223372036854775807, incrementBy: 1, cycle: false, usedRatio: 0, remaining: 9223372036854655807, level: "ok", perDay: null, daysLeft: null },
+    ],
+    wraparound_status: () => ({ freezeMaxAge: 200000000, databases: [
+      { name: "ventas", age: 1120000000, ratio: 0.52, level: "review" }, { name: "postgres", age: 90000000, ratio: 0.04, level: "ok" }],
+      tables: [{ schema: "public", table: "pedidos", age: 1120000000, ratio: 0.52, level: "review", totalBytes: 73400320 }] }),
+    autovacuum_status: () => [
+      { schema: "public", table: "pedidos", liveTuples: 48213, deadTuples: 21400, modifiedSinceAnalyze: 900, vacuumAt: 9692, analyzeAt: 4871, vacuumMissing: 0, status: "due", ownSettings: false, lastAutovacuumSeconds: 259200, lastAutoanalyzeSeconds: 3600, totalBytes: 73400320, level: "review" },
+      { schema: "public", table: "clientes", liveTuples: 120000, deadTuples: 300, modifiedSinceAnalyze: 40, vacuumAt: 24050, analyzeAt: 12050, vacuumMissing: 23750, status: "waiting", ownSettings: true, lastAutovacuumSeconds: 7200, lastAutoanalyzeSeconds: 7200, totalBytes: 41943040, level: "ok" },
+    ],
+    cache_stats: () => ({ tables: [
+      { schema: "public", table: "facturas", heapRead: 82000, heapHit: 190000, indexRead: 1000, indexHit: 90000, heapRatio: 0.7, indexRatio: 0.99, level: "review" },
+      { schema: "public", table: "pedidos", heapRead: 1200, heapHit: 9800000, indexRead: 300, indexHit: 5000000, heapRatio: 0.999, indexRatio: 0.999, level: "ok" }],
+      indexes: [{ schema: "public", table: "facturas", index: "facturas_pkey", read: 1000, hit: 90000, ratio: 0.989, level: "ok" }] }),
+    connection_report: () => ({ maxConnections: 100, reserved: 3, total: 41, groups: [
+      { application: "app-reportes", user: "bi", address: "10.0.0.14", total: 24, active: 1, idle: 23, idleInTransaction: 0, oldestIdleSeconds: 86400 },
+      { application: "app-web", user: "app", address: "10.0.0.9", total: 15, active: 4, idle: 10, idleInTransaction: 1, oldestIdleSeconds: 120 },
+      { application: "pgforge", user: "analista", address: null, total: 2, active: 1, idle: 1, idleInTransaction: 0, oldestIdleSeconds: 3 }] }),
+    space_overview: () => ({ map: { database: "ventas", databaseBytes: 1288490188, restBytes: 12582912, entries: [
+      { schema: "public", table: "pedidos", kind: "r", heapBytes: 524288000, toastBytes: 31457280, indexBytes: 209715200 },
+      { schema: "public", table: "facturas", kind: "r", heapBytes: 251658240, toastBytes: 10485760, indexBytes: 83886080 },
+      { schema: "public", table: "clientes", kind: "r", heapBytes: 41943040, toastBytes: 1048576, indexBytes: 20971520 },
+      { schema: "auditoria", table: "eventos", kind: "r", heapBytes: 62914560, toastBytes: 0, indexBytes: 10485760 }] },
+      growth: [{ kind: "database", name: "ventas", bytes: 1288490188, forecast: { perDay: 20971520, samples: 6, spanDays: 3.2, daysToLimit: null }, projected30d: 1917620108 },
+        { kind: "table", name: "public.pedidos", bytes: 765460480, forecast: null, projected30d: null }] }),
+    checkpoint_stats: () => ({ timed: 120, requested: 80, forcedRatio: 0.4, writeSeconds: 840, syncSeconds: 12, buffersWritten: 5200000, resetSeconds: 864000,
+      maxWalSizeBytes: 1073741824, checkpointTimeoutSeconds: 300, completionTarget: 0.9,
+      wal: { records: 90000000, fullPageImages: 2000000, bytes: 52000000000, buffersFull: 10, resetSeconds: 864000, bytesPerSecond: 60185 },
+      level: "review", advice: ["40 % de los checkpoints se forzaron porque el WAL llenó max_wal_size (hoy 1 GB). Subirlo reparte la escritura en el tiempo y baja los picos de disco."] }),
+    server_config_review: () => ({ hidden: [], findings: [
+      { name: "shared_buffers", current: "128 MB", suggested: "4GB", reason: "Con 16 GB de RAM, la regla de partida es un cuarto para la caché propia de PostgreSQL.", level: "review", alterSql: "ALTER SYSTEM SET shared_buffers = '4GB'", restart: true },
+      { name: "random_page_cost", current: "4", suggested: "1.1", reason: "El 4 de fábrica supone discos giratorios.", level: "info", alterSql: "ALTER SYSTEM SET random_page_cost = '1.1'", restart: false }] }),
+    query_check: ({ sql }) => (/clientez/i.test(sql)
+      ? { status: "error", message: 'no existe la relación «clientez»', position: Math.max(0, sql.search(/clientez/i)), hint: null }
+      : { status: "ok" }),
+    column_values: () => ({ kind: "frequent", values: [
+      { value: "activo", frequency: 0.72 }, { value: "pendiente", frequency: 0.2 }, { value: "baja", frequency: 0.08 }] }),
+    routine_signatures: ({ name }) => [
+      { schema: "pg_catalog", name, arguments: "field text, source timestamp with time zone", result: "timestamp with time zone", comment: "Trunca un timestamp a la precisión indicada", kind: "function" },
+      { schema: "pg_catalog", name, arguments: "field text, source interval", result: "interval", comment: null, kind: "function" }],
+    history_suggest: ({ prefix }) => (prefix && prefix.length > 6 ? [prefix + " FROM clientes WHERE estado = 'activo'"] : []),
+    sql_format: ({ sql }) => sql,
+    version_save: () => 1,
+    version_list: () => [
+      { id: 2, at: Math.floor(Date.now() / 1000) - 1200, size: 64, preview: "SELECT c.nombre, sum(p.total) FROM pedidos p JOIN clientes c ON c.id = p.cliente_id" },
+      { id: 1, at: Math.floor(Date.now() / 1000) - 7200, size: 18, preview: "SELECT * FROM pedidos" }],
+    version_get: ({ id }) => (id === 2 ? "SELECT c.nombre, sum(p.total)\nFROM pedidos p JOIN clientes c ON c.id = p.cliente_id\nGROUP BY 1" : "SELECT * FROM pedidos"),
+    version_clear: () => null,
     has_statement_stats: () => true,
     statement_stats: () => [
       { queryId: 1, database: "ventas", user: "bi", query: "SELECT c.nombre, sum(p.total) FROM pedidos p JOIN clientes c ON c.id = p.cliente_id GROUP BY 1 ORDER BY 2 DESC", calls: 312, totalMs: 481000, meanMs: 1541.7, rows: 93600 },
@@ -101,6 +151,8 @@
       return { database: "ventas", schema: "public", tables, edges: [e("pedidos_cliente_fk", 2, 1), e("items_pedido_fk", 3, 2), e("items_producto_fk", 3, 4), e("productos_cat_fk", 4, 5), e("facturas_pedido_fk", 6, 2), e("pagos_factura_fk", 7, 6)] };
     },
     history_recent: () => [], saved_list: () => [], bookmarks_list: () => [], snippets_list: () => [],
+    snippet_usage: () => ({}), snippet_used: () => null, snippets_export: () => 0,
+    snippets_import: () => ({ snippets: [], added: 0, replaced: 0, skipped: [] }),
   };
   window.__calls = [];
   window.__MOCK = handlers;
