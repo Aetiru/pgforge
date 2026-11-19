@@ -20,13 +20,9 @@ version = 2
 # Tauri —los bindings de GTK3, `unic-*`, `proc-macro-error`— no se pueden cambiar desde este
 # repositorio, y una alerta que nadie puede accionar termina apagando la atención sobre las que sí.
 unmaintained = "workspace"
-ignore = [
-    # `rsa`, por debajo de `russh`: el ataque Marvin recupera la clave midiendo tiempos de
-    # **descifrado** RSA, que es lo que hace un servidor SSH, no el cliente. Acá `russh` la usa para
-    # autenticarse con una clave del usuario y verificar la del host, y todavía no hay versión
-    # corregida («No safe upgrade is available»). Revisar cuando `russh` suba a un `rsa` parcheado.
-    "RUSTSEC-2023-0071",
-]
+# Sin excepciones: el único aviso que hubo (Marvin en `rsa`, por debajo de `russh`) se resolvió al subir
+# `russh` a una versión que trae un `rsa` corregido. Una excepción nueva va acá, con el motivo escrito.
+ignore = []
 
 [licenses]
 version = 2

@@ -167,7 +167,8 @@ async fn el_editor_revisa_sugiere_valores_y_conoce_las_firmas() {
                     .unwrap();
                 assert!(!firmas.is_empty(), "date_trunc tenía que existir");
                 assert!(firmas.iter().all(|f| f.schema == "pg_catalog"));
-                assert!(firmas.iter().any(|f| f.arguments.contains("field text")));
+                // En el catálogo los argumentos de `date_trunc` no llevan nombre: se reconoce por su tipo.
+                assert!(firmas.iter().any(|f| f.arguments.contains("timestamp")));
                 let solo = introspect::routine_signatures(&client, Some("public"), "date_trunc")
                     .await
                     .unwrap();
