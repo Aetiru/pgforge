@@ -15,8 +15,12 @@
    * mano, así el DDL que la aplicación muestra tiene exactamente los colores del editor —incluido el
    * cuerpo de una función, que es SQL adentro de una cadena `$$`—. Sin la decoración del editor
    * (números de línea, línea activa, búsqueda): es un `<pre>` con color.
+   *
+   * `compact` es para paneles angostos que muestran una sentencia como contexto (el detalle de una
+   * sesión): topa la letra en 12 px y aprieta el interlineado, porque con la preferencia del editor
+   * en 20 px una consulta de diez líneas no entraba en el panel.
    */
-  let { code }: { code: string } = $props();
+  let { code, compact = false }: { code: string; compact?: boolean } = $props();
 
   let element: HTMLDivElement;
   let view: EditorView | null = null;
@@ -26,9 +30,9 @@
     "&": {
       backgroundColor: "transparent",
       color: "inherit",
-      fontSize: "var(--sql-font-size)",
+      fontSize: "var(--sql-local-size, var(--sql-font-size))",
     },
-    ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "1.6" },
+    ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "var(--sql-local-line, 1.6)" },
     ".cm-content": { padding: "0" },
     ".cm-line": { padding: "0" },
   });
@@ -75,6 +79,7 @@
 <div
   bind:this={element}
   class="select-text [&_.cm-editor]:bg-transparent"
+  style={compact ? "--sql-local-size: min(var(--sql-font-size), 12px); --sql-local-line: 1.45" : undefined}
   onwheel={(event) => {
     if (!event.ctrlKey) return;
     event.preventDefault();

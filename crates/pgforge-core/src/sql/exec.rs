@@ -19,6 +19,7 @@ use tokio_postgres::{CancelToken, SimpleQueryMessage};
 
 use crate::conn::{Notice, ServerHandle, Session};
 use crate::error::{Error, Result};
+use crate::sql::lex::{lex, TokenKind};
 
 /// Techo de filas que se guardan en memoria por omisión.
 ///
@@ -77,6 +78,67 @@ pub struct ColumnType {
     pub type_name: String,
 }
 
+/// De qué tabla sale un resultado y qué columna de ella es cada columna del resultado.
+///
+/// `columns[i]` es el nombre en la tabla de la i-ésima columna del resultado, o `None` si no es una
+/// columna de esa tabla (una expresión, un alias de función, algo que viene de otra tabla).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditSource {
+    pub oid: u32,
+    pub columns: Vec<Option<String>>,
+}
+
+/// La única tabla de la que salen las columnas de un resultado, o por qué no se puede editar.
+///
+/// Es la decisión que habilita escribir sobre un resultado, así que es pura y se prueba sola: ante
+/// la duda —ninguna columna viene de una tabla, o vienen de varias— no se ofrece editar.
+fn single_origin(origins: &[Option<(u32, i16)>]) -> std::result::Result<u32, &'static str> {
+    let mut tables = origins.iter().flatten().map(|(oid, _)| *oid);
+    let Some(first) = tables.next() else {
+        return Err("El resultado no trae columnas de una tabla: son expresiones o funciones.");
+    };
+    if tables.any(|oid| oid != first) {
+        return Err("El resultado sale de más de una tabla; solo se edita el de una sola.");
+    }
+    Ok(first)
+}
+
+/// El veredicto de revisar una sentencia sin ejecutarla.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "status",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum Check {
+    Ok,
+    Error {
+        message: String,
+        /// Dónde empieza el problema dentro del texto recibido: en caracteres y con base 0 (el
+        /// servidor lo cuenta con base 1).
+        position: Option<usize>,
+        hint: Option<String>,
+    },
+    /// No se revisó, y no es un fallo: la interfaz no muestra nada.
+    Skipped {
+        reason: String,
+    },
+}
+
+/// La posición del servidor (base 1, en caracteres) a la del editor (base 0).
+fn zero_based(position: Option<u32>) -> Option<usize> {
+    position.map(|p| usize::try_from(p).unwrap_or(1).saturating_sub(1))
+}
+
+impl Check {
+    fn skipped(reason: &str) -> Self {
+        Check::Skipped {
+            reason: reason.to_owned(),
+        }
+    }
+}
+
 /// Estado de la transacción de una pestaña de consulta.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -112,6 +174,9 @@ const IN_FAILED_SQL_TRANSACTION: &str = "25P02";
 /// es como se espera que funcione un editor de SQL.
 pub struct QuerySession {
     session: Session,
+    /// El pid del backend de esta sesión, leído al abrir: es con lo que otra conexión pregunta qué
+    /// está esperando la consulta mientras esta sigue ocupada ejecutándola.
+    pid: i32,
 }
 
 impl QuerySession {
@@ -122,7 +187,61 @@ impl QuerySession {
             .open_session(database, handle.profile.statement_timeout_ms)
             .await?;
 
-        Ok(Self { session })
+        let pid: i32 = session
+            .client()
+            .query_one("SELECT pg_backend_pid()", &[])
+            .await?
+            .get(0);
+
+        Ok(Self { session, pid })
+    }
+
+    /// El pid del backend de esta sesión.
+    pub fn pid(&self) -> i32 {
+        self.pid
+    }
+
+    /// Cuántas filas tiene una tabla según las estadísticas del servidor, sin contarlas.
+    ///
+    /// Es `pg_class.reltuples`: una estimación, que es justo lo que hace falta para avisar «esto es
+    /// enorme». `None` si la tabla no existe o nunca se analizó (PostgreSQL 14 en adelante guarda
+    /// `-1` ahí; antes guardaba `0`, que se trata igual: no se sabe). El nombre se resuelve con
+    /// `to_regclass`, o sea con el `search_path` de la propia sesión, que es contra lo que se escribió.
+    pub async fn estimated_rows(&self, schema: Option<&str>, table: &str) -> Result<Option<i64>> {
+        let name = match schema {
+            Some(schema) => format!(
+                "{}.{}",
+                crate::ddl::quote_ident(schema),
+                crate::ddl::quote_ident(table)
+            ),
+            None => crate::ddl::quote_ident(table),
+        };
+        let row = self
+            .session
+            .client()
+            .query_opt(
+                "SELECT c.reltuples::int8
+                   FROM pg_catalog.pg_class c
+                  WHERE c.oid = pg_catalog.to_regclass($1)",
+                &[&name],
+            )
+            .await?;
+        // Sin fila, la tabla no existe (o no se ve): no es un error de quien pregunta.
+        Ok(row.map(|row| row.get::<_, i64>(0)).filter(|rows| *rows > 0))
+    }
+
+    /// Pone (o saca) el tiempo máximo de cada sentencia de esta sesión.
+    ///
+    /// `Some(0)` es «sin límite» —lo que `statement_timeout = 0` significa—; `None` vuelve al valor
+    /// con que se abrió la sesión, el del perfil. El número viene de la interfaz y se interpola:
+    /// por eso es un `u64`, que no puede llevar más que dígitos.
+    pub async fn set_statement_timeout(&self, millis: Option<u64>) -> Result<()> {
+        let sql = match millis {
+            Some(ms) => format!("SET statement_timeout = {ms}"),
+            None => "RESET statement_timeout".to_owned(),
+        };
+        self.session.client().batch_execute(&sql).await?;
+        Ok(())
     }
 
     /// Permite abortar desde afuera lo que esta sesión esté ejecutando.
@@ -198,6 +317,28 @@ impl QuerySession {
         })
     }
 
+    /// Como [`Self::run`], pero pidiéndole al **servidor** que corte en el techo.
+    ///
+    /// `run` solo descarta lo que sobra de este lado: el servidor igual produce y manda la tabla
+    /// entera, así que un `SELECT *` sobre millones de filas tarda lo mismo con un techo de 200 que
+    /// sin él. Acá la lectura simple se envuelve en un `LIMIT` de una fila más que el techo —esa
+    /// de más es lo que dice que hubo recorte—. Una escritura (`UPDATE … RETURNING`) nunca se
+    /// envuelve: cortarla a medias no es una opción.
+    ///
+    /// Si la envuelta falla, se vuelve a correr la original: la posición del error que devuelve
+    /// PostgreSQL se cuenta sobre el texto que recibió, y el editor la marca sobre el que escribió
+    /// el usuario.
+    pub async fn run_capped(&self, sql: &str, limits: Limits) -> Result<Outcome> {
+        if limits.max_rows == usize::MAX || !is_plain_read(sql) {
+            return self.run(sql, limits).await;
+        }
+
+        match self.run(&capped(sql, limits.max_rows), limits).await {
+            Err(Error::Database { .. }) => self.run(sql, limits).await,
+            other => other,
+        }
+    }
+
     /// Los tipos de las columnas que devolvería esta sentencia.
     ///
     /// El protocolo simple con el que se ejecuta no los trae: su `RowDescription` expone el nombre
@@ -224,6 +365,135 @@ impl QuerySession {
                 type_name: column.type_().name().to_owned(),
             })
             .collect())
+    }
+
+    /// Ejecuta un conteo previo —`SELECT count(*) FROM (SELECT 1 FROM … LIMIT n) AS _n`— y devuelve
+    /// el número. Es lo que la interfaz arma para decir cuántas filas tocaría un `UPDATE` o un
+    /// `DELETE` antes de correrlo.
+    ///
+    /// Solo acepta esa forma: esto no es un segundo camino para ejecutar SQL, y lo que no empieza así
+    /// se rechaza. Va por la sesión de la pestaña, que es la que ve lo que su transacción ya cambió.
+    pub async fn count(&self, sql: &str) -> Result<i64> {
+        if !sql.starts_with("SELECT count(*) FROM (SELECT 1 FROM ") {
+            return Err(Error::Config("no es un conteo previo".into()));
+        }
+        let row = self.session.client().query_one(sql, &[]).await?;
+        Ok(row.get(0))
+    }
+
+    /// Revisa una sentencia con el servidor **sin ejecutarla**: `prepare` manda solo el `Parse`, que
+    /// valida la sintaxis y resuelve los nombres (tablas, columnas, tipos) pero no corre nada.
+    ///
+    /// Dos casos se saltean en vez de arriesgarse:
+    /// - **Con una transacción abierta o fallida.** Resolver nombres toma un `ACCESS SHARE` sobre
+    ///   cada tabla, y adentro de una transacción ese bloqueo se queda hasta el `COMMIT`: un
+    ///   `ALTER TABLE` de otra persona esperaría por una revisión que se hizo mientras alguien
+    ///   escribía. Con la transacción fallida, además, el servidor rechaza todo con `25P02`.
+    /// - **Con más de una sentencia.** El protocolo extendido no acepta varias en un `Parse`, y el
+    ///   error resultante no es un problema del texto.
+    ///
+    /// Si otra sesión tiene la tabla bloqueada la revisión **espera**: se le pone un
+    /// `lock_timeout` corto y se restaura el que tenía la pestaña —incluso si falla—, que es lo único
+    /// que impide que una pausa al escribir se quede colgada detrás de un `ALTER TABLE` ajeno.
+    /// Un error de conexión no es un error del SQL y se propaga como siempre.
+    pub async fn check(&self, sql: &str) -> Result<Check> {
+        // Solo el final se recorta: lo de adelante no mueve ninguna posición de error.
+        let text = sql.trim_end().trim_end_matches(';');
+        if text.trim().is_empty() {
+            return Ok(Check::skipped("vacía"));
+        }
+        if crate::sql::split::split(text).len() > 1 {
+            return Ok(Check::skipped("varias sentencias"));
+        }
+        if self.tx_status().await? != TxStatus::Idle {
+            return Ok(Check::skipped("transacción abierta"));
+        }
+
+        let client = self.session.client();
+        let previous: String = client
+            .query_one("SELECT current_setting('lock_timeout')", &[])
+            .await?
+            .get(0);
+        client
+            .batch_execute("SET lock_timeout = '300ms'")
+            .await
+            .map_err(Error::from)?;
+
+        let outcome = client.prepare(text).await;
+
+        // Restaurar es parte de la revisión, no un detalle: sin esto, `SHOW lock_timeout` de la
+        // pestaña mostraría 300 ms para siempre. El valor se cita como literal.
+        let restore = format!("SET lock_timeout = '{}'", previous.replace('\'', "''"));
+        client.batch_execute(&restore).await.map_err(Error::from)?;
+
+        match outcome {
+            Ok(_) => Ok(Check::Ok),
+            Err(error) => match Error::from(error) {
+                Error::Database {
+                    code,
+                    message,
+                    hint,
+                    position,
+                    ..
+                } => {
+                    // Un `lock_timeout` (55P03) y una cancelación (57014) no dicen nada del texto.
+                    if code == "55P03" || code == "57014" {
+                        return Ok(Check::skipped("tabla ocupada"));
+                    }
+                    Ok(Check::Error {
+                        message,
+                        position: zero_based(position),
+                        hint,
+                    })
+                }
+                other => Err(other),
+            },
+        }
+    }
+
+    /// De qué tabla sale el resultado de la sentencia, sin ejecutarla.
+    ///
+    /// Se le pregunta al servidor —`prepare` devuelve, por cada columna, el oid de la tabla de
+    /// origen y su número de columna— y no se deduce leyendo el `FROM`: un alias, una vista o un
+    /// `SELECT *` hacen que el texto no diga qué columna es cuál. Una expresión no tiene origen y
+    /// por eso queda en `None`. Para una vista el origen es la vista misma, y la grilla de edición
+    /// la rechaza por solo lectura.
+    pub async fn edit_source(&self, sql: &str) -> Result<EditSource> {
+        let client = self.session.client();
+        let statement = client.prepare(sql.trim().trim_end_matches(';')).await?;
+
+        let origins: Vec<Option<(u32, i16)>> = statement
+            .columns()
+            .iter()
+            .map(|column| match (column.table_oid(), column.column_id()) {
+                (Some(oid), Some(id)) if oid != 0 => Some((oid, id)),
+                _ => None,
+            })
+            .collect();
+
+        let oid = single_origin(&origins).map_err(|reason| Error::Config(reason.to_owned()))?;
+
+        let names: std::collections::HashMap<i16, String> = client
+            .query(
+                "SELECT attnum, attname::text
+                   FROM pg_catalog.pg_attribute
+                  WHERE attrelid = $1 AND attnum > 0 AND NOT attisdropped",
+                &[&oid],
+            )
+            .await?
+            .into_iter()
+            .map(|row| (row.get(0), row.get(1)))
+            .collect();
+
+        let columns = origins
+            .iter()
+            .map(|origin| match origin {
+                Some((table, id)) if *table == oid => names.get(id).cloned(),
+                _ => None,
+            })
+            .collect();
+
+        Ok(EditSource { oid, columns })
     }
 
     /// Si hay o no una transacción abierta en esta sesión, y si está sana.
@@ -279,6 +549,44 @@ impl QuerySession {
     pub async fn rollback(&self) -> Result<()> {
         self.run("ROLLBACK", Limits::default()).await.map(|_| ())
     }
+}
+
+/// `true` si la sentencia solo lee y se puede envolver en `SELECT * FROM (…) LIMIT n`.
+///
+/// Conservadora a propósito: ante la duda dice que no y la sentencia corre tal cual. Entran
+/// `SELECT`, `WITH`, `TABLE` y `VALUES`; una palabra de escritura o de `SELECT … INTO` en cualquier
+/// parte la saca (un `WITH` puede traer un `DELETE … RETURNING` adentro).
+pub(crate) fn is_plain_read(sql: &str) -> bool {
+    let words: Vec<String> = lex(sql)
+        .into_iter()
+        .filter(|token| token.kind == TokenKind::Word)
+        .map(|token| token.text.to_ascii_lowercase())
+        .collect();
+
+    let Some(first) = words.first() else {
+        return false;
+    };
+    if !matches!(first.as_str(), "select" | "with" | "table" | "values") {
+        return false;
+    }
+
+    !words.iter().any(|word| {
+        matches!(
+            word.as_str(),
+            "into" | "insert" | "update" | "delete" | "merge" | "truncate"
+        )
+    })
+}
+
+/// La lectura envuelta en el techo, con una fila de más para saber si hubo recorte.
+///
+/// El salto de línea antes del paréntesis es lo que evita que un comentario `--` al final del
+/// texto se coma el cierre.
+pub(crate) fn capped(sql: &str, max_rows: usize) -> String {
+    format!(
+        "SELECT * FROM (\n{sql}\n) AS pgforge_cap LIMIT {}",
+        max_rows.saturating_add(1)
+    )
 }
 
 /// Nombre del comando, para poder decir «INSERT: 3 filas» en vez de «listo».
@@ -361,6 +669,68 @@ fn skip_comments(sql: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn la_posicion_del_servidor_pasa_a_base_cero() {
+        assert_eq!(super::zero_based(Some(1)), Some(0));
+        assert_eq!(super::zero_based(Some(15)), Some(14));
+        // El servidor nunca manda 0, pero un valor así no puede dar un desbordamiento.
+        assert_eq!(super::zero_based(Some(0)), Some(0));
+        assert_eq!(super::zero_based(None), None);
+    }
+
+    #[test]
+    fn el_veredicto_de_la_revision_viaja_etiquetado() {
+        let json = serde_json::to_value(super::Check::Error {
+            message: "no existe".into(),
+            position: Some(7),
+            hint: None,
+        })
+        .unwrap();
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["position"], 7);
+        let json = serde_json::to_value(super::Check::skipped("vacía")).unwrap();
+        assert_eq!(json["status"], "skipped");
+        assert_eq!(json["reason"], "vacía");
+        assert_eq!(
+            serde_json::to_value(super::Check::Ok).unwrap()["status"],
+            "ok"
+        );
+    }
+
+    use super::{capped, is_plain_read, single_origin};
+
+    #[test]
+    fn el_origen_de_un_resultado_es_una_sola_tabla() {
+        // Una expresión no tiene origen y no impide editar el resto.
+        assert_eq!(single_origin(&[Some((10, 1)), None, Some((10, 3))]), Ok(10));
+        assert!(single_origin(&[None, None]).is_err());
+        assert!(single_origin(&[]).is_err());
+        assert!(single_origin(&[Some((10, 1)), Some((11, 1))]).is_err());
+    }
+
+    #[test]
+    fn reconoce_las_lecturas_simples_y_deja_pasar_las_escrituras() {
+        assert!(is_plain_read("SELECT * FROM progvehiculos"));
+        assert!(is_plain_read("  -- nota\n select 1"));
+        assert!(is_plain_read("WITH a AS (SELECT 1) SELECT * FROM a"));
+        assert!(is_plain_read("TABLE clientes"));
+        assert!(!is_plain_read("UPDATE t SET a = 1 RETURNING *"));
+        assert!(!is_plain_read(
+            "WITH d AS (DELETE FROM t RETURNING *) SELECT * FROM d"
+        ));
+        assert!(!is_plain_read("SELECT * INTO copia FROM t"));
+        assert!(!is_plain_read("SELECT * FROM t FOR UPDATE"));
+        assert!(!is_plain_read("EXPLAIN SELECT 1"));
+        assert!(!is_plain_read(""));
+    }
+
+    #[test]
+    fn el_techo_pide_una_fila_de_mas_y_protege_el_comentario_final() {
+        let sql = capped("SELECT 1 -- hola", 200);
+        assert!(sql.ends_with("LIMIT 201"));
+        assert!(sql.contains("-- hola\n)"));
+    }
+
     use super::*;
 
     #[test]

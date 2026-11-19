@@ -108,6 +108,7 @@ async fn crea_reemplaza_y_borra_triggers_contra_servidores_reales() {
             tokio::spawn(async move {
                 prepara_tablas_y_funcion(&handle, &schema).await;
                 crea_y_dispara(&handle, &schema).await;
+                lista_un_trigger_con_cuando(&handle, &schema).await;
                 reemplaza_y_dispara_distinto(&handle, &schema).await;
                 borra_y_deja_de_dispararse(&handle, &schema).await;
             })
@@ -195,6 +196,63 @@ async fn crea_y_dispara(handle: &ServerHandle, schema: &str) {
         .expect("el insert tenía que disparar el trigger sin fallar");
 
     assert_eq!(bitacora_count(handle, schema).await, 1);
+}
+
+/// Regresión: la condición `WHEN` con `OLD`/`NEW` hacía fallar la lista entera con «bogus varno: 2»
+/// (`pg_get_expr(tgqual, tgrelid)` solo conoce una relación). Se lee desde `pg_get_triggerdef`.
+async fn lista_un_trigger_con_cuando(handle: &ServerHandle, schema: &str) {
+    let database = handle.default_database().to_owned();
+
+    trigger::apply(
+        handle,
+        &database,
+        &[TriggerChange::CreateTrigger {
+            schema: schema.to_owned(),
+            table: "clientes".into(),
+            name: "clientes_bu_cuando".into(),
+            definition: TriggerDef {
+                timing: Timing::Before,
+                events: vec![Event::Update],
+                level: Level::Row,
+                when: Some("OLD.nombre IS DISTINCT FROM NEW.nombre".into()),
+                function_schema: schema.to_owned(),
+                function_name: "registrar".into(),
+            },
+        }],
+    )
+    .await
+    .expect("tenía que crear el trigger con WHEN");
+
+    let oid = oid_of(handle, schema, "clientes").await;
+    let listed = trigger::triggers(handle, &database, oid)
+        .await
+        .expect("la lista no puede fallar por una condición con OLD/NEW");
+
+    let with_when = listed
+        .iter()
+        .find(|t| t.name == "clientes_bu_cuando")
+        .expect("el trigger con WHEN tiene que aparecer");
+    let when = with_when
+        .when
+        .as_deref()
+        .expect("tiene que traer la condición");
+    assert!(when.contains("nombre"), "la condición salió como: {when}");
+    assert!(listed
+        .iter()
+        .any(|t| t.name == "clientes_bi" && t.when.is_none()));
+
+    trigger::apply(
+        handle,
+        &database,
+        &[TriggerChange::DropTrigger {
+            schema: schema.to_owned(),
+            table: "clientes".into(),
+            name: "clientes_bu_cuando".into(),
+            cascade: false,
+        }],
+    )
+    .await
+    .expect("tenía que borrar el trigger con WHEN");
 }
 
 async fn reemplaza_y_dispara_distinto(handle: &ServerHandle, schema: &str) {

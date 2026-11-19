@@ -20,6 +20,7 @@ const KIND_LABEL: Record<TaskKind, string> = {
   restore: "Restore",
   export: "Exportación",
   import: "Importación",
+  transfer: "Copia de tabla",
 };
 
 export function taskKindLabel(kind: TaskKind): string {

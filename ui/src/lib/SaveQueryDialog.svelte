@@ -48,6 +48,7 @@
       });
 
       tab.savedId = saved.id;
+      tab.baseline = tab.sql;
       tab.savedName = saved.name;
       tab.title = saved.name;
       onsaved?.();

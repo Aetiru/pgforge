@@ -7,9 +7,8 @@
     describeError,
     schemaGraph,
     schemaNames,
-    treeChildren,
+    databaseNames,
     type DataSide,
-    type TreeNode,
   } from "./ipc";
 
   /**
@@ -52,10 +51,10 @@
   $effect(() => {
     const id = targetId;
     let cancelled = false;
-    treeChildren(id, null, explorer.options)
-      .then((nodes: TreeNode[]) => {
+    databaseNames(id, explorer.options)
+      .then((names) => {
         if (cancelled) return;
-        databases = nodes.filter((node) => node.kind === "database").map((node) => node.label);
+        databases = names;
         if (!databases.includes(targetDatabase)) targetDatabase = databases[0] ?? "";
       })
       .catch((problem) => {

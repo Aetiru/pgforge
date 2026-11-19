@@ -1,11 +1,15 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
+  import { EDITOR_ACTIONS } from "./editor/actions";
   import { explorer, type Row } from "./explorer.svelte";
+  import { noteHint } from "./notes";
+  import { notes } from "./notes.svelte";
   import { rank, type Command, type CommandGroup } from "./palette";
   import { QueryTab } from "./query.svelte";
   import { shortcutStore } from "./shortcuts.svelte";
   import { tabs } from "./tabs.svelte";
   import { theme } from "./theme.svelte";
+  import { uiZoom } from "./ui-zoom.svelte";
   import { view, type SidePane } from "./view.svelte";
 
   /**
@@ -29,6 +33,7 @@
     onshortcuts,
     onmigrations,
     onconnect,
+    ondisconnectall,
     onclose,
   }: {
     onnewquery: () => void;
@@ -40,6 +45,8 @@
     onshortcuts: () => void;
     onmigrations: () => void;
     onconnect: (profileId: string) => void;
+    /** Pide confirmación y desconecta todo: lo decide `App`, que es quien monta el diálogo. */
+    ondisconnectall: () => void;
     onclose: () => void;
   } = $props();
 
@@ -95,6 +102,36 @@
         run: onshortcuts,
       },
       { id: "server", label: "Nuevo servidor", group: "acción", run: onnewserver },
+      ...(explorer.connectedCount > 0
+        ? [
+            {
+              id: "disconnect-all",
+              label: `Desconectar todos los servidores (${explorer.connectedCount})`,
+              group: "acción" as const,
+              run: ondisconnectall,
+            },
+          ]
+        : []),
+      {
+        id: "zoom-in",
+        label: "Agrandar toda la interfaz",
+        hint: uiZoom.percent,
+        group: "acción",
+        run: () => uiZoom.bigger(),
+      },
+      {
+        id: "zoom-out",
+        label: "Achicar toda la interfaz",
+        hint: uiZoom.percent,
+        group: "acción",
+        run: () => uiZoom.smaller(),
+      },
+      {
+        id: "zoom-reset",
+        label: "Interfaz a su tamaño (100 %)",
+        group: "acción",
+        run: () => uiZoom.reset(),
+      },
       { id: "monitor", label: "Monitoreo del servidor", group: "acción", run: onmonitor },
       { id: "config", label: "Configuración del servidor", group: "acción", run: onconfig },
       { id: "migrations", label: "Migraciones del servidor", group: "acción", run: onmigrations },
@@ -117,6 +154,30 @@
         hint: shortcutStore.label("editor.format"),
         group: "acción",
         run: () => current.requestFormat(),
+      });
+      // Lo que solo el editor sabe hacer: la paleta lo pide por nombre y `QueryPanel` se lo pasa.
+      for (const item of EDITOR_ACTIONS) {
+        out.push({
+          id: `editor:${item.action}`,
+          label: item.label,
+          hint: item.shortcut ? shortcutStore.label(item.shortcut) : undefined,
+          group: "acción",
+          run: () => current.requestEditor(item.action),
+        });
+      }
+      out.push({
+        id: "format-options",
+        label: "Opciones del formateador…",
+        hint: "caja de las palabras clave, sangría, coma",
+        group: "acción",
+        run: () => current.requestFormatOptions(),
+      });
+      out.push({
+        id: "versions",
+        label: "Versiones anteriores de este texto",
+        hint: shortcutStore.label("editor.versions"),
+        group: "acción",
+        run: () => current.requestVersions(),
       });
     }
 
@@ -163,7 +224,15 @@
         // La ruta va en la pista y no en el nombre: dos tablas que se llaman igual en esquemas
         // distintos se distinguen sin que el nombre deje de ser lo que se busca.
         label: row.label,
-        hint: [row.node?.database, row.node?.schema].filter(Boolean).join(" / "),
+        // La nota va en la pista: es lo que hace que `#facturación` encuentre el objeto.
+        hint: [
+          [row.node?.database, row.node?.schema].filter(Boolean).join(" / "),
+          row.node?.schema && row.node.database
+            ? noteHint(notes.get(row.profileId, row.node.database, row.node.schema, row.node.label))
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" · "),
         group: "objeto",
         run: () => {
           explorer.select(row);

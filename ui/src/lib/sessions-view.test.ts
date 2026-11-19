@@ -4,6 +4,7 @@ import {
   barShare,
   countSessions,
   filterSessions,
+  groupLocks,
   groupSessions,
   isLong,
   kindOf,
@@ -115,5 +116,35 @@ describe("barShare e isLong", () => {
     expect(isLong(session({ querySeconds: 40 }), 30)).toBe(true);
     expect(isLong(session({ querySeconds: 40, state: "idle" }), 30)).toBe(false);
     expect(isLong(session({ querySeconds: 40 }), 0)).toBe(false);
+  });
+});
+
+describe("groupLocks", () => {
+  const lock = (mode: string, granted = true, relation: string | null = null, lockType = "relation") => ({
+    lockType,
+    relation,
+    mode,
+    granted,
+  });
+
+  it("junta los repetidos con su cuenta y deja primero lo que espera", () => {
+    const groups = groupLocks([
+      lock("ExclusiveLock"),
+      lock("ExclusiveLock"),
+      lock("ExclusiveLock"),
+      lock("AccessShareLock", false, "public.t"),
+    ]);
+    expect(groups.map((g) => [g.mode, g.count, g.granted])).toEqual([
+      ["AccessShareLock", 1, false],
+      ["ExclusiveLock", 3, true],
+    ]);
+  });
+
+  it("no repite relaciones y guarda como mucho tres de ejemplo", () => {
+    const groups = groupLocks(
+      ["a", "a", "b", "c", "d"].map((r) => lock("RowExclusiveLock", true, r)),
+    );
+    expect(groups[0].relations).toEqual(["a", "b", "c"]);
+    expect(groups[0].count).toBe(5);
   });
 });

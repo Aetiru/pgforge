@@ -14,16 +14,82 @@
 //! entrada tolerando solo espacios y el caso de las palabras clave. Si difieren en cualquier otra
 //! cosa, se devuelve la entrada sin tocar — el peor caso es «no formateó», nunca «formateó mal».
 
+use serde::{Deserialize, Serialize};
+
 use super::lex::{lex, Token, TokenKind};
 use super::split::split;
 
-/// Ancho de un nivel de sangría.
-const INDENT: usize = 4;
+/// Cómo se escriben las palabras clave. Los identificadores **nunca** cambian de caso: esto solo
+/// decide `SELECT` / `select` / lo que el usuario haya escrito.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KeywordCase {
+    #[default]
+    Upper,
+    Lower,
+    /// Cada palabra clave queda como se tipeó. Una frase de dos palabras (`GROUP BY`, `LEFT JOIN`)
+    /// se emite con cada palabra tal cual y un solo espacio entre ellas.
+    Preserve,
+}
 
-/// Formatea un script entero, sentencia por sentencia, separándolas con `;` y una línea en blanco.
-///
-/// Pura: el mismo texto de entrada da siempre el mismo resultado, sin tocar el servidor.
+/// Con qué se sangra cada nivel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum Indent {
+    #[serde(rename = "2")]
+    Two,
+    #[default]
+    #[serde(rename = "4")]
+    Four,
+    #[serde(rename = "tab")]
+    Tab,
+}
+
+impl Indent {
+    fn unit(self) -> &'static str {
+        match self {
+            Indent::Two => "  ",
+            Indent::Four => "    ",
+            Indent::Tab => "\t",
+        }
+    }
+}
+
+/// Las preferencias de estilo. Viajan del editor a cada llamada: el formateador sigue siendo puro,
+/// sin leer ninguna configuración de afuera. `#[serde(default)]` para que una preferencia guardada
+/// por una versión anterior —con menos campos— siga abriendo.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FormatOptions {
+    pub keyword_case: KeywordCase,
+    pub indent: Indent,
+    /// Líneas en blanco entre sentencias (0 a 3).
+    pub lines_between_queries: u8,
+    /// La coma al principio de cada línea (`, columna`) en vez de al final.
+    pub comma_first: bool,
+}
+
+impl Default for FormatOptions {
+    /// Lo que el formateador hacía antes de tener opciones: `format()` no puede cambiar su salida.
+    fn default() -> Self {
+        Self {
+            keyword_case: KeywordCase::Upper,
+            indent: Indent::Four,
+            lines_between_queries: 1,
+            comma_first: false,
+        }
+    }
+}
+
+/// Formatea con el estilo de fábrica.
 pub fn format(sql: &str) -> String {
+    format_with(sql, &FormatOptions::default())
+}
+
+/// Formatea un script entero, sentencia por sentencia, separándolas con `;` y líneas en blanco.
+///
+/// Pura: el mismo texto de entrada y las mismas opciones dan siempre el mismo resultado, sin tocar
+/// el servidor.
+pub fn format_with(sql: &str, options: &FormatOptions) -> String {
     let statements = split(sql);
     if statements.is_empty() {
         return sql.to_owned();
@@ -35,9 +101,12 @@ pub fn format(sql: &str) -> String {
     let last = statements.len() - 1;
     for (index, statement) in statements.iter().enumerate() {
         if index > 0 {
-            out.push_str(";\n\n");
+            // Un tope de 3 líneas en blanco: más que eso es un error de tipeo de quien configura,
+            // y el valor llega de la interfaz.
+            out.push(';');
+            out.push_str(&"\n".repeat(usize::from(options.lines_between_queries.min(3)) + 1));
         }
-        out.push_str(&format_statement(&statement.text));
+        out.push_str(&format_statement(&statement.text, options));
         if index == last && trailing_semicolon {
             out.push(';');
         }
@@ -170,7 +239,7 @@ enum Unit {
     Atomic(String),
 }
 
-fn units_of(tokens: &[Token]) -> Vec<Unit> {
+fn units_of(tokens: &[Token], case: KeywordCase) -> Vec<Unit> {
     // Los espacios los recalcula el formateador entero; no aportan nada acá.
     let words: Vec<&Token> = tokens
         .iter()
@@ -189,7 +258,7 @@ fn units_of(tokens: &[Token]) -> Vec<Unit> {
                     let pair = format!("{upper} {}", next.text.to_uppercase());
                     if TWO_WORD_CLAUSES.contains(&pair.as_str()) {
                         units.push(Unit::Word {
-                            display: pair,
+                            display: cased_phrase(&[token, next], case),
                             role: Role::Clause,
                         });
                         i += 2;
@@ -199,13 +268,8 @@ fn units_of(tokens: &[Token]) -> Vec<Unit> {
 
                 if upper == "JOIN" || JOIN_MODIFIERS.contains(&upper.as_str()) {
                     if let Some(end) = join_end(&words, i) {
-                        let phrase = words[i..=end]
-                            .iter()
-                            .map(|t| t.text.to_uppercase())
-                            .collect::<Vec<_>>()
-                            .join(" ");
                         units.push(Unit::Word {
-                            display: phrase,
+                            display: cased_phrase(&words[i..=end], case),
                             role: Role::Join,
                         });
                         i = end + 1;
@@ -217,7 +281,7 @@ fn units_of(tokens: &[Token]) -> Vec<Unit> {
                 let display = if role == Role::Plain {
                     token.text.clone()
                 } else {
-                    upper
+                    cased(&token.text, case)
                 };
                 units.push(Unit::Word { display, role });
                 i += 1;
@@ -233,6 +297,24 @@ fn units_of(tokens: &[Token]) -> Vec<Unit> {
         }
     }
     units
+}
+
+fn cased(word: &str, case: KeywordCase) -> String {
+    match case {
+        KeywordCase::Upper => word.to_uppercase(),
+        KeywordCase::Lower => word.to_lowercase(),
+        KeywordCase::Preserve => word.to_owned(),
+    }
+}
+
+/// Una frase de varias palabras clave (`GROUP BY`, `LEFT OUTER JOIN`) con un solo espacio entre
+/// ellas, cada una con el caso pedido.
+fn cased_phrase(words: &[&Token], case: KeywordCase) -> String {
+    words
+        .iter()
+        .map(|word| cased(&word.text, case))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Busca el `JOIN` que cierra una cadena de modificadores (`LEFT OUTER JOIN`) empezando en `start`.
@@ -261,7 +343,7 @@ fn opens_inline(prev: Option<&Unit>) -> bool {
     match prev {
         None => false,
         Some(Unit::Word { display, role }) => {
-            matches!(role, Role::Keyword | Role::Plain) || display == "VALUES"
+            matches!(role, Role::Keyword | Role::Plain) || display.eq_ignore_ascii_case("VALUES")
         }
         Some(Unit::Punct(')')) => true,
         _ => false,
@@ -350,7 +432,7 @@ enum Block {
 
 struct Printer {
     out: String,
-    /// Nivel de sangría vigente, en cantidad de niveles (cada uno son `INDENT` espacios).
+    /// Nivel de sangría vigente, en cantidad de niveles.
     level: usize,
     blocks: Vec<Block>,
     /// Nivel al que hay que volver con el `END` de cada `CASE` abierto.
@@ -370,11 +452,16 @@ struct Printer {
     prev_was_punct: bool,
     /// Corto y sin nada que lo obligue a partirse: se imprime todo en una sola línea.
     oneline: bool,
+    /// Lo que se repite por cada nivel de sangría.
+    indent: &'static str,
+    comma_first: bool,
 }
 
 impl Printer {
-    fn new(oneline: bool) -> Self {
+    fn new(oneline: bool, options: &FormatOptions) -> Self {
         Printer {
+            indent: options.indent.unit(),
+            comma_first: options.comma_first,
             out: String::new(),
             level: 0,
             blocks: Vec::new(),
@@ -407,7 +494,7 @@ impl Printer {
 
     fn newline_to(&mut self, level: usize) {
         self.out.push('\n');
-        self.out.push_str(&" ".repeat(level * INDENT));
+        self.out.push_str(&self.indent.repeat(level));
         self.fresh_line = true;
     }
 
@@ -501,11 +588,34 @@ impl Printer {
         match self.blocks.last() {
             Some(Block::List { indent, .. }) => {
                 let indent = *indent;
-                self.raw(",", true, false, true);
-                self.newline_to(indent);
+                if self.comma_first {
+                    self.comma_first_break(indent);
+                } else {
+                    self.raw(",", true, false, true);
+                    self.newline_to(indent);
+                }
             }
             _ => self.raw(",", true, false, true),
         }
+    }
+
+    /// La coma va al principio de la línea siguiente, dos columnas a la izquierda del elemento para
+    /// que este quede alineado con el primero de la lista (`  , columna`). Con tabuladores no hay
+    /// «dos columnas» que restar: la coma ocupa el lugar del último tabulador.
+    fn comma_first_break(&mut self, level: usize) {
+        self.out.push('\n');
+        match self.indent {
+            "\t" => self.out.push_str(&"\t".repeat(level.saturating_sub(1))),
+            unit => {
+                let width = (unit.len() * level).saturating_sub(2);
+                self.out.push_str(&" ".repeat(width));
+            }
+        }
+        self.out.push_str(", ");
+        // El próximo elemento sigue pegado a la coma: el espacio ya está puesto.
+        self.fresh_line = true;
+        self.prev_tight_after = false;
+        self.prev_was_punct = false;
     }
 
     fn second_level(&mut self, display: &str) {
@@ -561,7 +671,7 @@ impl Printer {
                     display,
                 } if self.suppressed == 0 => {
                     self.clause(display);
-                    if display == "SELECT" {
+                    if display.eq_ignore_ascii_case("SELECT") {
                         self.begin_select_list();
                     }
                 }
@@ -611,19 +721,19 @@ impl Printer {
     }
 }
 
-fn format_statement(text: &str) -> String {
+fn format_statement(text: &str, options: &FormatOptions) -> String {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return String::new();
     }
 
     let tokens = lex(trimmed);
-    let units = units_of(&tokens);
+    let units = units_of(&tokens, options.keyword_case);
     if units.is_empty() {
         return trimmed.to_owned();
     }
 
-    let mut printer = Printer::new(!needs_breaking(&units));
+    let mut printer = Printer::new(!needs_breaking(&units), options);
     printer.run(&units);
     printer.finish()
 }
@@ -631,6 +741,159 @@ fn format_statement(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn con(sql: &str, options: FormatOptions) -> String {
+        format_with(sql, &options)
+    }
+
+    #[test]
+    fn las_opciones_de_fabrica_no_cambian_la_salida() {
+        let sql = "select a, b from t where x = 1; select 2";
+        assert_eq!(format(sql), format_with(sql, &FormatOptions::default()));
+    }
+
+    #[test]
+    fn palabras_clave_en_minuscula() {
+        let out = con(
+            "SELECT a, b FROM t LEFT JOIN u ON u.id = t.id GROUP BY a",
+            FormatOptions {
+                keyword_case: KeywordCase::Lower,
+                ..Default::default()
+            },
+        );
+        assert!(out.starts_with("select\n"), "{out}");
+        assert!(out.contains("\nfrom t"), "{out}");
+        assert!(out.contains("\nleft join u on"), "{out}");
+        assert!(out.contains("\ngroup by a"), "{out}");
+    }
+
+    #[test]
+    fn preservar_deja_cada_palabra_como_se_escribio() {
+        let out = con(
+            "Select a, b From t Group By a",
+            FormatOptions {
+                keyword_case: KeywordCase::Preserve,
+                ..Default::default()
+            },
+        );
+        assert!(out.starts_with("Select\n"), "{out}");
+        assert!(out.contains("\nFrom t"), "{out}");
+        assert!(out.contains("\nGroup By a"), "{out}");
+    }
+
+    #[test]
+    fn los_identificadores_siguen_igual_con_cualquier_caso() {
+        let out = con(
+            "SELECT MiColumna FROM MiTabla",
+            FormatOptions {
+                keyword_case: KeywordCase::Lower,
+                ..Default::default()
+            },
+        );
+        assert!(
+            out.contains("MiColumna") && out.contains("MiTabla"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn sangria_de_dos_espacios_y_de_tabulador() {
+        let sql = "select a, b from t";
+        let dos = con(
+            sql,
+            FormatOptions {
+                indent: Indent::Two,
+                ..Default::default()
+            },
+        );
+        assert!(dos.contains("\n  a,\n  b"), "{dos}");
+        let tab = con(
+            sql,
+            FormatOptions {
+                indent: Indent::Tab,
+                ..Default::default()
+            },
+        );
+        assert!(tab.contains("\n\ta,\n\tb"), "{tab}");
+    }
+
+    #[test]
+    fn lineas_en_blanco_entre_sentencias() {
+        let sql = "select 1; select 2";
+        let ninguna = con(
+            sql,
+            FormatOptions {
+                lines_between_queries: 0,
+                ..Default::default()
+            },
+        );
+        assert_eq!(ninguna, "SELECT 1;\nSELECT 2");
+        let dos = con(
+            sql,
+            FormatOptions {
+                lines_between_queries: 2,
+                ..Default::default()
+            },
+        );
+        assert_eq!(dos, "SELECT 1;\n\n\nSELECT 2");
+        let tope = con(
+            sql,
+            FormatOptions {
+                lines_between_queries: 200,
+                ..Default::default()
+            },
+        );
+        assert_eq!(tope, "SELECT 1;\n\n\n\nSELECT 2");
+    }
+
+    #[test]
+    fn coma_al_principio() {
+        let out = con(
+            "select a, b, c from t",
+            FormatOptions {
+                comma_first: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(out, "SELECT\n    a\n  , b\n  , c\nFROM t");
+    }
+
+    #[test]
+    fn coma_al_principio_con_tabulador_y_con_dos_espacios() {
+        let tab = con(
+            "select a, b from t",
+            FormatOptions {
+                comma_first: true,
+                indent: Indent::Tab,
+                ..Default::default()
+            },
+        );
+        assert_eq!(tab, "SELECT\n\ta\n, b\nFROM t");
+        let dos = con(
+            "select a, b from t",
+            FormatOptions {
+                comma_first: true,
+                indent: Indent::Two,
+                ..Default::default()
+            },
+        );
+        assert_eq!(dos, "SELECT\n  a\n, b\nFROM t");
+    }
+
+    #[test]
+    fn las_opciones_viajan_en_camel_case() {
+        let json =
+            r#"{"keywordCase":"lower","indent":"tab","linesBetweenQueries":2,"commaFirst":true}"#;
+        let options: FormatOptions = serde_json::from_str(json).unwrap();
+        assert_eq!(options.keyword_case, KeywordCase::Lower);
+        assert_eq!(options.indent, Indent::Tab);
+        assert_eq!(options.lines_between_queries, 2);
+        assert!(options.comma_first);
+        // Una preferencia vieja, con menos campos, sigue abriendo con lo de fábrica.
+        let viejo: FormatOptions = serde_json::from_str(r#"{"indent":"2"}"#).unwrap();
+        assert_eq!(viejo.indent, Indent::Two);
+        assert_eq!(viejo.keyword_case, KeywordCase::Upper);
+    }
 
     #[test]
     fn pone_cada_columna_del_select_en_su_linea() {

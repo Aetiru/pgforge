@@ -7,15 +7,24 @@
 //! El árbol se arma por niveles. Un servidor con miles de tablas no puede resolverse de una vez,
 //! así que cada expansión es una consulta acotada al nodo que se abrió.
 
+mod database;
 mod dependencies;
 mod graph;
 mod node;
+mod routines;
 mod search;
+mod values;
 
+pub use database::{
+    database_overview, DatabaseDetails, DatabaseOverview, ExtensionSummary, SchemaSummary,
+    TableSummary,
+};
 pub use dependencies::{dependencies, Dependency, Direction};
 pub use graph::{schema_graph, GraphColumn, GraphEdge, GraphTable, SchemaGraph};
 pub use node::{Folder, NodeKind, NodeTag, TreeNode};
+pub use routines::{signatures as routine_signatures, RoutineKind, RoutineSignature};
 pub use search::{search, SearchHit};
+pub use values::{column_values, pair_values, ColumnValue, ColumnValues, ValuesKind};
 
 use crate::conn::ServerHandle;
 use crate::error::{Error, Result};
@@ -28,17 +37,20 @@ pub struct TreeOptions {
     pub show_system_schemas: bool,
 }
 
-/// Devuelve los hijos de un nodo. Con `None` devuelve el primer nivel: las bases del servidor.
+/// Devuelve los hijos de un nodo. Con `None` devuelve el primer nivel: las carpetas «Bases de datos»
+/// y «Roles» del servidor.
 pub async fn children(
     handle: &ServerHandle,
     parent: Option<&TreeNode>,
     options: TreeOptions,
 ) -> Result<Vec<TreeNode>> {
     let Some(parent) = parent else {
-        // "Roles" es del clúster entero, así que va como hermana de las bases en la raíz y no
-        // colgando de ninguna de ellas.
-        let mut nodes = vec![roles_folder(handle, options).await?];
-        nodes.extend(databases(handle).await?);
+        // Las dos carpetas son del clúster entero. Las bases van primero: es lo que se abre todo el
+        // día, y «Roles» las empujaba hacia abajo.
+        let database = handle.default_database();
+        let count = i64::try_from(databases(handle).await?.len()).unwrap_or(i64::MAX);
+        let mut nodes = vec![TreeNode::root_folder(database, Folder::Databases, count)];
+        nodes.push(roles_folder(handle, options).await?);
         return Ok(nodes);
     };
 
@@ -50,6 +62,7 @@ pub async fn children(
             foreign_servers_folder(handle, parent).await?,
         ]),
         NodeKind::Folder(Folder::Schemas) => schemas(handle, parent, options).await,
+        NodeKind::Folder(Folder::Databases) => databases(handle).await,
         NodeKind::Folder(Folder::Roles) => roles(handle, parent, options).await,
         NodeKind::Schema => schema_folders(handle, parent).await,
         NodeKind::Folder(folder) => objects(handle, parent, folder).await,
@@ -443,8 +456,70 @@ async fn objects(
         Folder::ForeignServers => foreign_servers(handle, parent).await,
         // Se resuelven antes, en el `match` de `children()`: `Schemas` no tiene un padre de este
         // tipo, y `Roles` va por su propia función porque no cuelga de una base.
-        Folder::Schemas | Folder::Roles => Ok(Vec::new()),
+        Folder::Schemas | Folder::Roles | Folder::Databases => Ok(Vec::new()),
     }
+}
+
+/// Hasta cuántas relaciones por esquema se calcula el tamaño en disco.
+///
+/// `pg_total_relation_size` toca el sistema de archivos por cada tabla e índice: en un esquema de
+/// miles de tablas abrir la carpeta pasaría de instantáneo a tardar. Pasado el techo se muestran
+/// solo las filas estimadas, que salen del catálogo sin costo.
+const SIZE_LIMIT: i64 = 500;
+
+/// Une el dueño y las medidas con « · », saltando lo que falte.
+fn join_detail(owner: Option<String>, size: Option<String>) -> Option<String> {
+    match (owner, size) {
+        (Some(owner), Some(size)) => Some(format!("{owner} · {size}")),
+        (one, other) => one.or(other),
+    }
+}
+
+/// Filas estimadas y tamaño en disco, legibles en una columna angosta: «48 M · 12 GB».
+///
+/// `reltuples` es una estimación del último `ANALYZE` y vale `-1` en una tabla que nunca se analizó
+/// (PG 14 en adelante; antes era `0`): ahí no se inventa un número, se omite.
+fn relation_size_text(reltuples: f64, bytes: Option<i64>) -> Option<String> {
+    let rows = (reltuples > 0.0).then(|| compact_count(reltuples));
+    let size = bytes.filter(|bytes| *bytes > 0).map(human_bytes);
+    match (rows, size) {
+        (Some(rows), Some(size)) => Some(format!("{rows} · {size}")),
+        (one, other) => one.or(other),
+    }
+}
+
+fn compact_count(value: f64) -> String {
+    let (scaled, unit) = if value >= 1e9 {
+        (value / 1e9, " G")
+    } else if value >= 1e6 {
+        (value / 1e6, " M")
+    } else if value >= 1e4 {
+        (value / 1e3, " K")
+    } else {
+        return format!("{}", value.round() as i64);
+    };
+    format!("{}{unit}", decimal_comma(scaled))
+}
+
+fn human_bytes(bytes: i64) -> String {
+    const UNITS: [&str; 5] = ["B", "kB", "MB", "GB", "TB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} B")
+    } else {
+        format!("{} {}", decimal_comma(value), UNITS[unit])
+    }
+}
+
+/// Un decimal con coma, sin el `,0` de sobra: «12» y no «12,0».
+fn decimal_comma(value: f64) -> String {
+    let text = format!("{value:.1}");
+    text.strip_suffix(".0").unwrap_or(&text).replace('.', ",")
 }
 
 async fn relations(
@@ -469,7 +544,14 @@ async fn relations(
                 pg_catalog.pg_get_userbyid(c.relowner)::text,
                 pg_catalog.obj_description(c.oid, 'pg_class'),
                 c.relispartition,
-                c.relrowsecurity
+                c.relrowsecurity,
+                c.reltuples::float8,
+                CASE WHEN c.relkind IN ('r', 'm') AND count(*) OVER () <= {SIZE_LIMIT}
+                     THEN pg_catalog.pg_total_relation_size(c.oid) END,
+                c.relkind IN ('r', 'p') AND NOT c.relispartition AND NOT EXISTS (
+                    SELECT 1 FROM pg_catalog.pg_index i
+                     WHERE i.indrelid = c.oid AND i.indisprimary),
+                c.relkind = 'm' AND NOT c.relispopulated
            FROM pg_catalog.pg_class c
           WHERE c.relnamespace = $1 AND c.relkind IN ({relkinds})
           ORDER BY c.relname"
@@ -496,11 +578,28 @@ async fn relations(
                 _ => NodeKind::Sequence,
             };
 
-            let detail = owner_detail(handle, owner);
+            let reltuples: f64 = row.get(7);
+            let bytes: Option<i64> = row.get(8);
+            let detail = join_detail(
+                owner_detail(handle, owner),
+                matches!(relkind.as_str(), "r" | "m" | "p")
+                    .then(|| relation_size_text(reltuples, bytes))
+                    .flatten(),
+            );
+
+            let no_primary_key: bool = row.get(9);
+            let not_populated: bool = row.get(10);
 
             let mut tags = Vec::new();
             if is_partition {
                 tags.push(NodeTag::Partition);
+            }
+            // Las particiones quedan afuera de la consulta: heredan la clave de su madre.
+            if no_primary_key {
+                tags.push(NodeTag::NoPrimaryKey);
+            }
+            if not_populated {
+                tags.push(NodeTag::NotPopulated);
             }
             // Una tabla con RLS activa devuelve menos filas de las que tiene, y eso explica de
             // antemano el «no veo mis datos» que si no se descubre recién al consultarla.
@@ -509,9 +608,14 @@ async fn relations(
             }
 
             let expandable = !matches!(kind, NodeKind::Sequence);
+            let measured = matches!(relkind.as_str(), "r" | "m" | "p");
             TreeNode::object(parent, kind, row.get(0), row.get(1), detail, expandable)
                 .with_comment(row.get(4))
                 .with_tags(tags)
+                .with_measures(
+                    (measured && reltuples > 0.0).then_some(reltuples as i64),
+                    bytes.filter(|bytes| *bytes > 0),
+                )
         })
         .collect())
 }
@@ -763,14 +867,19 @@ async fn indexes(handle: &ServerHandle, parent: &TreeNode) -> Result<Vec<TreeNod
                 detail.push_str(" · INVÁLIDO");
             }
 
-            TreeNode::object(
+            let node = TreeNode::object(
                 parent,
                 NodeKind::Index,
                 row.get(0),
                 row.get(1),
                 Some(detail),
                 false,
-            )
+            );
+            if is_valid {
+                node
+            } else {
+                node.with_tags(vec![NodeTag::Invalid])
+            }
         })
         .collect())
 }
@@ -912,4 +1021,52 @@ async fn policies(handle: &ServerHandle, parent: &TreeNode) -> Result<Vec<TreeNo
 
 fn missing_oid(what: &str) -> Error {
     Error::Config(format!("el nodo de {what} no tiene OID asociado"))
+}
+
+#[cfg(test)]
+mod size_tests {
+    use super::{human_bytes, join_detail, relation_size_text};
+
+    #[test]
+    fn el_tamano_usa_la_unidad_que_se_lee_de_un_vistazo() {
+        assert_eq!(human_bytes(512), "512 B");
+        assert_eq!(human_bytes(1_258_291), "1,2 MB");
+        assert_eq!(human_bytes(12 * 1024 * 1024 * 1024), "12 GB");
+    }
+
+    #[test]
+    fn las_filas_se_compactan_y_omiten_lo_que_no_se_sabe() {
+        assert_eq!(relation_size_text(874.0, None).as_deref(), Some("874"));
+        assert_eq!(
+            relation_size_text(48_000_000.0, Some(12 * 1024 * 1024 * 1024)).as_deref(),
+            Some("48 M · 12 GB")
+        );
+        assert_eq!(
+            relation_size_text(2_100_000.0, None).as_deref(),
+            Some("2,1 M")
+        );
+        // Tabla nunca analizada: `reltuples = -1`, no se inventa un número.
+        assert_eq!(
+            relation_size_text(-1.0, Some(8192)).as_deref(),
+            Some("8 kB")
+        );
+        assert_eq!(relation_size_text(-1.0, None), None);
+    }
+
+    #[test]
+    fn el_dueno_y_las_medidas_se_unen_sin_dejar_separadores_sueltos() {
+        assert_eq!(
+            join_detail(Some("ana".into()), Some("5 K".into())).as_deref(),
+            Some("ana · 5 K")
+        );
+        assert_eq!(
+            join_detail(None, Some("5 K".into())).as_deref(),
+            Some("5 K")
+        );
+        assert_eq!(
+            join_detail(Some("ana".into()), None).as_deref(),
+            Some("ana")
+        );
+        assert_eq!(join_detail(None, None), None);
+    }
 }

@@ -40,7 +40,7 @@
   import JsonTree from "./JsonTree.svelte";
   import Modal from "./Modal.svelte";
   import { parseJsonTree } from "./json-tree";
-  import { asJson, delimited, parseDelimited, pretty } from "./grid-copy";
+  import { asInserts, asJson, asMarkdown, delimited, parseDelimited, pretty } from "./grid-copy";
   import { columnRange } from "./grid-window";
   import { gridZoom } from "./grid.svelte";
   import { count } from "./format";
@@ -60,6 +60,8 @@
     serverSort = false,
     onsort,
     onfilter,
+    linkAt,
+    rowMenu,
   }: {
     columns: Column<T>[];
     rows: T[];
@@ -92,6 +94,13 @@
      * valor»).
      */
     onfilter?: (column: Column<T>, preset?: { op: "eq" | "isNull"; value?: string }) => void;
+    /**
+     * Si la celda es un salto (clave foránea con valor), a dónde lleva. Dibuja una flecha en la
+     * celda y abre el destino con `Ctrl`+clic. La grilla no sabe qué es una clave foránea.
+     */
+    linkAt?: (row: T, column: Column<T>) => { label: string; open: () => void } | null;
+    /** Acciones extra sobre la fila de la celda con el foco, al final del menú contextual. */
+    rowMenu?: (row: T, column: Column<T>) => { label: string; run: () => void }[];
   } = $props();
 
   /**
@@ -413,6 +422,20 @@
     anchor = null;
   }
 
+  /** Las claves de las columnas escondidas, para guardar una vista. */
+  export function hiddenKeys(): string[] {
+    return Object.keys(hidden).filter((key) => hidden[key]);
+  }
+
+  /** Esconde exactamente estas columnas, para aplicar una vista. Siempre queda alguna a la vista. */
+  export function setHiddenKeys(keys: string[]) {
+    const next = Object.fromEntries(keys.map((key) => [key, true] as const));
+    if (columns.every((column) => next[column.key])) return;
+    hidden = next;
+    cursor = null;
+    anchor = null;
+  }
+
   function showAll() {
     hidden = {};
     headerMenu = null;
@@ -727,6 +750,16 @@
     return toClipboard(text, format === "csv" ? "Copiado con encabezados" : "Copiado");
   }
 
+  function copyMarkdown() {
+    const { headers, cells } = selection();
+    return toClipboard(asMarkdown(headers, cells), "Copiado como tabla de Markdown");
+  }
+
+  function copyInserts() {
+    const { headers, cells } = selection();
+    return toClipboard(asInserts(headers, cells), "Copiado como INSERT (cambiá «tabla» por la de destino)");
+  }
+
   function copyJson() {
     const { headers, cells } = selection();
     return toClipboard(asJson(headers, cells), "Copiado como JSON");
@@ -806,6 +839,19 @@
     const value = rawOf(row, column);
     onfilter(column, value === null ? { op: "isNull" } : { op: "eq", value });
   }
+
+  /** Lo que ofrece el menú para la fila con el foco: el salto de su celda y las acciones de fila. */
+  const menuLinks = $derived.by(() => {
+    if (!menu || !cursor) return [];
+    const row = ordered[cursor.row];
+    const column = active[cursor.column];
+    if (!row || !column) return [];
+    const jump = linkAt?.(row, column);
+    return [
+      ...(jump ? [{ label: `Ir a ${jump.label}`, run: jump.open }] : []),
+      ...(rowMenu?.(row, column) ?? []),
+    ];
+  });
 
   function onCellMenu(event: MouseEvent, row: number, column: number) {
     event.preventDefault();
@@ -998,18 +1044,38 @@
       class="grid-cell
         {column.align === 'right' ? 'text-right tabular-nums' : ''} {column.tone?.(row) ?? ''}
         {editable?.(row, column) ? 'cursor-text' : ''}
-        {sticky ? 'sticky z-10 bg-inherit' : ''}
+        {sticky ? 'sticky z-10 bg-inherit' : 'relative'}
         {inRange(at, columnIndex) && !focused ? 'bg-blue-100/60 dark:bg-blue-900/30' : ''}
         {focused ? 'bg-blue-100/60 ring-1 ring-blue-500 ring-inset dark:bg-blue-900/30' : ''}"
       style="width: {widthOf(column)}px; left: {sticky
         ? columnOffsets[columnIndex]
         : 0}px {rangeEdge(at, columnIndex)}"
       title={column.title?.(row)}
-      onclick={(event) => pick(at, columnIndex, event.shiftKey)}
+      onclick={(event) => {
+        const jump = event.ctrlKey || event.metaKey ? linkAt?.(row, column) : null;
+        if (jump) jump.open();
+        else pick(at, columnIndex, event.shiftKey);
+      }}
       ondblclick={() => open(row, column)}
       oncontextmenu={(event) => onCellMenu(event, at, columnIndex)}
     >
       {column.value(row)}
+      {#if linkAt}
+        {@const jump = linkAt(row, column)}
+        {#if jump}
+          <button
+            class="fk-link"
+            tabindex="-1"
+            title="Ir a {jump.label} (Ctrl+clic)"
+            aria-label="Ir a {jump.label}"
+            onclick={(event) => {
+              event.stopPropagation();
+              jump.open();
+            }}
+            ondblclick={(event) => event.stopPropagation()}>→</button
+          >
+        {/if}
+      {/if}
     </div>
   {/if}
 {/snippet}
@@ -1122,9 +1188,7 @@
                   ? 'bg-blue-100 text-blue-950 dark:bg-blue-950 dark:text-blue-100'
                   : cursor?.row === at
                     ? 'bg-blue-50/70 dark:bg-blue-950/40'
-                    : at % 2 === 1
-                      ? 'bg-zinc-100/70 dark:bg-zinc-800'
-                      : 'bg-white dark:bg-zinc-900'}
+                    : 'bg-white dark:bg-zinc-900'}
                    {rowClass?.(row) ?? ''} font-mono"
                 style="height: {rowHeight}px; width: {totalWidth}px;
                        font-size: var(--grid-font-size, 0.875rem)"
@@ -1214,6 +1278,8 @@
       Copiar con encabezados <span class="muted">Ctrl+Shift+C</span>
     </button>
     <button class="row-menu" onclick={copyJson}>Copiar como JSON</button>
+    <button class="row-menu" onclick={copyMarkdown}>Copiar como tabla de Markdown</button>
+    <button class="row-menu" onclick={copyInserts}>Copiar como INSERT</button>
     <button class="row-menu" disabled={!onedit} onclick={pasteSelection}>
       Pegar <span class="muted">Ctrl+V</span>
     </button>
@@ -1226,6 +1292,15 @@
     {#if onfilter && active[cursor?.column ?? -1]?.orderBy}
       <button class="row-menu" onclick={filterByCell}>Filtrar por este valor</button>
     {/if}
+    {#each menuLinks as item (item.label)}
+      <button
+        class="row-menu"
+        onclick={() => {
+          menu = null;
+          item.run();
+        }}>{item.label}</button
+      >
+    {/each}
   </div>
 {/if}
 

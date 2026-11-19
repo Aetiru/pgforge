@@ -11,6 +11,7 @@
     saveProfile,
     sshHostKey,
     sshTest,
+    databaseNames,
     type ConnectionProfile,
     type Environment,
     type ServerColor,
@@ -41,6 +42,7 @@
       savePassword: false,
       readOnly: false,
       autocommit: true,
+      connectOnStart: false,
       // Un servidor nuevo creado desde una ventana de workspace nace en su carpeta: guardado sin
       // carpeta, o en una que cuelga de otra rama, no aparecería en el árbol de esta ventana y se
       // vería como si el guardado hubiera fallado. Sigue siendo el valor de partida nada más — el
@@ -56,6 +58,25 @@
   // El diálogo se crea de nuevo cada vez que se abre, así que tomar el valor inicial es lo que
   // corresponde: el formulario es una copia editable, no un espejo del perfil guardado.
   let form = $state<ConnectionProfile>(untrack(() => (profile ? { ...profile } : blank())));
+  // Las bases que tiene el servidor, para elegir la predeterminada. Solo se pueden leer con el
+  // servidor conectado: abrir una conexión desde un diálogo de edición pediría contraseña fuera del
+  // único lugar donde se piden.
+  let knownDatabases = $state<string[]>([]);
+  $effect(() => {
+    const id = untrack(() => profile?.id);
+    if (!id || !explorer.rowFor(id)?.connected) return;
+    let cancelled = false;
+    databaseNames(id, { showSystemSchemas: false })
+      .then((names) => {
+        if (!cancelled) {
+          knownDatabases = names;
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  });
   let password = $state("");
   // Contraseña del bastión, o frase de la clave privada. Solo se guarda en el almacén del sistema.
   let sshPassword = $state("");
@@ -276,7 +297,13 @@
             type="button"
             class="seg-item"
             aria-pressed={(form.environment ?? "") === item.value}
-            onclick={() => (form.environment = (item.value || undefined) as Environment | undefined)}
+            onclick={() => {
+              form.environment = (item.value || undefined) as Environment | undefined;
+              // Un servidor nuevo de producción nace en transacción manual: una sentencia suelta no
+              // se confirma sola contra producción. Solo en altas: un perfil existente conserva lo
+              // que ya tenía, y el interruptor de abajo deja volver atrás.
+              if (!profile && form.environment === 'prod') form.autocommit = false;
+            }}
           >
             {item.label}
           </button>
@@ -314,8 +341,23 @@
     </label>
 
     <label class="flex flex-col gap-1">
-      <span class="label">Base de datos</span>
-      <input class="field" bind:value={form.database} />
+      <span class="label">Base de datos predeterminada</span>
+      <input
+        class="field"
+        bind:value={form.database}
+        list="pgforge-databases"
+        title="Es la base a la que se conecta y la que queda abierta en el árbol cada vez que se conecta"
+      />
+      <datalist id="pgforge-databases">
+        {#each knownDatabases as name (name)}
+          <option value={name}></option>
+        {/each}
+      </datalist>
+      <span class="text-[11px] muted">
+        {knownDatabases.length > 0
+          ? "Elegí una de las bases del servidor o escribí otra."
+          : "Conectá el servidor una vez para poder elegirla de la lista."}
+      </span>
     </label>
 
     <label class="flex flex-col gap-1">
@@ -381,6 +423,15 @@
         <button type="button" class="btn btn-sm" onclick={pickRootCert}>Elegir…</button>
       </div>
     </label>
+
+    <label class="check col-span-2">
+      <input type="checkbox" bind:checked={form.connectOnStart} />
+      Conectar al abrir la aplicación
+    </label>
+    <p class="col-span-2 -mt-2 text-xs muted">
+      Conectar solo no puede preguntar la contraseña: sirve con la recordada o con un servidor que no
+      la pide. Si no acepta, queda desconectado y se conecta a mano como siempre.
+    </p>
 
     <label class="check col-span-2">
       <input type="checkbox" bind:checked={form.autocommit} />

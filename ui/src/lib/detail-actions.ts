@@ -54,6 +54,7 @@ export type DetailActionKind =
   | "newSchema"
   | "newPartition"
   | "openData"
+  | "openDatabase"
   | "openQuery"
   | "openErd"
   | "openCompare"
@@ -62,6 +63,7 @@ export type DetailActionKind =
   | "openRoleCapabilities"
   | "export"
   | "import"
+  | "transfer"
   | "backup"
   | "maintenance"
   | "restore"
@@ -234,6 +236,15 @@ export function headerActions(context: ActionContext): DetailAction[] {
       title: `Abre una consulta contra ${context.queryTarget.database}`,
     });
   }
+  if (flags.isDatabase && node) {
+    actions.push({
+      kind: "openDatabase",
+      icon: "database",
+      label: "Abrir",
+      title: `Abre ${node.label} en una pestaña: propiedades, esquemas, tablas y extensiones`,
+      tone: "primary",
+    });
+  }
   if (flags.isSchema && node) {
     actions.push({
       kind: "openErd",
@@ -299,6 +310,9 @@ export function headerActions(context: ActionContext): DetailAction[] {
     actions.push(
       { kind: "export", icon: "download", label: "Exportar", title: `Exporta ${node.label} a un archivo con COPY` },
       { kind: "import", icon: "upload", label: "Importar", title: `Importa un archivo a ${node.label} con COPY`, guarded: true },
+      // Escribe en el destino, no acá: el aviso de producción y el solo lectura se miran contra el
+      // servidor elegido en el diálogo, no contra el de origen.
+      { kind: "transfer", icon: "upload", label: "Copiar a otro servidor", title: `Copia ${node.label} a una tabla de otro servidor conectado, sin archivo intermedio` },
     );
     if (schema) {
       actions.push({

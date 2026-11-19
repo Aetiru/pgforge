@@ -23,6 +23,24 @@ import App from "./App.svelte";
 // primera pintura ya sale definitiva y no hay destello con la anterior.
 import "./lib/theme.svelte";
 import "./lib/font.svelte";
+import "./lib/accent.svelte";
+import "./lib/reconnect.svelte";
 import "./lib/sql-theme.svelte";
 
 export default mount(App, { target: document.getElementById("app")! });
+
+// La ventana no tiene documento que desplazar (`overflow: hidden` en `body`), pero eso solo quita la
+// barra: un `scrollIntoView` de cualquier componente puede igual correr la página entera y dejar
+// la barra de pestañas fuera de la pantalla, sin forma de volver con el mouse. Se vuelve al origen
+// apenas pasa, que es la única posición válida.
+for (const target of [window, document.body, document.documentElement] as const) {
+  target.addEventListener("scroll", () => {
+    if (window.scrollX !== 0 || window.scrollY !== 0) window.scrollTo(0, 0);
+    for (const element of [document.body, document.documentElement]) {
+      if (element.scrollTop !== 0 || element.scrollLeft !== 0) {
+        element.scrollTop = 0;
+        element.scrollLeft = 0;
+      }
+    }
+  });
+}

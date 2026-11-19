@@ -1,5 +1,7 @@
 <script lang="ts">
   import ColumnFilterDialog from "./ColumnFilterDialog.svelte";
+  import FkPicker from "./FkPicker.svelte";
+  import PasteRowsDialog from "./PasteRowsDialog.svelte";
   import { addToWhere, type FilterOp } from "./column-filter";
   import { untrack } from "svelte";
   import { environmentOf, readOnlyReason } from "./access.svelte";
@@ -13,8 +15,17 @@
   import { DEFAULT_GRID_FONT, gridZoom } from "./grid.svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
+  import RecordPanel from "./RecordPanel.svelte";
+  import TableStructure, { type StructureSection } from "./TableStructure.svelte";
   import { PAGE_SIZES, paging } from "./paging.svelte";
-  import type { DataTab, Row } from "./data.svelte";
+  import { timeZone } from "./tz.svelte";
+  import { numberFormat } from "./numfmt.svelte";
+  import TimeZoneSelect from "./TimeZoneSelect.svelte";
+  import { gridViews } from "./grid-views.svelte";
+  import { columnNameOfKey } from "./grid-views";
+  import { openData, type DataTab, type Row } from "./data.svelte";
+  import { jumpWhere, linkFor, linkLabel } from "./fk-nav";
+  import type { TableLink } from "./ipc";
 
   let { tab }: { tab: DataTab } = $props();
 
@@ -66,6 +77,10 @@
         (max, row) => Math.max(max, (tab.value(row, index) ?? NULL).length),
         column.name.length,
       );
+      // Por tipo del catálogo: `numeric(12,2)` también, aunque no esté en `NUMERIC` tal cual.
+      const numericType = /^(smallint|integer|bigint|numeric|decimal|real|double precision|int[248]|float[48])\b/.test(
+        column.typeName.toLowerCase(),
+      );
 
       return {
         key: `${index}-${column.name}`,
@@ -88,7 +103,8 @@
           if (value === null) return NULL;
           if (bool) return boolText(value);
           if (geometry) return geometryText(value);
-          return oneLine(value);
+          const shown = timeZone.show(value);
+          return oneLine(numericType ? numberFormat.show(shown) : shown);
         },
         edit: (row) => tab.value(row, index),
         title: (row) => tab.value(row, index) ?? undefined,
@@ -191,12 +207,189 @@
     tab.applyFilter(draftFilter);
   }
 
+  // Saltos por clave foránea. El mapa se arma una vez por forma de tabla: `linkAt` corre por celda
+  // en cada cuadro del desplazamiento.
+  const outgoing = $derived.by(() => {
+    const map = new Map<string, TableLink | null>();
+    for (const column of shape?.columns ?? []) {
+      map.set(column.name, linkFor(shape?.foreignKeys ?? [], column.name));
+    }
+    return map;
+  });
+
+  function jump(link: TableLink, row: Row) {
+    const current = shape;
+    if (!current) return;
+    const where = jumpWhere(link, (name) => {
+      const at = current.columns.findIndex((column) => column.name === name);
+      return at === -1 ? undefined : tab.value(row, at);
+    });
+    if (where === null) return;
+    void openData(tab.profileId, tab.database, linkLabel(link), link.oid, where);
+  }
+
+  function linkAt(row: Row, column: Column<Row>) {
+    if (row.isNew) return null;
+    const name = shape?.columns[columnIndex(column)]?.name;
+    const link = name === undefined ? null : outgoing.get(name);
+    if (!link) return null;
+    const where = jumpWhere(link, (col) => {
+      const at = shape!.columns.findIndex((c) => c.name === col);
+      return at === -1 ? undefined : tab.value(row, at);
+    });
+    return where === null ? null : { label: linkLabel(link), open: () => jump(link, row) };
+  }
+
+  /** «Ver filas que apuntan aquí»: una entrada por clave foránea de otra tabla. */
+  function rowMenu(row: Row, column: Column<Row>) {
+    const items: { label: string; run: () => void }[] = [];
+
+    // Elegir de una lista: solo en una celda de clave foránea que se puede editar.
+    const name = shape?.columns[columnIndex(column)]?.name;
+    const link = name === undefined ? null : outgoing.get(name);
+    if (link && editable(row, column)) {
+      items.push({
+        label: `Elegir de la lista de ${linkLabel(link)}…`,
+        run: () => (fkPick = { row, link }),
+      });
+    }
+
+    if (!row.isNew) {
+      for (const incoming of shape?.referencedBy ?? []) {
+        items.push({
+          label: `Ver filas de ${linkLabel(incoming)} que apuntan aquí (${incoming.otherColumns.join(", ")})`,
+          run: () => jump(incoming, row),
+        });
+      }
+    }
+    return items;
+  }
+
+  let pasteOpen = $state(false);
+
+  /** La clave foránea que se está eligiendo de una lista, y de qué fila. */
+  let fkPick = $state<{ row: Row; link: TableLink } | null>(null);
+
+  /** Pone en las columnas propias los valores elegidos, en el orden de la clave. */
+  function applyPick(pick: { row: Row; link: TableLink }, values: Record<string, string | null>) {
+    const current = shape;
+    if (!current) return;
+    pick.link.columns.forEach((own, position) => {
+      const at = current.columns.findIndex((column) => column.name === own);
+      if (at !== -1) tab.edit(pick.row, at, values[pick.link.otherColumns[position]] ?? null);
+    });
+  }
+
+  // Vistas guardadas: columnas visibles, orden y filtro con nombre, por tabla.
+  let grid = $state<{ hiddenKeys(): string[]; setHiddenKeys(keys: string[]): void }>();
+  const savedViews = $derived(
+    shape ? gridViews.of(tab.profileId, tab.database, shape.schema, shape.name) : [],
+  );
+  let appliedView = $state("");
+  let namingView = $state(false);
+  let viewName = $state("");
+
+  function saveView() {
+    const current = shape;
+    const name = viewName.trim();
+    if (!current || name === "") return;
+    gridViews.save(tab.profileId, tab.database, current.schema, current.name, {
+      name,
+      hidden: (grid?.hiddenKeys() ?? []).map(columnNameOfKey),
+      order: tab.order,
+      filter: tab.filter,
+    });
+    appliedView = name;
+    namingView = false;
+    viewName = "";
+  }
+
+  async function applyView(name: string) {
+    const view = savedViews.find((item) => item.name === name);
+    appliedView = name;
+    if (!view) return;
+    tab.order = view.order;
+    tab.filter = view.filter;
+    draftFilter = view.filter;
+    await tab.load();
+    const keys = definitions
+      .filter((column) => view.hidden.includes(columnNameOfKey(column.key)))
+      .map((column) => column.key);
+    grid?.setHiddenKeys(keys);
+  }
+
+  function removeView() {
+    const current = shape;
+    if (!current || appliedView === "") return;
+    gridViews.remove(tab.profileId, tab.database, current.schema, current.name, appliedView);
+    appliedView = "";
+  }
+
+  const VIEWS: { id: "data" | StructureSection; label: string }[] = [
+    { id: "data", label: "Datos" },
+    { id: "columns", label: "Columnas" },
+    { id: "indexes", label: "Índices" },
+    { id: "constraints", label: "Restricciones" },
+    { id: "triggers", label: "Triggers" },
+    { id: "stats", label: "Estadísticas" },
+    { id: "dependencies", label: "Dependencias" },
+    { id: "ddl", label: "DDL" },
+  ];
+  let view = $state<"data" | StructureSection>("data");
+
   /** La fila sobre la que actúan los botones de la barra. */
   let selected = $state<number | null>(null);
   const selectedRow = $derived(tab.rows.find((row) => row.index === selected) ?? null);
+
+  // Ver la fila entera, de arriba abajo. Se recuerda como preferencia de la aplicación: quien lo
+  // enciende para leer una tabla ancha lo quiere en la siguiente también.
+  const RECORD_KEY = "pgforge.data.record";
+  let showRecord = $state(
+    (() => {
+      try {
+        return localStorage.getItem(RECORD_KEY) === "1";
+      } catch {
+        return false;
+      }
+    })(),
+  );
+
+  function toggleRecord() {
+    showRecord = !showRecord;
+    try {
+      localStorage.setItem(RECORD_KEY, showRecord ? "1" : "0");
+    } catch {
+      // Sin `localStorage` no se recuerda esta vez.
+    }
+  }
+
+  // Sin fila elegida se muestra la primera: abrir el panel y encontrarlo vacío parece roto.
+  const recordRow = $derived(selectedRow ?? tab.rows[0] ?? null);
 </script>
 
 <div class="flex h-full flex-col">
+  <!-- Las pestañas de adentro: la tabla y todo lo que la describe, sin salir de la pestaña ni abrir
+       el panel de detalle. «Datos» es la grilla de siempre; el resto es de solo lectura. -->
+  <div class="divider-b flex items-center gap-2 overflow-x-auto px-2 py-1">
+    <div class="seg shrink-0" role="tablist">
+      {#each VIEWS as item (item.id)}
+        <button
+          class="seg-item"
+          role="tab"
+          aria-selected={view === item.id}
+          onclick={() => (view = item.id)}
+        >
+          {item.label}
+        </button>
+      {/each}
+    </div>
+  </div>
+
+  {#if view !== "data"}
+    <div class="min-h-0 flex-1">
+      <TableStructure {tab} section={view} />
+    </div>
+  {:else}
   <header class="toolbar {envBar(environment)}">
     <button class="btn" disabled={tab.loading || tab.saving} onclick={() => tab.load()}>
       <Icon name="refresh" size={12} />
@@ -219,6 +412,14 @@
     {#if tab.editable}
       <span class="toolbar-sep"></span>
 
+      <button
+        class="btn"
+        disabled={tab.saving}
+        title="Pega filas copiadas de Excel como filas nuevas"
+        onclick={() => (pasteOpen = true)}
+      >
+        Pegar filas…
+      </button>
       <button class="btn" disabled={tab.saving} onclick={() => tab.addRow()}>
         <Icon name="plus" size={12} />
         Fila
@@ -261,6 +462,16 @@
     {/if}
 
     <span class="ml-auto flex items-center gap-2 text-xs muted">
+      <button
+        class="btn btn-sm"
+        aria-pressed={showRecord}
+        title="Muestra todos los valores de la fila elegida, una columna por línea"
+        onclick={toggleRecord}
+      >
+        <Icon name="columns" size={12} />
+        Fila completa
+      </button>
+
       {#if tab.loading}
         <span class="spinner"></span>
       {/if}
@@ -271,6 +482,53 @@
         {@const badge = envLook(environment)}
         <span class="tag {badge.tone}" title={badge.title}>{badge.label}</span>
       {/if}
+
+      <!-- Vistas guardadas de esta tabla. Aplicar una vuelve a leer: cambia el orden y el filtro. -->
+      {#if namingView}
+        <!-- svelte-ignore a11y_autofocus -->
+        <input
+          class="field w-36 py-0.5 text-xs"
+          placeholder="Nombre de la vista"
+          maxlength="40"
+          autofocus
+          bind:value={viewName}
+          onkeydown={(event) => {
+            if (event.key === "Enter") saveView();
+            if (event.key === "Escape") namingView = false;
+          }}
+        />
+        <button class="btn btn-sm" disabled={viewName.trim() === ""} onclick={saveView}>Guardar</button>
+        <button class="btn btn-sm btn-ghost" onclick={() => (namingView = false)}>Cancelar</button>
+      {:else}
+        {#if savedViews.length > 0}
+          <label class="flex items-center gap-1" title="Vistas guardadas de esta tabla">
+            <span>Vista</span>
+            <select
+              class="field py-0.5 text-xs"
+              value={appliedView}
+              disabled={pendingBlocks !== null || tab.loading}
+              onchange={(event) => void applyView(event.currentTarget.value)}
+            >
+              <option value="">—</option>
+              {#each savedViews as item (item.name)}
+                <option value={item.name}>{item.name}</option>
+              {/each}
+            </select>
+          </label>
+        {/if}
+        <button
+          class="btn btn-sm btn-ghost"
+          title="Guarda las columnas visibles, el orden y el filtro de ahora con un nombre"
+          onclick={() => (namingView = true)}>Guardar vista…</button
+        >
+        {#if appliedView !== ""}
+          <button class="btn btn-sm btn-ghost" title="Borra la vista elegida" onclick={removeView}>
+            Borrar vista
+          </button>
+        {/if}
+      {/if}
+
+      <TimeZoneSelect />
 
       <!-- Cuántas filas trae cada tanda. La tabla no se lee entera nunca: el scroll pide la
            siguiente al acercarse al final, y el tamaño depende de para qué se abrió. -->
@@ -411,7 +669,8 @@
     <Alert tone="bad" onclose={() => (tab.error = null)}>{tab.error}</Alert>
   {/if}
 
-  <div class="min-h-0 flex-1">
+  <div class="flex min-h-0 flex-1">
+  <div class="min-h-0 min-w-0 flex-1">
     {#if !shape}
       <div class="flex flex-col gap-px p-3" aria-label="Abriendo la tabla…">
         <div class="flex gap-2 pb-2">
@@ -435,6 +694,7 @@
       </div>
     {:else}
       <DataGrid
+        bind:this={grid}
         columns={definitions}
         rows={tab.rows}
         rowKey={(row) => row.index}
@@ -446,6 +706,8 @@
         sortable={pendingBlocks === null}
         serverSort
         onfilter={pendingBlocks === null ? askColumnFilter : undefined}
+        {linkAt}
+        {rowMenu}
         onsort={(column, descending) => tab.setOrder(column?.orderBy ?? null, descending)}
         rowClass={(row) =>
           row.deleted
@@ -457,6 +719,10 @@
       />
     {/if}
   </div>
+  {#if showRecord && shape}
+    <RecordPanel {tab} row={recordRow} onclose={toggleRecord} />
+  {/if}
+  </div>
 
   {#if tab.editable && tab.rows.length > 0}
     <p class="divider-t flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1 text-xs muted">
@@ -465,6 +731,7 @@
       <span><span class="kbd">Enter</span> confirma · <span class="kbd">Esc</span> descarta</span>
       <span class="ml-auto">Nada se escribe en la base hasta que se guarda.</span>
     </p>
+  {/if}
   {/if}
 </div>
 
@@ -501,6 +768,29 @@
       </button>
     {/snippet}
   </Modal>
+{/if}
+
+{#if pasteOpen && shape}
+  <PasteRowsDialog
+    columns={shape.columns.map((column) => ({ name: column.name, generated: column.generated }))}
+    onadd={(rows) => tab.addRows(rows)}
+    onclose={() => (pasteOpen = false)}
+  />
+{/if}
+
+{#if fkPick}
+  {@const pick = fkPick}
+  <FkPicker
+    profileId={tab.profileId}
+    database={tab.database}
+    link={pick.link}
+    current={pick.link.columns.map((own) => {
+      const at = shape?.columns.findIndex((column) => column.name === own) ?? -1;
+      return at === -1 ? null : tab.value(pick.row, at);
+    })}
+    onpick={(values) => applyPick(pick, values)}
+    onclose={() => (fkPick = null)}
+  />
 {/if}
 
 {#if columnFilter && shape}

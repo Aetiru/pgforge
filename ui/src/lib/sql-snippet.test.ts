@@ -3,7 +3,15 @@ import { findSnippet, preview, wordBefore } from "./sql-snippet";
 import type { Snippet } from "./ipc";
 
 function snippet(abbreviation: string, body = "algo"): Snippet {
-  return { id: abbreviation, abbreviation, body, description: "" };
+  return {
+    id: abbreviation,
+    abbreviation,
+    body,
+    description: "",
+    category: "",
+    scope: { profileIds: [], databases: [] },
+    shortcut: null,
+  };
 }
 
 describe("wordBefore", () => {

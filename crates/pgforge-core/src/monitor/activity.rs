@@ -282,6 +282,30 @@ pub fn longest_blocked_seconds(backends: &[Backend]) -> Option<f64> {
         .max_by(|a, b| a.total_cmp(b))
 }
 
+/// Lo que el árbol muestra de cada servidor sin abrir el monitoreo: cuántas sesiones están paradas
+/// detrás de otra y cuánto lleva la transacción más vieja sin hacer nada.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Brief {
+    pub blocked: usize,
+    pub longest_idle_in_transaction_seconds: Option<f64>,
+    /// `true` si el rol no ve las sesiones ajenas (sin `pg_read_all_stats`): los números valen solo
+    /// para las propias, y mostrarlos como «0 bloqueadas» sería afirmar algo que no se miró.
+    pub restricted: bool,
+}
+
+/// El resumen de un servidor, sobre todas sus sesiones. Barato: una lectura de `pg_stat_activity`.
+pub fn brief(backends: &[Backend], can_read_all_stats: bool) -> Brief {
+    Brief {
+        blocked: backends
+            .iter()
+            .filter(|b| !b.is_monitor && !b.blocked_by.is_empty())
+            .count(),
+        longest_idle_in_transaction_seconds: longest_idle_in_transaction_seconds(backends),
+        restricted: !can_read_all_stats,
+    }
+}
+
 /// Cuánto lleva en `idle in transaction` la sesión que más tiempo lleva así. Cuenta también la
 /// variante abortada: retiene lo mismo hasta que alguien cierre la transacción.
 pub fn longest_idle_in_transaction_seconds(backends: &[Backend]) -> Option<f64> {

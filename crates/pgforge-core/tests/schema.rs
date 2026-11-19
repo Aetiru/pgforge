@@ -181,11 +181,18 @@ async fn recorre_el_arbol_y_genera_el_ddl() {
 async fn assertions(handle: &ServerHandle, schema_name: &str) {
     let database = handle.default_database().to_owned();
 
-    // Primer nivel: las bases del servidor.
+    // Primer nivel: las carpetas «Bases de datos» y «Roles» del servidor.
     let databases = introspect::children(handle, None, TreeOptions::default())
         .await
-        .expect("no se pudieron listar las bases");
-    let db_node = find(&databases, &database).clone();
+        .expect("no se pudo leer la raíz del servidor");
+    assert_eq!(
+        databases.first().map(|n| n.kind),
+        Some(NodeKind::Folder(Folder::Databases)),
+        "las bases van primero, en su carpeta"
+    );
+    let databases_folder = folder(&databases, Folder::Databases).clone();
+    let bases = expand(handle, &databases_folder).await;
+    let db_node = find(&bases, &database).clone();
 
     // Roles: la carpeta cuelga de la raíz, no de una base. Que un rol pueda entrar o no va como
     // etiqueta, que es lo que la interfaz muestra sin leer el detalle.
@@ -260,8 +267,16 @@ async fn assertions(handle: &ServerHandle, schema_name: &str) {
         .tags
         .contains(&NodeTag::Partition));
 
-    // El dueño es el usuario con el que corre el test, así que no se repite en cada fila.
-    assert_eq!(clientes.detail, None);
+    // El dueño es el usuario con el que corre el test, así que no se repite en cada fila: lo único
+    // que puede traer es el tamaño en disco («8 kB»), nunca el nombre de un rol.
+    assert!(
+        clientes
+            .detail
+            .as_deref()
+            .is_none_or(|detail| detail.ends_with("B")),
+        "detalle inesperado: {:?}",
+        clientes.detail
+    );
     assert!(
         find(&tables, "reservas")
             .tags

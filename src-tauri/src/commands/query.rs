@@ -5,6 +5,7 @@
 //! el mismo mecanismo que usa el mantenimiento. Un script de diez sentencias tiene que mostrar la
 //! primera cuando termina la primera, no cuando terminan las diez.
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -12,8 +13,9 @@ use std::time::Instant;
 use pgforge_core::error::ErrorPayload;
 use pgforge_core::sql::{
     self, completion, explain, history::Entry as HistoryEntry, history::Source as HistorySource,
-    ColumnType, ExplainOptions, Limits, NewEntry, NewQuery, Outcome, Plan, QuerySession,
-    RehearsalOptions, RehearsalReport, SavedQuery, SchemaSnapshot, Snippet, SnippetId, TxStatus,
+    snippet as snippets, ColumnType, EditSource, ExplainOptions, ImportMode, Limits, NewEntry,
+    NewQuery, Outcome, Plan, QuerySession, RehearsalOptions, RehearsalReport, SavedQuery,
+    SchemaSnapshot, Snippet, SnippetId, SnippetUse, TxStatus,
 };
 use pgforge_core::{Error, ProfileId, Result};
 use serde::Serialize;
@@ -104,6 +106,7 @@ pub async fn query_open(
 
     let mut session = QuerySession::open(&handle, &database).await?;
     let cancel = session.cancel_token();
+    let pid = session.pid();
     let notices = session.take_notices();
     let sink = Arc::new(Mutex::new(None));
     let tab_id = uuid::Uuid::new_v4().to_string();
@@ -133,6 +136,7 @@ pub async fn query_open(
             database: database.clone(),
             session: Arc::new(Mutex::new(session)),
             cancel,
+            pid,
             notices: sink,
             autocommit: Arc::new(AtomicBool::new(autocommit)),
         },
@@ -214,7 +218,7 @@ pub async fn query_run(
             offset: statement.offset,
         });
 
-        match session.run(&statement.text, limits).await {
+        match session.run_capped(&statement.text, limits).await {
             Ok(outcome) => {
                 executed += 1;
                 if let Outcome::Rows { row_count, .. } = &outcome {
@@ -388,6 +392,8 @@ pub async fn snippet_delete(
 ) -> Result<Vec<Snippet>> {
     let mut store = state.snippets.lock().await;
     store.remove(snippet_id)?;
+    // Contador y abreviatura mueren juntos; que falle el contador no deshace el borrado.
+    let _ = state.snippet_usage.lock().await.forget(snippet_id);
     Ok(store.snippets().to_vec())
 }
 
@@ -396,7 +402,82 @@ pub async fn snippet_delete(
 pub async fn snippets_reset(state: State<'_, AppState>) -> Result<Vec<Snippet>> {
     let mut store = state.snippets.lock().await;
     store.reset()?;
+    // Las de fábrica son otras abreviaturas con otros ids: los usos de las anteriores no significan nada.
+    let _ = state.snippet_usage.lock().await.clear();
     Ok(store.snippets().to_vec())
+}
+
+/// Cuántas veces se usó cada abreviatura. Archivo aparte de la lista (ver `SnippetUsage`).
+#[tauri::command]
+pub async fn snippet_usage(state: State<'_, AppState>) -> Result<HashMap<SnippetId, SnippetUse>> {
+    Ok(state.snippet_usage.lock().await.all().clone())
+}
+
+/// Anota que se expandió una abreviatura. Es un contador y no un dato: si no se puede escribir, la
+/// expansión ya ocurrió y no hay nada que le sirva al usuario saber, así que no devuelve error.
+#[tauri::command]
+pub async fn snippet_used(state: State<'_, AppState>, snippet_id: SnippetId) -> Result<()> {
+    let _ = state
+        .snippet_usage
+        .lock()
+        .await
+        .record(snippet_id, epoch_seconds());
+    Ok(())
+}
+
+/// Escribe las abreviaturas elegidas (o todas) en un archivo. La ruta tiene que haber salido del
+/// diálogo de guardar, como en `sql_write_file`. Devuelve cuántas se escribieron.
+#[tauri::command]
+pub async fn snippets_export(
+    state: State<'_, AppState>,
+    path: String,
+    snippet_ids: Option<Vec<SnippetId>>,
+) -> Result<usize> {
+    let path = state.paths.check(&path)?;
+    let store = state.snippets.lock().await;
+    let chosen: Vec<Snippet> = store
+        .snippets()
+        .iter()
+        .filter(|s| snippet_ids.as_ref().is_none_or(|ids| ids.contains(&s.id)))
+        .cloned()
+        .collect();
+    std::fs::write(path, snippets::export(&chosen))?;
+    Ok(chosen.len())
+}
+
+/// Lo que devuelve una importación: el informe y la lista nueva, que la interfaz toma tal cual.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnippetsImported {
+    snippets: Vec<Snippet>,
+    added: usize,
+    replaced: usize,
+    /// Lo omitido al leer el archivo y lo omitido por chocar, juntos y ya escritos para mostrar.
+    skipped: Vec<String>,
+}
+
+/// Importa un archivo de abreviaturas. Es entrada no confiable: `parse_import` la verifica antes de
+/// tocar nada, y lo inválido se omite en vez de abortar lo demás.
+#[tauri::command]
+pub async fn snippets_import(
+    state: State<'_, AppState>,
+    path: String,
+    mode: ImportMode,
+) -> Result<SnippetsImported> {
+    let path = state.paths.check(&path)?;
+    let bytes = std::fs::read(path)?;
+    let parsed = snippets::parse_import(&String::from_utf8_lossy(&bytes))?;
+
+    let mut store = state.snippets.lock().await;
+    let report = store.import(parsed.snippets, mode)?;
+    let mut skipped = parsed.skipped;
+    skipped.extend(report.skipped);
+    Ok(SnippetsImported {
+        snippets: store.snippets().to_vec(),
+        added: report.added,
+        replaced: report.replaced,
+        skipped,
+    })
 }
 
 /// Pide al servidor que aborte lo que la pestaña esté ejecutando.
@@ -453,6 +534,69 @@ pub async fn query_column_types(
     let session = session_of(&state, &tab_id).await?;
     let session = session.lock().await;
     session.column_types(&sql).await
+}
+
+/// Qué espera la consulta que la pestaña está ejecutando. Pregunta por una conexión del pool y no
+/// por la sesión de la pestaña, que está ocupada: por eso no toma su cerrojo.
+#[tauri::command]
+pub async fn query_wait_info(
+    state: State<'_, AppState>,
+    tab_id: String,
+) -> Result<Option<sql::wait::WaitInfo>> {
+    let (profile, database, pid) = {
+        let tabs = state.queries.lock().await;
+        let entry = require(&tabs, &tab_id)?;
+        (entry.profile, entry.database.clone(), entry.pid)
+    };
+    let handle = state.manager.require(profile).await?;
+    sql::wait::wait_info(&handle, &database, pid).await
+}
+
+/// Cuántas filas tiene una tabla según las estadísticas del servidor, para avisar antes de un
+/// `SELECT` sin límite sobre una tabla enorme. `None` si no se sabe.
+#[tauri::command]
+pub async fn query_estimated_rows(
+    state: State<'_, AppState>,
+    tab_id: String,
+    schema: Option<String>,
+    table: String,
+) -> Result<Option<i64>> {
+    let session = session_of(&state, &tab_id).await?;
+    let session = session.lock().await;
+    session.estimated_rows(schema.as_deref(), &table).await
+}
+
+/// Tiempo máximo de cada sentencia de la pestaña, en milisegundos. `0` es sin límite y `None`
+/// vuelve al del perfil.
+#[tauri::command]
+pub async fn query_timeout(
+    state: State<'_, AppState>,
+    tab_id: String,
+    millis: Option<u64>,
+) -> Result<()> {
+    let session = session_of(&state, &tab_id).await?;
+    let session = session.lock().await;
+    session.set_statement_timeout(millis).await
+}
+
+/// Cuántas filas cumple el conteo previo de un `UPDATE` o `DELETE`.
+#[tauri::command]
+pub async fn query_count(state: State<'_, AppState>, tab_id: String, sql: String) -> Result<i64> {
+    let session = session_of(&state, &tab_id).await?;
+    let session = session.lock().await;
+    session.count(&sql).await
+}
+
+/// De qué tabla sale el resultado de la sentencia, para ofrecer editarlo. No la ejecuta.
+#[tauri::command]
+pub async fn query_edit_source(
+    state: State<'_, AppState>,
+    tab_id: String,
+    sql: String,
+) -> Result<EditSource> {
+    let session = session_of(&state, &tab_id).await?;
+    let session = session.lock().await;
+    session.edit_source(&sql).await
 }
 
 /// Estado de la transacción de la pestaña, para volver a sincronizar la interfaz.
@@ -567,6 +711,21 @@ pub async fn schema_snapshot(
     completion::snapshot(&handle, &database).await
 }
 
+/// Las definiciones de la función o procedimiento con ese nombre, para abrirlas desde el editor.
+#[tauri::command]
+pub async fn routine_definitions(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    schema: Option<String>,
+    name: String,
+) -> Result<Vec<String>> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    completion::routine_definitions(&handle, &database, schema.as_deref(), &name).await
+}
+
 /// La sentencia sobre la que está el cursor, para poder ejecutar solo esa.
 ///
 /// Lo resuelve el núcleo y no la interfaz: reimplementar en TypeScript las reglas de dónde termina
@@ -579,8 +738,9 @@ pub fn statement_at_cursor(sql: String, cursor: usize) -> Option<sql::Statement>
 /// Formatea un script SQL. Puro, sin servidor: la guarda de equivalencia de `sql::format` es lo
 /// que hace que el peor caso sea «no formateó», nunca «formateó mal».
 #[tauri::command]
-pub fn sql_format(sql: String) -> String {
-    sql::format(&sql)
+pub fn sql_format(sql: String, options: Option<sql::FormatOptions>) -> String {
+    // Sin opciones, el estilo de fábrica: la interfaz vieja y la CLI siguen formateando igual.
+    sql::format_with(&sql, &options.unwrap_or_default())
 }
 
 /// Guarda el texto de una pestaña de consulta en la ruta elegida.
@@ -591,6 +751,21 @@ pub fn sql_format(sql: String) -> String {
 #[tauri::command]
 pub fn sql_write_file(state: State<'_, AppState>, path: String, sql: String) -> Result<()> {
     std::fs::write(state.paths.check(&path)?, sql)?;
+    Ok(())
+}
+
+/// Escribe un resultado como libro de Excel. Mismo trato que `sql_write_file`: la ruta tiene que
+/// haber salido del diálogo de guardar. El libro lo arma el núcleo (`data::xlsx`), puro y probado.
+#[tauri::command]
+pub fn result_export_xlsx(
+    state: State<'_, AppState>,
+    path: String,
+    columns: Vec<String>,
+    rows: Vec<Vec<Option<String>>>,
+) -> Result<()> {
+    let path = state.paths.check(&path)?;
+    let bytes = pgforge_core::data::xlsx_workbook(&columns, &rows)?;
+    std::fs::write(path, bytes)?;
     Ok(())
 }
 

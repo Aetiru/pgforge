@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { sqlFont } from "./editor.svelte";
+  import { sqlDensity, sqlFont } from "./editor.svelte";
 
   /**
    * Los tres botones del tamaño de letra del SQL.
@@ -36,5 +36,16 @@
     onclick={() => sqlFont.bigger()}
   >
     A+
+  </button>
+  <button
+    class="btn btn-ghost btn-icon btn-sm text-[11px]"
+    aria-pressed={sqlDensity.mode === "compact"}
+    aria-label="Interlineado del SQL"
+    title={sqlDensity.mode === "compact"
+      ? "Interlineado compacto: apretá para volver al cómodo"
+      : "Interlineado cómodo: apretá para ver más líneas (compacto)"}
+    onclick={() => sqlDensity.toggle()}
+  >
+    ↕
   </button>
 </div>

@@ -382,6 +382,8 @@ mod tests {
                 column("creado", "timestamp with time zone"),
             ],
             read_only: key.is_none().then(|| "sin clave".to_owned()),
+            foreign_keys: vec![],
+            referenced_by: vec![],
             key,
         }
     }

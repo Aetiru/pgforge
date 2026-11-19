@@ -13,7 +13,10 @@ use std::sync::{Arc, Mutex};
 
 use russh::client::{self, Config, Handle};
 use russh::keys::known_hosts::{check_known_hosts, learn_known_hosts};
-use russh::keys::{load_secret_key, Error as KeysError, HashAlg, PrivateKeyWithHashAlg, PublicKey};
+use russh::keys::{
+    load_secret_key, Error as KeysError, HashAlg, PrivateKeyWithHashAlg, PublicKey,
+    PublicKeyOrCertificate,
+};
 use russh::Disconnect;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
@@ -80,8 +83,13 @@ impl client::Handler for ForwardHandler {
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &PublicKey,
+        server_key: &PublicKeyOrCertificate,
     ) -> std::result::Result<bool, Self::Error> {
+        // Desde russh 0.65 el servidor puede presentar un certificado en vez de una clave pelada.
+        // No se valida ninguna CA: se toma la clave que el certificado lleva adentro y se la trata
+        // igual que una clave de host común, contra `known_hosts`, así que un certificado no abre
+        // ningún camino que la huella conocida no abra.
+        let server_public_key = &server_key.public_key();
         let fingerprint = server_public_key.fingerprint(HashAlg::Sha256).to_string();
         match check_known_hosts(&self.host, self.port, server_public_key) {
             Ok(true) => Ok(true),

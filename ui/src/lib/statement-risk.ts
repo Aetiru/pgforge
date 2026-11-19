@@ -34,13 +34,13 @@ export const RISK_LABEL: Record<RiskKind, string> = {
   unsure: "No se pudo analizar con certeza",
 };
 
-type Token =
+export type Token =
   | { type: "word"; value: string; start: number; end: number }
   | { type: "punct"; value: string; start: number; end: number }
   /** Cadena, identificador citado o cuerpo de dólares: `inner` es lo que va adentro. */
   | { type: "opaque"; value: string; inner: string; dollar: boolean; start: number; end: number };
 
-interface Lexed {
+export interface Lexed {
   tokens: Token[];
   /** Quedó una cadena, comentario o `$$` sin cerrar. */
   unterminated: boolean;
@@ -50,7 +50,7 @@ const WORD_CHAR = /[\p{L}\p{N}_$\u0080-￿]/u;
 const WORD_START = /[\p{L}\p{N}_\u0080-￿]/u;
 const DOLLAR_TAG = /^\$([\p{L}_][\p{L}\p{N}_]*)?\$/u;
 
-function lex(sql: string): Lexed {
+export function lex(sql: string): Lexed {
   const tokens: Token[] = [];
   let unterminated = false;
   let i = 0;

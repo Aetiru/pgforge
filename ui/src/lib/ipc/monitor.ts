@@ -256,3 +256,215 @@ export const maintenanceRun = (
     label,
     database: database ?? null,
   });
+
+// ---------------------------------------------------------------------------
+// Diagnósticos: lo que no se ve mirando una sesión
+// ---------------------------------------------------------------------------
+
+/** Qué tan grave es lo mostrado. `info` no pide hacer nada. */
+export type DiagnoseLevel = "ok" | "info" | "review" | "attention";
+
+/** Hacia dónde va una serie de muestras guardadas. */
+export interface Forecast {
+  /** Unidades por día (bytes por día en tamaños). */
+  perDay: number;
+  samples: number;
+  spanDays: number;
+  daysToLimit: number | null;
+}
+
+export interface SequenceUsage {
+  schema: string;
+  name: string;
+  dataType: string;
+  lastValue: number | null;
+  maxValue: number;
+  incrementBy: number;
+  cycle: boolean;
+  usedRatio: number;
+  remaining: number;
+  level: DiagnoseLevel;
+  perDay: number | null;
+  daysLeft: number | null;
+}
+
+export interface WraparoundDatabase {
+  name: string;
+  age: number;
+  ratio: number;
+  level: DiagnoseLevel;
+}
+
+export interface WraparoundTable {
+  schema: string;
+  table: string;
+  age: number;
+  ratio: number;
+  level: DiagnoseLevel;
+  totalBytes: number;
+}
+
+export interface Wraparound {
+  freezeMaxAge: number;
+  databases: WraparoundDatabase[];
+  tables: WraparoundTable[];
+}
+
+export interface AutovacuumRow {
+  schema: string;
+  table: string;
+  liveTuples: number;
+  deadTuples: number;
+  modifiedSinceAnalyze: number;
+  vacuumAt: number;
+  analyzeAt: number;
+  vacuumMissing: number;
+  status: "disabled" | "due" | "waiting";
+  ownSettings: boolean;
+  lastAutovacuumSeconds: number | null;
+  lastAutoanalyzeSeconds: number | null;
+  totalBytes: number;
+  level: DiagnoseLevel;
+}
+
+export interface TableCache {
+  schema: string;
+  table: string;
+  heapRead: number;
+  heapHit: number;
+  indexRead: number;
+  indexHit: number;
+  heapRatio: number | null;
+  indexRatio: number | null;
+  level: DiagnoseLevel;
+}
+
+export interface IndexCache {
+  schema: string;
+  table: string;
+  index: string;
+  read: number;
+  hit: number;
+  ratio: number | null;
+  level: DiagnoseLevel;
+}
+
+export interface CacheReport {
+  tables: TableCache[];
+  indexes: IndexCache[];
+}
+
+export interface ConnectionGroup {
+  /** `null` en application, user y address: el rol no ve el detalle de esas sesiones. */
+  application: string | null;
+  user: string | null;
+  address: string | null;
+  total: number;
+  active: number;
+  idle: number;
+  idleInTransaction: number;
+  oldestIdleSeconds: number | null;
+}
+
+export interface ConnectionReport {
+  maxConnections: number;
+  reserved: number;
+  total: number;
+  groups: ConnectionGroup[];
+}
+
+export interface SpaceEntry {
+  schema: string;
+  table: string;
+  kind: string;
+  heapBytes: number;
+  toastBytes: number;
+  indexBytes: number;
+}
+
+export interface SpaceMap {
+  database: string;
+  databaseBytes: number;
+  entries: SpaceEntry[];
+  restBytes: number;
+}
+
+export interface Growth {
+  kind: "database" | "table";
+  name: string;
+  bytes: number;
+  /** `null` mientras faltan muestras. */
+  forecast: Forecast | null;
+  projected30d: number | null;
+}
+
+export interface SpaceOverview {
+  map: SpaceMap;
+  growth: Growth[];
+}
+
+export interface WalReport {
+  records: number;
+  fullPageImages: number;
+  bytes: number;
+  buffersFull: number;
+  resetSeconds: number | null;
+  bytesPerSecond: number | null;
+}
+
+export interface CheckpointReport {
+  timed: number;
+  requested: number;
+  forcedRatio: number | null;
+  writeSeconds: number;
+  syncSeconds: number;
+  buffersWritten: number;
+  resetSeconds: number | null;
+  maxWalSizeBytes: number | null;
+  checkpointTimeoutSeconds: number | null;
+  completionTarget: number | null;
+  /** `null` en PostgreSQL 13, que no tiene `pg_stat_wal`. */
+  wal: WalReport | null;
+  level: DiagnoseLevel;
+  advice: string[];
+}
+
+export interface ConfigFinding {
+  name: string;
+  current: string;
+  suggested: string | null;
+  reason: string;
+  level: DiagnoseLevel;
+  /** La sentencia para copiar; la aplicación no la ejecuta. */
+  alterSql: string | null;
+  /** Hay que reiniciar el servidor; si no, alcanza con `pg_reload_conf()`. */
+  restart: boolean;
+}
+
+export interface ConfigReview {
+  findings: ConfigFinding[];
+  /** Parámetros que no se pudieron leer por falta de permiso. */
+  hidden: string[];
+}
+
+export const spaceOverview = (id: string) => invoke<SpaceOverview>("space_overview", { id });
+
+export const sequenceUsage = (id: string, limit?: number) =>
+  invoke<SequenceUsage[]>("sequence_usage", { id, limit: limit ?? null });
+
+export const wraparoundStatus = (id: string, limit?: number) =>
+  invoke<Wraparound>("wraparound_status", { id, limit: limit ?? null });
+
+export const autovacuumStatus = (id: string, limit?: number) =>
+  invoke<AutovacuumRow[]>("autovacuum_status", { id, limit: limit ?? null });
+
+export const cacheStats = (id: string, limit?: number) =>
+  invoke<CacheReport>("cache_stats", { id, limit: limit ?? null });
+
+export const connectionReport = (id: string) => invoke<ConnectionReport>("connection_report", { id });
+
+export const checkpointStats = (id: string) => invoke<CheckpointReport>("checkpoint_stats", { id });
+
+/** `ramBytes` lo pone el usuario: el servidor no sabe cuánta memoria tiene la máquina. */
+export const serverConfigReview = (id: string, ramBytes?: number | null) =>
+  invoke<ConfigReview>("server_config_review", { id, ramBytes: ramBytes ?? null });

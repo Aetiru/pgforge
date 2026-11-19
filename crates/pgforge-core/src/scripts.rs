@@ -161,6 +161,48 @@ pub fn within(root: &Path, path: &Path) -> Result<PathBuf> {
 pub struct ScriptEntry {
     pub name: String,
     pub path: PathBuf,
+    /// Última modificación, en segundos desde la época; `0` si el sistema no la da. Es lo que deja
+    /// ordenar «lo último que toqué» arriba: con nombres `script1…script18` el nombre no dice nada.
+    pub modified: u64,
+    /// Sin nada escrito (o solo espacios). Un script así no sirve ni se puede distinguir de otro, y
+    /// la interfaz lo esconde y ofrece limpiarlos.
+    pub empty: bool,
+    /// Primera línea con contenido, recortada: lo único que distingue un `script7.sql` de otro.
+    pub preview: String,
+}
+
+/// Cuánto de cada archivo se lee para armar la vista previa: alcanza para la primera línea y no
+/// convierte listar la biblioteca en leer todos los scripts enteros.
+const PREVIEW_BYTES: u64 = 512;
+
+/// Máximo de caracteres de la vista previa.
+const PREVIEW_CHARS: usize = 80;
+
+/// Primera línea con algo escrito, sin sangría y recortada. Vacía si no hay ninguna.
+pub fn first_line(content: &str) -> String {
+    content
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(|line| line.chars().take(PREVIEW_CHARS).collect())
+        .unwrap_or_default()
+}
+
+/// `(vacío, vista previa)` de un archivo. Un archivo que no se puede leer cuenta como no vacío: ante
+/// la duda no se ofrece borrarlo.
+fn inspect(path: &Path) -> (bool, String) {
+    use std::io::Read;
+    let Ok(file) = std::fs::File::open(path) else {
+        return (false, String::new());
+    };
+    let mut buffer = Vec::new();
+    if file.take(PREVIEW_BYTES).read_to_end(&mut buffer).is_err() {
+        return (false, String::new());
+    }
+    let head = String::from_utf8_lossy(&buffer);
+    // Con 512 bytes de puro espacio el archivo podría seguir más abajo: «vacío» solo si cabe entero.
+    let whole = (buffer.len() as u64) < PREVIEW_BYTES;
+    (whole && head.trim().is_empty(), first_line(&head))
 }
 
 /// Una carpeta del árbol de scripts. En el primer nivel bajo la raíz, una por conexión —con
@@ -215,9 +257,19 @@ fn read_folder(path: &Path, name: &str, depth: u32) -> Result<ScriptFolder> {
             } else if file_type.is_file()
                 && entry_path.extension().and_then(|ext| ext.to_str()) == Some("sql")
             {
+                let modified = entry
+                    .metadata()
+                    .ok()
+                    .and_then(|meta| meta.modified().ok())
+                    .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(0, |elapsed| elapsed.as_secs());
+                let (empty, preview) = inspect(&entry_path);
                 files.push(ScriptEntry {
                     name: entry_name,
                     path: entry_path,
+                    modified,
+                    empty,
+                    preview,
                 });
             }
         }
@@ -268,6 +320,25 @@ pub fn rename(old: &Path, new: &Path) -> Result<()> {
 
 pub fn delete(path: &Path) -> Result<()> {
     Ok(std::fs::remove_file(path)?)
+}
+
+/// Borra los scripts vacíos de toda la biblioteca y devuelve cuántos fueron. Solo archivos sin nada
+/// escrito: no se pierde contenido, y es lo que dejaban abiertas y cerradas las versiones que
+/// creaban el `.sql` al abrir la pestaña.
+pub fn purge_empty(root: &Path) -> Result<usize> {
+    fn walk(folder: &ScriptFolder, removed: &mut usize) -> Result<()> {
+        for file in folder.files.iter().filter(|file| file.empty) {
+            std::fs::remove_file(&file.path)?;
+            *removed += 1;
+        }
+        folder.folders.iter().try_for_each(|sub| walk(sub, removed))
+    }
+
+    let mut removed = 0;
+    for connection in tree(root)? {
+        walk(&connection, &mut removed)?;
+    }
+    Ok(removed)
 }
 
 pub fn create_folder(path: &Path) -> Result<()> {
@@ -581,6 +652,39 @@ mod tests {
         assert_eq!(a.folders.len(), 1);
         assert_eq!(a.folders[0].name, "sub");
         assert_eq!(a.folders[0].files[0].name, "script3.sql");
+    }
+
+    #[test]
+    fn primera_linea_salta_blancos_y_recorta() {
+        assert_eq!(first_line("\n  \n   SELECT 1;\nSELECT 2;"), "SELECT 1;");
+        assert_eq!(first_line("   \n\t"), "");
+        assert_eq!(first_line(&"x".repeat(200)).chars().count(), PREVIEW_CHARS);
+    }
+
+    #[test]
+    fn el_arbol_marca_vacios_y_trae_vista_previa_y_se_pueden_limpiar() {
+        let dir = TempDir::new("vacios");
+        let conn = dir.path.join("servidor");
+        std::fs::create_dir_all(conn.join("sub")).unwrap();
+        write(&conn.join("script1.sql"), "").unwrap();
+        write(&conn.join("script2.sql"), "  \n\n").unwrap();
+        write(&conn.join("script3.sql"), "\nSELECT 3;\n").unwrap();
+        write(&conn.join("sub").join("script4.sql"), "").unwrap();
+
+        let result = tree(&dir.path).unwrap();
+        let files = &result[0].files;
+        assert!(files[0].empty && files[1].empty);
+        assert!(!files[2].empty);
+        assert_eq!(files[2].preview, "SELECT 3;");
+
+        assert_eq!(purge_empty(&dir.path).unwrap(), 3);
+        let after = tree(&dir.path).unwrap();
+        assert_eq!(after[0].files.len(), 1);
+        assert_eq!(after[0].files[0].name, "script3.sql");
+        assert!(
+            after[0].folders[0].files.is_empty(),
+            "la subcarpeta se queda, sin el vacío"
+        );
     }
 
     #[test]

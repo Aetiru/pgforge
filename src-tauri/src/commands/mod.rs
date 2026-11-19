@@ -11,6 +11,7 @@ pub mod compare;
 pub mod data;
 pub mod ddl;
 pub mod dialogs;
+pub mod editor;
 pub mod migrations;
 pub mod monitoring;
 pub mod query;

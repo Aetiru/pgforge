@@ -43,6 +43,9 @@ const TAGS: Record<NodeTag, true> = {
   superuser: true,
   partition: true,
   rowSecurity: true,
+  noPrimaryKey: true,
+  invalid: true,
+  notPopulated: true,
 };
 
 describe("lookOf", () => {
@@ -119,7 +122,7 @@ describe("envFrame", () => {
     expect(envFrame(null)).toBeNull();
   });
 
-  it("producción lleva el marco más grueso de los tres", () => {
+  it("producción lleva la franja más gruesa de los tres", () => {
     expect(envFrame("prod")?.frame).toContain("3px");
     expect(envFrame("dev")?.frame).not.toContain("3px");
     expect(envFrame("test")?.frame).not.toContain("3px");

@@ -14,6 +14,7 @@
     onnew,
     onedit,
     ondrop,
+    onopenfunction,
   }: {
     triggers: TriggerInfo[] | null;
     loading?: boolean;
@@ -23,6 +24,8 @@
     onnew: () => void;
     onedit: (trigger: TriggerInfo) => void;
     ondrop: (name: string) => void;
+    /** Si se pasa, el nombre de la función es un enlace que abre su código. */
+    onopenfunction?: (trigger: TriggerInfo) => void;
   } = $props();
 </script>
 
@@ -58,7 +61,17 @@
               <td class="w-px font-medium whitespace-nowrap">{trigger.name}</td>
               <td class="w-px text-xs whitespace-nowrap muted">{triggerSummary(trigger)}</td>
               <td class="max-w-0 truncate font-mono text-xs muted">
-                {trigger.functionSchema}.{trigger.functionName}()
+                {#if onopenfunction}
+                  <button
+                    class="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-blue-600 dark:hover:text-blue-400"
+                    title="Abrir el código de la función"
+                    onclick={() => onopenfunction(trigger)}
+                  >
+                    {trigger.functionSchema}.{trigger.functionName}()
+                  </button>
+                {:else}
+                  {trigger.functionSchema}.{trigger.functionName}()
+                {/if}
               </td>
               <td class="w-24">
                 <div class="row-actions">

@@ -54,3 +54,37 @@ export function scriptFolderName(connection: string): string {
 
   return name;
 }
+
+import type { ScriptEntry, ScriptFolder } from "./ipc";
+
+/**
+ * Los scripts que se muestran de una carpeta: sin los vacíos, y lo último que se tocó primero.
+ * Con nombres `script1…script18` el nombre no dice cuál es cuál; lo reciente casi siempre es lo que
+ * se busca. A igual fecha manda el nombre, para que el orden no baile entre lecturas.
+ */
+export function visibleFiles(files: ScriptEntry[]): ScriptEntry[] {
+  return files
+    .filter((file) => !file.empty)
+    .sort(
+      (a, b) =>
+        b.modified - a.modified ||
+        a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }),
+    );
+}
+
+/** Cuántos `.sql` con contenido hay, contando las subcarpetas. */
+export function countVisible(folder: ScriptFolder): number {
+  return (
+    folder.files.filter((file) => !file.empty).length +
+    folder.folders.reduce((sum, sub) => sum + countVisible(sub), 0)
+  );
+}
+
+/** Cuántos vacíos hay en todo el árbol: lo que ofrece limpiar el botón de arriba. */
+export function countEmpty(folders: ScriptFolder[]): number {
+  return folders.reduce(
+    (sum, folder) =>
+      sum + folder.files.filter((file) => file.empty).length + countEmpty(folder.folders),
+    0,
+  );
+}

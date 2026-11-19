@@ -8,6 +8,8 @@
  * demás lo pone cada una.
  */
 
+import { NavHistory } from "./nav-history";
+
 let sequence = 0;
 
 /**
@@ -21,6 +23,7 @@ export type TabKind =
   | "query"
   | "data"
   | "erd"
+  | "database"
   | "compare"
   | "dataCompare"
   | "monitor"
@@ -70,6 +73,49 @@ class Tabs {
    * sin pestañas, así que una pareja dividida tampoco tiene por qué sobrevivir a un reinicio.
    */
   split = $state<string | null>(null);
+  /**
+   * Las pestañas por orden de uso, la más reciente primero. Sirve para saltar a la anterior y para
+   * ordenar el selector: con diez abiertas, lo que se quiere casi siempre es lo último que se tocó.
+   */
+  recent = $state<string[]>([]);
+
+  /** El recorrido para ir atrás y adelante (`Alt`+←/→). Se alimenta solo al activar. */
+  private nav = new NavHistory();
+  /** Mientras se recorre el historial, activar no lo reescribe. */
+  private navigating = false;
+
+  /** Retrocede a la pestaña que se miraba antes. */
+  goBack(): boolean {
+    return this.walk(this.nav.back((key) => this.all.some((tab) => tab.key === key)));
+  }
+
+  goForward(): boolean {
+    return this.walk(this.nav.forward((key) => this.all.some((tab) => tab.key === key)));
+  }
+
+  private walk(key: string | null): boolean {
+    if (key === null) return false;
+    this.navigating = true;
+    try {
+      this.activate(key);
+    } finally {
+      this.navigating = false;
+    }
+    return true;
+  }
+
+  /** Las abiertas, de la más a la menos reciente. */
+  get byRecency(): Tab[] {
+    const rank = new Map(this.recent.map((key, index) => [key, index]));
+    return [...this.all].sort(
+      (a, b) => (rank.get(a.key) ?? Infinity) - (rank.get(b.key) ?? Infinity),
+    );
+  }
+
+  /** La pestaña que se usó justo antes de la actual, o `null` si no hay otra. */
+  get previous(): Tab | null {
+    return this.byRecency.find((tab) => tab.key !== this.active) ?? null;
+  }
 
   get current(): Tab | null {
     return this.all.find((tab) => tab.key === this.active) ?? null;
@@ -94,6 +140,8 @@ class Tabs {
   activate(key: string | null) {
     const previous = this.current;
     this.active = key;
+    if (key !== null) this.recent = [key, ...this.recent.filter((item) => item !== key)];
+    if (key !== null && !this.navigating) this.nav.push(key);
     if (key !== null && key === this.split) this.split = null;
     if (previous && previous.key !== key) void previous.flush();
   }
@@ -109,6 +157,8 @@ class Tabs {
     if (!tab) return;
 
     this.all = this.all.filter((item) => item.key !== key);
+    this.recent = this.recent.filter((item) => item !== key);
+    this.nav.remove(key);
     if (this.split === key) this.split = null;
     if (this.active === key) {
       this.active = this.all.at(-1)?.key ?? null;

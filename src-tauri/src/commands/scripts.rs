@@ -16,6 +16,13 @@ pub async fn scripts_tree(state: State<'_, AppState>) -> Result<Vec<ScriptFolder
     pgforge_core::scripts::tree(&state.scripts_root)
 }
 
+/// Borra los scripts sin nada escrito de toda la biblioteca y dice cuántos eran. No recibe rutas:
+/// recorre `scripts_root`, que es de la aplicación y no del webview.
+#[tauri::command]
+pub async fn scripts_purge_empty(state: State<'_, AppState>) -> Result<usize> {
+    pgforge_core::scripts::purge_empty(&state.scripts_root)
+}
+
 /// Para el botón «Abrir la carpeta» de la interfaz: no toca disco, solo informa dónde está.
 ///
 /// Devuelve `Result` aunque no pueda fallar: un comando `async` con `State` como argumento lo exige

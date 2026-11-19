@@ -86,6 +86,17 @@ impl ServerCaps {
         self.version.at_least(16)
     }
 
+    /// Vista `pg_stat_checkpointer`. Hasta PG 16 los contadores de checkpoints vivían en
+    /// `pg_stat_bgwriter`, con otros nombres de columna.
+    pub fn has_pg_stat_checkpointer(&self) -> bool {
+        self.version.at_least(17)
+    }
+
+    /// Vista `pg_stat_wal`: cuánto WAL se escribió. No existe en PG 13.
+    pub fn has_pg_stat_wal(&self) -> bool {
+        self.version.at_least(14)
+    }
+
     /// `REINDEX` con la opción `CONCURRENTLY`.
     pub fn has_reindex_concurrently(&self) -> bool {
         self.version.at_least(12)
@@ -139,5 +150,9 @@ mod tests {
         assert!(caps(140_000).has_query_id());
         assert!(!caps(150_000).has_pg_stat_io());
         assert!(caps(160_000).has_pg_stat_io());
+        assert!(!caps(160_000).has_pg_stat_checkpointer());
+        assert!(caps(170_000).has_pg_stat_checkpointer());
+        assert!(!caps(130_000).has_pg_stat_wal());
+        assert!(caps(140_000).has_pg_stat_wal());
     }
 }

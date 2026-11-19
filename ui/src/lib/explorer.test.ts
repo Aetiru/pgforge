@@ -135,6 +135,15 @@ describe("búsqueda con prefijo de tipo", () => {
     ]),
   ];
 
+  it("una etiqueta o el texto de una nota también encuentran el objeto", () => {
+    const noteOf = (row: Row) =>
+      row.label === "facturas_activas" ? { note: "se llena desde el ETL", tags: ["facturación"] } : null;
+    expect(labels(visibleRows(tree, "#fact", false, noteOf))).toEqual(["local", "facturas_activas"]);
+    expect(labels(visibleRows(tree, "etl", false, noteOf))).toEqual(["local", "facturas_activas"]);
+    // Sin nota, `#fact` no coincide con ningún nombre.
+    expect(labels(visibleRows(tree, "#fact"))).toEqual([]);
+  });
+
   it("acota a la familia sin dejar de mostrar el camino hasta ella", () => {
     expect(visibleRows(tree, "t:factura").map((row) => row.label)).toEqual(["local", "facturas"]);
   });

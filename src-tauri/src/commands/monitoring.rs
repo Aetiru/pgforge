@@ -9,8 +9,10 @@ use std::time::Duration;
 
 use pgforge_core::error::ErrorPayload;
 use pgforge_core::monitor::{
-    maintenance, ActivityFilter, IndexStat, Lock, Monitor, Operation, Redundancy, Snapshot,
-    StatementStat, StatsWindow, TableBloat, TableStat, Target,
+    maintenance, ActivityFilter, AutovacuumRow, CacheReport, CheckpointReport, ConfigReview,
+    ConnectionReport, Forecast, IndexStat, Lock, Monitor, Operation, Redundancy, Sample,
+    SequenceUsage, Snapshot, SpaceMap, StatementStat, StatsWindow, TableBloat, TableStat, Target,
+    Wraparound,
 };
 use pgforge_core::{Error, ProfileId, Result};
 use serde::{Deserialize, Serialize};
@@ -287,6 +289,213 @@ pub async fn table_bloat(
     let monitor = monitor_of(&state, id).await?;
     let bloat = monitor.lock().await.bloat(limit.unwrap_or(50)).await?;
     Ok(bloat)
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Cómo crece una tabla o la base entera, según las muestras guardadas.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Growth {
+    /// `database` o `table`.
+    kind: String,
+    name: String,
+    bytes: i64,
+    /// `None` mientras faltan muestras (ver `trend::forecast`).
+    forecast: Option<Forecast>,
+    /// Tamaño estimado dentro de 30 días al ritmo medido.
+    projected_30d: Option<i64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpaceOverview {
+    map: SpaceMap,
+    growth: Vec<Growth>,
+}
+
+/// Cuántas tablas entran en el mapa y se siguen en el tiempo.
+const SPACE_TABLES: i64 = 60;
+const TRACKED_TABLES: usize = 30;
+const TRACKED_SEQUENCES: usize = 50;
+
+/// El mapa de espacio y, de paso, anota una muestra de tamaños: es lo que después permite decir
+/// cuánto crece cada cosa. Que falle al anotar no tapa el mapa.
+#[tauri::command]
+pub async fn space_overview(state: State<'_, AppState>, id: ProfileId) -> Result<SpaceOverview> {
+    let monitor = monitor_of(&state, id).await?;
+    let map = monitor.lock().await.space_map(SPACE_TABLES).await?;
+    let server = id.to_string();
+
+    let mut tracked: Vec<(&'static str, String, i64)> =
+        vec![("database", map.database.clone(), map.database_bytes)];
+    for entry in map.entries.iter().take(TRACKED_TABLES) {
+        tracked.push((
+            "table",
+            format!("{}.{}", entry.schema, entry.table),
+            entry.total(),
+        ));
+    }
+    let samples: Vec<Sample> = tracked
+        .iter()
+        .map(|(kind, name, bytes)| Sample {
+            kind,
+            name: name.clone(),
+            value: *bytes as f64,
+        })
+        .collect();
+
+    let mut trends = state.trends.lock().await;
+    if let Err(error) = trends.record(&server, &map.database, now_secs(), &samples) {
+        tauri_plugin_log::log::warn!("no se pudo anotar la muestra de tamaños: {error}");
+    }
+    let growth = tracked
+        .into_iter()
+        .map(|(kind, name, bytes)| {
+            let forecast = trends
+                .series(&server, &map.database, kind, &name)
+                .ok()
+                .and_then(|series| pgforge_core::monitor::trend::forecast(&series, None));
+            let projected_30d = forecast
+                .as_ref()
+                .map(|f| (bytes as f64 + f.per_day * 30.0).max(0.0) as i64);
+            Growth {
+                kind: kind.to_owned(),
+                name,
+                bytes,
+                forecast,
+                projected_30d,
+            }
+        })
+        .collect();
+    Ok(SpaceOverview { map, growth })
+}
+
+/// Las secuencias más gastadas, con cuándo se agotan al ritmo medido.
+#[tauri::command]
+pub async fn sequence_usage(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    limit: Option<i64>,
+) -> Result<Vec<SequenceUsage>> {
+    let monitor = monitor_of(&state, id).await?;
+    let (mut list, database) = {
+        let monitor = monitor.lock().await;
+        (
+            monitor.sequences(limit.unwrap_or(200)).await?,
+            monitor.database().to_owned(),
+        )
+    };
+    let server = id.to_string();
+    let samples: Vec<Sample> = list
+        .iter()
+        .take(TRACKED_SEQUENCES)
+        .filter(|s| s.increment_by > 0)
+        .filter_map(|s| {
+            Some(Sample {
+                kind: "sequence",
+                name: format!("{}.{}", s.schema, s.name),
+                value: s.last_value? as f64,
+            })
+        })
+        .collect();
+    let mut trends = state.trends.lock().await;
+    if let Err(error) = trends.record(&server, &database, now_secs(), &samples) {
+        tauri_plugin_log::log::warn!("no se pudo anotar la muestra de secuencias: {error}");
+    }
+    for usage in list
+        .iter_mut()
+        .take(TRACKED_SEQUENCES)
+        .filter(|s| s.increment_by > 0)
+    {
+        let name = format!("{}.{}", usage.schema, usage.name);
+        let forecast = trends
+            .series(&server, &database, "sequence", &name)
+            .ok()
+            .and_then(|series| {
+                pgforge_core::monitor::trend::forecast(&series, Some(usage.max_value as f64))
+            });
+        if let Some(forecast) = forecast {
+            usage.per_day = Some(forecast.per_day);
+            usage.days_left = forecast.days_to_limit;
+        }
+    }
+    Ok(list)
+}
+
+#[tauri::command]
+pub async fn wraparound_status(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    limit: Option<i64>,
+) -> Result<Wraparound> {
+    let monitor = monitor_of(&state, id).await?;
+    let report = monitor.lock().await.wraparound(limit.unwrap_or(30)).await?;
+    Ok(report)
+}
+
+#[tauri::command]
+pub async fn autovacuum_status(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    limit: Option<i64>,
+) -> Result<Vec<AutovacuumRow>> {
+    let monitor = monitor_of(&state, id).await?;
+    let rows = monitor
+        .lock()
+        .await
+        .autovacuum(limit.unwrap_or(200))
+        .await?;
+    Ok(rows)
+}
+
+#[tauri::command]
+pub async fn cache_stats(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    limit: Option<i64>,
+) -> Result<CacheReport> {
+    let monitor = monitor_of(&state, id).await?;
+    let report = monitor.lock().await.cache(limit.unwrap_or(100)).await?;
+    Ok(report)
+}
+
+#[tauri::command]
+pub async fn connection_report(
+    state: State<'_, AppState>,
+    id: ProfileId,
+) -> Result<ConnectionReport> {
+    let monitor = monitor_of(&state, id).await?;
+    let report = monitor.lock().await.connections().await?;
+    Ok(report)
+}
+
+#[tauri::command]
+pub async fn checkpoint_stats(
+    state: State<'_, AppState>,
+    id: ProfileId,
+) -> Result<CheckpointReport> {
+    let monitor = monitor_of(&state, id).await?;
+    let report = monitor.lock().await.checkpoints().await?;
+    Ok(report)
+}
+
+/// Revisa la configuración. `ram_bytes` lo pone el usuario: el servidor no sabe cuánta memoria tiene
+/// la máquina.
+#[tauri::command]
+pub async fn server_config_review(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    ram_bytes: Option<i64>,
+) -> Result<ConfigReview> {
+    let monitor = monitor_of(&state, id).await?;
+    let review = monitor.lock().await.config_review(ram_bytes).await?;
+    Ok(review)
 }
 
 #[tauri::command]

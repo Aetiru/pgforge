@@ -26,6 +26,7 @@
     restore: "undo",
     export: "download",
     import: "upload",
+  transfer: "upload",
   };
 
   let now = $state(Date.now());

@@ -42,13 +42,32 @@ pub struct Relation {
     pub columns: Vec<RelationColumn>,
 }
 
+/// Una clave foránea entre tablas visibles, para que el autocompletado ofrezca el `ON` de un `JOIN`.
+/// Las columnas van en el orden de la restricción: la i-ésima de `columns` apunta a la i-ésima de
+/// `ref_columns`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForeignKeyRef {
+    pub schema: String,
+    pub table: String,
+    pub columns: Vec<String>,
+    pub ref_schema: String,
+    pub ref_table: String,
+    pub ref_columns: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SchemaSnapshot {
     pub database: String,
     pub schemas: Vec<String>,
     pub relations: Vec<Relation>,
+    pub foreign_keys: Vec<ForeignKeyRef>,
 }
+
+/// Tope de claves foráneas que se mandan: una base enorme no tiene que inflar la respuesta de
+/// cada pestaña para un autocompletado que usa las de las tablas que uno nombra.
+const MAX_FOREIGN_KEYS: i64 = 5000;
 
 /// Los esquemas del sistema quedan afuera aunque el explorador los esté mostrando: `pg_catalog`
 /// solo aporta miles de nombres que nadie escribe a mano y que taparían a los propios.
@@ -127,9 +146,87 @@ pub async fn snapshot(handle: &ServerHandle, database: &str) -> Result<SchemaSna
         })
         .collect();
 
+    // Las de una partición heredadas de su madre (`conparentid`) se dejan: repetirían cada clave
+    // una vez por partición. Solo las que tocan tablas visibles, para no ofrecer un `JOIN` a algo
+    // que el rol no puede leer.
+    let foreign_keys = client
+        .query(
+            &format!(
+                "SELECT n.nspname::text, c.relname::text,
+                        ARRAY(SELECT a.attname::text
+                                FROM unnest(k.conkey) WITH ORDINALITY AS u(attnum, ord)
+                                JOIN pg_catalog.pg_attribute a
+                                  ON a.attrelid = k.conrelid AND a.attnum = u.attnum
+                               ORDER BY u.ord),
+                        rn.nspname::text, rc.relname::text,
+                        ARRAY(SELECT a.attname::text
+                                FROM unnest(k.confkey) WITH ORDINALITY AS u(attnum, ord)
+                                JOIN pg_catalog.pg_attribute a
+                                  ON a.attrelid = k.confrelid AND a.attnum = u.attnum
+                               ORDER BY u.ord)
+                   FROM pg_catalog.pg_constraint k
+                   JOIN pg_catalog.pg_class c ON c.oid = k.conrelid
+                   JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                   JOIN pg_catalog.pg_class rc ON rc.oid = k.confrelid
+                   JOIN pg_catalog.pg_namespace rn ON rn.oid = rc.relnamespace
+                  WHERE k.contype = 'f'
+                    AND k.conparentid = 0
+                    AND {VISIBLE_SCHEMAS}
+                    AND rn.nspname NOT IN ('pg_catalog', 'information_schema')
+                    AND pg_catalog.has_table_privilege(c.oid, 'SELECT')
+                    AND pg_catalog.has_table_privilege(rc.oid, 'SELECT')
+                  ORDER BY n.nspname, c.relname, k.conname
+                  LIMIT {MAX_FOREIGN_KEYS}"
+            ),
+            &[],
+        )
+        .await?
+        .into_iter()
+        .map(|row| ForeignKeyRef {
+            schema: row.get(0),
+            table: row.get(1),
+            columns: row.get(2),
+            ref_schema: row.get(3),
+            ref_table: row.get(4),
+            ref_columns: row.get(5),
+        })
+        .collect();
+
     Ok(SchemaSnapshot {
         database: database.to_owned(),
         schemas,
         relations,
+        foreign_keys,
     })
+}
+
+/// La definición de una función o procedimiento por su nombre, para el `Ctrl`+clic del editor.
+///
+/// Devuelve **todas** las sobrecargas que coinciden —un nombre sin calificar puede ser dos funciones
+/// de dos esquemas, o la misma con distintos argumentos— y no elige una por el usuario. Salen de
+/// `pg_get_functiondef`, lo que afirma el servidor. Las agregaciones quedan fuera: esa función no
+/// las acepta.
+pub async fn routine_definitions(
+    handle: &ServerHandle,
+    database: &str,
+    schema: Option<&str>,
+    name: &str,
+) -> Result<Vec<String>> {
+    let client = handle.client(database).await?;
+    let rows = client
+        .query(
+            "SELECT pg_catalog.pg_get_functiondef(p.oid)
+               FROM pg_catalog.pg_proc p
+               JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+              WHERE p.proname = $1
+                AND ($2::text IS NULL OR n.nspname = $2)
+                AND p.prokind IN ('f', 'p')
+                AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+                AND pg_catalog.has_schema_privilege(n.oid, 'USAGE')
+              ORDER BY n.nspname, p.oid
+              LIMIT 20",
+            &[&name, &schema],
+        )
+        .await?;
+    Ok(rows.into_iter().map(|row| row.get(0)).collect())
 }

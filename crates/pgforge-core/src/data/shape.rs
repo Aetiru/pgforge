@@ -45,6 +45,24 @@ pub struct Key {
     pub columns: Vec<String>,
 }
 
+/// Una clave foránea vista desde una tabla: a qué otra tabla apunta, o qué otra tabla apunta a ella.
+///
+/// `columns` son siempre las de **esta** tabla y `other_columns` las de la otra, en el mismo orden,
+/// así que la grilla arma el filtro del salto sin saber en qué sentido va la flecha.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Link {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub oid: u32,
+    pub schema: String,
+    pub table: String,
+    pub other_columns: Vec<String>,
+}
+
+/// Tope de tablas que apuntan a una: una tabla de catálogo puede tener cientos y el menú no sirve.
+const MAX_REFERENCED_BY: usize = 40;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TableShape {
@@ -56,6 +74,13 @@ pub struct TableShape {
     pub key: Option<Key>,
     /// Por qué no se puede editar. `None` significa que sí se puede.
     pub read_only: Option<String>,
+    /// A qué tablas apunta. `default` porque la interfaz devuelve la forma entera en cada página y
+    /// una forma armada sin estos campos tiene que seguir leyéndose.
+    #[serde(default)]
+    pub foreign_keys: Vec<Link>,
+    /// Qué tablas apuntan a esta.
+    #[serde(default)]
+    pub referenced_by: Vec<Link>,
 }
 
 impl TableShape {
@@ -113,6 +138,34 @@ const KEY_SQL: &str = "
        AND k.ord <= i.indnkeyatts
      GROUP BY c.relname, i.indisprimary
      ORDER BY i.indisprimary DESC, c.relname
+";
+
+/// Claves foráneas de las dos puntas. Las de una partición heredadas de su madre (`conparentid`)
+/// se dejan: el mismo salto aparecería una vez por partición.
+const LINKS_SQL: &str = "
+    SELECT c.conname::text,
+           c.conrelid::int8,
+           c.confrelid::int8,
+           ARRAY(SELECT a.attname::text
+                   FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
+                   JOIN pg_catalog.pg_attribute a
+                     ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+                  ORDER BY k.ord),
+           ARRAY(SELECT a.attname::text
+                   FROM unnest(c.confkey) WITH ORDINALITY AS k(attnum, ord)
+                   JOIN pg_catalog.pg_attribute a
+                     ON a.attrelid = c.confrelid AND a.attnum = k.attnum
+                  ORDER BY k.ord),
+           n.nspname::text,
+           r.relname::text
+      FROM pg_catalog.pg_constraint c
+      JOIN pg_catalog.pg_class r
+        ON r.oid = CASE WHEN c.conrelid = $1 THEN c.confrelid ELSE c.conrelid END
+      JOIN pg_catalog.pg_namespace n ON n.oid = r.relnamespace
+     WHERE c.contype = 'f'
+       AND c.conparentid = 0
+       AND (c.conrelid = $1 OR c.confrelid = $1)
+     ORDER BY n.nspname, r.relname, c.conname
 ";
 
 const RELATION_SQL: &str = "
@@ -206,14 +259,57 @@ pub async fn shape(handle: &ServerHandle, database: &str, oid: u32) -> Result<Ta
             columns: row.get(2),
         });
 
+    let (foreign_keys, referenced_by) = links(&client, oid).await?;
+
     Ok(TableShape {
         read_only: read_only_reason(&relkind, key.as_ref()),
+        foreign_keys,
+        referenced_by,
         oid,
         schema,
         name,
         columns,
         key,
     })
+}
+
+/// Las claves foráneas de la tabla, separadas por sentido. Una autorreferencia cuenta en los dos.
+async fn links(client: &tokio_postgres::Client, oid: u32) -> Result<(Vec<Link>, Vec<Link>)> {
+    let mut outgoing = Vec::new();
+    let mut incoming = Vec::new();
+
+    for row in client.query(LINKS_SQL, &[&oid]).await? {
+        let owner: i64 = row.get(1);
+        let target: i64 = row.get(2);
+        let own_columns: Vec<String> = row.get(3);
+        let target_columns: Vec<String> = row.get(4);
+        let schema: String = row.get(5);
+        let table: String = row.get(6);
+        let name: String = row.get(0);
+
+        if owner == i64::from(oid) {
+            outgoing.push(Link {
+                name: name.clone(),
+                columns: own_columns.clone(),
+                oid: target as u32,
+                schema: schema.clone(),
+                table: table.clone(),
+                other_columns: target_columns.clone(),
+            });
+        }
+        if target == i64::from(oid) && incoming.len() < MAX_REFERENCED_BY {
+            incoming.push(Link {
+                name,
+                columns: target_columns,
+                oid: owner as u32,
+                schema,
+                table,
+                other_columns: own_columns,
+            });
+        }
+    }
+
+    Ok((outgoing, incoming))
 }
 
 /// El motivo por el que la grilla se abre en solo lectura, redactado para mostrarlo tal cual.

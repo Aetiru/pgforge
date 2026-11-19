@@ -110,3 +110,54 @@ export function pretty(value: string): string {
     return value;
   }
 }
+
+/**
+ * La selección como tabla de Markdown, para pegar en un ticket o en un chat.
+ *
+ * `|` va escapado y los saltos de línea pasan a `<br>`: una celda con cualquiera de los dos rompería
+ * la fila. NULL se escribe como `NULL` y no como celda vacía, que es otra cosa.
+ */
+export function asMarkdown(headers: string[], rows: (string | null)[][]): string {
+  const cell = (value: string | null) =>
+    value === null ? "NULL" : value.replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
+  const line = (cells: (string | null)[]) => `| ${cells.map(cell).join(" | ")} |`;
+  return [
+    line(headers),
+    `| ${headers.map(() => "---").join(" | ")} |`,
+    ...rows.map((row) => line(headers.map((_, index) => row[index] ?? null))),
+  ].join("\n");
+}
+
+/** Cita un identificador solo cuando hace falta: minúsculas, dígitos y guion bajo se dejan tal cual. */
+function ident(name: string): string {
+  return /^[a-z_][a-z0-9_]*$/.test(name) ? name : `"${name.replace(/"/g, '""')}"`;
+}
+
+/** Un valor como literal de SQL: NULL, o texto entre comillas simples con las comillas duplicadas. */
+function literal(value: string | null): string {
+  if (value === null) return "NULL";
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/**
+ * La selección como `INSERT`s, una sentencia por fila, para llevar filas a otra tabla o base.
+ *
+ * Todo viaja como texto entre comillas: PostgreSQL resuelve el tipo de un literal sin tipo contra la
+ * columna, y así no hay que adivinar cuáles son números. `table` es lo que el usuario cambia después
+ * de pegar cuando el resultado no sale de una sola tabla.
+ */
+export function asInserts(
+  headers: string[],
+  rows: (string | null)[][],
+  table = "tabla",
+): string {
+  const columns = headers.map(ident).join(", ");
+  return rows
+    .map(
+      (row) =>
+        `INSERT INTO ${table} (${columns}) VALUES (${headers
+          .map((_, index) => literal(row[index] ?? null))
+          .join(", ")});`,
+    )
+    .join("\n");
+}

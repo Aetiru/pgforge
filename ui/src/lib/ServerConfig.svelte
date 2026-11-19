@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from "./Skeleton.svelte";
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
@@ -118,7 +119,7 @@
 
   <div class="min-h-0 flex-1 overflow-auto px-3 py-2">
     {#if loading}
-      <div class="flex items-center gap-2 text-sm muted"><span class="spinner"></span> Leyendo…</div>
+      <Skeleton rows={10} compact label="Leyendo la configuración…" />
     {:else if filtered.length === 0}
       <Empty icon="search" title="Sin coincidencias" hint="Probá con otro nombre de parámetro." />
     {:else}

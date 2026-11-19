@@ -68,6 +68,9 @@ async function sqlOf(source: SqlSource): Promise<string | null> {
  * pregunta es la misma pero exige escribir el nombre del servidor: es el escalón que separa «sí,
  * quiero tocar producción» de «sí, quiero tirar esto».
  */
+/** Desde cuántas filas se pregunta fuera de producción. */
+const AFFECTED_ASK = 1000;
+
 class MutationGuard {
   pending = $state<PendingConfirm | null>(null);
 
@@ -93,6 +96,24 @@ class MutationGuard {
     return this.ask(profile, "El script que vas a ejecutar incluye:", risks);
   }
 
+  /**
+   * Para un `UPDATE`/`DELETE` del que ya se contó cuántas filas toca. En producción pregunta siempre,
+   * con el número a la vista; en el resto solo cuando son muchas, porque un `UPDATE` de diez filas
+   * en desarrollo no merece una pregunta.
+   */
+  async confirmAffected(profileId: string, rows: number, capped: boolean, sql: string): Promise<boolean> {
+    const profile = profileOf(profileId);
+    if (!profile) return true;
+    if (profile.environment !== "prod" && rows < AFFECTED_ASK) return true;
+
+    const amount = `${capped ? "más de " : ""}${rows.toLocaleString("es")}`;
+    return this.ask(
+      profile,
+      `Esta sentencia va a modificar ${amount} ${rows === 1 && !capped ? "fila" : "filas"}.`,
+      assessRisks(sql),
+    );
+  }
+
   private ask(profile: ConnectionProfile, action: string, risks: StatementRisk[]) {
     return new Promise<boolean>((resolve) => {
       this.pending = { profile, action, risks, resolve };
@@ -113,3 +134,7 @@ export const confirmMutation = (profileId: string, action: string, sql?: SqlSour
 
 /** Para el editor: solo pregunta si el script trae algo destructivo. */
 export const confirmScript = (profileId: string, sql: string) => guard.confirmScript(profileId, sql);
+
+/** Para el editor: un `UPDATE`/`DELETE` con su conteo previo. */
+export const confirmAffected = (profileId: string, rows: number, capped: boolean, sql: string) =>
+  guard.confirmAffected(profileId, rows, capped, sql);

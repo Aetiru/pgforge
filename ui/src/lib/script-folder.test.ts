@@ -29,3 +29,42 @@ describe("scriptFolderName", () => {
     expect(scriptFolderName("Local")).toBe("Local");
   });
 });
+
+import { countEmpty, countVisible, visibleFiles } from "./script-folder";
+import type { ScriptEntry, ScriptFolder } from "./ipc";
+
+describe("biblioteca de scripts: vacíos y orden", () => {
+  const file = (name: string, modified: number, empty = false): ScriptEntry => ({
+    name,
+    path: `/x/${name}`,
+    modified,
+    empty,
+    preview: "",
+  });
+  const folder = (files: ScriptEntry[], folders: ScriptFolder[] = []): ScriptFolder => ({
+    name: "c",
+    path: "/x",
+    files,
+    folders,
+  });
+
+  it("esconde los vacíos y deja lo último tocado primero", () => {
+    const names = visibleFiles([
+      file("script1.sql", 10),
+      file("script2.sql", 30),
+      file("script3.sql", 20, true),
+    ]).map((f) => f.name);
+    expect(names).toEqual(["script2.sql", "script1.sql"]);
+  });
+
+  it("a igual fecha ordena por número y no por texto", () => {
+    const names = visibleFiles([file("script10.sql", 5), file("script2.sql", 5)]).map((f) => f.name);
+    expect(names).toEqual(["script2.sql", "script10.sql"]);
+  });
+
+  it("cuenta visibles y vacíos incluyendo subcarpetas", () => {
+    const tree = folder([file("a.sql", 1), file("b.sql", 1, true)], [folder([file("c.sql", 1, true)])]);
+    expect(countVisible(tree)).toBe(1);
+    expect(countEmpty([tree])).toBe(2);
+  });
+});

@@ -21,6 +21,16 @@ export interface TableKey {
   columns: string[];
 }
 
+/** Una clave foránea vista desde la tabla: `columns` son las de esta, `otherColumns` las de la otra. */
+export interface TableLink {
+  name: string;
+  columns: string[];
+  oid: number;
+  schema: string;
+  table: string;
+  otherColumns: string[];
+}
+
 export interface TableShape {
   oid: number;
   schema: string;
@@ -29,6 +39,10 @@ export interface TableShape {
   key: TableKey | null;
   /** Por qué no se puede editar. `null` significa que sí se puede. */
   readOnly: string | null;
+  /** A qué tablas apunta. */
+  foreignKeys: TableLink[];
+  /** Qué tablas apuntan a esta. */
+  referencedBy: TableLink[];
 }
 
 export type Cursor = { kind: "after"; key: string[] } | { kind: "offset"; rows: number };
@@ -171,3 +185,52 @@ export const dataImportRun = (
   path: string,
   database?: string,
 ) => invoke<string>("data_import_run", { id, spec, path, database: database ?? null });
+
+// ---------------------------------------------------------------------------
+// Copiar una tabla a otro servidor
+// ---------------------------------------------------------------------------
+
+/** Qué hacer con la tabla de destino: crearla, agregarle filas o vaciarla y recargarla. */
+export type TransferMode = "create" | "append" | "truncate";
+
+export interface TransferSpec {
+  schema: string;
+  table: string;
+  targetSchema: string;
+  targetTable: string;
+  mode: TransferMode;
+  /** Con `false` solo se crea la estructura. Solo con `create`. */
+  withData: boolean;
+  /** Recrear los índices que no sostienen una restricción. Solo con `create`. */
+  withIndexes: boolean;
+  /** `WHERE` crudo para copiar solo parte de las filas. */
+  filter?: string | null;
+}
+
+/** Lo que se ejecutaría. Refleja `data::transfer::TransferPlan`. */
+export interface TransferPlan {
+  before: string[];
+  copyOut: string | null;
+  copyIn: string | null;
+  after: string[];
+  warnings: string[];
+}
+
+export const tableTransferPreview = (id: string, spec: TransferSpec, database?: string) =>
+  invoke<TransferPlan>("table_transfer_preview", { id, database: database ?? null, spec });
+
+/** Lanza la copia y devuelve el identificador del proceso. */
+export const tableTransferRun = (
+  id: string,
+  database: string | undefined,
+  targetId: string,
+  targetDatabase: string | undefined,
+  spec: TransferSpec,
+) =>
+  invoke<string>("table_transfer_run", {
+    id,
+    database: database ?? null,
+    targetId,
+    targetDatabase: targetDatabase ?? null,
+    spec,
+  });

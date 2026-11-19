@@ -160,6 +160,10 @@ pub struct ConnectionProfile {
     /// Valor inicial del autocommit de cada pestaña de consulta; la pestaña después lo alterna sola.
     #[serde(default = "default_autocommit")]
     pub autocommit: bool,
+    /// Conectar solo al abrir la aplicación. Solo funciona sin pedir nada: con la contraseña
+    /// recordada, o sin contraseña. Un perfil que la pide no se conecta solo y se avisa.
+    #[serde(default)]
+    pub connect_on_start: bool,
     /// Color propio en el árbol. `None` no pinta nada, que es lo que trae un perfil viejo.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<ServerColor>,
@@ -248,6 +252,7 @@ impl ConnectionProfile {
             environment: None,
             read_only: false,
             autocommit: default_autocommit(),
+            connect_on_start: false,
             color: None,
             order: None,
         }
@@ -314,6 +319,7 @@ impl ConnectionProfile {
             environment: None,
             read_only: false,
             autocommit: default_autocommit(),
+            connect_on_start: false,
             color: None,
             order: None,
         };

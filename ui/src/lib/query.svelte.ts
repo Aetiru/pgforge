@@ -1,21 +1,49 @@
 import type { SQLNamespace } from "@codemirror/lang-sql";
 import { pickSave } from "./ipc";
-import { confirmScript } from "./access.svelte";
+import { confirmAffected, confirmMutation, confirmScript, isReadOnly } from "./access.svelte";
+import { CAP, countQuery } from "./affected-count";
+import { buildChanges, editedRows, planEdit, withEdit, type EditPlan } from "./result-edit";
+import { isWatchable } from "./watch-guard";
+import { defaultTimeout } from "./query-timeout";
+import { BIG_TABLE_ROWS, sizeTarget, withLimit } from "./select-size";
+import { describeWait, type WaitText } from "./wait-text";
+import { fillVars, findVars, parseRemembered, unmapper, varNames } from "./query-vars";
+
+/** El `LIMIT` que se ofrece al avisar de una tabla enorme. */
+const SAFE_LIMIT = 1000;
+
+/** Últimos valores de las variables `{{nombre}}`, por nombre: preferencia de la aplicación. */
+const VARS_KEY = "pgforge.queryvars";
 import { changesCatalog } from "./ddl-tags";
 import { autoFormat } from "./editor.svelte";
+import { formatSql } from "./format-options.svelte";
+import { versions } from "./editor/versions.svelte";
 import { explorer } from "./explorer.svelte";
 import { oneLine } from "./format";
 import { notify } from "./notify.svelte";
 import { paging } from "./paging.svelte";
+import type { EditorAction } from "./editor/actions";
+import { cursorInfo, type CursorInfo } from "./cursor-info";
 import { renamedScriptPath } from "./script-name";
 import { Tab, tabs } from "./tabs.svelte";
 import {
   Channel,
   describeError,
   isCanceled,
+  isDisconnected,
+  reportServerDown,
   queryAutocommit,
   queryCancel,
+  dataApply,
+  dataOpen,
+  dataPreview,
   queryColumnTypes,
+  queryCount,
+  queryEstimatedRows,
+  queryTimeout,
+  queryWaitInfo,
+  queryEditSource,
+  type PreviewStatement,
   queryClose,
   queryCommit,
   queryExplain,
@@ -29,7 +57,6 @@ import {
   scriptRead,
   scriptRename,
   scriptWrite,
-  sqlFormat,
   sqlReadFile,
   sqlWriteFile,
   type CoreError,
@@ -38,15 +65,31 @@ import {
   type Plan,
   type QueryEvent,
   type RehearsalReport,
+  type ForeignKeyRef,
   type SchemaRelation,
   type TxStatus,
 } from "./ipc";
 
 export type MessageTone = "info" | "notice" | "error";
 
+/** Un error de PostgreSQL con sus partes, para dibujarlo como tarjeta en vez de una línea. */
+export interface MessageError {
+  code: string;
+  message: string;
+  detail: string | null;
+  hint: string | null;
+  /** Línea del editor donde falló (base 1), si el servidor dio una posición. */
+  line: number | null;
+  /** Texto de esa línea, recortado, para ver de qué se trata sin ir al editor. */
+  lineText: string | null;
+  /** Desplazamiento en caracteres dentro del editor: lo que usa «Ir a la línea». */
+  at: number | null;
+}
+
 export interface Message {
   tone: MessageTone;
   text: string;
+  error?: MessageError;
 }
 
 /** El resultado de una sentencia, junto con de cuál del script salió. */
@@ -88,6 +131,7 @@ export interface PinnedResult {
 export interface EditorSchema {
   namespace: SQLNamespace;
   relations: SchemaRelation[];
+  foreignKeys: ForeignKeyRef[];
 }
 
 /**
@@ -111,7 +155,11 @@ async function schemaFor(profileId: string, database: string): Promise<EditorSch
       // para el hover, no para esta lista.
       (namespace[relation.schema] ??= {})[relation.name] = relation.columns.map((c) => c.name);
     }
-    return { namespace: namespace as SQLNamespace, relations: snapshot.relations };
+    return {
+      namespace: namespace as SQLNamespace,
+      relations: snapshot.relations,
+      foreignKeys: snapshot.foreignKeys ?? [],
+    };
   });
 
   // Un fallo no se cachea: la próxima pestaña vuelve a intentarlo.
@@ -137,9 +185,29 @@ export class QueryTab extends Tab {
   schema = $state.raw<SQLNamespace | undefined>(undefined);
   /** Los mismos nombres en plano, para completar las columnas del `FROM` sin calificar. */
   relations = $state.raw<SchemaRelation[]>([]);
+  /** Claves foráneas de la base, para proponer el `ON` de un `JOIN`. */
+  foreignKeys = $state.raw<ForeignKeyRef[]>([]);
   sql = $state("");
   opening = $state(true);
   running = $state(false);
+  /** Desde cuándo corre lo que corre (ms); `null` si no hay nada en curso. Lo lee el cronómetro. */
+  runStartedAt = $state<number | null>(null);
+
+  /**
+   * El texto tal como quedó la última vez que se guardó en un archivo o con nombre, o `null` si
+   * nunca. Un script de la biblioteca no cuenta: se vuelca solo a su `.sql` al cambiar de pestaña,
+   * así que no hay nada «sin guardar» que avisar ahí.
+   */
+  baseline = $state<string | null>(null);
+
+  /** Hay un archivo o una consulta con nombre que ya no coincide con lo escrito. */
+  get dirty(): boolean {
+    return (
+      (this.filePath !== null || this.savedId !== null) &&
+      this.baseline !== null &&
+      this.sql !== this.baseline
+    );
+  }
 
   /** Arranca con el valor del perfil; el interruptor de la barra lo cambia solo para esta pestaña. */
   autocommit = $state(true);
@@ -151,6 +219,26 @@ export class QueryTab extends Tab {
   rehearsalOpen = $state(false);
   /** Lo dice el servidor después de cada ejecución, no se deduce del SQL escrito. */
   txStatus = $state<TxStatus>("idle");
+  /** Desde cuándo está abierta la transacción (ms); `null` sin transacción. Lo lee la franja. */
+  txSince = $state<number | null>(null);
+  /** Sentencias y filas tocadas desde que se abrió: lo que se pierde si se revierte. */
+  txStatements = $state(0);
+  txRows = $state(0);
+
+  /**
+   * Único lugar que asigna `txStatus`: el contador y el reloj de la franja nacen y mueren con la
+   * transacción, así que no pueden quedar desfasados de lo que dice el servidor.
+   */
+  applyTx(status: TxStatus) {
+    if (status === "idle") {
+      this.txSince = null;
+      this.txStatements = 0;
+      this.txRows = 0;
+    } else if (this.txSince === null) {
+      this.txSince = Date.now();
+    }
+    this.txStatus = status;
+  }
 
   /**
    * Van en `$state.raw` y no en `$state` porque se reemplazan enteros y nunca se mutan por dentro.
@@ -232,6 +320,10 @@ export class QueryTab extends Tab {
    * el botón y el atajo.
    */
   formatRequest = $state(0);
+  /** Lo mismo para abrir el diálogo de opciones del formateador y el de versiones anteriores desde
+   *  la paleta: el diálogo vive en `QueryPanel`, que es quien escucha estos contadores. */
+  formatOptionsRequest = $state(0);
+  versionsRequest = $state(0);
 
   /**
    * Cursor y scroll del editor al salir de la pestaña.
@@ -242,6 +334,8 @@ export class QueryTab extends Tab {
    * No es `$state`: nadie dibuja con esto, solo lo lee `SqlEditor` al nacer.
    */
   editorSelection: { anchor: number; head: number } | null = null;
+  /** Lo mismo, para la barra de estado: sí es reactivo, `editorSelection` no. */
+  cursor = $state<CursorInfo>({ line: 1, column: 1, selected: 0 });
   /** Posición del documento que quedaba arriba del todo, no el `scrollTop` en píxeles —ver `ondetach`
    *  de `SqlEditor`. */
   editorTopPos: number | null = null;
@@ -250,9 +344,29 @@ export class QueryTab extends Tab {
     this.formatRequest += 1;
   }
 
+  /**
+   * Un pedido de la paleta al editor de esta pestaña (expandir el `*`, renombrar un alias, una
+   * transformación de texto…). Es un contador junto al nombre de lo pedido, como `formatRequest`:
+   * dos pedidos iguales seguidos tienen que dispararse los dos, y el valor solo no cambiaría.
+   */
+  editorRequest = $state<{ action: EditorAction | null; n: number }>({ action: null, n: 0 });
+
+  requestEditor(action: EditorAction) {
+    this.editorRequest = { action, n: this.editorRequest.n + 1 };
+  }
+
+  requestFormatOptions() {
+    this.formatOptionsRequest += 1;
+  }
+
+  requestVersions() {
+    this.versionsRequest += 1;
+  }
+
   /** Trae al editor una consulta guardada. */
   applySaved(saved: { id: number; name: string; sql: string }) {
     this.sql = saved.sql;
+    this.baseline = saved.sql;
     this.savedId = saved.id;
     this.savedName = saved.name;
     this.title = saved.name;
@@ -303,6 +417,7 @@ export class QueryTab extends Tab {
   async saveTo(path: string) {
     await sqlWriteFile(path, this.sql);
     this.filePath = path;
+    this.baseline = this.sql;
     // El nombre del archivo es lo que uno busca en la barra cuando tiene cuatro pestañas abiertas.
     const name = path.split(/[\\/]/).pop();
     if (name) this.title = name;
@@ -339,13 +454,47 @@ export class QueryTab extends Tab {
       this.tabId = opened.tabId;
       this.database = opened.database;
       this.autocommit = opened.autocommit;
-      this.txStatus = opened.txStatus;
+      this.applyTx(opened.txStatus);
       this.messages = [];
       this.log("info", `Conectado a ${opened.database}.`);
+      if (this.timeoutMs !== null) await this.setTimeoutMs(this.timeoutMs);
       await this.loadSchema();
     } catch (error) {
       this.log("error", describeError(error));
       this.view = "messages";
+    } finally {
+      this.opening = false;
+    }
+  }
+
+  /**
+   * Abre una sesión nueva después de que el servidor se cayó y volvió. La anterior murió con la
+   * conexión, y con ella lo que tuviera: una transacción abierta, las tablas temporales, los `SET`.
+   * El texto de la pestaña, el resultado y lo anclado quedan como estaban.
+   */
+  async reopenSession() {
+    if (this.running) return;
+    this.stopWatch();
+    const hadTransaction = this.txStatus !== "idle";
+    const previous = this.tabId;
+    this.opening = true;
+    try {
+      // La anterior ya no responde: cerrarla es para soltar lo que quedó del lado de Rust.
+      if (previous) await queryClose(previous).catch(() => {});
+      const opened = await queryOpen(this.profileId, this.database);
+      this.tabId = opened.tabId;
+      this.applyTx(opened.txStatus);
+      if (opened.autocommit !== this.autocommit) await this.setAutocommit(this.autocommit);
+      // El tiempo máximo era de la sesión que murió: se vuelve a poner en la nueva.
+      if (this.timeoutMs !== null) await this.setTimeoutMs(this.timeoutMs);
+      this.log(
+        "notice",
+        hadTransaction
+          ? "Conectado de nuevo. La transacción que estaba abierta se perdió: nada de lo que hizo quedó confirmado."
+          : "Conectado de nuevo.",
+      );
+    } catch (error) {
+      this.log("error", describeError(error));
     } finally {
       this.opening = false;
     }
@@ -358,20 +507,26 @@ export class QueryTab extends Tab {
   async loadSchema() {
     this.schema = undefined;
     this.relations = [];
+    this.foreignKeys = [];
     try {
       const loaded = await schemaFor(this.profileId, this.database);
       this.schema = loaded.namespace;
       this.relations = loaded.relations;
+      this.foreignKeys = loaded.foreignKeys;
     } catch (error) {
       this.log("notice", `Sin autocompletado: ${describeError(error)}`);
     }
   }
 
-  log(tone: MessageTone, text: string) {
-    this.messages.push({ tone, text });
+  log(tone: MessageTone, text: string, error?: MessageError) {
+    this.messages.push({ tone, text, error });
   }
 
   override async dispose() {
+    this.stopWatch();
+    this.stopWaitWatch();
+    // Última copia del texto: es lo que se recupera si la pestaña se cerró sin querer.
+    versions.noteClose(this);
     // Cerrar la pestaña guarda y no borra el script: que sobreviva es todo el punto de tenerlo.
     await this.flushScript();
     if (this.tabId) await queryClose(this.tabId);
@@ -413,21 +568,140 @@ export class QueryTab extends Tab {
   }
 
   /**
+   * Pregunta el valor de `askSize` cuando un `SELECT` sin límite va contra una tabla enorme de
+   * producción. Devuelve el SQL a ejecutar —con o sin `LIMIT`— o `null` si se canceló. Cualquier
+   * fallo al estimar deja pasar la sentencia tal cual: avisar es una ayuda, no una condición.
+   */
+  askSize: ((table: string, rows: number, limit: number) => Promise<"limit" | "run" | "cancel">) | null = null;
+
+  private async checkSize(sql: string): Promise<string | null> {
+    const profile = explorer.profiles.find((item) => item.id === this.profileId);
+    if (profile?.environment !== "prod" || !this.tabId || !this.askSize) return sql;
+
+    const target = sizeTarget(sql);
+    if (!target) return sql;
+
+    let rows: number | null = null;
+    try {
+      rows = await queryEstimatedRows(this.tabId, target.schema, target.table);
+    } catch {
+      return sql;
+    }
+    if (rows === null || rows < BIG_TABLE_ROWS) return sql;
+
+    const name = target.schema ? `${target.schema}.${target.table}` : target.table;
+    const choice = await this.askSize(name, rows, SAFE_LIMIT);
+    if (choice === "cancel") return null;
+    return choice === "limit" ? withLimit(sql, SAFE_LIMIT) : sql;
+  }
+
+  /**
+   * La confirmación de antes de ejecutar. Un `UPDATE` o `DELETE` simple se cuenta primero y la
+   * pregunta lleva el número; si no se puede contar —forma rara, error, cancelación del conteo— se
+   * cae a la confirmación de siempre.
+   */
+  private async confirmRun(sql: string): Promise<boolean> {
+    const plan = this.tabId ? countQuery(sql) : null;
+    if (!plan || !this.tabId) return confirmScript(this.profileId, sql);
+
+    this.running = true;
+    this.runStartedAt = Date.now();
+    let rows: number | null = null;
+    let canceled = false;
+    try {
+      rows = await queryCount(this.tabId, plan.sql);
+    } catch (error) {
+      // Cancelar el conteo es cancelar la ejecución: no se sigue como si nada. Cualquier otro fallo
+      // —contar es una ayuda— deja a la sentencia con su confirmación habitual.
+      canceled = isCanceled(error);
+    } finally {
+      this.running = false;
+      this.runStartedAt = null;
+    }
+    if (canceled) return false;
+    if (rows === null) return confirmScript(this.profileId, sql);
+    return confirmAffected(this.profileId, rows, rows > CAP, sql);
+  }
+
+  /**
+   * Pregunta los valores de las variables `{{nombre}}` del texto. Lo pone el panel (es un diálogo);
+   * sin él una variable no se puede resolver y la consulta no corre.
+   */
+  askVars: ((variables: { name: string; default: string }[]) => Promise<Record<string, string> | null>) | null =
+    null;
+
+  /** Lleva una posición del texto enviado al escrito, para que la marca del error caiga bien. */
+  private runUnmap: (position: number) => number = (position) => position;
+
+  /**
+   * Reemplaza las variables por lo que se escribió. `null` si se canceló. Va antes de la
+   * confirmación de producción: lo que se confirma tiene que ser lo que se va a ejecutar.
+   */
+  private async bindVars(
+    sql: string,
+  ): Promise<{ sql: string; unmap: (position: number) => number } | null> {
+    const uses = findVars(sql);
+    const identity = (position: number) => position;
+    if (uses.length === 0) return { sql, unmap: identity };
+
+    if (!this.askVars) {
+      this.log("error", "La consulta tiene variables {{nombre}} y no hay dónde pedir sus valores.");
+      return null;
+    }
+
+    let remembered: Record<string, string> = {};
+    try {
+      remembered = parseRemembered(localStorage.getItem(VARS_KEY));
+    } catch {
+      // Sin `localStorage` no se recuerda nada: se pregunta con los campos vacíos.
+    }
+
+    const values = await this.askVars(
+      varNames(uses).map((name) => ({ name, default: remembered[name] ?? "" })),
+    );
+    if (values === null) return null;
+
+    try {
+      localStorage.setItem(VARS_KEY, JSON.stringify({ ...remembered, ...values }));
+    } catch {
+      // Recordar es una comodidad; no recordar no impide ejecutar.
+    }
+    return { sql: fillVars(sql, uses, values), unmap: unmapper(uses, values) };
+  }
+
+  /**
    * `base` es dónde empieza `sql` dentro del texto del editor. Al ejecutar una sola sentencia se le
    * manda al servidor solo ese fragmento, así que la posición que devuelve un error está referida
    * al fragmento: sin sumar el desplazamiento, la marca caería sobre la primera sentencia.
    */
   async run(sql: string, base = 0) {
     if (!this.tabId || this.running || sql.trim() === "") return;
+    // Lo que se está por correr es lo que uno querría poder recuperar si sale mal.
+    versions.noteRun(this);
+
+    const bound = await this.bindVars(sql);
+    if (bound === null) return;
+    sql = bound.sql;
+    this.runUnmap = bound.unmap;
+
+    const sized = await this.checkSize(sql);
+    if (sized === null) return;
+    sql = sized;
 
     // En producción, un `DROP`, un `TRUNCATE` o un `DELETE`/`UPDATE` sin `WHERE` piden escribir el
     // nombre del servidor. El resto del script corre sin preguntar, como siempre.
-    if (!(await confirmScript(this.profileId, sql))) return;
+    if (!(await this.confirmRun(sql))) return;
 
     // Lo último que se mandó, para poder exportarlo sin volver a ejecutarlo. La grilla tiene solo
     // las filas que entraron en el techo; exportar tiene que ir de nuevo al servidor con la consulta.
     this.ranSql = sql;
+    // Una ejecución nueva reemplaza el resultado: lo que se editaba ya no es lo que se mira.
+    this.editPlan = null;
+    this.edits = new Map();
+    this.editError = null;
     this.running = true;
+    this.runStartedAt = Date.now();
+    this.startWaitWatch();
     this.results = [];
     this.messages = [];
     this.errorMark = null;
@@ -454,10 +728,13 @@ export class QueryTab extends Tab {
       if (this.showTypes) await this.loadColumnTypes();
     } catch (error) {
       failed = true;
+      if (isDisconnected(error)) reportServerDown(this.profileId);
       this.log("error", describeError(error));
       this.view = "messages";
     } finally {
+      this.stopWaitWatch();
       this.running = false;
+      this.runStartedAt = null;
       // Una consulta pesada se lanza y uno se va a otra pantalla, igual que con un `VACUUM`. Lo que
       // tardó poco no avisa: el umbral y el interruptor viven en `notify.svelte.ts`.
       void notify.queryEnded({
@@ -467,6 +744,208 @@ export class QueryTab extends Tab {
         failed: failed || this.messages.some((message) => message.tone === "error"),
       });
     }
+  }
+
+  // --- Qué espera la consulta ------------------------------------------------------------------
+
+  /** Lo que el servidor dice que espera la consulta en curso, o `null`. */
+  waiting = $state.raw<WaitText | null>(null);
+  private waitTimer: ReturnType<typeof setInterval> | null = null;
+  private waitDelay: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Empieza a preguntar qué espera la consulta. No antes de unos segundos: una consulta que termina
+   * enseguida no merece ni una pregunta, y la que tarda es justo la que lo necesita. Se llama al
+   * arrancar una ejecución y se corta sola en `stopWaitWatch`.
+   */
+  private startWaitWatch() {
+    this.stopWaitWatch();
+    this.waitDelay = setTimeout(() => {
+      const ask = async () => {
+        if (!this.tabId || !this.running) return;
+        try {
+          this.waiting = describeWait(await queryWaitInfo(this.tabId));
+        } catch {
+          // Preguntar es una ayuda: si falla, la consulta sigue sin el detalle.
+          this.waiting = null;
+        }
+      };
+      void ask();
+      this.waitTimer = setInterval(() => void ask(), 2000);
+    }, 3000);
+  }
+
+  private stopWaitWatch() {
+    if (this.waitDelay !== null) clearTimeout(this.waitDelay);
+    if (this.waitTimer !== null) clearInterval(this.waitTimer);
+    this.waitDelay = null;
+    this.waitTimer = null;
+    this.waiting = null;
+  }
+
+  // --- Tiempo máximo ---------------------------------------------------------------------------
+
+  /** Tiempo máximo por sentencia: `null` el del perfil, `0` sin límite. */
+  timeoutMs = $state<number | null>(null);
+
+  async setTimeoutMs(millis: number | null) {
+    if (!this.tabId) return;
+    try {
+      await queryTimeout(this.tabId, millis);
+      this.timeoutMs = millis;
+    } catch (error) {
+      // Dentro de una transacción abortada un `SET` no corre: se dice en vez de aparentar que sí.
+      this.log("error", describeError(error));
+    }
+  }
+
+  // --- Vigilar ---------------------------------------------------------------------------------
+
+  /** Cada cuántos segundos se repite la consulta, o `null` si no se vigila. */
+  watchSeconds = $state<number | null>(null);
+  /** Cuándo terminó la última repetición, para decir «hace N s». */
+  watchedAt = $state<number | null>(null);
+  private watchTimer: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * Si se puede vigilar lo último que se ejecutó: una sola lectura y con autocommit. Con autocommit
+   * apagado cada repetición dejaría una transacción abierta contra el servidor.
+   */
+  get canWatch(): boolean {
+    return this.autocommit && this.ranSql !== "" && isWatchable(this.ranSql);
+  }
+
+  startWatch(seconds: number) {
+    this.stopWatch();
+    if (!this.canWatch) return;
+    this.watchSeconds = seconds;
+    this.watchTimer = setInterval(() => void this.watchTick(), seconds * 1000);
+  }
+
+  stopWatch() {
+    if (this.watchTimer !== null) clearInterval(this.watchTimer);
+    this.watchTimer = null;
+    this.watchSeconds = null;
+  }
+
+  private async watchTick() {
+    // Sin ventana a la vista no hay quien mire, y con una repetición en curso no se encima otra.
+    if (document.hidden || this.running || this.txStatus !== "idle" || !this.canWatch) return;
+    await this.run(this.ranSql);
+    this.watchedAt = Date.now();
+    // Un error —conexión caída, permiso— se mostraría igual en cada vuelta: mejor frenar y que se vea.
+    if (this.messages.some((message) => message.tone === "error")) this.stopWatch();
+  }
+
+  // --- Edición del resultado -------------------------------------------------------------------
+
+  /** El plan de edición mientras se edita el resultado; `null` fuera de ese modo. */
+  editPlan = $state.raw<EditPlan | null>(null);
+  /** Cambios sin guardar, por fila y columna del resultado. */
+  edits = $state.raw<ReadonlyMap<number, ReadonlyMap<number, string | null>>>(new Map());
+  /** Por qué no se pudo entrar al modo de edición, o qué falló al guardar. */
+  editError = $state<string | null>(null);
+  editPreview = $state.raw<PreviewStatement[] | null>(null);
+  editBusy = $state(false);
+
+  get editedRowCount(): number {
+    return editedRows(this.edits);
+  }
+
+  /** El resultado que se edita: el único con filas del último script. */
+  private get editableOutcome() {
+    const only = this.results.length === 1 ? this.results[0] : null;
+    return only?.outcome.kind === "rows" ? only.outcome : null;
+  }
+
+  /** Si tiene sentido ofrecer el botón: una sola sentencia con filas, sin transacción por medio. */
+  get canTryEdit(): boolean {
+    return this.editableOutcome !== null && !this.running && !isReadOnly(this.profileId);
+  }
+
+  /**
+   * Entra al modo de edición. Le pregunta al servidor de qué tabla sale el resultado y exige que la
+   * clave esté entera entre las columnas: ante la duda no se ofrece, y se dice por qué.
+   */
+  async startEdit() {
+    this.editError = null;
+    if (!this.tabId || !this.editableOutcome) return;
+    // Repetir la consulta pisaría lo que se está editando.
+    this.stopWatch();
+    // La escritura va por otra conexión: con una transacción abierta en esta pestaña vería datos
+    // distintos de los que se están mirando, y podría quedar esperando un bloqueo de esta misma.
+    if (this.txStatus !== "idle") {
+      this.editError =
+        "Hay una transacción abierta en esta pestaña: confirmala o revertila antes de editar el resultado.";
+      return;
+    }
+
+    this.editBusy = true;
+    try {
+      const source = await queryEditSource(this.tabId, this.ranSql);
+      const shape = await dataOpen(this.profileId, source.oid, this.database);
+      const plan = planEdit(shape, source);
+      if (typeof plan === "string") {
+        this.editError = plan;
+        return;
+      }
+      this.edits = new Map();
+      this.editPlan = plan;
+    } catch (error) {
+      this.editError = describeError(error);
+    } finally {
+      this.editBusy = false;
+    }
+  }
+
+  cancelEdit() {
+    this.editPlan = null;
+    this.edits = new Map();
+    this.editPreview = null;
+    this.editError = null;
+  }
+
+  setEdit(row: number, column: number, value: string | null) {
+    const outcome = this.editableOutcome;
+    if (!outcome) return;
+    this.edits = withEdit(this.edits, outcome.rows, row, column, value);
+  }
+
+  private editChanges() {
+    const outcome = this.editableOutcome;
+    return this.editPlan && outcome ? buildChanges(this.editPlan, outcome.rows, this.edits) : [];
+  }
+
+  async showEditPreview() {
+    if (!this.editPlan) return;
+    this.editError = null;
+    try {
+      this.editPreview = await dataPreview(this.editPlan.shape, this.editChanges());
+    } catch (error) {
+      this.editError = describeError(error);
+    }
+  }
+
+  /** Aplica los cambios y vuelve a ejecutar la consulta, para mostrar lo que quedó en la base. */
+  async saveEdit() {
+    const plan = this.editPlan;
+    const changes = this.editChanges();
+    if (!plan || changes.length === 0) return;
+    if (!(await confirmMutation(this.profileId, `Se van a aplicar ${changes.length} cambios.`))) return;
+
+    this.editBusy = true;
+    this.editError = null;
+    try {
+      await dataApply(this.profileId, plan.shape, changes, this.database);
+    } catch (error) {
+      this.editError = describeError(error);
+      this.editBusy = false;
+      return;
+    }
+    const sql = this.ranSql;
+    this.editBusy = false;
+    this.cancelEdit();
+    await this.run(sql);
   }
 
   async setShowTypes(on: boolean) {
@@ -513,14 +992,19 @@ export class QueryTab extends Tab {
             outcome: event.outcome,
           },
         ];
+        // Con autocommit encendido cada sentencia se confirma sola: no hay nada que contar.
+        if (!this.autocommit || this.txStatus !== "idle") {
+          this.txStatements += 1;
+          if (event.outcome.kind === "command") this.txRows += event.outcome.affected;
+        }
         if (event.outcome.kind === "command") {
           this.log("info", `${event.outcome.tag}: ${event.outcome.affected}`);
           if (changesCatalog(event.outcome.tag)) this.catalogDirty = true;
         } else if (event.outcome.truncated) {
           this.log(
             "notice",
-            `Se recortó el resultado: hay ${event.outcome.rowCount} filas y se trajeron ` +
-              `${event.outcome.rows.length}.`,
+            `Se recortó el resultado: se trajeron ${event.outcome.rows.length} filas y hay más. ` +
+              "El servidor corta en el máximo elegido, así que no se sabe cuántas son en total.",
           );
         }
         // Mostrar el último resultado con filas es lo que uno espera al ejecutar un script que
@@ -537,7 +1021,7 @@ export class QueryTab extends Tab {
         break;
 
       case "transaction":
-        this.txStatus = event.status;
+        this.applyTx(event.status);
         break;
 
       case "failed": {
@@ -545,8 +1029,8 @@ export class QueryTab extends Tab {
           this.log("info", "Consulta cancelada.");
           break;
         }
+        if (isDisconnected(event.error)) reportServerDown(this.profileId);
         const description = describeError(event.error);
-        this.log("error", description);
         this.view = "messages";
         // Si el núcleo detectó que falta un `;`, la marca va sobre el arranque de la segunda
         // sentencia y no sobre el token que señaló el servidor: ese token es inocente, PostgreSQL
@@ -554,15 +1038,35 @@ export class QueryTab extends Tab {
         // `separatorAt` ya viene en caracteres y con base 0, igual que `offset`.
         if (event.separatorAt !== null) {
           this.errorMark = {
-            at: base + event.offset + event.separatorAt,
+            at: base + this.runUnmap(event.offset + event.separatorAt),
             message: description,
           };
         } else if (event.error.kind === "database" && event.error.position !== null) {
           // La posición del servidor viene con base 1 y relativa a su sentencia.
           this.errorMark = {
-            at: base + event.offset + event.error.position - 1,
+            at: base + this.runUnmap(event.offset + event.error.position - 1),
             message: event.error.message,
           };
+        }
+
+        // Un error del servidor se muestra como tarjeta; los demás —conexión, permiso— siguen siendo
+        // una línea, que es todo lo que tienen para decir.
+        if (event.error.kind === "database") {
+          const at = this.errorMark?.at ?? null;
+          const where = at === null ? null : cursorInfo(this.sql, at, at);
+          const lineText =
+            where === null ? null : (this.sql.split("\n")[where.line - 1]?.trim().slice(0, 200) ?? null);
+          this.log("error", description, {
+            code: event.error.code,
+            message: event.error.message,
+            detail: event.error.detail,
+            hint: event.error.hint,
+            line: where?.line ?? null,
+            lineText: lineText || null,
+            at,
+          });
+        } else {
+          this.log("error", description);
         }
         break;
       }
@@ -618,7 +1122,7 @@ export class QueryTab extends Tab {
     if (!this.tabId) return;
     this.autocommit = enabled;
     try {
-      this.txStatus = await queryAutocommit(this.tabId, enabled);
+      this.applyTx(await queryAutocommit(this.tabId, enabled));
       if (enabled && this.txStatus !== "idle") {
         this.log("notice", "Queda una transacción abierta: confirmala o revertila.");
       }
@@ -633,7 +1137,7 @@ export class QueryTab extends Tab {
   ) {
     if (!this.tabId || this.running) return;
     try {
-      this.txStatus = await action(this.tabId);
+      this.applyTx(await action(this.tabId));
       this.log("info", done);
       // Recién ahora el DDL de la transacción existe para las otras conexiones. Un `ROLLBACK` pasa
       // por acá igual: descartar el cambio también deja al árbol pidiendo una relectura, porque lo
@@ -643,7 +1147,7 @@ export class QueryTab extends Tab {
       this.log("error", describeError(error));
       this.view = "messages";
       // Un `COMMIT` que falla igual termina la transacción: se vuelve a preguntar en vez de suponer.
-      this.txStatus = await queryTxStatus(this.tabId).catch(() => this.txStatus);
+      this.applyTx(await queryTxStatus(this.tabId).catch(() => this.txStatus));
     }
   }
 
@@ -653,6 +1157,10 @@ export class QueryTab extends Tab {
    */
   async rehearse(sql: string) {
     if (!this.tabId || this.running || this.rehearsing || sql.trim() === "") return;
+
+    const bound = await this.bindVars(sql);
+    if (bound === null) return;
+    sql = bound.sql;
 
     this.rehearsing = true;
     this.rehearsal = null;
@@ -670,7 +1178,13 @@ export class QueryTab extends Tab {
   async explain(sql: string, base: number, options: ExplainOptions) {
     if (!this.tabId || this.running || sql.trim() === "") return;
 
+    const bound = await this.bindVars(sql);
+    if (bound === null) return;
+    sql = bound.sql;
+    this.runUnmap = bound.unmap;
+
     this.running = true;
+    this.runStartedAt = Date.now();
     this.errorMark = null;
     this.messages = [];
 
@@ -684,10 +1198,14 @@ export class QueryTab extends Tab {
       // La posición ya viene descontado el `EXPLAIN (…)` que antepuso el núcleo.
       const failure = error as CoreError;
       if (failure.kind === "database" && failure.position !== null) {
-        this.errorMark = { at: base + failure.position - 1, message: failure.message };
+        this.errorMark = {
+          at: base + this.runUnmap(failure.position - 1),
+          message: failure.message,
+        };
       }
     } finally {
       this.running = false;
+      this.runStartedAt = null;
     }
   }
 }
@@ -720,7 +1238,7 @@ export async function saveQueryTab(tab: QueryTab, askPath: boolean) {
   try {
     // `sql::format` es pura y nunca falla: en el peor caso, la guarda de equivalencia del núcleo
     // devuelve el texto tal cual estaba, así que no hace falta un try/catch aparte para esto.
-    if (autoFormat.enabled) tab.sql = await sqlFormat(tab.sql);
+    if (autoFormat.enabled) tab.sql = await formatSql(tab.sql);
 
     let path = askPath ? null : tab.filePath;
     if (!path) {
@@ -761,6 +1279,7 @@ export async function openSqlFiles(
     try {
       tab.sql = await sqlReadFile(path);
       tab.filePath = path;
+      tab.baseline = tab.sql;
     } catch (error) {
       // La pestaña queda abierta y vacía con el motivo adentro: cerrarla sola escondería el error.
       tab.log("error", `No se pudo abrir ${path}: ${describeError(error)}`);
@@ -818,8 +1337,9 @@ export async function openQuery(
     const opened = await queryOpen(profileId, database);
     tab.tabId = opened.tabId;
     tab.autocommit = opened.autocommit;
-    tab.txStatus = opened.txStatus;
+    tab.applyTx(opened.txStatus);
     tab.log("info", `Conectado a ${opened.database}.`);
+    await applyDefaultTimeout(tab, profileId);
     if (!opened.autocommit) {
       tab.log("info", "Autocommit apagado: cada ejecución abre una transacción.");
     }
@@ -885,4 +1405,11 @@ export async function renameQueryTab(tab: QueryTab, title: string) {
     // toca, para no dejar la pestaña diciendo un nombre que el archivo no tiene.
     tab.log("error", `No se pudo renombrar el script: ${describeError(error)}`);
   }
+}
+
+/** En producción, una pestaña nueva arranca con tiempo máximo (ver `query-timeout.ts`). */
+async function applyDefaultTimeout(tab: QueryTab, profileId: string) {
+  const profile = explorer.profiles.find((item) => item.id === profileId);
+  const ms = defaultTimeout(profile?.environment, profile?.statementTimeoutMs);
+  if (ms !== null) await tab.setTimeoutMs(ms);
 }

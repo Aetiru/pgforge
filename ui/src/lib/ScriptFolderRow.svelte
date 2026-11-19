@@ -19,6 +19,7 @@
   // otra.
   import ScriptFolderRow from "./ScriptFolderRow.svelte";
   import { scripts } from "./scripts.svelte";
+  import { countVisible, visibleFiles } from "./script-folder";
 
   let {
     folder,
@@ -41,12 +42,10 @@
   const open = $derived(scripts.isOpen(folder.path));
   const indent = $derived(8 + depth * 14);
 
-  /** Cuántos `.sql` hay adentro, contando los de las subcarpetas: lo que dice si vale la pena
-   * abrirla sin tener que hacerlo. */
-  function countAll(node: ScriptFolder): number {
-    return node.files.length + node.folders.reduce((sum, sub) => sum + countAll(sub), 0);
-  }
-  const count = $derived(countAll(folder));
+  /** Cuántos `.sql` con contenido hay adentro, contando las subcarpetas: lo que dice si vale la
+   * pena abrirla sin tener que hacerlo. Los vacíos no cuentan: no se muestran. */
+  const count = $derived(countVisible(folder));
+  const files = $derived(visibleFiles([...folder.files]));
 </script>
 
 <!--
@@ -103,7 +102,7 @@
     <ScriptFolderRow folder={sub} depth={depth + 1} {onopenfile} {onmenu} />
   {/each}
 
-  {#each folder.files as file (file.path)}
+  {#each files as file (file.path)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
@@ -120,11 +119,15 @@
       {/each}
       <button
         class="relative flex min-w-0 flex-1 items-center gap-1.5 text-left"
-        title={file.path}
+        title="{file.name} — {file.path}"
         onclick={() => onopenfile(file)}
       >
         <Icon name="sql" size={13} class="shrink-0 text-violet-600 dark:text-violet-400" />
-        <span class="min-w-0 flex-1 truncate text-[11px]">{file.name}</span>
+        <!-- Lo que identifica al script es lo que dice, no su nombre: `script7.sql` no le dice nada a
+             nadie. El nombre queda en el `title` y en el menú de renombrar. -->
+        <span class="min-w-0 flex-1 truncate text-[11px]">
+          {file.preview || file.name}
+        </span>
       </button>
     </div>
   {/each}

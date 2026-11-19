@@ -20,13 +20,14 @@
     scriptCreateFolder,
     scriptDelete,
     scriptRename,
+    scriptsPurgeEmpty,
     scriptsImportFolder,
     type ConnectionProfile,
     type ScriptEntry,
     type ScriptFolder,
   } from "./ipc";
   import { childPath, siblingPath } from "./script-name";
-  import { scriptFolderName } from "./script-folder";
+  import { countEmpty, countVisible, scriptFolderName } from "./script-folder";
   import { scripts } from "./scripts.svelte";
 
   let {
@@ -263,6 +264,29 @@
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Vacíos
+  // ---------------------------------------------------------------------------
+
+  /** Scripts sin nada escrito: dejados por versiones que creaban el archivo al abrir la pestaña. */
+  const emptyCount = $derived(countEmpty(scripts.tree));
+  let purging = $state<{ busy?: boolean; error?: string | null } | null>(null);
+
+  async function confirmPurge() {
+    const current = purging;
+    if (!current) return;
+    current.busy = true;
+    current.error = null;
+    try {
+      await scriptsPurgeEmpty();
+      purging = null;
+      await scripts.load();
+    } catch (failure) {
+      current.error = describeError(failure);
+      current.busy = false;
+    }
+  }
+
   function profileName(profileId: string): string {
     return explorer.profiles.find((profile) => profile.id === profileId)?.name ?? profileId;
   }
@@ -291,6 +315,15 @@
     </button>
   </div>
 
+  {#if emptyCount > 0}
+    <div class="divider-b flex items-center gap-1.5 px-2 py-1 text-[11px] muted">
+      <span class="min-w-0 flex-1 truncate">
+        {emptyCount} {emptyCount === 1 ? "script vacío escondido" : "scripts vacíos escondidos"}
+      </span>
+      <button class="btn btn-sm btn-ghost" onclick={() => (purging = {})}>Limpiar…</button>
+    </div>
+  {/if}
+
   {#if error}
     <Alert tone="bad" onclose={() => (error = null)}>{error}</Alert>
   {/if}
@@ -306,7 +339,9 @@
     />
   {:else}
     <div class="min-h-0 flex-1 overflow-auto py-1">
-      {#each scripts.tree as folder, index (folder.path)}
+      <!-- Una conexión que solo tiene scripts vacíos no se dibuja: sería una carpeta con contador en
+           cero que no lleva a nada. -->
+      {#each scripts.tree.filter((item) => countVisible(item) > 0) as folder, index (folder.path)}
         <ScriptFolderRow
           {folder}
           depth={0}
@@ -388,6 +423,18 @@
       onkeydown={(event) => event.key === "Enter" && confirmRename()}
     />
   </Confirm>
+{/if}
+
+{#if purging}
+  <Confirm
+    title="Borrar scripts vacíos"
+    message="Se borran del disco {emptyCount} {emptyCount === 1 ? 'archivo' : 'archivos'} sin nada escrito, de todas las conexiones. No se pierde contenido."
+    confirmLabel="Borrar"
+    busy={purging.busy}
+    error={purging.error}
+    onconfirm={confirmPurge}
+    onclose={() => (purging = null)}
+  />
 {/if}
 
 {#if deleting}

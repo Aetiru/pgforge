@@ -3,8 +3,9 @@
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
-  import { environmentOf, isReadOnly } from "./access.svelte";
-  import { envLook, envWash, lookOf, READ_ONLY_LOOK, serverColorLook, tagLook } from "./badges";
+  import { confirmMutation, environmentOf, isReadOnly } from "./access.svelte";
+  import { pins } from "./pins.svelte";
+  import { envIcon, envLook, envWash, lookOf, READ_ONLY_LOOK, serverColorLook, tagLook } from "./badges";
   import { bookmarks } from "./bookmarks.svelte";
   import { explorer, visibleRows, type Row } from "./explorer.svelte";
   import { describeError, folderOf, type CompareSide, type DataSide } from "./ipc";
@@ -21,6 +22,21 @@
   import { guideAt, guideSpans } from "./tree-guides";
   import { parseQuery } from "./tree-query";
   import { recents } from "./recents.svelte";
+  import { openDatabase } from "./database.svelte";
+  import { generateSqlDialog } from "./generate-sql.svelte";
+  import { activityBadge } from "./server-activity";
+  import { openMonitor } from "./monitor.svelte";
+  import { notes } from "./notes.svelte";
+  import { treeView } from "./tree-view.svelte";
+  import { OBJECT_MIME, objectRef, type ObjectRef } from "./tree-object";
+  import ObjectPeek from "./ObjectPeek.svelte";
+  import { openQuery } from "./query.svelte";
+  import { tasks } from "./tasks.svelte";
+  import { dataOpen } from "./ipc";
+  import { generateSql as buildSql } from "./sql-generate";
+  import { ORDER_MODES, type OrderMode } from "./tree-order";
+  import SchemaVisibilityDialog from "./SchemaVisibilityDialog.svelte";
+  import { schemaDocDialog } from "./schema-doc.svelte";
   import { stickyIndex } from "./tree-sticky";
 
   let {
@@ -94,6 +110,26 @@
    * el ojo separa contenedor de objeto por la forma y no por el color de un ícono de carpeta. Sin
    * ícono pero **con su columna**: el rótulo arranca donde arrancan los nombres de sus hermanos.
    */
+  /**
+   * Los objetos que uno busca por nombre llevan el peso un escalón arriba: bases, esquemas, tablas y
+   * vistas se leen de un vistazo entre las columnas, índices y funciones, que son detalle. Una
+   * carpeta es un objeto de tipo `{ folder }`, no una cadena, así que no entra.
+   */
+  const NAMED = new Set([
+    "database",
+    "schema",
+    "table",
+    "partitionedTable",
+    "foreignTable",
+    "view",
+    "materializedView",
+  ]);
+
+  /** Los servidores fijados que todavía existen, en el orden en que se fijaron. */
+  const pinnedRows = $derived(
+    pins.ids.flatMap((id) => explorer.servers.filter((row) => row.profileId === id)),
+  );
+
   const isSection = (row: Row) =>
     row.kind === "group" || (row.node !== null && folderOf(row.node.kind) !== null);
 
@@ -116,6 +152,103 @@
   let moveError = $state<string | null>(null);
 
   /**
+   * La vista rápida de una relación. Aparece tras un rato con el cursor encima —no al pasar de largo
+   * por la lista— y se va con cualquier cosa que mueva el árbol o abra otra cosa.
+   */
+  let peek = $state<{ row: Row; top: number; left: number } | null>(null);
+  let peekTimer: ReturnType<typeof setTimeout> | undefined;
+  const PEEK_DELAY_MS = 600;
+  const PEEK_HEIGHT = 300;
+
+  function schedulePeek(event: MouseEvent, row: Row) {
+    clearTimeout(peekTimer);
+    if (dragging !== null || menu !== null || !objectRef(row.node)?.hasRows) {
+      peek = null;
+      return;
+    }
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    peekTimer = setTimeout(() => {
+      peek = {
+        row,
+        left: box.right + 8,
+        top: Math.max(8, Math.min(box.top, window.innerHeight - PEEK_HEIGHT - 8)),
+      };
+    }, PEEK_DELAY_MS);
+  }
+
+  /** Abre una consulta nueva con un `SELECT` de la relación, listo para ejecutar. */
+  async function openSelectQuery(row: Row, object: ObjectRef) {
+    const tab = await openQuery(row.profileId, object.database, row.label);
+    tab.sql = `SELECT *\nFROM ${object.qualified}\nLIMIT 100;\n`;
+  }
+
+  // --- Lo marcado: varias tablas del mismo esquema ---
+
+  const markedObjectRefs = $derived(
+    explorer.markedObjects.map((row) => ({ row, ref: objectRef(row.node) })).filter(
+      (item): item is { row: Row; ref: ObjectRef } => item.ref !== null,
+    ),
+  );
+  /** El tope de tablas para las acciones que piden una ida al servidor por cada una. */
+  const BULK_LIMIT = 20;
+  let bulkError = $state<string | null>(null);
+
+  function copyMarkedNames() {
+    const text = markedObjectRefs.map((item) => item.ref.qualified).join("\n");
+    void navigator.clipboard.writeText(text).catch(() => {});
+  }
+
+  /** `VACUUM ANALYZE` de cada tabla marcada, como procesos en segundo plano. */
+  async function maintainMarked() {
+    const first = markedObjectRefs[0];
+    if (!first) return;
+    if (
+      !(await confirmMutation(
+        first.row.profileId,
+        `Se va a correr VACUUM ANALYZE sobre ${markedObjectRefs.length} tablas.`,
+      ))
+    ) {
+      return;
+    }
+    bulkError = null;
+    try {
+      for (const { row, ref } of markedObjectRefs) {
+        await tasks.maintenance({
+          profileId: row.profileId,
+          database: ref.database,
+          target: ref.qualified,
+          operation: { kind: "vacuum", full: false, freeze: false, analyze: true },
+          on: { kind: "table", schema: ref.schema, name: ref.name },
+        });
+      }
+    } catch (error) {
+      bulkError = describeError(error);
+    }
+  }
+
+  /** Una consulta nueva con el `SELECT` de todas las marcadas, con sus columnas. */
+  async function selectMarked() {
+    const first = markedObjectRefs[0];
+    if (!first) return;
+    bulkError = null;
+    try {
+      const picked = markedObjectRefs.slice(0, BULK_LIMIT);
+      const shapes = await Promise.all(
+        picked.map(({ row, ref }) => dataOpen(row.profileId, ref.oid, ref.database)),
+      );
+      const tab = await openQuery(first.row.profileId, first.ref.database, "Consulta");
+      tab.sql = shapes.map((shape) => buildSql(shape, "select")).join("\n");
+    } catch (error) {
+      bulkError = describeError(error);
+    }
+  }
+
+  function hidePeek() {
+    clearTimeout(peekTimer);
+    peek = null;
+  }
+
+  /**
    * Cada cuánto se vuelve a medir la latencia de los servidores conectados. Es un sondeo de fondo,
    * no algo que el usuario pida: cada quince segundos alcanza para notar un servidor lento sin
    * convertir el árbol en tráfico constante contra veinte conexiones abiertas.
@@ -136,25 +269,52 @@
     return () => clearInterval(interval);
   });
 
+  /** Cada cuánto se pregunta la actividad (sesiones bloqueadas, transacciones largas). Más espaciado
+   * que la latencia: lee `pg_stat_activity` entera, y un servidor ocupado no necesita eso cada 15 s. */
+  const ACTIVITY_POLL_MS = 30_000;
+
+  $effect(() => {
+    const tick = () => {
+      for (const row of explorer.servers) {
+        if (row.connected && !row.down) void explorer.refreshActivity(row.profileId);
+      }
+    };
+    untrack(tick);
+    const interval = setInterval(() => untrack(tick), ACTIVITY_POLL_MS);
+    return () => clearInterval(interval);
+  });
+
   /** A partir de qué latencia la pastilla deja de ser verde: bien por encima de lo que tarda
    * cualquier conexión local o de la misma nube, y bien por debajo de lo que se nota al escribir. */
   const LATENCY_WARN_MS = 150;
 
-  const rows = $derived(visibleRows(explorer.roots, explorer.search, explorer.onlyConnected));
+  const rows = $derived(
+    visibleRows(explorer.roots, explorer.search, explorer.onlyConnected, (row) =>
+      row.node?.schema && row.node.database
+        ? notes.get(row.profileId, row.node.database, row.node.schema, row.node.label)
+        : null,
+    ),
+  );
 
   /**
    * Atajo a los servidores usados hace poco, para no bajar hasta su carpeta. Solo mientras se ve el
    * árbol de verdad: durante una búsqueda —local o contra el servidor— la lista ya está acotada a lo
    * que se busca, y encima de eso este atajo no pintaría nada.
    */
+  const RECENTS_SHOWN = 3;
+  let recentsAll = $state(false);
+
   const recentRows = $derived.by(() => {
     if (explorer.workspaceError || explorer.hits !== null || explorer.search.trim() !== "") {
       return [];
     }
+    // Solo los que el árbol de abajo no está mostrando: con la carpeta abierta, el atajo repetía
+    // el mismo servidor a dos filas de distancia y gastaba la altura que más hace falta.
+    const shown = new Set(rows.map((item) => item.key));
     const out: Row[] = [];
     for (const id of recents.list) {
       const row = explorer.rowFor(id);
-      if (row) out.push(row);
+      if (row && !shown.has(row.key)) out.push(row);
     }
     return out;
   });
@@ -245,6 +405,23 @@
    * nada, que es mejor que marcar algo que después no habilita ninguna acción.
    */
   function onRowClick(event: MouseEvent, row: Row) {
+    // Ctrl+clic y Mayús+clic sobre una relación marcan tablas, como sobre un servidor marcan servidores.
+    if (row.kind === "node" && objectRef(row.node)?.hasRows) {
+      if (event.ctrlKey || event.metaKey) {
+        explorer.toggleObjectMark(row);
+        return;
+      }
+      if (event.shiftKey && explorer.selected?.kind === "node") {
+        const to = rows.indexOf(row);
+        const from = rows.findIndex((item) => item.key === explorer.selected?.key);
+        if (to >= 0 && from >= 0) {
+          const [start, end] = from <= to ? [from, to] : [to, from];
+          const range = rows.slice(start, end + 1).filter((item) => objectRef(item.node)?.hasRows);
+          explorer.markObjects(from <= to ? range : [...range].reverse());
+          return;
+        }
+      }
+    }
     if (row.kind === "server" && (event.ctrlKey || event.metaKey)) {
       explorer.toggleMark(row);
       return;
@@ -367,11 +544,65 @@
     if (row && target && oid !== null) ondata(row.profileId, target.database, target.title, oid);
   }
 
+  /** El cajón de relaciones de la fila del menú (o el grupo por prefijo de uno), si lo es. */
+  const menuOrderable = $derived.by(() => {
+    const kind = menu?.row.node ? folderOf(menu.row.node.kind) : null;
+    return kind === "tables" || kind === "views" || kind === "materializedViews" || kind === "foreignTables";
+  });
+
+  /** La carpeta de esquemas de una base, para elegir cuáles se ven. */
+  const menuSchemasFolder = $derived(
+    menu?.row.node && folderOf(menu.row.node.kind) === "schemas" ? menu.row : null,
+  );
+
+  let visibilityTarget = $state<{ profileId: string; database: string; row: Row } | null>(null);
+
+  function chooseSchemas() {
+    const row = menuSchemasFolder;
+    menu = null;
+    if (row?.node) visibilityTarget = { profileId: row.profileId, database: row.node.database, row };
+  }
+
+  function setOrder(mode: OrderMode) {
+    menu = null;
+    treeView.setOrder(mode);
+    explorer.rearrange();
+  }
+
+  function toggleGroup() {
+    menu = null;
+    treeView.setGroup(!treeView.group);
+    explorer.rearrange();
+  }
+
+  function generateSql() {
+    const row = menu?.row;
+    const target = menuQuery;
+    const oid = menuData;
+    menu = null;
+    if (!row || !target || oid === null || !row.node?.schema) return;
+    generateSqlDialog.open({
+      profileId: row.profileId,
+      database: target.database,
+      oid,
+      title: `${row.node.schema}.${row.node.label}`,
+    });
+  }
+
   function openErd() {
     const row = menu?.row;
     const target = menuSchema;
     menu = null;
     if (row && target) onerd(row.profileId, target.database, target.schema);
+  }
+
+  function documentSchema() {
+    const row = menu?.row;
+    const target = menuSchema;
+    menu = null;
+    if (row && target) {
+      schemaDocDialog.open({ profileId: row.profileId, database: target.database, schema: target.schema });
+    }
   }
 
   function compare() {
@@ -729,7 +960,10 @@
   class="h-full overflow-auto outline-none {dragging !== null && dropGroup === null
     ? 'rounded-md ring-1 ring-blue-500/50'
     : ''}"
-  onscroll={(event) => (scrollTop = event.currentTarget.scrollTop)}
+  onscroll={(event) => {
+    scrollTop = event.currentTarget.scrollTop;
+    hidePeek();
+  }}
   onkeydown={onKey}
   ondragover={(event) => {
     if (dragging === null) return;
@@ -849,6 +1083,44 @@
     </Empty>
   {:else}
     <div bind:clientHeight={aboveRowsH}>
+      {#if pinnedRows.length > 0}
+        <!-- Los de todos los días, sobre las carpetas: con decenas de servidores sin carpeta los dos
+             o tres que se usan estaban enterrados. Acceso directo, no una segunda copia del árbol. -->
+        <div class="border-b border-zinc-200/80 pb-1 dark:border-zinc-700">
+          <p class="px-3 pt-1.5 pb-0.5 text-[10px] font-semibold tracking-wide uppercase muted">
+            Fijados
+          </p>
+          {#each pinnedRows as row (row.key)}
+            {@const environment = environmentOf(row.profileId)}
+            <button
+              class="flex w-full items-center gap-1.5 py-1 pr-2 pl-3 text-left text-[13px]
+                     hover:bg-zinc-100 dark:hover:bg-zinc-700/70"
+              title={row.connected ? "Ir al servidor" : "Conectar"}
+              onclick={() => {
+                if (explorer.needsConnection(row)) {
+                  onconnect(row.profileId);
+                  return;
+                }
+                explorer.select(row);
+                const at = rows.findIndex((item) => item.key === row.key);
+                if (at >= 0) reveal(at);
+              }}
+            >
+              <span
+                class="dot shrink-0 {row.down ? 'dot-down' : row.connected ? 'dot-on' : 'dot-off'}"
+              ></span>
+              <span class="min-w-0 truncate">{row.label}</span>
+              {#if environment}
+                <span
+                  class="ml-auto size-1.5 shrink-0 rounded-full {envLook(environment).spine}"
+                  title={envLook(environment).title}
+                ></span>
+              {/if}
+            </button>
+          {/each}
+        </div>
+      {/if}
+
       {#if recentRows.length > 0}
         <!--
           Atajo a lo usado hace poco: encontrar un servidor no debería depender de acordarse en qué
@@ -856,14 +1128,24 @@
           directo, no una segunda fuente de verdad—.
         -->
         <div class="border-b border-zinc-200/80 pb-1.5 dark:border-zinc-700">
-          <p class="px-3 pt-1.5 pb-1 text-[10px] font-semibold tracking-wide uppercase muted">
-            Recientes
-          </p>
-          {#each recentRows as row (row.key)}
+          <div class="flex items-center px-3 pt-1.5 pb-1">
+            <p class="text-[10px] font-semibold tracking-wide uppercase muted">Recientes</p>
+            <!-- Con varias bases conectadas la lista llegaba a seis filas de dos líneas y empujaba el
+                 árbol fuera de la primera pantalla: se ven tres y el resto está a un clic. -->
+            {#if recentRows.length > RECENTS_SHOWN}
+              <button
+                class="ml-auto text-[10px] muted underline-offset-2 hover:underline"
+                onclick={() => (recentsAll = !recentsAll)}
+              >
+                {recentsAll ? "ver menos" : `ver ${recentRows.length - RECENTS_SHOWN} más`}
+              </button>
+            {/if}
+          </div>
+          {#each recentsAll ? recentRows : recentRows.slice(0, RECENTS_SHOWN) as row (row.key)}
             {@const environment = environmentOf(row.profileId)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div
-              class="group/recent relative flex w-full items-center gap-1.5 rounded-md py-1 pr-1
+              class="group/recent relative flex w-full items-center gap-1.5 rounded-md py-0.5 pr-1
                      pl-3 text-[13px] hover:bg-zinc-100 dark:hover:bg-zinc-700/70"
               role="button"
               tabindex="0"
@@ -968,7 +1250,8 @@
         {@const look = lookOf(row.node?.kind ?? null)}
         {@const section = isSection(row)}
         {@const isSelected = explorer.selected?.key === row.key}
-        {@const isMarked = explorer.isMarked(row)}
+        {@const isMarked = explorer.isMarked(row) || explorer.isObjectMarked(row)}
+        {@const object = isServer ? null : objectRef(row.node)}
         {@const isDropTarget = dragging !== null && dropGroup === dropTargetOf(row)}
         {@const environment = environmentOf(row.profileId)}
         {@const rowProfile = isServer
@@ -985,21 +1268,51 @@
             : `${isServer ? envWash(environment) : ''} hover:bg-zinc-100 dark:hover:bg-zinc-700/70`}
                  {separated(at) ? 'border-t border-zinc-200/80 dark:border-zinc-700' : ''}
                  {isDropTarget && dropGroup !== null ? 'bg-blue-100/70 dark:bg-blue-900/40' : ''}
-                 {dragging === row.profileId ? 'opacity-40' : ''}"
+                 {dragging === row.profileId ? 'opacity-40' : ''}
+                 {section && row.node !== null && row.detail === '0' && !isSelected ? 'opacity-50' : ''}"
           style="top: {offsets[at]}px; height: {heightOf(row)}px; padding-left: {INDENT_BASE +
             row.level * INDENT}px"
           role="treeitem"
           tabindex="-1"
+          onmouseenter={(event) => schedulePeek(event, row)}
+          onmouseleave={hidePeek}
           aria-expanded={row.hasChildren ? row.expanded : undefined}
           aria-selected={isSelected}
-          onclick={(event) => onRowClick(event, row)}
-          oncontextmenu={(event) => openMenu(event, row)}
+          onclick={(event) => {
+            hidePeek();
+            onRowClick(event, row);
+          }}
+          oncontextmenu={(event) => {
+            hidePeek();
+            openMenu(event, row);
+          }}
           ondblclick={() => {
             // Doble clic sobre un servidor apagado: lo que se quiere es entrar.
             if (explorer.needsConnection(row)) onconnect(row.profileId);
+            // Sobre una base: abrirla como pestaña, igual que una tabla abre sus datos.
+            else if (row.node?.kind === "database") void openDatabase(row.profileId, row.node.label);
           }}
-          draggable={isServer}
+          draggable={isServer || objectRef(row.node) !== null}
           ondragstart={(event) => {
+            // Un objeto del catálogo se arrastra al editor: viaja su nombre calificado como texto —lo
+            // que cualquier editor sabe soltar— y, aparte, lo que hace falta para armar un SELECT.
+            const object = isServer ? null : objectRef(row.node);
+            if (object) {
+              peek = null;
+              event.dataTransfer?.setData("text/plain", object.qualified);
+              event.dataTransfer?.setData(
+                OBJECT_MIME,
+                JSON.stringify({
+                  profileId: row.profileId,
+                  database: object.database,
+                  oid: object.oid,
+                  qualified: object.qualified,
+                  hasRows: object.hasRows,
+                }),
+              );
+              if (event.dataTransfer) event.dataTransfer.effectAllowed = "copy";
+              return;
+            }
             // Arrastrar una fila que no está marcada arrastra solo esa: las marcas de antes no
             // tienen por qué venirse con ella.
             if (!explorer.isMarked(row)) explorer.clearMarks();
@@ -1112,7 +1425,7 @@
           {:else}
             <span
               class="relative grid shrink-0 place-items-center {isServer
-                ? 'size-6 rounded-md bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400'
+                ? `size-6 rounded-md ${envIcon(environment)}`
                 : ''}"
             >
               <Icon name={look.icon} class={isServer ? "" : look.tone} size={14} />
@@ -1140,6 +1453,7 @@
             <span class="flex min-w-0 items-center gap-1.5">
               <span
                 class="min-w-0 truncate {isServer ? 'text-[12px] font-semibold' : ''}
+                       {row.node && NAMED.has(row.node.kind as string) ? 'font-medium' : ''}
                        {section ? 'text-[10px] font-semibold tracking-wide uppercase' : ''}
                        {section && !isSelected ? 'muted' : ''}"
                 title={row.comment ?? row.label}
@@ -1155,7 +1469,7 @@
 
               <!--
                 El color propio del servidor, independiente del entorno: conviven, no se reemplazan.
-                El entorno ya tiene la línea del borde (`spine`) y, en producción, su pastilla; el
+                El entorno ya tiene la línea del borde (`spine`) y el tinte de la fila; el
                 color es la señal que elige el usuario, sin significado fijo.
               -->
               {#if isServer && row.color}
@@ -1173,14 +1487,6 @@
                 {@const badge = tagLook(tag)}
                 <span class="tag {badge.tone} shrink-0" title={badge.title}>{badge.label}</span>
               {/each}
-
-              <!-- Producción lo dice con palabras y arriba, junto al nombre: es la marca que no se
-                   puede depender de reconocer por el color, y la que decide si se sigue o no. Los
-                   otros entornos se conforman con la línea del borde y el texto de abajo. -->
-              {#if isServer && environment === "prod"}
-                {@const badge = envLook(environment)}
-                <span class="tag {badge.tone} shrink-0" title={badge.title}>{badge.label}</span>
-              {/if}
 
               {#if !isServer && row.error}
                 <span
@@ -1216,6 +1522,25 @@
                   >
                     {latencyMs}&nbsp;ms
                   </span>
+                {/if}
+
+                <!-- Actividad: sesiones bloqueadas o una transacción que retiene bloqueos. Un clic abre
+                     el monitoreo; la insignia no aparece si no hay nada que decir. -->
+                {#if row.connected && !row.down}
+                  {@const activity = activityBadge(explorer.activity[row.profileId])}
+                  {#if activity}
+                    <button
+                      class="shrink-0 rounded px-1 py-px font-medium {activity.level === 'bad'
+                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300'
+                        : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'}"
+                      title={activity.title}
+                      tabindex="-1"
+                      onclick={(event) => {
+                        event.stopPropagation();
+                        openMonitor(row.profileId);
+                      }}>{activity.text}</button
+                    >
+                  {/if}
                 {/if}
 
                 <!-- Solo lectura, sin la palabra: el candado dice lo mismo y el texto se comía el
@@ -1348,6 +1673,55 @@
             {/if}
 
             <!--
+              Acciones de un objeto al pasar el mouse: ver los datos, abrir una consulta con su
+              SELECT y copiar el nombre calificado. Son las tres cosas que se hacen con una tabla
+              diez veces al día, y por el clic derecho eran un menú que buscar cada vez. Mismo patrón
+              que las del servidor: ocultas hasta pasar por encima o enfocar la fila.
+            -->
+            {#if object}
+              <span class="flex shrink-0 items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+                {#if object.hasRows}
+                  <button
+                    class="btn btn-ghost btn-icon size-6"
+                    title="Ver los datos"
+                    aria-label="Ver los datos"
+                    tabindex="-1"
+                    onclick={(event) => {
+                      event.stopPropagation();
+                      void ondata(row.profileId, object.database, row.label, object.oid);
+                    }}
+                  >
+                    <Icon name="table" size={12} />
+                  </button>
+                  <button
+                    class="btn btn-ghost btn-icon size-6"
+                    title="Consulta nueva con un SELECT de esta tabla"
+                    aria-label="Consulta nueva"
+                    tabindex="-1"
+                    onclick={(event) => {
+                      event.stopPropagation();
+                      void openSelectQuery(row, object);
+                    }}
+                  >
+                    <Icon name="sql" size={12} />
+                  </button>
+                {/if}
+                <button
+                  class="btn btn-ghost btn-icon size-6"
+                  title="Copiar el nombre: {object.qualified}"
+                  aria-label="Copiar el nombre"
+                  tabindex="-1"
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    void navigator.clipboard.writeText(object.qualified).catch(() => {});
+                  }}
+                >
+                  <Icon name="copy" size={12} />
+                </button>
+              </span>
+            {/if}
+
+            <!--
               Lo que describe a la fila va al final, en columna: el tipo de una columna, el tamaño
               de una tabla y el contador de una sección se comparan de un vistazo cuando están
               alineados, y pegados al nombre lo empujaban a truncarse. El contador de una sección
@@ -1369,7 +1743,50 @@
       no una fila más de la lista: si fuera parte del flujo, se iría scrolleando con las últimas
       filas y dejaría de estar a la vista justo cuando hace falta apretarla.
     -->
-    {#if markedCount > 0}
+    {#if markedObjectRefs.length > 0}
+      <div
+        class="sticky bottom-0 z-20 flex flex-wrap items-center gap-1.5 border-t border-zinc-200/80
+               bg-zinc-50 p-1.5 text-[13px] dark:border-zinc-700 dark:bg-zinc-800"
+      >
+        <span class="min-w-0 truncate pl-1 text-[11px]">
+          <b class="tabular-nums">{markedObjectRefs.length}</b>
+          tabla{markedObjectRefs.length === 1 ? "" : "s"} marcada{markedObjectRefs.length === 1 ? "" : "s"}
+        </span>
+        <span class="divider-r h-4"></span>
+        <button class="btn btn-sm btn-ghost" title="Copiar los nombres, uno por línea" onclick={copyMarkedNames}>
+          Copiar nombres
+        </button>
+        <button
+          class="btn btn-sm btn-ghost"
+          disabled={markedObjectRefs.length > BULK_LIMIT}
+          title={markedObjectRefs.length > BULK_LIMIT
+            ? `Hasta ${BULK_LIMIT} tablas`
+            : "Una consulta con el SELECT de cada una"}
+          onclick={selectMarked}
+        >
+          SELECT de todas
+        </button>
+        <button
+          class="btn btn-sm btn-ghost"
+          disabled={isReadOnly(markedObjectRefs[0].row.profileId) || markedObjectRefs.length > BULK_LIMIT}
+          title="VACUUM ANALYZE de cada una, en segundo plano"
+          onclick={maintainMarked}
+        >
+          Mantenimiento
+        </button>
+        <button
+          class="btn btn-ghost btn-icon ml-auto size-7"
+          title="Quitar las marcas"
+          aria-label="Quitar las marcas"
+          onclick={() => explorer.clearMarks()}
+        >
+          <Icon name="close" size={12} />
+        </button>
+        {#if bulkError}
+          <p class="w-full text-[11px] text-rose-600 dark:text-rose-400">{bulkError}</p>
+        {/if}
+      </div>
+    {:else if markedCount > 0}
       <div
         class="sticky bottom-0 z-20 flex items-center gap-1.5 border-t border-zinc-200/80 bg-zinc-50
                p-1.5 text-[13px] dark:border-zinc-700 dark:bg-zinc-800"
@@ -1485,9 +1902,51 @@
       </button>
     {/if}
 
+    {#if menu.row.node?.kind === "database"}
+      <button
+        class="row-menu"
+        onclick={() => {
+          const row = menu?.row;
+          menu = null;
+          if (row?.node) void openDatabase(row.profileId, row.node.label);
+        }}
+      >
+        <span class="flex items-center gap-2"><Icon name="database" size={13} /> Abrir la base</span>
+      </button>
+    {/if}
+
     {#if menuQuery && menuData !== null}
       <button class="row-menu" onclick={openData}>
         <span class="flex items-center gap-2"><Icon name="table" size={13} /> Ver los datos</span>
+      </button>
+    {/if}
+
+    {#if menuOrderable}
+      {#each ORDER_MODES as mode (mode.value)}
+        <button class="row-menu" onclick={() => setOrder(mode.value)}>
+          <span class="flex items-center gap-2">
+            <span class="w-3 text-center">{treeView.order === mode.value ? "✓" : ""}</span>
+            {mode.label}
+          </span>
+        </button>
+      {/each}
+      <button class="row-menu" onclick={toggleGroup}>
+        <span class="flex items-center gap-2">
+          <span class="w-3 text-center">{treeView.group ? "✓" : ""}</span>
+          Agrupar por prefijo (fact_, dim_…)
+        </span>
+      </button>
+    {/if}
+
+    {#if menuSchemasFolder}
+      <button class="row-menu" onclick={chooseSchemas}>
+        <span class="flex items-center gap-2"><Icon name="schema" size={13} /> Elegir esquemas visibles…</span>
+      </button>
+    {/if}
+
+    {#if menuQuery && menuData !== null && menu?.row.node?.schema}
+      <button class="row-menu" onclick={generateSql}>
+        <span class="flex items-center gap-2"><Icon name="sql" size={13} /> Generar SQL…</span>
       </button>
     {/if}
 
@@ -1503,6 +1962,11 @@
       <button class="row-menu" onclick={openErd}>
         <span class="flex items-center gap-2">
           <Icon name="diagram" size={13} /> Diagrama del esquema
+        </span>
+      </button>
+      <button class="row-menu" onclick={documentSchema}>
+        <span class="flex items-center gap-2">
+          <Icon name="info" size={13} /> Documentar el esquema…
         </span>
       </button>
       <button class="row-menu" onclick={compare}>
@@ -1562,6 +2026,20 @@
     {#if menuIsServer && (onedit || onduplicate || ondelete)}
       <div class="divider-t my-1"></div>
 
+      <button
+        class="row-menu"
+        onclick={() => {
+          const id = menu?.row.profileId;
+          menu = null;
+          if (id) pins.toggle(id);
+        }}
+      >
+        <span class="flex items-center gap-2">
+          <Icon name="star" size={13} />
+          {menu && pins.has(menu.row.profileId) ? "Quitar de fijados" : "Fijar arriba"}
+        </span>
+      </button>
+
       {#if onedit}
         <button class="row-menu" onclick={editServer}>
           <span class="flex items-center gap-2"><Icon name="edit" size={13} /> Editar</span>
@@ -1583,4 +2061,18 @@
       {/if}
     {/if}
   </div>
+{/if}
+
+{#if peek && peek.row.node}
+  <ObjectPeek profileId={peek.row.profileId} node={peek.row.node} top={peek.top} left={peek.left} />
+{/if}
+
+{#if visibilityTarget}
+  {@const target = visibilityTarget}
+  <SchemaVisibilityDialog
+    profileId={target.profileId}
+    database={target.database}
+    onapply={() => void explorer.reload(target.row)}
+    onclose={() => (visibilityTarget = null)}
+  />
 {/if}

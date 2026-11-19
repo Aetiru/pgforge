@@ -25,6 +25,7 @@ export * from "./tasks";
 export * from "./backup";
 export * from "./bookmarks";
 export * from "./query";
+export * from "./editor";
 export * from "./snippets";
 export * from "./data";
 export * from "./ddl";

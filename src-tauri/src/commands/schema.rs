@@ -2,7 +2,9 @@
 
 use pgforge_core::conn::{self, CancelSink};
 use pgforge_core::ddl::{self, Ddl};
-use pgforge_core::introspect::{self, Dependency, SchemaGraph, SearchHit, TreeNode, TreeOptions};
+use pgforge_core::introspect::{
+    self, DatabaseOverview, Dependency, SchemaGraph, SearchHit, TreeNode, TreeOptions,
+};
 use pgforge_core::monitor::stats::{self as monitor_stats, TableStat};
 use pgforge_core::{ProfileId, Result};
 use tauri::State;
@@ -176,4 +178,16 @@ pub async fn table_stat(
     let client = handle.client(&database).await?;
 
     monitor_stats::table_by_oid(&client, oid).await
+}
+
+/// Lo que tiene una base por dentro, para abrirla como se abre una tabla: propiedades, esquemas,
+/// tablas y extensiones. Una conexión del pool de esa base, no el monitor.
+#[tauri::command]
+pub async fn database_overview(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: String,
+) -> Result<DatabaseOverview> {
+    let handle = state.manager.require(id).await?;
+    introspect::database_overview(&handle, &database).await
 }

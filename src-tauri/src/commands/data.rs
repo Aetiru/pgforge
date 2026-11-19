@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use pgforge_core::data::{
     self, Applied, Change, CopyCommand, Cursor, ExportSpec, ImportSpec, Page, PageView, Statement,
-    TableShape,
+    TableShape, TransferPlan, TransferSpec,
 };
 use pgforge_core::error::ErrorPayload;
 use pgforge_core::{ProfileId, Result};
@@ -271,6 +271,125 @@ pub async fn data_import_run(
                                 // En importación el núcleo siempre trae las filas; el `unwrap_or(0)`
                                 // es solo por completar el tipo, no un caso que pueda darse.
                                 rows: Some(outcome.rows.unwrap_or(0)),
+                                ..Outcome::default()
+                            },
+                        )
+                        .await
+                }
+                Err(error) => {
+                    state
+                        .processes
+                        .fail(&task_id, ErrorPayload::from(&error))
+                        .await
+                }
+            }
+        });
+    }
+
+    Ok(task_id)
+}
+
+/// Lo que se ejecutaría al copiar una tabla a otro servidor, sin ejecutar nada. Lee el catálogo del
+/// origen, así que pide conexión; el destino ni se toca.
+#[tauri::command]
+pub async fn table_transfer_preview(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    spec: TransferSpec,
+) -> Result<TransferPlan> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+    data::transfer_prepare(&handle, &database, &spec).await
+}
+
+/// Lanza la copia de una tabla a otro servidor y devuelve su identificador, con el que se la puede
+/// cancelar. Corre como un proceso más: se ve en «Procesos» y sobrevive a recargar la ventana.
+#[tauri::command]
+pub async fn table_transfer_run(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+    target_id: ProfileId,
+    target_database: Option<String>,
+    spec: TransferSpec,
+) -> Result<String> {
+    let source = state.manager.require(id).await?;
+    let target = state.manager.require(target_id).await?;
+    let database = database.unwrap_or_else(|| source.default_database().to_owned());
+    let target_database = target_database.unwrap_or_else(|| target.default_database().to_owned());
+
+    // El plan se arma antes de lanzar la tarea: un filtro inválido o una tabla que no existe llegan
+    // como el error de este comando, no como un evento de algo que ya arrancó.
+    let plan = data::transfer_prepare(&source, &database, &spec).await?;
+
+    let (cancel, cancelled) = oneshot::channel();
+    let (progress, mut bytes_rx) = mpsc::channel::<u64>(64);
+
+    let task_id = state
+        .processes
+        .start(
+            ProcessKind::Transfer,
+            target_id,
+            target_database.clone(),
+            format!(
+                "{}.{} → {}.{}",
+                spec.schema, spec.table, spec.target_schema, spec.target_table
+            ),
+            plan.script(),
+            Cancel::Child(cancel),
+        )
+        .await;
+
+    {
+        let task_id = task_id.clone();
+        tokio::spawn(async move {
+            {
+                let app = app.clone();
+                let task_id = task_id.clone();
+                tokio::spawn(async move {
+                    let state = app.state::<AppState>();
+                    while let Some(bytes) = bytes_rx.recv().await {
+                        state.processes.progress(&task_id, bytes).await;
+                    }
+                });
+            }
+
+            let started = Instant::now();
+            let state = app.state::<AppState>();
+            // Se anota en el historial del destino, que es donde se escribe: es la pregunta de la
+            // auditoría —qué cambió en este servidor y cuándo—.
+            let result = record_applied(
+                &state,
+                target_id,
+                &target_database,
+                plan.script(),
+                data::transfer_run(
+                    data::TransferRoute {
+                        source: &source,
+                        source_database: &database,
+                        target: &target,
+                        target_database: &target_database,
+                    },
+                    &spec,
+                    &plan,
+                    progress,
+                    cancelled,
+                ),
+            )
+            .await;
+
+            match result {
+                Ok(outcome) => {
+                    state
+                        .processes
+                        .finish(
+                            &task_id,
+                            Outcome {
+                                seconds: started.elapsed().as_secs_f64(),
+                                bytes: Some(outcome.bytes),
+                                rows: outcome.rows,
                                 ..Outcome::default()
                             },
                         )

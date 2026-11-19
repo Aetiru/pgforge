@@ -873,6 +873,8 @@ mod tests {
                 columns: cols.iter().map(|s| s.to_string()).collect(),
             }),
             read_only: None,
+            foreign_keys: vec![],
+            referenced_by: vec![],
         }
     }
 

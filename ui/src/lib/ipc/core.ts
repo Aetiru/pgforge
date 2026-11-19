@@ -38,10 +38,19 @@ export { Channel };
  */
 type ServerDownHandler = (profileId: string) => void;
 
-let serverDown: ServerDownHandler | null = null;
+const serverDown: ServerDownHandler[] = [];
 
+/** Se puede llamar más de una vez: el árbol pinta el corte y `reconnect.svelte.ts` lo reintenta. */
 export function onServerDown(handler: ServerDownHandler) {
-  serverDown = handler;
+  serverDown.push(handler);
+}
+
+/**
+ * Avisa un corte descubierto por quien no pasa el `id` en sus argumentos —los comandos de una
+ * pestaña de consulta llevan `tabId`—, que el `invoke` de abajo no puede atribuir a un servidor.
+ */
+export function reportServerDown(profileId: string) {
+  for (const handler of serverDown) handler(profileId);
 }
 
 /**
@@ -56,7 +65,7 @@ export async function invoke<T>(command: string, args?: Record<string, unknown>)
     return await tauriInvoke<T>(command, args);
   } catch (error) {
     if ((error as CoreError)?.kind === "disconnected" && typeof args?.id === "string") {
-      serverDown?.(args.id);
+      reportServerDown(args.id);
     }
     throw error;
   }

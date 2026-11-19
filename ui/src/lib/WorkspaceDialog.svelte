@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from "./Skeleton.svelte";
   import Alert from "./Alert.svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
@@ -192,7 +193,7 @@
   <div class="flex flex-col gap-1">
     <span class="label">Ventanas guardadas</span>
     {#if loading}
-      <p class="flex items-center gap-2 text-sm muted"><span class="spinner"></span> Cargando…</p>
+      <Skeleton rows={3} compact label="Cargando…" />
     {:else if workspaces.length === 0}
       <p class="text-xs muted">Todavía no se creó ningún workspace.</p>
     {:else}

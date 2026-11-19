@@ -95,7 +95,11 @@ export class DataTab extends Tab {
       this.rows = [];
       this.cursor = null;
       this.complete = false;
-      await this.more();
+      // `fetchPage` y no `more`: `more` se niega a correr con `loading` encendido —es lo que frena
+      // al scroll de pedir dos tandas a la vez—, y acá lo acabamos de encender nosotros. Con `more`
+      // la primera tanda nunca se pedía, y una tabla quedaba en «vacía» hasta que algo disparara el
+      // scroll, cosa que una grilla sin filas no puede hacer.
+      await this.fetchPage();
     } catch (error) {
       this.error = describeError(error);
     } finally {
@@ -122,6 +126,13 @@ export class DataTab extends Tab {
   async more() {
     const shape = this.shape;
     if (!shape || this.complete || this.loading) return;
+    await this.fetchPage();
+  }
+
+  /** Pide una tanda sin mirar `loading`: quien llama ya decidió que toca. */
+  private async fetchPage() {
+    const shape = this.shape;
+    if (!shape) return;
 
     this.loading = true;
     try {
@@ -201,6 +212,28 @@ export class DataTab extends Tab {
         isNew: true,
         deleted: false,
       },
+    ];
+  }
+
+  /**
+   * Agrega filas nuevas ya con valores —lo pegado de una hoja—. Quedan como altas sin guardar, igual
+   * que las de «Nueva fila»: nada se escribe hasta que se ve el SQL y se guarda.
+   */
+  addRows(values: Map<number, string | null>[]) {
+    const shape = this.shape;
+    if (!shape || values.length === 0) return;
+
+    const base = this.rows.length;
+    this.rows = [
+      ...this.rows,
+      ...values.map((edited, offset) => ({
+        index: base + offset,
+        original: shape.columns.map(() => null),
+        edited: new Map(edited),
+        key: [],
+        isNew: true,
+        deleted: false,
+      })),
     ];
   }
 
@@ -305,8 +338,29 @@ export async function openData(
   database: string,
   title: string,
   oid: number,
+  /** `WHERE` con el que abrir, para los saltos por clave foránea. */
+  filter?: string,
 ): Promise<DataTab> {
-  const tab = tabs.add(new DataTab(profileId, database, title, oid));
+  // Un salto por clave foránea a una fila que ya se tiene abierta no abre otra pestaña igual: se
+  // vuelve a ella, que es lo que hace que ir y volver entre tres tablas no deje diez abiertas.
+  if (filter) {
+    const open = tabs.all.find(
+      (existing): existing is DataTab =>
+        existing instanceof DataTab &&
+        existing.profileId === profileId &&
+        existing.database === database &&
+        existing.oid === oid &&
+        existing.filter.trim() === filter.trim(),
+    );
+    if (open) {
+      tabs.activate(open.key);
+      return open;
+    }
+  }
+
+  const tab = new DataTab(profileId, database, title, oid);
+  if (filter) tab.filter = filter;
+  tabs.add(tab);
   await tab.load();
   return tab;
 }

@@ -9,6 +9,7 @@
   "permissions": [
     "core:default",
     "log:default",
-    "notification:default"
+    "notification:default",
+    "core:webview:allow-set-webview-zoom"
   ]
 }

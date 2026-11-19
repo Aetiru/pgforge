@@ -12,7 +12,7 @@ import { invoke, type CoreError } from "./core";
 // novedades. Por eso recargar la ventana no pierde nada de lo que estaba corriendo.
 // ---------------------------------------------------------------------------
 
-export type ProcessKind = "maintenance" | "index" | "migration" | "backup" | "restore" | "export" | "import";
+export type ProcessKind = "maintenance" | "index" | "migration" | "backup" | "restore" | "export" | "import" | "transfer";
 
 export type ProcessStatus = "running" | "done" | "failed";
 

@@ -13,6 +13,7 @@ const existing = {
   when: null,
   functionSchema: "auditoria",
   functionName: "registrar",
+  functionOid: 42,
 } as TriggerInfo;
 
 describe("triggerForm", () => {
