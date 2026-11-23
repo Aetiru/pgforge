@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
@@ -101,16 +102,16 @@
   }
 
   function validate(): string | null {
-    if (!name.trim()) return "Poné un nombre para la constraint.";
+    if (!name.trim()) return t("Poné un nombre para la constraint.");
     if (kind === "primaryKey" || kind === "unique") {
-      if (selected.length === 0) return "Elegí al menos una columna.";
+      if (selected.length === 0) return t("Elegí al menos una columna.");
     } else if (kind === "foreignKey") {
-      if (selected.length === 0) return "Elegí al menos una columna local.";
-      if (!refTable.trim()) return "Poné la tabla referenciada.";
+      if (selected.length === 0) return t("Elegí al menos una columna local.");
+      if (!refTable.trim()) return t("Poné la tabla referenciada.");
       const def = definition() as Extract<ConstraintDef, { kind: "foreignKey" }>;
-      if (def.refColumns.length === 0) return "Poné las columnas referenciadas.";
+      if (def.refColumns.length === 0) return t("Poné las columnas referenciadas.");
     } else if (kind === "check") {
-      if (!expression.trim()) return "Poné la expresión del CHECK.";
+      if (!expression.trim()) return t("Poné la expresión del CHECK.");
     }
     return null;
   }
@@ -148,7 +149,7 @@
       return;
     }
 
-    if (!(await confirmMutation(profileId, "Se va a crear una restricción.", sqlToApply))) return;
+    if (!(await confirmMutation(profileId, t("Se va a crear una restricción."), sqlToApply))) return;
 
     saving = true;
     try {
@@ -162,15 +163,15 @@
   }
 </script>
 
-<Modal title="Nueva restricción" subtitle="{schema}.{table}" busy={saving} {onclose}>
+<Modal title={t("Nueva restricción")} subtitle="{schema}.{table}" busy={saving} {onclose}>
   <div class="grid grid-cols-2 gap-3">
     <label class="flex flex-col gap-1">
-      <span class="label">Nombre</span>
+      <span class="label">{t("Nombre")}</span>
       <input class="field" data-autofocus bind:value={name} />
     </label>
 
     <label class="flex flex-col gap-1">
-      <span class="label">Tipo</span>
+      <span class="label">{t("Tipo")}</span>
       <select class="field" bind:value={kind}>
         {#each KIND_OPTIONS as option (option.value)}
           <option value={option.value}>{option.label}</option>
@@ -181,7 +182,7 @@
 
   {#if kind === "primaryKey" || kind === "unique" || kind === "foreignKey"}
     <div class="mt-3">
-      <span class="label">{kind === "foreignKey" ? "Columnas locales" : "Columnas"}</span>
+      <span class="label">{kind === "foreignKey" ? t("Columnas locales") : t("Columnas")}</span>
       <div
         class="mt-1 flex max-h-52 flex-col gap-1 overflow-auto rounded-md border border-zinc-200 p-2
                dark:border-zinc-700"
@@ -204,22 +205,22 @@
   {#if kind === "foreignKey"}
     <div class="mt-3 grid grid-cols-2 gap-3">
       <label class="flex flex-col gap-1">
-        <span class="label">Esquema referenciado</span>
+        <span class="label">{t("Esquema referenciado")}</span>
         <input class="field" bind:value={refSchema} />
       </label>
       <label class="flex flex-col gap-1">
-        <span class="label">Tabla referenciada</span>
+        <span class="label">{t("Tabla referenciada")}</span>
         <input class="field" bind:value={refTable} />
       </label>
       <label class="col-span-2 flex flex-col gap-1">
-        <span class="label">Columnas referenciadas (separadas por coma)</span>
+        <span class="label">{t("Columnas referenciadas (separadas por coma)")}</span>
         <input class="field" bind:value={refColumns} placeholder="id" />
       </label>
       <label class="flex flex-col gap-1">
         <span class="label">ON DELETE</span>
         <select class="field" bind:value={onDelete}>
           {#each ACTION_OPTIONS as option (option.value)}
-            <option value={option.value}>{option.label}</option>
+            <option value={option.value}>{option.value === "" ? t("Sin acción") : option.label}</option>
           {/each}
         </select>
       </label>
@@ -227,7 +228,7 @@
         <span class="label">ON UPDATE</span>
         <select class="field" bind:value={onUpdate}>
           {#each ACTION_OPTIONS as option (option.value)}
-            <option value={option.value}>{option.label}</option>
+            <option value={option.value}>{option.value === "" ? t("Sin acción") : option.label}</option>
           {/each}
         </select>
       </label>
@@ -236,7 +237,7 @@
 
   {#if kind === "check"}
     <label class="mt-3 flex flex-col gap-1">
-      <span class="label">Expresión</span>
+      <span class="label">{t("Expresión")}</span>
       <textarea class="field font-mono" rows="3" bind:value={expression} placeholder="total >= 0"
       ></textarea>
     </label>
@@ -251,11 +252,11 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>{t("Ver SQL")}</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving}>
       {#if saving}<span class="spinner"></span>{/if}
-      Agregar
+      {t("Agregar")}
     </button>
   {/snippet}
 </Modal>

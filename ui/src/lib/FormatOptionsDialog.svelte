@@ -1,5 +1,6 @@
 <script lang="ts">
   import Alert from "./Alert.svelte";
+  import { t } from "./i18n.svelte";
   import Modal from "./Modal.svelte";
   import Sql from "./Sql.svelte";
   import { FORMAT_SAMPLE, isDefaultFormat } from "./format-options";
@@ -31,16 +32,17 @@
     return () => clearTimeout(timer);
   });
 
-  const CASES = [
+  // Derivadas y no constantes: la etiqueta se traduce al idioma vigente, no al del primer render.
+  const CASES = $derived([
     { value: "upper", label: "SELECT" },
     { value: "lower", label: "select" },
-    { value: "preserve", label: "Como está" },
-  ] as const;
-  const INDENTS = [
-    { value: "2", label: "2 espacios" },
-    { value: "4", label: "4 espacios" },
-    { value: "tab", label: "Tabulador" },
-  ] as const;
+    { value: "preserve", label: t("Como está") },
+  ] as const);
+  const INDENTS = $derived([
+    { value: "2", label: t("2 espacios") },
+    { value: "4", label: t("4 espacios") },
+    { value: "tab", label: t("Tabulador") },
+  ] as const);
   const LINES = [0, 1, 2, 3];
 
   const options = $derived(formatPrefs.options);
@@ -49,12 +51,12 @@
   const set = (next: Partial<FormatOptions>) => formatPrefs.set(next);
 </script>
 
-<Modal title="Opciones del formateador" size="lg" {onclose}>
+<Modal title={t("Opciones del formateador")} size="lg" {onclose}>
   <div class="grid gap-4 md:grid-cols-[14rem_minmax(0,1fr)]">
     <div class="flex flex-col gap-3 text-xs">
       <div>
-        <div class="label">Palabras clave</div>
-        <div class="seg" role="group" aria-label="Palabras clave">
+        <div class="label">{t("Palabras clave")}</div>
+        <div class="seg" role="group" aria-label={t("Palabras clave")}>
           {#each CASES as item (item.value)}
             <button
               class="seg-item"
@@ -63,12 +65,12 @@
             >
           {/each}
         </div>
-        <p class="mt-1 muted">Los nombres de tablas y columnas nunca cambian de caso.</p>
+        <p class="mt-1 muted">{t("Los nombres de tablas y columnas nunca cambian de caso.")}</p>
       </div>
 
       <div>
-        <div class="label">Sangría</div>
-        <div class="seg" role="group" aria-label="Sangría">
+        <div class="label">{t("Sangría")}</div>
+        <div class="seg" role="group" aria-label={t("Sangría")}>
           {#each INDENTS as item (item.value)}
             <button
               class="seg-item"
@@ -80,7 +82,7 @@
       </div>
 
       <div>
-        <label class="label" for="fmt-lines">Líneas en blanco entre sentencias</label>
+        <label class="label" for="fmt-lines">{t("Líneas en blanco entre sentencias")}</label>
         <select
           id="fmt-lines"
           class="field w-full"
@@ -99,28 +101,26 @@
           checked={options.commaFirst}
           onchange={(event) => set({ commaFirst: event.currentTarget.checked })}
         />
-        Coma al principio de la línea
+        {t("Coma al principio de la línea")}
       </label>
     </div>
 
     <div class="min-w-0">
-      <div class="label">Así queda</div>
+      <div class="label">{t("Así queda")}</div>
       <div class="max-h-80 overflow-auto rounded-md border border-zinc-200 p-2 select-text dark:border-zinc-700">
         {#if sample}<Sql code={sample} />{/if}
       </div>
       {#if error}<Alert tone="bad" box class="mt-2">{error}</Alert>{/if}
       <p class="mt-2 text-xs muted">
-        Vale para el botón y el atajo de formatear, el comando de la paleta y el autoformateo. Solo
-        cambia espacios y la caja de las palabras clave: el formateador comprueba que el SQL
-        resultante sea el mismo.
+        {t("Vale para el botón y el atajo de formatear, el comando de la paleta y el autoformateo. Solo cambia espacios y la caja de las palabras clave: el formateador comprueba que el SQL resultante sea el mismo.")}
       </p>
     </div>
   </div>
 
   {#snippet footer()}
     <button class="btn" disabled={isDefault} onclick={() => formatPrefs.reset()}>
-      Valores de fábrica
+      {t("Valores de fábrica")}
     </button>
-    <button class="btn btn-primary ml-auto" onclick={onclose}>Listo</button>
+    <button class="btn btn-primary ml-auto" onclick={onclose}>{t("Listo")}</button>
   {/snippet}
 </Modal>

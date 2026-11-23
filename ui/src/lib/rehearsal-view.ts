@@ -5,6 +5,7 @@
  * falló, qué locks hay) llega hecho; acá solo se decide cómo decirlo y en qué orden.
  */
 
+import { t } from "./i18n.svelte";
 import type { CoreError, Outcome, RehearsalLock, RehearsalReport, RehearsalStep } from "./ipc";
 
 export type Tone = "ok" | "warn" | "bad";
@@ -16,8 +17,8 @@ export interface Verdict {
 }
 
 /** Lo que el `ROLLBACK` no devuelve, dicho siempre: avisarlo solo cuando se detecta lo esconde. */
-export const NOT_REVERTED_NOTE =
-  "El ensayo revierte los cambios de tablas, pero no las secuencias (cada número consumido se pierde) ni nada que actúe fuera de la base.";
+export const notRevertedNote = () =>
+  t("El ensayo revierte los cambios de tablas, pero no las secuencias (cada número consumido se pierde) ni nada que actúe fuera de la base.");
 
 export function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
@@ -28,22 +29,22 @@ const COUNTS_ROWS = new Set(["INSERT", "UPDATE", "DELETE", "MERGE", "COPY", "SEL
 
 export function outcomeText(outcome: Outcome): string {
   if (outcome.kind === "rows") {
-    const shown = plural(outcome.rowCount, "fila", "filas");
-    return outcome.truncated ? `${shown} (se muestran las primeras)` : shown;
+    const shown = plural(outcome.rowCount, t("fila"), t("filas"));
+    return outcome.truncated ? t("{shown} (se muestran las primeras)", { shown }) : shown;
   }
   return COUNTS_ROWS.has(outcome.tag)
-    ? `${outcome.tag}: ${plural(outcome.affected, "fila", "filas")}`
-    : outcome.tag || "Listo";
+    ? `${outcome.tag}: ${plural(outcome.affected, t("fila"), t("filas"))}`
+    : outcome.tag || t("Listo");
 }
 
 export function errorText(error: CoreError): string {
   switch (error.kind) {
     case "canceled":
-      return "Cancelada.";
+      return t("Cancelada.");
     case "database":
       return error.hint ? `${error.message} (${error.hint})` : error.message;
     case "sshHostKey":
-      return "Clave del host SSH sin verificar.";
+      return t("Clave del host SSH sin verificar.");
     default:
       return error.message;
   }
@@ -68,18 +69,20 @@ export function verdict(report: RehearsalReport): Verdict {
   if (report.blocked.length > 0) {
     return {
       tone: "bad",
-      title: "No se puede ensayar este script",
-      detail: "No se ejecutó nada. Sacá lo que se indica abajo o corré esas sentencias aparte.",
+      title: t("No se puede ensayar este script"),
+      detail: t("No se ejecutó nada. Sacá lo que se indica abajo o corré esas sentencias aparte."),
     };
   }
 
   if (!report.rolledBack) {
     return {
       tone: "bad",
-      title: "No se confirmó el ROLLBACK",
+      title: t("No se confirmó el ROLLBACK"),
       detail: report.rollbackError
-        ? `${report.rollbackError}. Revisá la pestaña antes de seguir: la transacción puede seguir abierta.`
-        : "Revisá la pestaña antes de seguir: la transacción puede seguir abierta.",
+        ? t("{error}. Revisá la pestaña antes de seguir: la transacción puede seguir abierta.", {
+            error: report.rollbackError,
+          })
+        : t("Revisá la pestaña antes de seguir: la transacción puede seguir abierta."),
     };
   }
 
@@ -87,16 +90,19 @@ export function verdict(report: RehearsalReport): Verdict {
   if (failed) {
     return {
       tone: "bad",
-      title: `Falló la sentencia ${failed.index + 1} de ${report.total}`,
-      detail: "Se revirtió todo. Las sentencias que seguían no se ejecutaron.",
+      title: t("Falló la sentencia {index} de {total}", { index: failed.index + 1, total: report.total }),
+      detail: t("Se revirtió todo. Las sentencias que seguían no se ejecutaron."),
     };
   }
 
   const touched = rowsTouched(report);
   return {
     tone: report.caveats.length > 0 ? "warn" : "ok",
-    title: "Salió bien y se revirtió",
-    detail: `${plural(report.steps.length, "sentencia", "sentencias")}, ${plural(touched, "fila tocada", "filas tocadas")}. Nada quedó aplicado.`,
+    title: t("Salió bien y se revirtió"),
+    detail: t("{statements}, {rows}. Nada quedó aplicado.", {
+      statements: plural(report.steps.length, t("sentencia"), t("sentencias")),
+      rows: plural(touched, t("fila tocada"), t("filas tocadas")),
+    }),
   };
 }
 
@@ -116,18 +122,18 @@ const LOCK_ORDER = [
   "AccessShareLock",
 ];
 
-const LOCK_NOTE: Record<string, string> = {
-  AccessExclusiveLock: "bloquea hasta las lecturas de la tabla",
-  ExclusiveLock: "bloquea escrituras y bloqueos de fila",
-  ShareRowExclusiveLock: "bloquea escrituras",
-  ShareLock: "bloquea escrituras (p. ej. CREATE INDEX sin CONCURRENTLY)",
-  ShareUpdateExclusiveLock: "no deja correr otro VACUUM ni cambios de estructura",
-  RowExclusiveLock: "el habitual de INSERT/UPDATE/DELETE: no estorba a las lecturas",
-  RowShareLock: "el de SELECT … FOR UPDATE",
-  AccessShareLock: "el de un SELECT: casi no estorba",
-};
+const lockNotes = (): Record<string, string> => ({
+  AccessExclusiveLock: t("bloquea hasta las lecturas de la tabla"),
+  ExclusiveLock: t("bloquea escrituras y bloqueos de fila"),
+  ShareRowExclusiveLock: t("bloquea escrituras"),
+  ShareLock: t("bloquea escrituras (p. ej. CREATE INDEX sin CONCURRENTLY)"),
+  ShareUpdateExclusiveLock: t("no deja correr otro VACUUM ni cambios de estructura"),
+  RowExclusiveLock: t("el habitual de INSERT/UPDATE/DELETE: no estorba a las lecturas"),
+  RowShareLock: t("el de SELECT … FOR UPDATE"),
+  AccessShareLock: t("el de un SELECT: casi no estorba"),
+});
 
-export const lockNote = (mode: string): string => LOCK_NOTE[mode] ?? "";
+export const lockNote = (mode: string): string => lockNotes()[mode] ?? "";
 
 const rank = (mode: string) => {
   const index = LOCK_ORDER.indexOf(mode);

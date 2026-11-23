@@ -6,6 +6,7 @@
  * decir cuántos bytes escribió parece igual de bien que uno que sí lo dice.
  */
 
+import { t } from "./i18n.svelte";
 import { bytes, count, duration } from "./format";
 import type { ProcessKind } from "./ipc/tasks";
 
@@ -13,14 +14,14 @@ import type { ProcessKind } from "./ipc/tasks";
 export type TaskKind = ProcessKind;
 
 const KIND_LABEL: Record<TaskKind, string> = {
-  maintenance: "Mantenimiento",
-  index: "Índice",
-  migration: "Migración",
+  get maintenance() { return t("Mantenimiento"); },
+  get index() { return t("Índice"); },
+  get migration() { return t("Migración"); },
   backup: "Backup",
   restore: "Restore",
-  export: "Exportación",
-  import: "Importación",
-  transfer: "Copia de tabla",
+  get export() { return t("Exportación"); },
+  get import() { return t("Importación"); },
+  get transfer() { return t("Copia de tabla"); },
 };
 
 export function taskKindLabel(kind: TaskKind): string {
@@ -49,16 +50,16 @@ export interface TaskEnd {
  */
 export function outcomeText(end: TaskEnd): string {
   const parts: string[] = [];
-  if (end.rows != null) parts.push(`${count(end.rows)} filas`);
+  if (end.rows != null) parts.push(t("{rows} filas", { rows: count(end.rows) }));
   if (end.bytes != null) parts.push(bytes(end.bytes));
-  if (end.ignoredErrors) parts.push(`${count(end.ignoredErrors)} errores ignorados`);
-  parts.push(`en ${duration(end.seconds)}`);
-  return `Terminó: ${parts.join(", ")}.`;
+  if (end.ignoredErrors) parts.push(t("{errors} errores ignorados", { errors: count(end.ignoredErrors) }));
+  parts.push(t("en {duration}", { duration: duration(end.seconds) }));
+  return t("Terminó: {parts}.", { parts: parts.join(", ") });
 }
 
 /** El avance de lo que copia un archivo, que es lo único que se sabe mientras corre. */
 export function progressText(copied: number): string {
-  return `${bytes(copied)} copiados`;
+  return t("{size} copiados", { size: bytes(copied) });
 }
 
 /**

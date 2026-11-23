@@ -6,6 +6,7 @@
  * se puede hacer con un `$derived` metido en un componente de tres mil líneas.
  */
 
+import { t } from "./i18n.svelte";
 import { folderOf, formatVersion, type TreeNode } from "./ipc";
 import type {
   ColumnGrant,
@@ -296,39 +297,39 @@ export function propertiesOf(
 ): Property[] {
   if (!isServer) {
     if (!node) return [];
-    const rows: Property[] = [{ label: "Base de datos", value: node.database }];
-    if (node.schema) rows.push({ label: "Esquema", value: node.schema });
+    const rows: Property[] = [{ label: t("Base de datos"), value: node.database }];
+    if (node.schema) rows.push({ label: t("Esquema"), value: node.schema });
     if (node.oid) rows.push({ label: "OID", value: String(node.oid) });
     return rows;
   }
   if (!profile) return [];
 
   const rows: Property[] = [
-    { label: "Servidor", value: `${profile.host}:${profile.port}` },
-    { label: "Base inicial", value: profile.database },
-    { label: "Usuario", value: profile.user },
-    { label: "Cifrado", value: profile.sslMode },
+    { label: t("Servidor"), value: `${profile.host}:${profile.port}` },
+    { label: t("Base inicial"), value: profile.database },
+    { label: t("Usuario"), value: profile.user },
+    { label: t("Cifrado"), value: profile.sslMode },
     {
-      label: "Entorno",
-      value: profile.environment ? envLook(profile.environment).title : "sin marcar",
+      label: t("Entorno"),
+      value: profile.environment ? envLook(profile.environment).title : t("sin marcar"),
       bad: profile.environment === "prod",
     },
-    { label: "Solo lectura", value: profile.readOnly ? "sí" : "no" },
-    { label: "Autocommit", value: profile.autocommit ? "sí" : "no" },
+    { label: t("Solo lectura"), value: profile.readOnly ? t("sí") : t("no") },
+    { label: "Autocommit", value: profile.autocommit ? t("sí") : t("no") },
   ];
 
   if (caps) {
     rows.push(
-      { label: "Versión", value: `PostgreSQL ${formatVersion(caps.version)}` },
-      { label: "Superusuario", value: caps.isSuperuser ? "sí" : "no" },
+      { label: t("Versión"), value: `PostgreSQL ${formatVersion(caps.version)}` },
+      { label: t("Superusuario"), value: caps.isSuperuser ? t("sí") : t("no") },
       {
-        label: "Puede cancelar sesiones",
-        value: caps.canSignalBackends ? "sí" : "no (falta pg_signal_backend)",
+        label: t("Puede cancelar sesiones"),
+        value: caps.canSignalBackends ? t("sí") : t("no (falta pg_signal_backend)"),
         bad: !caps.canSignalBackends,
       },
       {
-        label: "Ve todas las estadísticas",
-        value: caps.canReadAllStats ? "sí" : "no (falta pg_read_all_stats)",
+        label: t("Ve todas las estadísticas"),
+        value: caps.canReadAllStats ? t("sí") : t("no (falta pg_read_all_stats)"),
         bad: !caps.canReadAllStats,
       },
     );

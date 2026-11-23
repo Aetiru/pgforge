@@ -8,6 +8,7 @@
    * un objeto sigue siendo del panel de detalle, que es donde viven los diálogos y la confirmación
    * de producción: duplicarlos acá serían dos caminos para una misma mutación.
    */
+  import { t } from "./i18n.svelte";
   import Columns from "./detail/Columns.svelte";
   import Constraints from "./detail/Constraints.svelte";
   import DdlSection from "./detail/Ddl.svelte";
@@ -47,7 +48,9 @@
   /** Todo apagado con el mismo motivo: así los botones de las secciones se ven y explican por qué no. */
   const blocked = {
     disabled: true,
-    title: "Se cambia desde el panel de detalle de la tabla",
+    get title() {
+      return t("Se cambia desde el panel de detalle de la tabla");
+    },
   };
   const noop = () => {};
 

@@ -1,3 +1,4 @@
+import { i18n, t } from "./i18n.svelte";
 import { explorer } from "./explorer.svelte";
 import type { ConnectionProfile, Environment } from "./ipc";
 import { assessRisks, type StatementRisk } from "./statement-risk";
@@ -27,7 +28,7 @@ export function isReadOnly(profileId: string): boolean {
  */
 export function readOnlyReason(profileId: string): string | null {
   return isReadOnly(profileId)
-    ? "El servidor está configurado como conexión de solo lectura"
+    ? t("El servidor está configurado como conexión de solo lectura")
     : null;
 }
 
@@ -93,7 +94,7 @@ class MutationGuard {
 
     const risks = assessRisks(sql);
     if (risks.length === 0) return true;
-    return this.ask(profile, "El script que vas a ejecutar incluye:", risks);
+    return this.ask(profile, t("El script que vas a ejecutar incluye:"), risks);
   }
 
   /**
@@ -106,10 +107,12 @@ class MutationGuard {
     if (!profile) return true;
     if (profile.environment !== "prod" && rows < AFFECTED_ASK) return true;
 
-    const amount = `${capped ? "más de " : ""}${rows.toLocaleString("es")}`;
+    const amount = `${capped ? t("más de ") : ""}${rows.toLocaleString(i18n.current)}`;
     return this.ask(
       profile,
-      `Esta sentencia va a modificar ${amount} ${rows === 1 && !capped ? "fila" : "filas"}.`,
+      rows === 1 && !capped
+        ? t("Esta sentencia va a modificar {amount} fila.", { amount })
+        : t("Esta sentencia va a modificar {amount} filas.", { amount }),
       assessRisks(sql),
     );
   }

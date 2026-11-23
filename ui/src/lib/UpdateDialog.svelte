@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import Alert from "./Alert.svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
@@ -43,7 +44,9 @@
 {#if release}
   <Modal
     title="pgforge {release.version}"
-    subtitle="Estás en la {current}{published ? ` · publicada el ${published}` : ''}"
+    subtitle={published
+      ? t("Estás en la {current} · publicada el {date}", { current, date: published })
+      : t("Estás en la {current}", { current })}
     {busy}
     {onclose}
   >
@@ -54,12 +57,13 @@
         class="max-h-72 overflow-auto rounded border border-zinc-200 bg-zinc-50 p-3 text-xs
                whitespace-pre-wrap select-text dark:border-zinc-700 dark:bg-zinc-800">{release.notes.trim()}</pre>
     {:else}
-      <p class="text-sm muted">Esta versión salió sin notas.</p>
+      <p class="text-sm muted">{t("Esta versión salió sin notas.")}</p>
     {/if}
 
     <p class="mt-3 text-xs muted">
-      pgforge no se actualiza solo: el botón abre la página de la release en el navegador, donde está
-      el instalador de cada sistema. «Ahora no» silencia esta versión; la siguiente vuelve a avisar.
+      {t(
+        'pgforge no se actualiza solo: el botón abre la página de la release en el navegador, donde está el instalador de cada sistema. «Ahora no» silencia esta versión; la siguiente vuelve a avisar.',
+      )}
     </p>
 
     {#if error}
@@ -67,10 +71,10 @@
     {/if}
 
     {#snippet footer()}
-      <button class="btn ml-auto" disabled={busy} onclick={() => updates.dismiss()}>Ahora no</button>
+      <button class="btn ml-auto" disabled={busy} onclick={() => updates.dismiss()}>{t("Ahora no")}</button>
       <button class="btn btn-primary" data-autofocus disabled={busy} onclick={open}>
         {#if busy}<span class="spinner"></span>{:else}<Icon name="download" size={12} />{/if}
-        Ver la descarga
+        {t("Ver la descarga")}
       </button>
     {/snippet}
   </Modal>

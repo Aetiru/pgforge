@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   /**
    * Una fila vista de arriba abajo: una línea por columna, con el valor entero.
    *
@@ -43,21 +44,21 @@
 <aside class="flex h-full w-80 shrink-0 flex-col border-l border-zinc-200 dark:border-zinc-700">
   <div class="divider-b flex items-center gap-1.5 px-3 py-1.5">
     <span class="text-xs font-medium">
-      {row ? `Fila ${row.index + 1}` : "Fila"}
+      {row ? t("Fila {n}", { n: row.index + 1 }) : t("Fila")}
     </span>
-    <span class="text-[11px] muted">{tab.shape?.columns.length ?? 0} columnas</span>
-    <button class="btn btn-ghost btn-icon ml-auto" aria-label="Cerrar" onclick={onclose}>
+    <span class="text-[11px] muted">{t("{n} columnas", { n: tab.shape?.columns.length ?? 0 })}</span>
+    <button class="btn btn-ghost btn-icon ml-auto" aria-label={t("Cerrar")} onclick={onclose}>
       <Icon name="close" size={11} />
     </button>
   </div>
 
   {#if !row}
-    <p class="p-3 text-xs muted">Elegí una fila de la grilla para ver todos sus valores.</p>
+    <p class="p-3 text-xs muted">{t("Elegí una fila de la grilla para ver todos sus valores.")}</p>
   {:else}
     <div class="divider-b px-2 py-1">
       <input
         class="field w-full py-0.5 text-xs"
-        placeholder="Filtrar columnas…"
+        placeholder={t("Filtrar columnas…")}
         bind:value={needle}
       />
     </div>
@@ -72,8 +73,8 @@
             <button
               class="ml-auto opacity-0 group-hover/field:opacity-100 focus-visible:opacity-100"
               disabled={field.raw === null}
-              title="Copiar el valor"
-              aria-label="Copiar {field.name}"
+              title={t("Copiar el valor")}
+              aria-label={t("Copiar {name}", { name: field.name })}
               onclick={() => copy(field.name, field.raw)}
             >
               <Icon name={copied === field.name ? "check" : "copy"} size={11} />
@@ -90,7 +91,7 @@
           </dd>
         </div>
       {:else}
-        <p class="p-3 text-xs muted">Ninguna columna coincide.</p>
+        <p class="p-3 text-xs muted">{t("Ninguna columna coincide.")}</p>
       {/each}
     </dl>
   {/if}

@@ -7,6 +7,7 @@
  * o se abre en una consulta contra el destino.
  */
 
+import { t } from "./i18n.svelte";
 import { Tab, tabs } from "./tabs.svelte";
 import {
   Channel,
@@ -40,7 +41,7 @@ export class DataCompareTab extends Tab {
   constructor(source: DataSide, target: DataSide) {
     // Cuelga del origen, igual que la comparación de esquemas: es el servidor cuya caída decide
     // qué se cierra.
-    super(source.id, source.database, `Datos · ${source.table} → ${target.table}`);
+    super(source.id, source.database, t("Datos · {table} → {table2}", { table: source.table, table2: target.table }));
     this.source = source;
     this.target = target;
   }

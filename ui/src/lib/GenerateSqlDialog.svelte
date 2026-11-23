@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
@@ -43,14 +44,14 @@
   }
 </script>
 
-<Modal title="Generar SQL" subtitle={target.title} size="lg" {onclose}>
+<Modal title={t("Generar SQL")} subtitle={target.title} size="lg" {onclose}>
   <div class="seg" role="tablist">
     {#each GENERATE_KINDS as item (item.value)}
       <button
         class="seg-item"
         role="tab"
         aria-selected={kind === item.value}
-        onclick={() => (kind = item.value)}>{item.label}</button
+        onclick={() => (kind = item.value)}>{t(item.label)}</button
       >
     {/each}
   </div>
@@ -64,16 +65,15 @@
       <Sql code={sql} />
     </div>
     <p class="mt-2 text-xs muted">
-      Lo que falta va como <code class="font-mono">{"{{variable}}"}</code>: al ejecutar, la consulta
-      pregunta cada valor.
+      {t("Lo que falta va como")} <code class="font-mono">{"{{variable}}"}</code>{t(": al ejecutar, la consulta pregunta cada valor.")}
     </p>
   {/if}
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose}>Cerrar</button>
-    <button class="btn" disabled={!shape} onclick={copy}>{copied ? "Copiado ✓" : "Copiar"}</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cerrar")}</button>
+    <button class="btn" disabled={!shape} onclick={copy}>{copied ? t("Copiado ✓") : t("Copiar")}</button>
     <button class="btn btn-primary" disabled={!shape} onclick={openInQuery}>
-      Abrir en una consulta
+      {t("Abrir en una consulta")}
     </button>
   {/snippet}
 </Modal>

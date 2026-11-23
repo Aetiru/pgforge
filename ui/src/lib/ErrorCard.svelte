@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
   import type { MessageError } from "./query.svelte";
+  import { t } from "./i18n.svelte";
 
   /**
    * Un error de PostgreSQL ordenado: qué falló, el código, dónde, la pista del servidor y lo que se
@@ -22,9 +23,9 @@
   function asText(): string {
     return [
       `ERROR ${error.code}: ${error.message}`,
-      error.line !== null ? `Línea ${error.line}` : null,
-      error.detail ? `Detalle: ${error.detail}` : null,
-      error.hint ? `Pista: ${error.hint}` : null,
+      error.line !== null ? t("Línea {line}", { line: error.line }) : null,
+      error.detail ? t("Detalle: {text}", { text: error.detail }) : null,
+      error.hint ? t("Pista: {text}", { text: error.hint }) : null,
     ]
       .filter(Boolean)
       .join("\n");
@@ -52,9 +53,9 @@
     <span class="min-w-0 flex-1 text-[13px] font-semibold text-rose-800 dark:text-rose-200">
       {error.message}
     </span>
-    <span class="tag tag-bad" title="Código SQLSTATE del error">{error.code}</span>
+    <span class="tag tag-bad" title={t("Código SQLSTATE del error")}>{error.code}</span>
     {#if error.line !== null}
-      <span class="tag tag-neutral">Línea {error.line}</span>
+      <span class="tag tag-neutral">{t("Línea {line}", { line: error.line })}</span>
     {/if}
   </div>
 
@@ -68,18 +69,18 @@
     <p class="text-zinc-700 dark:text-zinc-300">{error.detail}</p>
   {/if}
   {#if error.hint}
-    <p class="text-zinc-600 dark:text-zinc-400"><strong class="font-semibold">Pista:</strong> {error.hint}</p>
+    <p class="text-zinc-600 dark:text-zinc-400"><strong class="font-semibold">{t("Pista:")}</strong> {error.hint}</p>
   {/if}
 
   <div class="flex items-center gap-1.5 pt-0.5">
     {#if error.at !== null && ongoto}
       <button class="btn btn-sm" onclick={() => ongoto(error.at!)}>
-        <Icon name="compass" size={11} /> Ir a la línea
+        <Icon name="compass" size={11} /> {t("Ir a la línea")}
       </button>
     {/if}
     <button class="btn btn-sm" onclick={copy}>
       <Icon name="copy" size={11} />
-      {copied ? "Copiado" : "Copiar error"}
+      {copied ? t("Copiado") : t("Copiar error")}
     </button>
   </div>
 </div>

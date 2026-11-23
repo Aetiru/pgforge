@@ -7,6 +7,7 @@
  * y que la `key` que Svelte usa para identificar cada fila no se filtre al núcleo.
  */
 
+import { t } from "./i18n.svelte";
 import type { ColumnDef, TableChange } from "./ipc";
 
 /** Una fila del formulario. `key` es solo para que Svelte identifique la fila; no viaja al núcleo. */
@@ -26,11 +27,11 @@ export function blankColumn(): DraftColumn {
 }
 
 export function validateTable(name: string, columns: DraftColumn[]): string | null {
-  if (!name.trim()) return "Poné un nombre para la tabla.";
-  if (columns.length === 0) return "Una tabla necesita al menos una columna.";
+  if (!name.trim()) return t("Poné un nombre para la tabla.");
+  if (columns.length === 0) return t("Una tabla necesita al menos una columna.");
   for (const column of columns) {
-    if (!column.name.trim()) return "Todas las columnas necesitan un nombre.";
-    if (!column.typeName.trim()) return `La columna ${column.name} necesita un tipo.`;
+    if (!column.name.trim()) return t("Todas las columnas necesitan un nombre.");
+    if (!column.typeName.trim()) return t("La columna {name} necesita un tipo.", { name: column.name });
   }
   return null;
 }

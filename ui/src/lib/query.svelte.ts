@@ -1,3 +1,4 @@
+import { t } from "./i18n.svelte";
 import type { SQLNamespace } from "@codemirror/lang-sql";
 import { pickSave } from "./ipc";
 import { confirmAffected, confirmMutation, confirmScript, isReadOnly } from "./access.svelte";
@@ -421,7 +422,7 @@ export class QueryTab extends Tab {
     // El nombre del archivo es lo que uno busca en la barra cuando tiene cuatro pestañas abiertas.
     const name = path.split(/[\\/]/).pop();
     if (name) this.title = name;
-    this.log("info", `Guardado en ${path}.`);
+    this.log("info", t("Guardado en {path}.", { path }));
   }
 
   /**
@@ -456,7 +457,7 @@ export class QueryTab extends Tab {
       this.autocommit = opened.autocommit;
       this.applyTx(opened.txStatus);
       this.messages = [];
-      this.log("info", `Conectado a ${opened.database}.`);
+      this.log("info", t("Conectado a {database}.", { database: opened.database }));
       if (this.timeoutMs !== null) await this.setTimeoutMs(this.timeoutMs);
       await this.loadSchema();
     } catch (error) {
@@ -490,8 +491,8 @@ export class QueryTab extends Tab {
       this.log(
         "notice",
         hadTransaction
-          ? "Conectado de nuevo. La transacción que estaba abierta se perdió: nada de lo que hizo quedó confirmado."
-          : "Conectado de nuevo.",
+          ? t("Conectado de nuevo. La transacción que estaba abierta se perdió: nada de lo que hizo quedó confirmado.")
+          : t("Conectado de nuevo."),
       );
     } catch (error) {
       this.log("error", describeError(error));
@@ -514,7 +515,7 @@ export class QueryTab extends Tab {
       this.relations = loaded.relations;
       this.foreignKeys = loaded.foreignKeys;
     } catch (error) {
-      this.log("notice", `Sin autocompletado: ${describeError(error)}`);
+      this.log("notice", t("Sin autocompletado: {error}", { error: describeError(error) }));
     }
   }
 
@@ -552,7 +553,7 @@ export class QueryTab extends Tab {
       await scriptWrite(this.scriptPath, this.sql);
       this.scriptCreated = true;
     } catch (error) {
-      this.log("error", `No se pudo guardar el script: ${describeError(error)}`);
+      this.log("error", t("No se pudo guardar el script: {error}", { error: describeError(error) }));
     }
   }
 
@@ -645,7 +646,7 @@ export class QueryTab extends Tab {
     if (uses.length === 0) return { sql, unmap: identity };
 
     if (!this.askVars) {
-      this.log("error", "La consulta tiene variables {{nombre}} y no hay dónde pedir sus valores.");
+      this.log("error", t("La consulta tiene variables {variable} y no hay dónde pedir sus valores.", { variable: "{{nombre}}" }));
       return null;
     }
 
@@ -876,7 +877,7 @@ export class QueryTab extends Tab {
     // distintos de los que se están mirando, y podría quedar esperando un bloqueo de esta misma.
     if (this.txStatus !== "idle") {
       this.editError =
-        "Hay una transacción abierta en esta pestaña: confirmala o revertila antes de editar el resultado.";
+        t("Hay una transacción abierta en esta pestaña: confirmala o revertila antes de editar el resultado.");
       return;
     }
 
@@ -931,7 +932,7 @@ export class QueryTab extends Tab {
     const plan = this.editPlan;
     const changes = this.editChanges();
     if (!plan || changes.length === 0) return;
-    if (!(await confirmMutation(this.profileId, `Se van a aplicar ${changes.length} cambios.`))) return;
+    if (!(await confirmMutation(this.profileId, t("Se van a aplicar {length} cambios.", { length: changes.length })))) return;
 
     this.editBusy = true;
     this.editError = null;
@@ -1003,8 +1004,8 @@ export class QueryTab extends Tab {
         } else if (event.outcome.truncated) {
           this.log(
             "notice",
-            `Se recortó el resultado: se trajeron ${event.outcome.rows.length} filas y hay más. ` +
-              "El servidor corta en el máximo elegido, así que no se sabe cuántas son en total.",
+            t("Se recortó el resultado: se trajeron {length} filas y hay más. ", { length: event.outcome.rows.length }) +
+              t("El servidor corta en el máximo elegido, así que no se sabe cuántas son en total."),
           );
         }
         // Mostrar el último resultado con filas es lo que uno espera al ejecutar un script que
@@ -1026,7 +1027,7 @@ export class QueryTab extends Tab {
 
       case "failed": {
         if (isCanceled(event.error)) {
-          this.log("info", "Consulta cancelada.");
+          this.log("info", t("Consulta cancelada."));
           break;
         }
         if (isDisconnected(event.error)) reportServerDown(this.profileId);
@@ -1073,7 +1074,7 @@ export class QueryTab extends Tab {
 
       case "completed":
         if (event.executed > 1) {
-          this.log("info", `${event.executed} sentencias en ${event.seconds.toFixed(3)} s.`);
+          this.log("info", t("{executed} sentencias en {seconds} s.", { executed: event.executed, seconds: event.seconds.toFixed(3) }));
         }
         // Sin `await`: el resultado ya está en pantalla y releer el catálogo no debe hacerlo esperar.
         void this.syncCatalog();
@@ -1107,11 +1108,11 @@ export class QueryTab extends Tab {
   }
 
   async commit() {
-    await this.endTransaction(queryCommit, "Transacción confirmada.");
+    await this.endTransaction(queryCommit, t("Transacción confirmada."));
   }
 
   async rollback() {
-    await this.endTransaction(queryRollback, "Transacción revertida.");
+    await this.endTransaction(queryRollback, t("Transacción revertida."));
   }
 
   /**
@@ -1124,7 +1125,7 @@ export class QueryTab extends Tab {
     try {
       this.applyTx(await queryAutocommit(this.tabId, enabled));
       if (enabled && this.txStatus !== "idle") {
-        this.log("notice", "Queda una transacción abierta: confirmala o revertila.");
+        this.log("notice", t("Queda una transacción abierta: confirmala o revertila."));
       }
     } catch (error) {
       this.log("error", describeError(error));
@@ -1243,7 +1244,7 @@ export async function saveQueryTab(tab: QueryTab, askPath: boolean) {
     let path = askPath ? null : tab.filePath;
     if (!path) {
       path = await pickSave({
-        title: "Guardar la consulta",
+        title: t("Guardar la consulta"),
         defaultPath: tab.filePath ?? `${tab.title.replace(/[\\/:*?"<>|]/g, "_")}.sql`,
         filters: [{ name: "SQL", extensions: ["sql"] }],
       });
@@ -1271,7 +1272,7 @@ export async function openSqlFiles(
   let last: QueryTab | null = null;
 
   for (const path of paths) {
-    const name = path.split(/[\\/]/).pop() ?? "consulta.sql";
+    const name = path.split(/[\\/]/).pop() ?? t("consulta.sql");
     // Sin reservar script: la pestaña ya tiene su archivo, que es justo el que se está abriendo.
     // `filePath` es el camino de «guardé esto en otro lado con Ctrl+S», y sigue siéndolo acá.
     const tab = await openQuery(profileId, database, name, false);
@@ -1282,7 +1283,7 @@ export async function openSqlFiles(
       tab.baseline = tab.sql;
     } catch (error) {
       // La pestaña queda abierta y vacía con el motivo adentro: cerrarla sola escondería el error.
-      tab.log("error", `No se pudo abrir ${path}: ${describeError(error)}`);
+      tab.log("error", t("No se pudo abrir {path}: {error}", { path, error: describeError(error) }));
       tab.view = "messages";
     }
   }
@@ -1309,7 +1310,7 @@ export async function openScript(
   try {
     tab.sql = await scriptRead(path);
   } catch (error) {
-    tab.log("error", `No se pudo abrir ${path}: ${describeError(error)}`);
+    tab.log("error", t("No se pudo abrir {path}: {error}", { path, error: describeError(error) }));
     tab.view = "messages";
   }
   return tab;
@@ -1338,10 +1339,10 @@ export async function openQuery(
     tab.tabId = opened.tabId;
     tab.autocommit = opened.autocommit;
     tab.applyTx(opened.txStatus);
-    tab.log("info", `Conectado a ${opened.database}.`);
+    tab.log("info", t("Conectado a {database}.", { database: opened.database }));
     await applyDefaultTimeout(tab, profileId);
     if (!opened.autocommit) {
-      tab.log("info", "Autocommit apagado: cada ejecución abre una transacción.");
+      tab.log("info", t("Autocommit apagado: cada ejecución abre una transacción."));
     }
   } catch (error) {
     tab.log("error", describeError(error));
@@ -1403,7 +1404,7 @@ export async function renameQueryTab(tab: QueryTab, title: string) {
   } catch (error) {
     // Nombre repetido, permiso, lo que sea: se avisa en el registro de la pestaña y el título no se
     // toca, para no dejar la pestaña diciendo un nombre que el archivo no tiene.
-    tab.log("error", `No se pudo renombrar el script: ${describeError(error)}`);
+    tab.log("error", t("No se pudo renombrar el script: {error}", { error: describeError(error) }));
   }
 }
 

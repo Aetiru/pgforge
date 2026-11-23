@@ -6,6 +6,8 @@
  * cumple por estructura: así estas reglas no dependen de cuántos campos tenga el espejo de Rust.
  */
 
+
+import { t } from "./i18n.svelte";
 export interface SnippetScope {
   profileIds: string[];
   databases: string[];
@@ -70,19 +72,19 @@ export function sortSnippets<T extends SnippetItem>(
   return copy;
 }
 
-export const NO_CATEGORY = "Sin categoría";
+export const noCategory = () => t("Sin categoría");
 
 /** Agrupa por categoría, en orden alfabético, con «Sin categoría» al final. Respeta el orden de cada grupo. */
 export function groupByCategory<T extends SnippetItem>(items: T[]): { category: string; items: T[] }[] {
   const groups = new Map<string, T[]>();
   for (const item of items) {
-    const category = item.category?.trim() || NO_CATEGORY;
+    const category = item.category?.trim() || noCategory();
     groups.set(category, [...(groups.get(category) ?? []), item]);
   }
   return [...groups.entries()]
     .sort(([a], [b]) => {
-      if (a === NO_CATEGORY) return 1;
-      if (b === NO_CATEGORY) return -1;
+      if (a === noCategory()) return 1;
+      if (b === noCategory()) return -1;
       return a.localeCompare(b, "es", { sensitivity: "base" });
     })
     .map(([category, list]) => ({ category, items: list }));
@@ -119,12 +121,14 @@ export function scopeLabel(item: SnippetItem, profileName: (id: string) => strin
   const scope = item.scope;
   const parts: string[] = [];
   if (scope && scope.profileIds.length > 0) {
-    parts.push(scope.profileIds.map((id) => profileName(id) ?? "servidor desconocido").join(", "));
+    parts.push(scope.profileIds.map((id) => profileName(id) ?? t("servidor desconocido")).join(", "));
   }
   if (scope && scope.databases.length > 0) {
-    parts.push(`${scope.databases.length > 1 ? "bases" : "base"} ${scope.databases.join(", ")}`);
+    parts.push(scope.databases.length > 1
+        ? t("bases {names}", { names: scope.databases.join(", ") })
+        : t("base {names}", { names: scope.databases.join(", ") }));
   }
-  return parts.length > 0 ? parts.join(" · ") : "Todos los servidores";
+  return parts.length > 0 ? parts.join(" · ") : t("Todos los servidores");
 }
 
 /**

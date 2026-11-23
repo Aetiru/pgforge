@@ -8,6 +8,7 @@
  * selección. Acá cada caso dice **qué** quedó desactualizado y el panel se encarga una sola vez.
  */
 
+import { t } from "./i18n.svelte";
 import type { IconName } from "./Icon.svelte";
 import {
   databaseApply,
@@ -146,79 +147,79 @@ export function headerActions(context: ActionContext): DetailAction[] {
   // --- Crear ---
 
   if (flags.isTablesFolder && schema) {
-    actions.push({ kind: "newTable", icon: "plus", label: "Nueva tabla", title: "Nueva tabla", tone: "primary" });
+    actions.push({ kind: "newTable", icon: "plus", label: t("Nueva tabla"), title: t("Nueva tabla"), tone: "primary" });
   }
   if (flags.isViewsFolder && schema) {
-    actions.push({ kind: "newView", icon: "plus", label: "Nueva vista", title: "Nueva vista", tone: "primary", guarded: true });
+    actions.push({ kind: "newView", icon: "plus", label: t("Nueva vista"), title: t("Nueva vista"), tone: "primary", guarded: true });
   }
   if (flags.isMatViewsFolder && schema) {
     actions.push({
       kind: "newMaterializedView",
       icon: "plus",
-      label: "Nueva vista materializada",
-      title: "Nueva vista materializada",
+      label: t("Nueva vista materializada"),
+      title: t("Nueva vista materializada"),
       tone: "primary",
       guarded: true,
     });
   }
   if (flags.isFunctionsFolder && schema) {
-    actions.push({ kind: "newFunction", icon: "plus", label: "Nueva función", title: "Nueva función", tone: "primary", guarded: true });
+    actions.push({ kind: "newFunction", icon: "plus", label: t("Nueva función"), title: t("Nueva función"), tone: "primary", guarded: true });
   }
   if (flags.isProceduresFolder && schema) {
     actions.push({
       kind: "newProcedure",
       icon: "plus",
-      label: "Nuevo procedimiento",
-      title: "Nuevo procedimiento",
+      label: t("Nuevo procedimiento"),
+      title: t("Nuevo procedimiento"),
       tone: "primary",
       guarded: true,
     });
   }
   if (flags.isRolesFolder) {
-    actions.push({ kind: "newRole", icon: "plus", label: "Nuevo rol", title: "Nuevo rol", tone: "primary", guarded: true });
+    actions.push({ kind: "newRole", icon: "plus", label: t("Nuevo rol"), title: t("Nuevo rol"), tone: "primary", guarded: true });
   }
   if (flags.isExtensionsFolder) {
     actions.push({
       kind: "installExtension",
       icon: "plus",
-      label: "Instalar extensión",
-      title: "Instalar extensión",
+      label: t("Instalar extensión"),
+      title: t("Instalar extensión"),
       tone: "primary",
       guarded: true,
     });
   }
   if (flags.isFdwsFolder) {
-    actions.push({ kind: "newFdw", icon: "plus", label: "Nuevo wrapper", title: "Nuevo wrapper", tone: "primary", guarded: true });
+    actions.push({ kind: "newFdw", icon: "plus", label: t("Nuevo wrapper"), title: t("Nuevo wrapper"), tone: "primary", guarded: true });
   }
   if (flags.isForeignServersFolder) {
     actions.push({
       kind: "newForeignServer",
       icon: "plus",
-      label: "Nuevo servidor foráneo",
-      title: "Nuevo servidor foráneo",
+      label: t("Nuevo servidor foráneo"),
+      title: t("Nuevo servidor foráneo"),
       tone: "primary",
       guarded: true,
     });
   }
   if (flags.isSequencesFolder && schema) {
-    actions.push({ kind: "newSequence", icon: "plus", label: "Nueva secuencia", title: "Nueva secuencia", tone: "primary", guarded: true });
+    actions.push({ kind: "newSequence", icon: "plus", label: t("Nueva secuencia"), title: t("Nueva secuencia"), tone: "primary", guarded: true });
   }
   if (flags.isTypesFolder && schema) {
     actions.push(
-      { kind: "newEnum", icon: "plus", label: "Nueva enumeración", title: "Nueva enumeración", tone: "primary", guarded: true },
-      { kind: "newComposite", icon: "plus", label: "Nuevo compuesto", title: "Nuevo compuesto", guarded: true },
-      { kind: "newDomain", icon: "plus", label: "Nuevo dominio", title: "Nuevo dominio", guarded: true },
+      { kind: "newEnum", icon: "plus", label: t("Nueva enumeración"), title: t("Nueva enumeración"), tone: "primary", guarded: true },
+      { kind: "newComposite", icon: "plus", label: t("Nuevo compuesto"), title: t("Nuevo compuesto"), guarded: true },
+      { kind: "newDomain", icon: "plus", label: t("Nuevo dominio"), title: t("Nuevo dominio"), guarded: true },
     );
   }
   if (flags.isSchemasFolder) {
-    actions.push({ kind: "newSchema", icon: "plus", label: "Nuevo esquema", title: "Nuevo esquema", tone: "primary", guarded: true });
+    actions.push({ kind: "newSchema", icon: "plus", label: t("Nuevo esquema"), title: t("Nuevo esquema"), tone: "primary", guarded: true });
   }
   if (flags.isPartitionedTable && node?.oid) {
     actions.push({
       kind: "newPartition",
       icon: "plus",
-      label: "Nueva partición",
-      title: "Crea o engancha una partición de esta tabla",
+      label: t("Nueva partición"),
+      title: t("Crea o engancha una partición de esta tabla"),
       guarded: true,
     });
   }
@@ -226,22 +227,22 @@ export function headerActions(context: ActionContext): DetailAction[] {
   // --- Abrir en otra pestaña ---
 
   if (context.dataTarget !== null && context.queryTarget) {
-    actions.push({ kind: "openData", icon: "table", label: "Datos", title: `Abre los datos de ${label}`, tone: "primary" });
+    actions.push({ kind: "openData", icon: "table", label: t("Datos"), title: t("Abre los datos de {label}", { label }), tone: "primary" });
   }
   if (context.queryTarget) {
     actions.push({
       kind: "openQuery",
       icon: "sql",
-      label: "Consulta",
-      title: `Abre una consulta contra ${context.queryTarget.database}`,
+      label: t("Consulta"),
+      title: t("Abre una consulta contra {database}", { database: context.queryTarget.database }),
     });
   }
   if (flags.isDatabase && node) {
     actions.push({
       kind: "openDatabase",
       icon: "database",
-      label: "Abrir",
-      title: `Abre ${node.label} en una pestaña: propiedades, esquemas, tablas y extensiones`,
+      label: t("Abrir"),
+      title: t("Abre {label} en una pestaña: propiedades, esquemas, tablas y extensiones", { label: node.label }),
       tone: "primary",
     });
   }
@@ -249,28 +250,28 @@ export function headerActions(context: ActionContext): DetailAction[] {
     actions.push({
       kind: "openErd",
       icon: "diagram",
-      label: "Diagrama",
-      title: `Dibuja las tablas de ${node.label} y sus claves foráneas`,
+      label: t("Diagrama"),
+      title: t("Dibuja las tablas de {label} y sus claves foráneas", { label: node.label }),
     });
     actions.push({
       kind: "openCompare",
       icon: "compare",
-      label: "Comparar",
-      title: `Compara ${node.label} contra el esquema de otro servidor conectado`,
+      label: t("Comparar"),
+      title: t("Compara {label} contra el esquema de otro servidor conectado", { label: node.label }),
     });
     actions.push({
       kind: "openPermissionMatrix",
       icon: "role",
-      label: "Matriz de permisos",
-      title: `Quién puede hacer qué sobre los objetos de ${node.label}`,
+      label: t("Matriz de permisos"),
+      title: t("Quién puede hacer qué sobre los objetos de {label}", { label: node.label }),
     });
   }
   if (flags.isRole && node) {
     actions.push({
       kind: "openRoleCapabilities",
       icon: "role",
-      label: "Qué puede hacer",
-      title: `Los permisos calculados de ${node.label} sobre un esquema elegido`,
+      label: t("Qué puede hacer"),
+      title: t("Los permisos calculados de {label} sobre un esquema elegido", { label: node.label }),
     });
   }
 
@@ -280,10 +281,10 @@ export function headerActions(context: ActionContext): DetailAction[] {
     actions.push({
       kind: "bookmark",
       icon: "star",
-      label: context.bookmarked ? "Quitar de marcadores" : "Agregar a marcadores",
+      label: context.bookmarked ? t("Quitar de marcadores") : t("Agregar a marcadores"),
       title: context.bookmarked
-        ? "Sacar de la sección fija de marcadores"
-        : "Tenerlo siempre a mano en la sección fija de marcadores",
+        ? t("Sacar de la sección fija de marcadores")
+        : t("Tenerlo siempre a mano en la sección fija de marcadores"),
     });
   }
 
@@ -298,8 +299,8 @@ export function headerActions(context: ActionContext): DetailAction[] {
     actions.push({
       kind: "maintenance",
       icon: "refresh",
-      label: "Mantenimiento",
-      title: `VACUUM, ANALYZE o REINDEX sobre ${node.label}`,
+      label: t("Mantenimiento"),
+      title: t("VACUUM, ANALYZE o REINDEX sobre {label}", { label: node.label }),
       guarded: true,
     });
   }
@@ -308,29 +309,29 @@ export function headerActions(context: ActionContext): DetailAction[] {
 
   if (flags.isTable && node) {
     actions.push(
-      { kind: "export", icon: "download", label: "Exportar", title: `Exporta ${node.label} a un archivo con COPY` },
-      { kind: "import", icon: "upload", label: "Importar", title: `Importa un archivo a ${node.label} con COPY`, guarded: true },
+      { kind: "export", icon: "download", label: t("Exportar"), title: t("Exporta {label} a un archivo con COPY", { label: node.label }) },
+      { kind: "import", icon: "upload", label: t("Importar"), title: t("Importa un archivo a {label} con COPY", { label: node.label }), guarded: true },
       // Escribe en el destino, no acá: el aviso de producción y el solo lectura se miran contra el
       // servidor elegido en el diálogo, no contra el de origen.
-      { kind: "transfer", icon: "upload", label: "Copiar a otro servidor", title: `Copia ${node.label} a una tabla de otro servidor conectado, sin archivo intermedio` },
+      { kind: "transfer", icon: "upload", label: t("Copiar a otro servidor"), title: t("Copia {label} a una tabla de otro servidor conectado, sin archivo intermedio", { label: node.label }) },
     );
     if (schema) {
       actions.push({
         kind: "compareData",
         icon: "compare",
-        label: "Comparar datos",
-        title: `Compara las filas de ${node.label} contra las de otra tabla y arma el SQL para igualarlas`,
+        label: t("Comparar datos"),
+        title: t("Compara las filas de {label} contra las de otra tabla y arma el SQL para igualarlas", { label: node.label }),
       });
     }
   }
   if (flags.isDatabase && node) {
     actions.push(
-      { kind: "backup", icon: "download", label: "Backup", title: `Hace un backup de ${node.label} con pg_dump` },
+      { kind: "backup", icon: "download", label: t("Backup"), title: t("Hace un backup de {label} con pg_dump", { label: node.label }) },
       {
         kind: "restore",
         icon: "upload",
-        label: "Restaurar",
-        title: `Restaura un backup sobre ${node.label} con pg_restore`,
+        label: t("Restaurar"),
+        title: t("Restaura un backup sobre {label} con pg_restore", { label: node.label }),
         guarded: true,
       },
     );
@@ -339,112 +340,112 @@ export function headerActions(context: ActionContext): DetailAction[] {
   // --- Editar ---
 
   if (flags.isView && node) {
-    actions.push({ kind: "editView", icon: "edit", label: "Editar", title: "Editar", guarded: true });
+    actions.push({ kind: "editView", icon: "edit", label: t("Editar"), title: t("Editar"), guarded: true });
   }
   if (flags.isMaterializedView && node) {
     actions.push(
-      { kind: "editMaterializedView", icon: "edit", label: "Editar", title: "Editar", guarded: true },
+      { kind: "editMaterializedView", icon: "edit", label: t("Editar"), title: t("Editar"), guarded: true },
       {
         kind: "refreshMaterializedView",
         icon: "refresh",
-        label: "Refrescar",
-        title: "Vuelve a calcular los datos guardados de la vista",
+        label: t("Refrescar"),
+        title: t("Vuelve a calcular los datos guardados de la vista"),
         guarded: true,
       },
     );
   }
   if (flags.isRoutine && context.hasDdl) {
-    actions.push({ kind: "editFunction", icon: "edit", label: "Editar", title: "Editar", guarded: true });
+    actions.push({ kind: "editFunction", icon: "edit", label: t("Editar"), title: t("Editar"), guarded: true });
   }
-  if (flags.isRole) actions.push({ kind: "editRole", icon: "edit", label: "Editar", title: "Editar" });
-  if (flags.isExtension) actions.push({ kind: "editExtension", icon: "edit", label: "Editar", title: "Editar" });
-  if (flags.isFdw) actions.push({ kind: "editFdw", icon: "edit", label: "Editar", title: "Editar" });
+  if (flags.isRole) actions.push({ kind: "editRole", icon: "edit", label: t("Editar"), title: t("Editar") });
+  if (flags.isExtension) actions.push({ kind: "editExtension", icon: "edit", label: t("Editar"), title: t("Editar") });
+  if (flags.isFdw) actions.push({ kind: "editFdw", icon: "edit", label: t("Editar"), title: t("Editar") });
   if (flags.isForeignServer) {
-    actions.push({ kind: "editForeignServer", icon: "edit", label: "Editar", title: "Editar" });
+    actions.push({ kind: "editForeignServer", icon: "edit", label: t("Editar"), title: t("Editar") });
   }
   if (flags.isSequence && node?.oid) {
-    actions.push({ kind: "editSequence", icon: "edit", label: "Editar", title: "Editar", guarded: true });
+    actions.push({ kind: "editSequence", icon: "edit", label: t("Editar"), title: t("Editar"), guarded: true });
   }
   if (flags.isType && node?.oid) {
-    actions.push({ kind: "editType", icon: "edit", label: "Editar", title: "Editar", guarded: true });
+    actions.push({ kind: "editType", icon: "edit", label: t("Editar"), title: t("Editar"), guarded: true });
   }
   if (flags.isSchema && node) {
-    actions.push({ kind: "editSchema", icon: "edit", label: "Editar", title: "Editar", guarded: true });
+    actions.push({ kind: "editSchema", icon: "edit", label: t("Editar"), title: t("Editar"), guarded: true });
   }
   if (flags.isDatabase && node) {
     actions.push(
-      { kind: "editDatabase", icon: "edit", label: "Editar", title: "Editar", guarded: true },
-      { kind: "newDatabase", icon: "plus", label: "Nueva base", title: "Nueva base", guarded: true },
+      { kind: "editDatabase", icon: "edit", label: t("Editar"), title: t("Editar"), guarded: true },
+      { kind: "newDatabase", icon: "plus", label: t("Nueva base"), title: t("Nueva base"), guarded: true },
     );
   }
   if (context.hasCommentTarget) {
     actions.push({
       kind: "comment",
       icon: "edit",
-      label: "Comentario",
-      title: "Documenta el objeto adentro de la propia base",
+      label: t("Comentario"),
+      title: t("Documenta el objeto adentro de la propia base"),
       guarded: true,
     });
   }
   if (context.isGroup) {
-    actions.push({ kind: "renameGroup", icon: "edit", label: "Renombrar", title: "Renombrar", tone: "primary" });
+    actions.push({ kind: "renameGroup", icon: "edit", label: t("Renombrar"), title: t("Renombrar"), tone: "primary" });
   }
   if (context.isServer) {
     actions.push(
       context.connected
-        ? { kind: "disconnect", icon: "unplug", label: "Desconectar", title: "Desconectar" }
-        : { kind: "connect", icon: "plug", label: "Conectar", title: "Conectar", tone: "primary" },
-      { kind: "editServer", icon: "edit", label: "Editar", title: "Editar" },
+        ? { kind: "disconnect", icon: "unplug", label: t("Desconectar"), title: t("Desconectar") }
+        : { kind: "connect", icon: "plug", label: t("Conectar"), title: t("Conectar"), tone: "primary" },
+      { kind: "editServer", icon: "edit", label: t("Editar"), title: t("Editar") },
     );
   }
 
   // --- Borrar ---
 
   if (flags.isTable && context.hasShape) {
-    actions.push({ kind: "dropTable", icon: "trash", label: "Eliminar", title: "Eliminar la tabla", tone: "danger", guarded: true });
+    actions.push({ kind: "dropTable", icon: "trash", label: t("Eliminar"), title: t("Eliminar la tabla"), tone: "danger", guarded: true });
   }
   if (flags.isView && node) {
-    actions.push({ kind: "dropView", icon: "trash", label: "Eliminar", title: "Eliminar", tone: "danger", guarded: true });
+    actions.push({ kind: "dropView", icon: "trash", label: t("Eliminar"), title: t("Eliminar"), tone: "danger", guarded: true });
   }
   if (flags.isMaterializedView && node) {
-    actions.push({ kind: "dropMaterializedView", icon: "trash", label: "Eliminar", title: "Eliminar", tone: "danger", guarded: true });
+    actions.push({ kind: "dropMaterializedView", icon: "trash", label: t("Eliminar"), title: t("Eliminar"), tone: "danger", guarded: true });
   }
   if (flags.isRoutine && context.hasDdl) {
-    actions.push({ kind: "dropFunction", icon: "trash", label: "Eliminar", title: "Eliminar", tone: "danger", guarded: true });
+    actions.push({ kind: "dropFunction", icon: "trash", label: t("Eliminar"), title: t("Eliminar"), tone: "danger", guarded: true });
   }
   if (flags.isSequence && node) {
-    actions.push({ kind: "dropSequence", icon: "trash", label: "Eliminar", title: "Eliminar", tone: "danger", guarded: true });
+    actions.push({ kind: "dropSequence", icon: "trash", label: t("Eliminar"), title: t("Eliminar"), tone: "danger", guarded: true });
   }
   if (flags.isType && node) {
-    actions.push({ kind: "dropType", icon: "trash", label: "Eliminar", title: "Eliminar", tone: "danger", guarded: true });
+    actions.push({ kind: "dropType", icon: "trash", label: t("Eliminar"), title: t("Eliminar"), tone: "danger", guarded: true });
   }
   if (flags.isSchema && node) {
     actions.push({
       kind: "dropSchema",
       icon: "trash",
-      label: "Eliminar",
-      title: "Sin CASCADE falla si el esquema tiene algo adentro",
+      label: t("Eliminar"),
+      title: t("Sin CASCADE falla si el esquema tiene algo adentro"),
       tone: "danger",
       guarded: true,
     });
   }
   if (flags.isDatabase && node) {
-    actions.push({ kind: "dropDatabase", icon: "trash", label: "Eliminar", title: "Eliminar", tone: "danger", guarded: true });
+    actions.push({ kind: "dropDatabase", icon: "trash", label: t("Eliminar"), title: t("Eliminar"), tone: "danger", guarded: true });
   }
   if (flags.isRole) {
-    actions.push({ kind: "dropRole", icon: "trash", label: "Eliminar", title: "Eliminar", tone: "danger", guarded: true });
+    actions.push({ kind: "dropRole", icon: "trash", label: t("Eliminar"), title: t("Eliminar"), tone: "danger", guarded: true });
   }
   if (flags.isExtension) {
-    actions.push({ kind: "dropExtension", icon: "trash", label: "Quitar", title: "Quitar", tone: "danger", guarded: true });
+    actions.push({ kind: "dropExtension", icon: "trash", label: t("Quitar"), title: t("Quitar"), tone: "danger", guarded: true });
   }
   if (flags.isFdw) {
-    actions.push({ kind: "dropFdw", icon: "trash", label: "Eliminar", title: "Eliminar", tone: "danger", guarded: true });
+    actions.push({ kind: "dropFdw", icon: "trash", label: t("Eliminar"), title: t("Eliminar"), tone: "danger", guarded: true });
   }
   if (flags.isForeignServer) {
-    actions.push({ kind: "dropForeignServer", icon: "trash", label: "Eliminar", title: "Eliminar", tone: "danger", guarded: true });
+    actions.push({ kind: "dropForeignServer", icon: "trash", label: t("Eliminar"), title: t("Eliminar"), tone: "danger", guarded: true });
   }
   if (context.isServer) {
-    actions.push({ kind: "deleteServer", icon: "trash", label: "Eliminar", title: "Eliminar", tone: "danger" });
+    actions.push({ kind: "deleteServer", icon: "trash", label: t("Eliminar"), title: t("Eliminar"), tone: "danger" });
   }
 
   return actions;
@@ -507,41 +508,43 @@ export interface DropOptions {
 export function dropQuestion(target: DropTarget): string {
   switch (target.kind) {
     case "table":
-      return `¿Eliminar la tabla ${target.label}? Se pierden sus datos.`;
+      return t("¿Eliminar la tabla {label}? Se pierden sus datos.", { label: target.label });
     case "column":
-      return `¿Eliminar la columna ${target.label}? Se pierden sus valores en todas las filas.`;
+      return t("¿Eliminar la columna {label}? Se pierden sus valores en todas las filas.", { label: target.label });
     case "index":
-      return `¿Eliminar el índice ${target.label}?`;
+      return t("¿Eliminar el índice {label}?", { label: target.label });
     case "constraint":
-      return `¿Eliminar la restricción ${target.label}?`;
+      return t("¿Eliminar la restricción {label}?", { label: target.label });
     case "trigger":
-      return `¿Eliminar el trigger ${target.label}?`;
+      return t("¿Eliminar el trigger {label}?", { label: target.label });
     case "view":
-      return `¿Eliminar la vista ${target.label}?`;
+      return t("¿Eliminar la vista {label}?", { label: target.label });
     case "materializedView":
-      return `¿Eliminar la vista materializada ${target.label}? Se pierden los datos guardados.`;
+      return t("¿Eliminar la vista materializada {label}? Se pierden los datos guardados.", { label: target.label });
     case "function":
-      return `¿Eliminar ${target.procedure ? "el procedimiento" : "la función"} ${target.name}(${target.args})?`;
+      return target.procedure
+        ? t("¿Eliminar el procedimiento {signature}?", { signature: `${target.name}(${target.args})` })
+        : t("¿Eliminar la función {signature}?", { signature: `${target.name}(${target.args})` });
     case "policy":
-      return `¿Eliminar la política ${target.label}? Si es la única que dejaba ver filas, la tabla queda sin nada visible.`;
+      return t("¿Eliminar la política {label}? Si es la única que dejaba ver filas, la tabla queda sin nada visible.", { label: target.label });
     case "role":
-      return `¿Eliminar el rol ${target.label}?`;
+      return t("¿Eliminar el rol {label}?", { label: target.label });
     case "extension":
-      return `¿Quitar la extensión ${target.label} de la base?`;
+      return t("¿Quitar la extensión {label} de la base?", { label: target.label });
     case "foreignDataWrapper":
-      return `¿Eliminar el wrapper foráneo ${target.label}?`;
+      return t("¿Eliminar el wrapper foráneo {label}?", { label: target.label });
     case "foreignServer":
-      return `¿Eliminar el servidor foráneo ${target.label}? Se pierden sus mapeos de usuario.`;
+      return t("¿Eliminar el servidor foráneo {label}? Se pierden sus mapeos de usuario.", { label: target.label });
     case "sequence":
-      return `¿Eliminar la secuencia ${target.label}?`;
+      return t("¿Eliminar la secuencia {label}?", { label: target.label });
     case "type":
-      return `¿Eliminar el tipo ${target.label}? Las columnas que lo usan lo necesitan.`;
+      return t("¿Eliminar el tipo {label}? Las columnas que lo usan lo necesitan.", { label: target.label });
     case "domain":
-      return `¿Eliminar el dominio ${target.label}? Las columnas que lo usan lo necesitan.`;
+      return t("¿Eliminar el dominio {label}? Las columnas que lo usan lo necesitan.", { label: target.label });
     case "schema":
-      return `¿Eliminar el esquema ${target.label}? Sin CASCADE falla si tiene algo adentro.`;
+      return t("¿Eliminar el esquema {label}? Sin CASCADE falla si tiene algo adentro.", { label: target.label });
     case "database":
-      return `¿Eliminar la base ${target.label}? Se pierde todo lo que tiene adentro.`;
+      return t("¿Eliminar la base {label}? Se pierde todo lo que tiene adentro.", { label: target.label });
   }
 }
 

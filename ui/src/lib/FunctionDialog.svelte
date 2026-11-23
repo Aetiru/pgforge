@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
@@ -28,7 +29,7 @@
   async function submit() {
     error = null;
     if (!text.trim()) {
-      error = "Hace falta una sentencia CREATE FUNCTION o CREATE PROCEDURE.";
+      error = t("Hace falta una sentencia CREATE FUNCTION o CREATE PROCEDURE.");
       return;
     }
 
@@ -45,15 +46,15 @@
 </script>
 
 <Modal
-  title="Función o procedimiento"
-  subtitle="Se ejecuta tal cual está escrito, contra {database}"
+  title={t("Función o procedimiento")}
+  subtitle={t("Se ejecuta tal cual está escrito, contra {database}", { database })}
   size="xl"
   busy={saving}
   {onclose}
 >
   <p class="mb-2 text-xs muted">
-    Si el texto dice <code class="kbd">CREATE OR REPLACE</code>, reemplaza la que ya existe; si dice
-    <code class="kbd">CREATE</code> a secas, crea una nueva.
+    {t("Si el texto dice")} <code class="kbd">CREATE OR REPLACE</code>{t(", reemplaza la que ya existe; si dice")}
+    <code class="kbd">CREATE</code> {t("a secas, crea una nueva.")}
   </p>
 
   <!-- El cuerpo de una función es código: va en el editor de SQL, no en un cuadro de texto. -->
@@ -66,10 +67,10 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving}>
       {#if saving}<span class="spinner"></span>{/if}
-      Ejecutar
+      {t("Ejecutar")}
     </button>
   {/snippet}
 </Modal>

@@ -1,3 +1,4 @@
+import { i18n, t } from "./i18n.svelte";
 import { ago, bytes, count, duration, percent } from "./format";
 import { daysText, growthText, levelLabel, millions } from "./diagnose-view";
 import type { Health } from "./health";
@@ -47,11 +48,12 @@ export interface Section {
   table?: { head: string[]; rows: string[][] };
 }
 
-const HEALTH_TEXT = {
-  ok: "Todo en orden",
-  warn: "Hay cosas para revisar",
-  bad: "Requiere atención",
-} as const;
+const healthText = (level: "ok" | "warn" | "bad") =>
+  ({
+    ok: t("Todo en orden"),
+    warn: t("Hay cosas para revisar"),
+    bad: t("Requiere atención"),
+  })[level];
 
 function section(title: string, fill: Partial<Section> = {}): Section {
   return { title, paragraphs: [], bullets: [], ...fill };
@@ -60,10 +62,10 @@ function section(title: string, fill: Partial<Section> = {}): Section {
 export function buildReport(input: ReportInput): Section[] {
   const sections: Section[] = [];
 
-  const verdict = input.health ? HEALTH_TEXT[input.health.level] : "Sin muestra del monitoreo";
+  const verdict = input.health ? healthText(input.health.level) : t("Sin muestra del monitoreo");
   sections.push(
-    section("Resumen", {
-      paragraphs: [`${verdict}.`],
+    section(t("Resumen"), {
+      paragraphs: [t("{verdict}.", { verdict })],
       bullets: input.health?.issues.map((issue) => issue.text) ?? [],
     }),
   );
@@ -72,17 +74,22 @@ export function buildReport(input: ReportInput): Section[] {
     const c = input.connections;
     const usable = c.maxConnections - c.reserved;
     sections.push(
-      section("Conexiones", {
+      section(t("Conexiones"), {
         paragraphs: [
-          `${count(c.total)} de ${count(usable)} disponibles (máximo ${count(c.maxConnections)}, ${count(c.reserved)} reservadas a superusuarios).`,
+          t("{total} de {usable} disponibles (máximo {max}, {reserved} reservadas a superusuarios).", {
+            total: count(c.total),
+            usable: count(usable),
+            max: count(c.maxConnections),
+            reserved: count(c.reserved),
+          }),
         ],
         table: c.groups.length
           ? {
-              head: ["Aplicación", "Rol", "Dirección", "Total", "Inactivas", "En transacción"],
+              head: [t("Aplicación"), t("Rol"), t("Dirección"), t("Total"), t("Inactivas"), t("En transacción")],
               rows: c.groups
                 .slice(0, 10)
                 .map((g) => [
-                  g.application ?? "(sin permiso)",
+                  g.application ?? t("(sin permiso)"),
                   g.user ?? "—",
                   g.address ?? "—",
                   count(g.total),
@@ -98,9 +105,9 @@ export function buildReport(input: ReportInput): Section[] {
   const sequences = (input.sequences ?? []).filter((s) => s.level === "review" || s.level === "attention");
   if (sequences.length) {
     sections.push(
-      section("Secuencias por agotarse", {
+      section(t("Secuencias por agotarse"), {
         table: {
-          head: ["Secuencia", "Tipo", "Usado", "Quedan", "Se agota en"],
+          head: [t("Secuencia"), t("Tipo"), t("Usado"), t("Quedan"), t("Se agota en")],
           rows: sequences.map((s) => [
             `${s.schema}.${s.name}`,
             s.dataType,
@@ -116,16 +123,16 @@ export function buildReport(input: ReportInput): Section[] {
   const wrap = input.wraparound;
   if (wrap) {
     const dbs = wrap.databases.filter((d) => d.level !== "ok");
-    const tables = wrap.tables.filter((t) => t.level !== "ok");
+    const tables = wrap.tables.filter((tb) => tb.level !== "ok");
     if (dbs.length || tables.length) {
       sections.push(
-        section("Edad de las transacciones", {
+        section(t("Edad de las transacciones"), {
           paragraphs: [
-            `El autovacuum fuerza una limpieza a los ${millions(wrap.freezeMaxAge)}; a los 2.147 M el servidor deja de aceptar escrituras.`,
+            t("El autovacuum fuerza una limpieza a los {age}; a los 2.147 M el servidor deja de aceptar escrituras.", { age: millions(wrap.freezeMaxAge) }),
           ],
           bullets: [
-            ...dbs.map((d) => `Base ${d.name}: ${millions(d.age)} (${levelLabel(d.level)})`),
-            ...tables.map((t) => `${t.schema}.${t.table}: ${millions(t.age)} (${levelLabel(t.level)})`),
+            ...dbs.map((d) => t("Base {name}: {age} ({level})", { name: d.name, age: millions(d.age), level: levelLabel(d.level) })),
+            ...tables.map((tb) => `${tb.schema}.${tb.table}: ${millions(tb.age)} (${levelLabel(tb.level)})`),
           ],
         }),
       );
@@ -135,16 +142,16 @@ export function buildReport(input: ReportInput): Section[] {
   const stuck = (input.autovacuum ?? []).filter((r) => r.level === "review" || r.level === "attention");
   if (stuck.length) {
     sections.push(
-      section("Autovacuum que no alcanza", {
-        paragraphs: ["Tablas que ya pasaron su umbral y no se limpian, o con el autovacuum apagado."],
+      section(t("Autovacuum que no alcanza"), {
+        paragraphs: [t("Tablas que ya pasaron su umbral y no se limpian, o con el autovacuum apagado.")],
         table: {
-          head: ["Tabla", "Filas muertas", "Umbral", "Última limpieza", "Estado"],
+          head: [t("Tabla"), t("Filas muertas"), t("Umbral"), t("Última limpieza"), t("Estado")],
           rows: stuck.map((r) => [
             `${r.schema}.${r.table}`,
             count(r.deadTuples),
             count(Math.round(r.vacuumAt)),
             ago(r.lastAutovacuumSeconds),
-            r.status === "disabled" ? "apagado" : "le toca",
+            r.status === "disabled" ? t("apagado") : t("le toca"),
           ]),
         },
       }),
@@ -152,18 +159,18 @@ export function buildReport(input: ReportInput): Section[] {
   }
 
   if (input.cache) {
-    const rows = input.cache.tables.filter((t) => t.level !== "ok");
+    const rows = input.cache.tables.filter((tb) => tb.level !== "ok");
     if (rows.length) {
       sections.push(
-        section("Caché", {
-          paragraphs: ["Tablas que se leen del disco más de lo esperado (aciertos por debajo del 90 %)."],
+        section(t("Caché"), {
+          paragraphs: [t("Tablas que se leen del disco más de lo esperado (aciertos por debajo del 90 %).")],
           table: {
-            head: ["Tabla", "Aciertos tabla", "Aciertos índices", "Lecturas a disco"],
-            rows: rows.map((t) => [
-              `${t.schema}.${t.table}`,
-              percent(t.heapRatio),
-              percent(t.indexRatio),
-              count(t.heapRead + t.indexRead),
+            head: [t("Tabla"), t("Aciertos tabla"), t("Aciertos índices"), t("Lecturas a disco")],
+            rows: rows.map((tb) => [
+              `${tb.schema}.${tb.table}`,
+              percent(tb.heapRatio),
+              percent(tb.indexRatio),
+              count(tb.heapRead + tb.indexRead),
             ]),
           },
         }),
@@ -174,13 +181,13 @@ export function buildReport(input: ReportInput): Section[] {
   if (input.space) {
     const { map, growth } = input.space;
     const base = growth.find((g) => g.kind === "database");
-    const bullets = [`Base ${map.database}: ${bytes(map.databaseBytes)}`];
-    if (base?.forecast) bullets.push(`Crecimiento de la base: ${growthText(base.forecast.perDay)}`);
+    const bullets = [t("Base {name}: {size}", { name: map.database, size: bytes(map.databaseBytes) })];
+    if (base?.forecast) bullets.push(t("Crecimiento de la base: {growth}", { growth: growthText(base.forecast.perDay) }));
     sections.push(
-      section("Espacio", {
+      section(t("Espacio"), {
         bullets,
         table: {
-          head: ["Tabla", "Total", "Tabla", "Índices", "TOAST y otros", "Crece"],
+          head: [t("Tabla"), t("Total"), t("Tabla"), t("Índices"), t("TOAST y otros"), t("Crece")],
           rows: map.entries.slice(0, 10).map((e) => {
             const g = growth.find((x) => x.kind === "table" && x.name === `${e.schema}.${e.table}`);
             return [
@@ -200,13 +207,18 @@ export function buildReport(input: ReportInput): Section[] {
   if (input.checkpoints) {
     const c = input.checkpoints;
     sections.push(
-      section("Checkpoints y WAL", {
+      section(t("Checkpoints y WAL"), {
         paragraphs: [
-          `${count(c.timed)} programados y ${count(c.requested)} forzados` +
-            (c.forcedRatio !== null ? ` (${percent(c.forcedRatio, 0)} forzados)` : "") +
-            (c.resetSeconds !== null ? `, desde ${ago(c.resetSeconds)}.` : "."),
+          t("{timed} programados y {requested} forzados", {
+            timed: count(c.timed),
+            requested: count(c.requested),
+          }) +
+            (c.forcedRatio !== null
+              ? " " + t("({ratio} forzados)", { ratio: percent(c.forcedRatio, 0) })
+              : "") +
+            (c.resetSeconds !== null ? t(", desde {since}.", { since: ago(c.resetSeconds) }) : "."),
           ...(c.wal?.bytesPerSecond != null
-            ? [`WAL: ${bytes(c.wal.bytesPerSecond)}/s de promedio.`]
+            ? [t("WAL: {rate}/s de promedio.", { rate: bytes(c.wal.bytesPerSecond) })]
             : []),
         ],
         bullets: c.advice,
@@ -217,9 +229,9 @@ export function buildReport(input: ReportInput): Section[] {
   const findings = (input.config?.findings ?? []).filter((f) => f.level !== "info");
   if (findings.length) {
     sections.push(
-      section("Configuración", {
+      section(t("Configuración"), {
         table: {
-          head: ["Parámetro", "Hoy", "Sugerido", "Motivo"],
+          head: [t("Parámetro"), t("Hoy"), t("Sugerido"), t("Motivo")],
           rows: findings.map((f) => [f.name, f.current, f.suggested ?? "—", f.reason]),
         },
       }),
@@ -228,7 +240,7 @@ export function buildReport(input: ReportInput): Section[] {
 
   if (input.unavailable.length) {
     sections.push(
-      section("Lo que no se pudo leer", {
+      section(t("Lo que no se pudo leer"), {
         bullets: input.unavailable.map(([what, why]) => `${what}: ${why}`),
       }),
     );
@@ -237,11 +249,13 @@ export function buildReport(input: ReportInput): Section[] {
 }
 
 function title(input: ReportInput): string {
-  return `Informe de salud · ${input.server} · ${input.database}`;
+  return t("Informe de salud · {server} · {database}", { server: input.server, database: input.database });
 }
 
 function stamp(input: ReportInput): string {
-  return `Generado el ${input.generatedAt.toLocaleString("es")}. Los números son de ese momento.`;
+  return t("Generado el {date}. Los números son de ese momento.", {
+    date: input.generatedAt.toLocaleString(i18n.current),
+  });
 }
 
 /** Una celda de Markdown no puede llevar `|` ni saltos de línea sin romper la tabla. */
@@ -284,7 +298,7 @@ export function toHtml(input: ReportInput): string {
     })
     .join("\n");
   return `<!doctype html>
-<html lang="es">
+<html lang="${i18n.current}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

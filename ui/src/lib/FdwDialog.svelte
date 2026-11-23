@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
@@ -72,7 +73,7 @@
   }
 
   function validate(): string | null {
-    if (!name.trim()) return "Poné un nombre para el wrapper.";
+    if (!name.trim()) return t("Poné un nombre para el wrapper.");
     return null;
   }
 
@@ -82,7 +83,7 @@
     try {
       const list = changes();
       const statements = await fdwPreview(list);
-      preview = statements.map((statement) => statement.sql).join(";\n\n") || "Nada que aplicar.";
+      preview = statements.map((statement) => statement.sql).join(";\n\n") || t("Nada que aplicar.");
     } catch (e) {
       error = describeError(e);
     }
@@ -109,29 +110,29 @@
 </script>
 
 <Modal
-  title={existing ? `Wrapper ${existing.name}` : "Nuevo wrapper foráneo"}
+  title={existing ? t("Wrapper {name}", { name: existing.name }) : t("Nuevo wrapper foráneo")}
   subtitle="FOREIGN DATA WRAPPER"
   busy={saving}
   {onclose}
 >
   <label class="flex flex-col gap-1">
-    <span class="label">Nombre</span>
+    <span class="label">{t("Nombre")}</span>
     <input class="field" data-autofocus bind:value={name} disabled={existing !== null} />
   </label>
 
   <div class="mt-3 grid grid-cols-2 gap-3">
     <label class="flex flex-col gap-1">
-      <span class="label">Handler (opcional)</span>
-      <input class="field" bind:value={handler} placeholder="p. ej. postgres_fdw_handler" />
+      <span class="label">{t("Handler (opcional)")}</span>
+      <input class="field" bind:value={handler} placeholder={t("p. ej. postgres_fdw_handler")} />
     </label>
     <label class="flex flex-col gap-1">
-      <span class="label">Validator (opcional)</span>
-      <input class="field" bind:value={validator} placeholder="p. ej. postgres_fdw_validator" />
+      <span class="label">{t("Validator (opcional)")}</span>
+      <input class="field" bind:value={validator} placeholder={t("p. ej. postgres_fdw_validator")} />
     </label>
   </div>
 
   <div class="mt-3">
-    <span class="label">Opciones</span>
+    <span class="label">{t("Opciones")}</span>
     <div class="mt-1"><OptionsEditor bind:rows /></div>
   </div>
 
@@ -144,11 +145,11 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>{t("Ver SQL")}</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving}>
       {#if saving}<span class="spinner"></span>{/if}
-      {existing ? "Guardar" : "Crear"}
+      {existing ? t("Guardar") : t("Crear")}
     </button>
   {/snippet}
 </Modal>

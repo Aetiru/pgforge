@@ -13,6 +13,7 @@
   import Confirm from "./Confirm.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
+  import { t } from "./i18n.svelte";
   import ScriptFolderRow, { type MenuTarget } from "./ScriptFolderRow.svelte";
   import { explorer } from "./explorer.svelte";
   import {
@@ -60,7 +61,7 @@
   function openFile(file: ScriptEntry) {
     const profile = profileOfConnectionFolder(connectionFolderOf(file.path));
     if (!profile) {
-      error = `No se pudo determinar a qué conexión pertenece «${file.name}»: puede que el servidor se haya renombrado o borrado.`;
+      error = t("No se pudo determinar a qué conexión pertenece «{name}»: puede que el servidor se haya renombrado o borrado.", { name: file.name });
       return;
     }
     onopen(file.path, profile.id, profile.database);
@@ -236,14 +237,14 @@
 
   async function importFolder(defaultProfileId: string | null) {
     error = null;
-    const chosen = await pickOpen({ directory: true, title: "Carpeta con scripts .sql" }).catch(
+    const chosen = await pickOpen({ directory: true, title: t("Carpeta con scripts .sql") }).catch(
       () => null,
     );
     if (typeof chosen !== "string") return;
 
     const profileId = defaultProfileId ?? connectedProfiles[0];
     if (!profileId) {
-      error = "Conectá algún servidor primero: el script importado tiene que quedar en la carpeta de una conexión.";
+      error = t("Conectá algún servidor primero: el script importado tiene que quedar en la carpeta de una conexión.");
       return;
     }
     importing = { src: chosen, profileId };
@@ -296,19 +297,19 @@
 
 <div class="flex h-full flex-col">
   <div class="library-compact divider-b flex items-center gap-1 px-2 py-1">
-    <span class="text-[11px] font-medium muted">Scripts de cada conexión</span>
+    <span class="text-[11px] font-medium muted">{t("Scripts de cada conexión")}</span>
     <button
       class="btn btn-ghost btn-icon ml-auto"
-      title="Volver a leer el árbol de scripts"
-      aria-label="Volver a leer"
+      title={t("Volver a leer el árbol de scripts")}
+      aria-label={t("Volver a leer")}
       onclick={() => scripts.load()}
     >
       <Icon name="refresh" size={11} />
     </button>
     <button
       class="btn btn-ghost btn-icon"
-      title="Importar una carpeta con archivos .sql"
-      aria-label="Importar carpeta"
+      title={t("Importar una carpeta con archivos .sql")}
+      aria-label={t("Importar carpeta")}
       onclick={() => importFolder(null)}
     >
       <Icon name="upload" size={11} />
@@ -318,9 +319,11 @@
   {#if emptyCount > 0}
     <div class="divider-b flex items-center gap-1.5 px-2 py-1 text-[11px] muted">
       <span class="min-w-0 flex-1 truncate">
-        {emptyCount} {emptyCount === 1 ? "script vacío escondido" : "scripts vacíos escondidos"}
+        {emptyCount === 1
+          ? t("{n} script vacío escondido", { n: emptyCount })
+          : t("{n} scripts vacíos escondidos", { n: emptyCount })}
       </span>
-      <button class="btn btn-sm btn-ghost" onclick={() => (purging = {})}>Limpiar…</button>
+      <button class="btn btn-sm btn-ghost" onclick={() => (purging = {})}>{t("Limpiar…")}</button>
     </div>
   {/if}
 
@@ -334,8 +337,8 @@
   {#if !scripts.loading && scripts.tree.length === 0}
     <Empty
       icon="folder"
-      title="Sin scripts"
-      hint="Cada pestaña de consulta se guarda sola en una carpeta por conexión. También podés importar una carpeta con .sql ya escritos."
+      title={t("Sin scripts")}
+      hint={t("Cada pestaña de consulta se guarda sola en una carpeta por conexión. También podés importar una carpeta con .sql ya escritos.")}
     />
   {:else}
     <div class="min-h-0 flex-1 overflow-auto py-1">
@@ -374,17 +377,17 @@
           if (file) openFile(file);
         }}
       >
-        <span class="flex items-center gap-2"><Icon name="sql" size={13} /> Abrir</span>
+        <span class="flex items-center gap-2"><Icon name="sql" size={13} /> {t("Abrir")}</span>
       </button>
     {/if}
 
     {#if menu.target.kind === "folder"}
       <button class="row-menu" onclick={startNewFolder}>
-        <span class="flex items-center gap-2"><Icon name="plus" size={13} /> Nueva subcarpeta</span>
+        <span class="flex items-center gap-2"><Icon name="plus" size={13} /> {t("Nueva subcarpeta")}</span>
       </button>
       <button class="row-menu" onclick={startImport}>
         <span class="flex items-center gap-2">
-          <Icon name="upload" size={13} /> Importar carpeta…
+          <Icon name="upload" size={13} /> {t("Importar carpeta…")}
         </span>
       </button>
     {/if}
@@ -392,13 +395,13 @@
     {#if !(menu.target.kind === "folder" && menu.target.isConnection)}
       <div class="divider-t my-1"></div>
       <button class="row-menu" onclick={startRename}>
-        <span class="flex items-center gap-2"><Icon name="edit" size={13} /> Renombrar</span>
+        <span class="flex items-center gap-2"><Icon name="edit" size={13} /> {t("Renombrar")}</span>
       </button>
       <!-- Solo archivos: ver el comentario de `startDelete` sobre por qué una carpeta no se puede
            borrar desde acá todavía. -->
       {#if menu.target.kind === "file"}
         <button class="row-menu text-rose-600 dark:text-rose-400" onclick={startDelete}>
-          <span class="flex items-center gap-2"><Icon name="trash" size={13} /> Borrar</span>
+          <span class="flex items-center gap-2"><Icon name="trash" size={13} /> {t("Borrar")}</span>
         </button>
       {/if}
     {/if}
@@ -407,9 +410,9 @@
 
 {#if renaming}
   <Confirm
-    title="Renombrar «{renaming.label}»"
-    message="Nuevo nombre:"
-    confirmLabel="Renombrar"
+    title={t("Renombrar «{name}»", { name: renaming.label })}
+    message={t("Nuevo nombre:")}
+    confirmLabel={t("Renombrar")}
     danger={false}
     busy={renaming.busy}
     error={renaming.error}
@@ -427,9 +430,11 @@
 
 {#if purging}
   <Confirm
-    title="Borrar scripts vacíos"
-    message="Se borran del disco {emptyCount} {emptyCount === 1 ? 'archivo' : 'archivos'} sin nada escrito, de todas las conexiones. No se pierde contenido."
-    confirmLabel="Borrar"
+    title={t("Borrar scripts vacíos")}
+    message={emptyCount === 1
+      ? t("Se borra del disco {n} archivo sin nada escrito, de todas las conexiones. No se pierde contenido.", { n: emptyCount })
+      : t("Se borran del disco {n} archivos sin nada escrito, de todas las conexiones. No se pierde contenido.", { n: emptyCount })}
+    confirmLabel={t("Borrar")}
     busy={purging.busy}
     error={purging.error}
     onconfirm={confirmPurge}
@@ -439,9 +444,9 @@
 
 {#if deleting}
   <Confirm
-    title="Borrar «{deleting.label}»"
-    message="Se borra del disco. No se puede deshacer."
-    confirmLabel="Borrar"
+    title={t("Borrar «{name}»", { name: deleting.label })}
+    message={t("Se borra del disco. No se puede deshacer.")}
+    confirmLabel={t("Borrar")}
     busy={deleting.busy}
     error={deleting.error}
     onconfirm={confirmDelete}
@@ -451,9 +456,9 @@
 
 {#if newFolder}
   <Confirm
-    title="Nueva subcarpeta"
-    message="Nombre de la carpeta:"
-    confirmLabel="Crear"
+    title={t("Nueva subcarpeta")}
+    message={t("Nombre de la carpeta:")}
+    confirmLabel={t("Crear")}
     danger={false}
     busy={newFolder.busy}
     error={newFolder.error}
@@ -471,9 +476,9 @@
 
 {#if importing}
   <Confirm
-    title="Importar carpeta"
-    message="Se copian los .sql de «{importing.src}» —con sus subcarpetas— a la biblioteca de «{profileName(importing.profileId)}». Un nombre repetido no se pisa: entra con « (2)»."
-    confirmLabel="Importar"
+    title={t("Importar carpeta")}
+    message={t("Se copian los .sql de «{src}» —con sus subcarpetas— a la biblioteca de «{name}». Un nombre repetido no se pisa: entra con « (2)».", { src: importing.src, name: profileName(importing.profileId) })}
+    confirmLabel={t("Importar")}
     danger={false}
     busy={importing.busy}
     error={importing.error}
@@ -482,7 +487,7 @@
   >
     {#if connectedProfiles.length > 1}
       <label class="flex flex-col gap-1">
-        <span class="label">Conexión de destino</span>
+        <span class="label">{t("Conexión de destino")}</span>
         <select class="field" bind:value={importing.profileId}>
           {#each connectedProfiles as profileId (profileId)}
             <option value={profileId}>{profileName(profileId)}</option>
@@ -495,9 +500,14 @@
 
 {#if importReport}
   <Confirm
-    title="Importación terminada"
-    message="Entraron {importReport.imported} {importReport.imported === 1 ? 'archivo' : 'archivos'}.{importReport.skipped.length > 0 ? ` ${importReport.skipped.length} no se pudieron copiar.` : ''}"
-    confirmLabel="Cerrar"
+    title={t("Importación terminada")}
+    message={(importReport.imported === 1
+      ? t("Entró {n} archivo.", { n: importReport.imported })
+      : t("Entraron {n} archivos.", { n: importReport.imported })) +
+      (importReport.skipped.length > 0
+        ? " " + t("{n} no se pudieron copiar.", { n: importReport.skipped.length })
+        : "")}
+    confirmLabel={t("Cerrar")}
     danger={false}
     onconfirm={() => (importReport = null)}
     onclose={() => (importReport = null)}

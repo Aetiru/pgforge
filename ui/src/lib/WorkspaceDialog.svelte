@@ -3,6 +3,7 @@
   import Alert from "./Alert.svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
+  import { t } from "./i18n.svelte";
   import {
     describeError,
     listGroups,
@@ -108,7 +109,7 @@
   async function createAndOpen() {
     const trimmed = name.trim();
     if (!trimmed) {
-      error = "Poné un nombre para el workspace.";
+      error = t("Poné un nombre para el workspace.");
       return;
     }
     creating = true;
@@ -139,17 +140,17 @@
 </script>
 
 <Modal
-  title="Ventana de workspace"
-  subtitle="Una ventana aparte, acotada a una carpeta de servidores"
+  title={t("Ventana de workspace")}
+  subtitle={t("Una ventana aparte, acotada a una carpeta de servidores")}
   size="md"
   busy={creating}
   {onclose}
 >
   <div class="flex flex-col gap-1">
-    <span class="label">Nueva ventana</span>
+    <span class="label">{t("Nueva ventana")}</span>
     <input
       class="field"
-      placeholder="Nombre del workspace"
+      placeholder={t("Nombre del workspace")}
       data-autofocus
       bind:value={name}
       onkeydown={(event) => {
@@ -158,9 +159,9 @@
     />
 
     <label class="mt-1 flex flex-col gap-1">
-      <span class="label">Carpeta raíz</span>
+      <span class="label">{t("Carpeta raíz")}</span>
       <select class="field" bind:value={rootGroup}>
-        <option value="">Todo el árbol</option>
+        <option value="">{t("Todo el árbol")}</option>
         {#each groups as group (group)}
           <option value={group}>{group}</option>
         {/each}
@@ -168,9 +169,7 @@
     </label>
 
     <p class="mt-1 text-xs muted">
-      Abre una ventana nueva que solo muestra esa carpeta y las que cuelgan de ella —o el árbol
-      entero, sin elegir ninguna—. No es una copia de los servidores: es la misma lista, mirada
-      desde otra ventana.
+      {t("Abre una ventana nueva que solo muestra esa carpeta y las que cuelgan de ella —o el árbol entero, sin elegir ninguna—. No es una copia de los servidores: es la misma lista, mirada desde otra ventana.")}
     </p>
 
     <button
@@ -180,7 +179,7 @@
     >
       {#if creating}<span class="spinner"></span>{/if}
       <Icon name="window" size={12} />
-      Crear y abrir
+      {t("Crear y abrir")}
     </button>
   </div>
 
@@ -191,11 +190,11 @@
   <div class="divider-t my-3"></div>
 
   <div class="flex flex-col gap-1">
-    <span class="label">Ventanas guardadas</span>
+    <span class="label">{t("Ventanas guardadas")}</span>
     {#if loading}
-      <Skeleton rows={3} compact label="Cargando…" />
+      <Skeleton rows={3} compact label={t("Cargando…")} />
     {:else if workspaces.length === 0}
-      <p class="text-xs muted">Todavía no se creó ningún workspace.</p>
+      <p class="text-xs muted">{t("Todavía no se creó ningún workspace.")}</p>
     {:else}
       <ul class="flex flex-col gap-0.5">
         {#each workspaces as workspace (workspace.id)}
@@ -221,23 +220,23 @@
             {/if}
             <span
               class="max-w-32 shrink-0 truncate text-xs muted"
-              title={workspace.rootGroup ?? "todo el árbol"}
+              title={workspace.rootGroup ?? t("todo el árbol")}
             >
-              {workspace.rootGroup ?? "todo el árbol"}
+              {workspace.rootGroup ?? t("todo el árbol")}
             </span>
             <div class="row-actions shrink-0">
               <button
                 class="btn btn-icon btn-ghost btn-sm"
-                title="Renombrar «{workspace.name}»"
-                aria-label="Renombrar"
+                title={t("Renombrar «{name}»", { name: workspace.name })}
+                aria-label={t("Renombrar")}
                 onclick={() => startRename(workspace)}
               >
                 <Icon name="edit" size={11} />
               </button>
               <button
                 class="btn btn-icon btn-sm btn-danger-ghost"
-                title="Borrar «{workspace.name}»"
-                aria-label="Borrar"
+                title={t("Borrar «{name}»", { name: workspace.name })}
+                aria-label={t("Borrar")}
                 onclick={() => ondelete(workspace)}
               >
                 <Icon name="trash" size={11} />
@@ -249,7 +248,7 @@
               onclick={() => openExisting(workspace)}
             >
               {#if openingId === workspace.id}<span class="spinner"></span>{/if}
-              Abrir
+              {t("Abrir")}
             </button>
           </li>
         {/each}
@@ -258,6 +257,6 @@
   </div>
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose}>Cerrar</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cerrar")}</button>
   {/snippet}
 </Modal>

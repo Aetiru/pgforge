@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Modal from "./Modal.svelte";
   import { previewLines } from "./editor/rename-alias";
@@ -26,7 +27,7 @@
 
   let name = $state(untrack(() => info.name));
 
-  const problem = $derived(name === info.name ? "Es el mismo nombre." : validateAliasName(text, pos, name));
+  const problem = $derived(name === info.name ? t("Es el mismo nombre.") : validateAliasName(text, pos, name));
   const lines = $derived(problem === null ? previewLines(text, info.occurrences, name.trim()) : []);
   const total = $derived(info.occurrences.length);
 
@@ -35,8 +36,8 @@
   }
 </script>
 
-<Modal title={info.kind === "cte" ? "Renombrar la CTE" : "Renombrar el alias"} size="sm" {onclose}>
-  <label class="label" for="rename-alias-name">Nombre nuevo</label>
+<Modal title={info.kind === "cte" ? t("Renombrar la CTE") : t("Renombrar el alias")} size="sm" {onclose}>
+  <label class="label" for="rename-alias-name">{t("Nombre nuevo")}</label>
   <input
     id="rename-alias-name"
     class="field w-full font-mono"
@@ -51,10 +52,12 @@
   />
 
   {#if problem}
-    <p class="mt-1.5 text-xs text-rose-600 dark:text-rose-400">{problem}</p>
+    <p class="mt-1.5 text-xs text-rose-600 dark:text-rose-400">{t(problem)}</p>
   {:else}
     <p class="mt-1.5 text-xs muted">
-      Se {total === 1 ? "cambia 1 aparición" : `cambian ${total} apariciones`} en esta sentencia.
+      {total === 1
+        ? t("Se cambia 1 aparición en esta sentencia.")
+        : t("Se cambian {n} apariciones en esta sentencia.", { n: total })}
     </p>
   {/if}
 
@@ -70,11 +73,11 @@
   {/if}
 
   <p class="mt-3 text-xs muted">
-    Vale para toda la sentencia, no solo para una subconsulta. Se deshace con Ctrl+Z.
+    {t("Vale para toda la sentencia, no solo para una subconsulta. Se deshace con Ctrl+Z.")}
   </p>
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose}>Cancelar</button>
-    <button class="btn btn-primary" disabled={problem !== null} onclick={submit}>Renombrar</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cancelar")}</button>
+    <button class="btn btn-primary" disabled={problem !== null} onclick={submit}>{t("Renombrar")}</button>
   {/snippet}
 </Modal>

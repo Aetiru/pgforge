@@ -11,6 +11,7 @@
   import Alert from "./Alert.svelte";
   import BookmarksList from "./BookmarksList.svelte";
   import Icon from "./Icon.svelte";
+  import { t } from "./i18n.svelte";
   import ScriptsTree from "./ScriptsTree.svelte";
   import { bookmarks, revealBookmark } from "./bookmarks.svelte";
   import { dock, LIBRARY_DEFAULT } from "./dock.svelte";
@@ -66,7 +67,9 @@
     try {
       const row = await revealBookmark(bookmark);
       if (!row) {
-        error = `No se encontró «${bookmark.schema}.${bookmark.name}»: puede que ya no exista o haya cambiado de nombre.`;
+        error = t("No se encontró «{name}»: puede que ya no exista o haya cambiado de nombre.", {
+          name: `${bookmark.schema}.${bookmark.name}`,
+        });
       }
     } catch (failure) {
       error = describeError(failure);
@@ -99,7 +102,7 @@
     onmousedown={dock.libraryOpen ? startResize : undefined}
     ondblclick={() => dock.setLibraryHeight(LIBRARY_DEFAULT)}
     title={dock.libraryOpen
-      ? "Arrastrá para cambiar el alto de la biblioteca; doble clic para restablecerlo"
+      ? t("Arrastrá para cambiar el alto de la biblioteca; doble clic para restablecerlo")
       : undefined}
   >
     {#if dock.libraryOpen}
@@ -119,7 +122,7 @@
         onclick={() => (mode = "bookmarks")}
       >
         <Icon name="star" size={11} />
-        Marcadores
+        {t("Marcadores")}
         {#if bookmarks.entries.length > 0}
           <span class="seg-count">{bookmarks.entries.length}</span>
         {/if}
@@ -131,15 +134,15 @@
         onclick={() => (mode = "scripts")}
       >
         <Icon name="sql" size={11} />
-        Scripts
+        {t("Scripts")}
       </button>
     </div>
 
     <button
       class="btn btn-ghost btn-icon btn-toggle ml-auto"
-      aria-label={dock.libraryOpen ? "Colapsar la biblioteca" : "Mostrar la biblioteca"}
+      aria-label={dock.libraryOpen ? t("Colapsar la biblioteca") : t("Mostrar la biblioteca")}
       aria-pressed={dock.libraryOpen}
-      title={dock.libraryOpen ? "Colapsar la biblioteca" : "Mostrar la biblioteca"}
+      title={dock.libraryOpen ? t("Colapsar la biblioteca") : t("Mostrar la biblioteca")}
       onclick={() => dock.toggleLibrary()}
     >
       <Icon name="panel-bottom" size={11} />

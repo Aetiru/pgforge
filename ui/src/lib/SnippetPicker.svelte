@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
   import Sql from "./Sql.svelte";
@@ -70,14 +71,24 @@
     }
   }
 
-  const KIND: Record<string, string> = {
-    text: "texto",
-    list: "lista",
-    date: "fecha",
-    number: "número",
-    table: "tabla del catálogo",
-    column: "columna del catálogo",
-  };
+  function kindLabel(kind: string): string {
+    switch (kind) {
+      case "text":
+        return t("texto");
+      case "list":
+        return t("lista");
+      case "date":
+        return t("fecha");
+      case "number":
+        return t("número");
+      case "table":
+        return t("tabla del catálogo");
+      case "column":
+        return t("columna del catálogo");
+      default:
+        return kind;
+    }
+  }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -94,8 +105,8 @@
         bind:this={input}
         bind:value={query}
         class="w-full bg-transparent text-sm outline-none placeholder:text-zinc-400"
-        placeholder="Buscar una abreviatura por nombre, descripción o texto…"
-        aria-label="Buscar una abreviatura para insertarla"
+        placeholder={t("Buscar una abreviatura por nombre, descripción o texto…")}
+        aria-label={t("Buscar una abreviatura para insertarla")}
         role="combobox"
         aria-expanded="true"
         aria-controls="snippet-picker-list"
@@ -105,14 +116,14 @@
     </div>
 
     <div class="grid min-h-0 flex-1 grid-cols-1 overflow-hidden sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
-      <div id="snippet-picker-list" role="listbox" aria-label="Abreviaturas" class="min-h-0 overflow-auto py-1 sm:border-r sm:border-zinc-200 sm:dark:border-zinc-700">
+      <div id="snippet-picker-list" role="listbox" aria-label={t("Abreviaturas")} class="min-h-0 overflow-auto py-1 sm:border-r sm:border-zinc-200 sm:dark:border-zinc-700">
         {#if shown.length === 0}
           <Empty
             icon="search"
-            title={items.length === 0 ? "No hay abreviaturas para este servidor" : "Sin coincidencias"}
+            title={items.length === 0 ? t("No hay abreviaturas para este servidor") : t("Sin coincidencias")}
             hint={items.length === 0
-              ? "Crea una desde «Abreviaturas…» o guardando una selección."
-              : `Ninguna abreviatura menciona «${query}».`}
+              ? t("Crea una desde «Abreviaturas…» o guardando una selección.")
+              : t("Ninguna abreviatura menciona «{query}».", { query })}
           />
         {:else}
           {#each shown as item, index (item.id)}
@@ -128,7 +139,7 @@
               <span class="shrink-0 font-mono">{item.abbreviation}</span>
               <span class="min-w-0 flex-1 truncate text-xs muted">{item.description}</span>
               {#if (usage[item.id ?? ""]?.uses ?? 0) > 0}
-                <span class="shrink-0 text-[10px] muted" title="Veces que se expandió">
+                <span class="shrink-0 text-[10px] muted" title={t("Veces que se expandió")}>
                   {usage[item.id ?? ""]?.uses}
                 </span>
               {/if}
@@ -149,12 +160,12 @@
           </div>
           {#if asks.length > 0}
             <div>
-              <div class="label mb-1">Va a preguntar</div>
+              <div class="label mb-1">{t("Va a preguntar")}</div>
               <ul class="flex flex-col gap-0.5 text-xs">
                 {#each asks as variable (variable.name)}
                   <li>
                     <span class="font-mono">{variable.name}</span>
-                    <span class="muted">· {KIND[variable.kind]}{variable.kind === "list" ? `: ${(variable.options ?? []).join(", ")}` : variable.default ? ` (por omisión ${variable.default})` : ""}</span>
+                    <span class="muted">· {kindLabel(variable.kind)}{variable.kind === "list" ? `: ${(variable.options ?? []).join(", ")}` : variable.default ? ` ${t("(por omisión {value})", { value: variable.default })}` : ""}</span>
                   </li>
                 {/each}
               </ul>
@@ -162,7 +173,7 @@
           {/if}
           {#if autos.length > 0}
             <p class="text-xs muted">
-              Se llena sola: {autos.map((name) => name).join(", ")}.
+              {t("Se llena sola: {names}.", { names: autos.map((name) => name).join(", ") })}
             </p>
           {/if}
         {/if}
@@ -170,9 +181,9 @@
     </div>
 
     <div class="divider-t flex items-center gap-3 px-3 py-1.5 text-[11px] muted">
-      <span><kbd>↑</kbd> <kbd>↓</kbd> navegar</span>
-      <span><kbd>Enter</kbd> insertar</span>
-      <span class="ml-auto">{shown.length} de {items.length}</span>
+      <span><kbd>↑</kbd> <kbd>↓</kbd> {t("navegar")}</span>
+      <span><kbd>Enter</kbd> {t("insertar")}</span>
+      <span class="ml-auto">{t("{shown} de {total}", { shown: shown.length, total: items.length })}</span>
     </div>
   </div>
 </div>

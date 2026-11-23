@@ -12,6 +12,7 @@
  * no se renombra: eso cambiaría el objeto, no el texto.
  */
 
+import { t } from "./i18n.svelte";
 import { isReserved } from "./sql-ident";
 import { lex, type Token } from "./statement-risk";
 
@@ -250,20 +251,20 @@ export function renameAlias(
  */
 export function validateAliasName(text: string, pos: number, newName: string): string | null {
   const name = newName.trim();
-  if (name === "") return "Escribe un nombre para el alias.";
+  if (name === "") return t("Escribe un nombre para el alias.");
 
   let key: string;
   if (name.startsWith('"')) {
     if (!/^"(?:[^"]|"")+"$/.test(name)) {
-      return "El nombre entre comillas dobles tiene que abrir y cerrar con comillas, sin comillas sueltas adentro.";
+      return t("El nombre entre comillas dobles tiene que abrir y cerrar con comillas, sin comillas sueltas adentro.");
     }
     key = name.slice(1, -1).replace(/""/g, '"');
   } else {
     if (!/^[\p{L}_][\p{L}\p{N}_$]*$/u.test(name)) {
-      return "Sin comillas, el nombre empieza con una letra o _ y solo lleva letras, números, _ y $. Para otro formato, ponlo entre comillas dobles.";
+      return t("Sin comillas, el nombre empieza con una letra o _ y solo lleva letras, números, _ y $. Para otro formato, ponlo entre comillas dobles.");
     }
     if (isReserved(name)) {
-      return `«${name}» es una palabra reservada de SQL. Elige otro nombre o ponlo entre comillas dobles.`;
+      return t("«{name}» es una palabra reservada de SQL. Elige otro nombre o ponlo entre comillas dobles.", { name });
     }
     key = name.toLowerCase();
   }
@@ -276,11 +277,11 @@ export function validateAliasName(text: string, pos: number, newName: string): s
       if (token.start <= pos && pos <= token.end) current = candidate;
     }
   }
-  if (current === null) return "El cursor no está sobre un alias.";
-  if (key === current) return "El nombre no cambió.";
+  if (current === null) return t("El cursor no está sobre un alias.");
+  if (key === current) return t("El nombre no cambió.");
 
   const taken = new Set<string>([...byKey.keys()].filter((candidate) => candidate !== current));
   for (const table of analysis.tableKeys) taken.add(table);
-  if (taken.has(key)) return `«${name}» ya se usa en esta sentencia para otra tabla o alias.`;
+  if (taken.has(key)) return t("«{name}» ya se usa en esta sentencia para otra tabla o alias.", { name });
   return null;
 }

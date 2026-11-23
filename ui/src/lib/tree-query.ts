@@ -8,6 +8,7 @@
  * como texto, así que un nombre con dos puntos adentro sigue buscándose entero.
  */
 
+import { t } from "./i18n.svelte";
 import type { NodeKind, SearchHit } from "./ipc";
 
 /** Qué acota cada prefijo. Una letra puede abarcar más de una clase cuando el usuario no distingue:
@@ -26,7 +27,7 @@ const PREFIXES: Record<string, NodeKind[]> = {
 
 /** Cómo se le explica al usuario qué puede escribir. */
 export const PREFIX_HELP =
-  "t: tablas · v: vistas · s: esquemas · f: funciones · i: índices · q: secuencias · c: columnas · r: roles · y: tipos";
+  t("t: tablas · v: vistas · s: esquemas · f: funciones · i: índices · q: secuencias · c: columnas · r: roles · y: tipos");
 
 export interface TreeQuery {
   /** El texto a buscar, ya sin el prefijo y sin espacios de más. */

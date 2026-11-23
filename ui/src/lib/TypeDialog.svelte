@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
@@ -113,22 +114,22 @@
   }
 
   function validate(): string | null {
-    if (!existing && !name.trim()) return "Poné un nombre para el tipo.";
+    if (!existing && !name.trim()) return t("Poné un nombre para el tipo.");
 
     if (isComposite) {
       const usables = fields.filter(
         (row) => row.name.trim() !== "" && row.dataType.trim() !== "",
       );
-      if (usables.length === 0) return "Un tipo compuesto necesita al menos un campo.";
+      if (usables.length === 0) return t("Un tipo compuesto necesita al menos un campo.");
       const nombres = usables.map((row) => row.name.trim());
-      if (new Set(nombres).size !== nombres.length) return "Hay campos con el mismo nombre.";
+      if (new Set(nombres).size !== nombres.length) return t("Hay campos con el mismo nombre.");
     } else {
       const valores = labels.map((row) => row.value.trim()).filter((value) => value !== "");
-      if (valores.length === 0) return "Una enumeración necesita al menos un valor.";
-      if (new Set(valores).size !== valores.length) return "Hay valores repetidos.";
+      if (valores.length === 0) return t("Una enumeración necesita al menos un valor.");
+      if (new Set(valores).size !== valores.length) return t("Hay valores repetidos.");
     }
 
-    if (existing && changes().length === 0) return "No hay nada que cambiar.";
+    if (existing && changes().length === 0) return t("No hay nada que cambiar.");
     return null;
   }
 
@@ -165,7 +166,7 @@
       return;
     }
 
-    if (!(await confirmMutation(profileId, "Se va a modificar un tipo.", sqlToApply))) return;
+    if (!(await confirmMutation(profileId, t("Se va a modificar un tipo."), sqlToApply))) return;
 
     saving = true;
     try {
@@ -180,7 +181,11 @@
 </script>
 
 <Modal
-  title={existing ? `Editar ${existing.name}` : isComposite ? "Nuevo tipo compuesto" : "Nueva enumeración"}
+  title={existing
+    ? t("Editar {name}", { name: existing.name })
+    : isComposite
+      ? t("Nuevo tipo compuesto")
+      : t("Nueva enumeración")}
   subtitle={schema}
   size="lg"
   busy={saving}
@@ -189,30 +194,30 @@
   {#if loading}
     <p class="flex items-center justify-center gap-2 py-8 text-sm muted">
       <span class="spinner"></span>
-      Leyendo la definición…
+      {t("Leyendo la definición…")}
     </p>
   {:else}
     <label class="flex flex-col gap-1">
-      <span class="label">Nombre</span>
+      <span class="label">{t("Nombre")}</span>
       <input class="field" data-autofocus bind:value={name} disabled={existing !== null} />
     </label>
 
     {#if isComposite}
       <div class="mt-4 flex flex-col gap-2">
-        <span class="label">Campos</span>
+        <span class="label">{t("Campos")}</span>
         {#each fields as row, index (index)}
           <div class="flex items-center gap-2">
             <input
               class="field flex-1"
-              placeholder="nombre"
+              placeholder={t("nombre")}
               bind:value={row.name}
               disabled={row.original !== ""}
             />
-            <input class="field flex-1" placeholder="tipo" bind:value={row.dataType} />
+            <input class="field flex-1" placeholder={t("tipo")} bind:value={row.dataType} />
             <button
               class="btn btn-icon"
-              title="Quitar"
-              aria-label="Quitar campo"
+              title={t("Quitar")}
+              aria-label={t("Quitar campo")}
               onclick={() => (fields = fields.filter((_, i) => i !== index))}
             >
               <Icon name="trash" size={12} />
@@ -224,25 +229,26 @@
           onclick={() => (fields = [...fields, { original: "", name: "", dataType: "text" }])}
         >
           <Icon name="plus" size={11} />
-          Agregar campo
+          {t("Agregar campo")}
         </button>
         {#if existing}
           <p class="text-xs muted">
-            El nombre de un campo que ya existe no se puede editar acá: cambiarlo y cambiarle el tipo
-            a la vez haría imposible distinguir un renombre de un borrado más un alta.
+            {t(
+              "El nombre de un campo que ya existe no se puede editar acá: cambiarlo y cambiarle el tipo a la vez haría imposible distinguir un renombre de un borrado más un alta.",
+            )}
           </p>
         {/if}
       </div>
     {:else}
       <div class="mt-4 flex flex-col gap-2">
-        <span class="label">Valores</span>
+        <span class="label">{t("Valores")}</span>
         {#each labels as row, index (index)}
           <div class="flex items-center gap-2">
-            <input class="field flex-1" placeholder="valor" bind:value={row.value} />
+            <input class="field flex-1" placeholder={t("valor")} bind:value={row.value} />
             <button
               class="btn btn-icon"
-              title="Quitar"
-              aria-label="Quitar valor"
+              title={t("Quitar")}
+              aria-label={t("Quitar valor")}
               onclick={() => (labels = labels.filter((_, i) => i !== index))}
             >
               <Icon name="trash" size={12} />
@@ -254,15 +260,15 @@
           onclick={() => (labels = [...labels, { original: "", value: "" }])}
         >
           <Icon name="plus" size={11} />
-          Agregar valor
+          {t("Agregar valor")}
         </button>
       </div>
 
       {#if perdidos.length > 0}
         <Alert tone="warn" box class="mt-3">
-          PostgreSQL no puede quitar un valor de una enumeración: {perdidos.join(", ")}
-          {perdidos.length === 1 ? "se va a conservar" : "se van a conservar"}. Para sacarlo hay que
-          recrear el tipo y todas las columnas que lo usan.
+          {perdidos.length === 1
+            ? t("PostgreSQL no puede quitar un valor de una enumeración: {values} se va a conservar. Para sacarlo hay que recrear el tipo y todas las columnas que lo usan.", { values: perdidos.join(", ") })
+            : t("PostgreSQL no puede quitar un valor de una enumeración: {values} se van a conservar. Para sacarlo hay que recrear el tipo y todas las columnas que lo usan.", { values: perdidos.join(", ") })}
         </Alert>
       {/if}
     {/if}
@@ -278,12 +284,12 @@
 
   {#snippet footer()}
     <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving || loading}>
-      Ver SQL
+      {t("Ver SQL")}
     </button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving || loading}>
       {#if saving}<span class="spinner"></span>{/if}
-      {existing ? "Guardar" : "Crear"}
+      {existing ? t("Guardar") : t("Crear")}
     </button>
   {/snippet}
 </Modal>

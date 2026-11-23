@@ -1,5 +1,6 @@
 <script lang="ts">
   import Alert from "./Alert.svelte";
+  import { i18n, t } from "./i18n.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
@@ -50,7 +51,7 @@
   }
 
   function when(seconds: number): string {
-    return new Date(seconds * 1000).toLocaleString("es", {
+    return new Date(seconds * 1000).toLocaleString(i18n.current, {
       day: "2-digit",
       month: "2-digit",
       year: "2-digit",
@@ -93,7 +94,7 @@
     error = null;
     try {
       const path = await pickSave({
-        title: "Exportar el registro de auditoría",
+        title: t("Exportar el registro de auditoría"),
         defaultPath: exportName(format),
         filters: [
           format === "csv"
@@ -103,7 +104,10 @@
       });
       if (!path) return;
       const rows = await auditExport(toFilter(form), format, path);
-      notice = `${rows} fila${rows === 1 ? "" : "s"} exportada${rows === 1 ? "" : "s"} a ${path}`;
+      notice =
+        rows === 1
+          ? t("1 fila exportada a {path}", { path })
+          : t("{rows} filas exportadas a {path}", { rows, path });
     } catch (failure) {
       error = describeError(failure);
     }
@@ -117,56 +121,56 @@
   });
 </script>
 
-<Modal title="Registro de auditoría" subtitle="{total} ejecuciones" size="2xl" onclose={onclose}>
+<Modal title={t("Registro de auditoría")} subtitle={t("{total} ejecuciones", { total })} size="2xl" onclose={onclose}>
   <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
     <label class="flex flex-col gap-1">
-      <span class="label">Servidor</span>
+      <span class="label">{t("Servidor")}</span>
       <select class="field" bind:value={form.profileId} onchange={() => load()}>
-        <option value="">Todos</option>
+        <option value="">{t("Todos")}</option>
         {#each facets.servers as server (server.profileId)}
           <option value={server.profileId}>{server.serverName ?? server.profileId.slice(0, 8)}</option>
         {/each}
       </select>
     </label>
     <label class="flex flex-col gap-1">
-      <span class="label">Base</span>
+      <span class="label">{t("Base")}</span>
       <select class="field" bind:value={form.database} onchange={() => load()}>
-        <option value="">Todas</option>
+        <option value="">{t("Todas")}</option>
         {#each facets.databases as database (database)}
           <option value={database}>{database}</option>
         {/each}
       </select>
     </label>
     <label class="flex flex-col gap-1">
-      <span class="label">Desde</span>
+      <span class="label">{t("Desde")}</span>
       <input class="field" type="date" bind:value={form.from} onchange={() => load()} />
     </label>
     <label class="flex flex-col gap-1">
-      <span class="label">Hasta</span>
+      <span class="label">{t("Hasta")}</span>
       <input class="field" type="date" bind:value={form.to} onchange={() => load()} />
     </label>
     <label class="flex flex-col gap-1">
-      <span class="label">Origen</span>
+      <span class="label">{t("Origen")}</span>
       <select class="field" bind:value={form.source} onchange={() => load()}>
-        <option value="">Todos</option>
-        <option value="editor">Editor de consultas</option>
-        <option value="dialog">Diálogos de la aplicación</option>
+        <option value="">{t("Todos")}</option>
+        <option value="editor">{t("Editor de consultas")}</option>
+        <option value="dialog">{t("Diálogos de la aplicación")}</option>
       </select>
     </label>
     <label class="flex flex-col gap-1">
-      <span class="label">Entorno</span>
+      <span class="label">{t("Entorno")}</span>
       <select class="field" bind:value={form.environment} onchange={() => load()}>
-        <option value="">Todos</option>
+        <option value="">{t("Todos")}</option>
         <option value="prod">prod</option>
         <option value="test">test</option>
         <option value="dev">dev</option>
       </select>
     </label>
     <label class="col-span-2 flex flex-col gap-1">
-      <span class="label">Texto en el SQL o el error</span>
+      <span class="label">{t("Texto en el SQL o el error")}</span>
       <input
         class="field"
-        placeholder="ALTER TABLE, DROP, permission denied…"
+        placeholder={t("ALTER TABLE, DROP, permission denied…")}
         bind:value={form.text}
         oninput={textSoon}
       />
@@ -176,16 +180,16 @@
   <div class="mt-2 flex flex-wrap items-center gap-2">
     <label class="check">
       <input type="checkbox" bind:checked={form.onlyFailed} onchange={() => load()} />
-      Solo las que fallaron
+      {t("Solo las que fallaron")}
     </label>
     <button class="btn btn-sm btn-ghost" disabled={activeFilters(form) === 0} onclick={clear}>
-      Limpiar filtros{activeFilters(form) > 0 ? ` (${activeFilters(form)})` : ""}
+      {t("Limpiar filtros")}{activeFilters(form) > 0 ? ` (${activeFilters(form)})` : ""}
     </button>
     <span class="ml-auto"></span>
     <button
       class="btn btn-sm"
       disabled={total === 0}
-      title="Exporta todo lo que cumple el filtro, no solo lo que se ve en la lista"
+      title={t("Exporta todo lo que cumple el filtro, no solo lo que se ve en la lista")}
       onclick={() => exportTo("csv")}
     >
       <Icon name="download" size={11} /> CSV
@@ -208,19 +212,19 @@
     {#if entries.length === 0 && !loading}
       <Empty
         icon="clock"
-        title="Sin ejecuciones"
-        hint="Ninguna ejecución registrada cumple estos filtros."
+        title={t("Sin ejecuciones")}
+        hint={t("Ninguna ejecución registrada cumple estos filtros.")}
       />
     {:else}
       <table class="list-table">
         <thead>
           <tr>
-            <th>Cuándo</th>
-            <th>Servidor</th>
-            <th>Base</th>
-            <th>Usuario</th>
-            <th>Origen</th>
-            <th>Resultado</th>
+            <th>{t("Cuándo")}</th>
+            <th>{t("Servidor")}</th>
+            <th>{t("Base")}</th>
+            <th>{t("Usuario")}</th>
+            <th>{t("Origen")}</th>
+            <th>{t("Resultado")}</th>
             <th>SQL</th>
           </tr>
         </thead>
@@ -240,13 +244,13 @@
               </td>
               <td class="text-xs whitespace-nowrap">{entry.database}</td>
               <td class="font-mono text-xs whitespace-nowrap">{entry.dbUser ?? "—"}</td>
-              <td class="text-xs whitespace-nowrap">{entry.source === "dialog" ? "diálogo" : "editor"}</td>
+              <td class="text-xs whitespace-nowrap">{entry.source === "dialog" ? t("diálogo") : t("editor")}</td>
               <td class="text-xs whitespace-nowrap">
                 {#if entry.succeeded}
                   <span class="tag tag-ok">ok</span>
                   <span class="muted tabular-nums">{decimal(entry.seconds * 1000, 0)} ms</span>
                 {:else}
-                  <span class="tag tag-bad" title={entry.error ?? ""}>falló</span>
+                  <span class="tag tag-bad" title={entry.error ?? ""}>{t("falló")}</span>
                 {/if}
               </td>
               <td class="max-w-[22rem] truncate font-mono text-xs">{entry.sql.replace(/\s+/g, " ")}</td>
@@ -260,7 +264,7 @@
   {#if entries.length < total}
     <button class="btn btn-sm mt-2" disabled={loading} onclick={() => load(true)}>
       {#if loading}<span class="spinner"></span>{/if}
-      Cargar {Math.min(PAGE, total - entries.length)} más ({entries.length} de {total})
+      {t("Cargar {n} más ({shown} de {total})", { n: Math.min(PAGE, total - entries.length), shown: entries.length, total })}
     </button>
   {/if}
 
@@ -274,12 +278,11 @@
   {/if}
 
   <p class="mt-3 text-xs muted">
-    Es el registro de pgforge en esta máquina: no incluye lo que otra herramienta haya ejecutado
-    contra el mismo servidor. El usuario es el rol con el que se conectó el servidor, no una persona.
-    Las contraseñas de <span class="font-mono">CREATE/ALTER ROLE</span> se guardan ocultas.
+    {t("Es el registro de pgforge en esta máquina: no incluye lo que otra herramienta haya ejecutado contra el mismo servidor. El usuario es el rol con el que se conectó el servidor, no una persona.")}
+    {t("Las contraseñas de CREATE/ALTER ROLE se guardan ocultas.")}
   </p>
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose}>Cerrar</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cerrar")}</button>
   {/snippet}
 </Modal>

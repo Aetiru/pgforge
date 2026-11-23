@@ -3,6 +3,8 @@
  * y cómo identificar la pestaña. Sin DOM ni ipc, para poder probarlo con un reloj inyectado.
  */
 
+
+import { t } from "../i18n.svelte";
 /** Lo único que hace falta saber de una pestaña para ponerle clave. */
 export interface VersionedTab {
   key: string;
@@ -106,12 +108,12 @@ export class VersionScheduler {
 /** «hace 20 min», con la escala que importa para decidir a cuál volver. */
 export function relativeTime(at: number, now: number): string {
   const seconds = Math.max(0, now - at);
-  if (seconds < 60) return "hace un momento";
-  if (seconds < 3600) return `hace ${Math.floor(seconds / 60)} min`;
+  if (seconds < 60) return t("hace un momento");
+  if (seconds < 3600) return t("hace {floor} min", { floor: Math.floor(seconds / 60) });
   if (seconds < 86_400) {
     const hours = Math.floor(seconds / 3600);
-    return `hace ${hours} h`;
+    return t("hace {hours} h", { hours });
   }
   const days = Math.floor(seconds / 86_400);
-  return days === 1 ? "ayer" : `hace ${days} días`;
+  return days === 1 ? t("ayer") : t("hace {days} días", { days });
 }

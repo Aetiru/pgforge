@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
@@ -84,7 +85,7 @@
       return;
     }
 
-    if (!(await confirmMutation(profileId, "Se va a modificar un disparador.", sqlToApply))) return;
+    if (!(await confirmMutation(profileId, t("Se va a modificar un disparador."), sqlToApply))) return;
 
     saving = true;
     try {
@@ -99,26 +100,29 @@
 </script>
 
 <Modal
-  title={existing ? `Editar el trigger ${existing.name}` : "Nuevo trigger"}
+  title={existing
+    ? t("Editar el trigger {name}", { name: existing.name })
+    : t("Nuevo trigger")}
   subtitle="{schema}.{table}"
   busy={saving}
   {onclose}
 >
   {#if existing}
     <p class="mb-3 text-xs muted">
-      PostgreSQL no permite alterar un trigger: se borra y se vuelve a crear con lo que quede acá,
-      todo dentro de la misma transacción.
+      {t(
+        "PostgreSQL no permite alterar un trigger: se borra y se vuelve a crear con lo que quede acá, todo dentro de la misma transacción.",
+      )}
     </p>
   {/if}
 
   <div class="grid grid-cols-2 gap-3">
     <label class="flex flex-col gap-1">
-      <span class="label">Nombre</span>
+      <span class="label">{t("Nombre")}</span>
       <input class="field" data-autofocus bind:value={form.name} />
     </label>
 
     <label class="flex flex-col gap-1">
-      <span class="label">Momento</span>
+      <span class="label">{t("Momento")}</span>
       <select class="field" bind:value={form.timing}>
         {#each TIMING_OPTIONS as option (option.value)}
           <option value={option.value}>{option.label}</option>
@@ -128,7 +132,7 @@
   </div>
 
   <div class="mt-3">
-    <span class="label">Eventos</span>
+    <span class="label">{t("Eventos")}</span>
     <div class="mt-1 flex flex-wrap gap-3">
       {#each EVENT_OPTIONS as option (option.value)}
         <label class="check">
@@ -145,7 +149,7 @@
 
   <div class="mt-3 grid grid-cols-2 gap-3">
     <label class="flex flex-col gap-1">
-      <span class="label">Nivel</span>
+      <span class="label">{t("Nivel")}</span>
       <select class="field" bind:value={form.level}>
         {#each LEVEL_OPTIONS as option (option.value)}
           <option value={option.value}>{option.label}</option>
@@ -155,17 +159,17 @@
   </div>
 
   <label class="mt-3 flex flex-col gap-1">
-    <span class="label">WHEN (opcional)</span>
-    <input class="field" bind:value={form.when} placeholder="condición SQL, p. ej. NEW.activo" />
+    <span class="label">{t("WHEN (opcional)")}</span>
+    <input class="field" bind:value={form.when} placeholder={t("condición SQL, p. ej. NEW.activo")} />
   </label>
 
   <div class="mt-3 grid grid-cols-2 gap-3">
     <label class="flex flex-col gap-1">
-      <span class="label">Esquema de la función</span>
+      <span class="label">{t("Esquema de la función")}</span>
       <input class="field" bind:value={form.functionSchema} />
     </label>
     <label class="flex flex-col gap-1">
-      <span class="label">Función a ejecutar</span>
+      <span class="label">{t("Función a ejecutar")}</span>
       <input class="field" bind:value={form.functionName} />
     </label>
   </div>
@@ -179,11 +183,11 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>{t("Ver SQL")}</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving}>
       {#if saving}<span class="spinner"></span>{/if}
-      {existing ? "Guardar" : "Crear trigger"}
+      {existing ? t("Guardar") : t("Crear trigger")}
     </button>
   {/snippet}
 </Modal>

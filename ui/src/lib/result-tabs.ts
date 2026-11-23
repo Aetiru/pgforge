@@ -1,3 +1,4 @@
+import { t } from "./i18n.svelte";
 import { count } from "./format";
 import type { ResultSet } from "./query.svelte";
 
@@ -19,19 +20,19 @@ export interface ResultLabel {
 
 export function resultLabel(set: ResultSet): ResultLabel {
   const title = `#${set.index + 1}`;
-  const where = `línea ${set.line}`;
+  const where = t("línea {line}", { line: set.line });
 
   if (set.outcome.kind === "command") {
     const detail = `${set.outcome.tag} · ${count(set.outcome.affected)}`;
-    return { title, detail, hint: `Sentencia ${set.index + 1} — ${where} — ${set.outcome.tag}` };
+    return { title, detail, hint: t("Sentencia {set} — {where} — {tag}", { set: set.index + 1, where, tag: set.outcome.tag }) };
   }
 
   const { rowCount, truncated } = set.outcome;
-  const noun = rowCount === 1 ? "fila" : "filas";
+  const noun = rowCount === 1 ? t("fila") : t("filas");
   const detail = truncated ? `${count(rowCount)}+ ${noun}` : `${count(rowCount)} ${noun}`;
   return {
     title,
     detail,
-    hint: `Sentencia ${set.index + 1} — ${where} — ${count(rowCount)} ${noun}`,
+    hint: t("Sentencia {set} — {where} — {count} {noun}", { set: set.index + 1, where, count: count(rowCount), noun }),
   };
 }

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
+  import { t } from "./i18n.svelte";
   import { toasts } from "./toasts.svelte";
   import { view } from "./view.svelte";
 </script>
@@ -25,7 +26,7 @@
       </div>
       <button
         class="btn btn-ghost btn-icon shrink-0"
-        aria-label="Cerrar"
+        aria-label={t("Cerrar")}
         onclick={(event) => {
           event.stopPropagation();
           toasts.dismiss(item.id);

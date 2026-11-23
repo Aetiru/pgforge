@@ -3,6 +3,7 @@
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
   import Sql from "./Sql.svelte";
+  import { t } from "./i18n.svelte";
   import {
     cellText,
     countDataRisks,
@@ -40,17 +41,17 @@
   });
   const rows = $derived(result ? result.rows.filter((row) => shown[row.kind]) : []);
 
-  const RISK_CHIPS = [
-    { key: "safe", label: "Seguro", tone: "text-emerald-700 dark:text-emerald-300", title: "Los INSERT: agregan filas que faltan" },
-    { key: "review", label: "Para revisar", tone: "text-amber-700 dark:text-amber-300", title: "Los UPDATE: pisan valores del destino" },
-    { key: "destructive", label: "Destructivo", tone: "text-rose-700 dark:text-rose-300", title: "Los DELETE: borran filas que solo están en el destino" },
-  ] as const;
+  const RISK_CHIPS = $derived([
+    { key: "safe", label: t("Seguro"), tone: "text-emerald-700 dark:text-emerald-300", title: t("Los INSERT: agregan filas que faltan") },
+    { key: "review", label: t("Para revisar"), tone: "text-amber-700 dark:text-amber-300", title: t("Los UPDATE: pisan valores del destino") },
+    { key: "destructive", label: t("Destructivo"), tone: "text-rose-700 dark:text-rose-300", title: t("Los DELETE: borran filas que solo están en el destino") },
+  ] as const);
 
-  const MARK: Record<DiffStatus, { text: string; tone: string; title: string }> = {
-    onlySource: { text: "+", tone: "tag-ok", title: "Está en el origen y falta en el destino" },
-    onlyTarget: { text: "−", tone: "tag-bad", title: "Está en el destino y no en el origen" },
-    different: { text: "~", tone: "tag-warn", title: "Está en los dos, con valores distintos" },
-  };
+  const MARK = $derived<Record<DiffStatus, { text: string; tone: string; title: string }>>({
+    onlySource: { text: "+", tone: "tag-ok", title: t("Está en el origen y falta en el destino") },
+    onlyTarget: { text: "−", tone: "tag-bad", title: t("Está en el destino y no en el origen") },
+    different: { text: "~", tone: "tag-warn", title: t("Está en los dos, con valores distintos") },
+  });
 
   /** Todas las columnas del informe: la clave primero, igual que en las filas. */
   const headers = $derived(result ? [...result.layout.keyColumns, ...result.layout.columns] : []);
@@ -64,8 +65,8 @@
   function lines(row: DataRowDiff): { label: string; values: (string | null)[] }[] {
     if (row.kind === "different") {
       return [
-        { label: "origen", values: cells(row.key, row.source) },
-        { label: "destino", values: cells(row.key, row.target) },
+        { label: t("origen"), values: cells(row.key, row.source) },
+        { label: t("destino"), values: cells(row.key, row.target) },
       ];
     }
     return [{ label: "", values: cells(row.key, row.values) }];
@@ -84,7 +85,7 @@
     const query = await openQuery(
       tab.target.id,
       tab.target.database,
-      `Sincronizar ${tab.target.table}`,
+      t("Sincronizar {table}", { table: tab.target.table }),
     );
     query.sql = script;
   }
@@ -99,7 +100,7 @@
         aria-selected={view === "report"}
         onclick={() => (view = "report")}
       >
-        Diferencias
+        {t("Diferencias")}
         {#if result}
           <span class="seg-count">
             {result.counts.onlySource + result.counts.onlyTarget + result.counts.different}
@@ -130,32 +131,34 @@
     {#if tab.loading}
       <button class="btn btn-ghost btn-sm" onclick={() => tab.cancel()}>
         <Icon name="close" size={13} />
-        Cancelar
+        {t("Cancelar")}
       </button>
     {:else}
       <button
         class="btn btn-ghost btn-sm"
-        title="Vuelve a leer las dos tablas y compara de nuevo"
+        title={t("Vuelve a leer las dos tablas y compara de nuevo")}
         onclick={() => tab.load()}
       >
         <Icon name="refresh" size={13} />
-        Comparar de nuevo
+        {t("Comparar de nuevo")}
       </button>
     {/if}
   </div>
 
   {#if tab.loading}
     <div class="flex flex-1 flex-col items-center justify-center gap-2 muted text-sm">
-      <div class="flex items-center gap-2"><span class="spinner"></span> Leyendo las dos tablas…</div>
+      <div class="flex items-center gap-2"><span class="spinner"></span> {t("Leyendo las dos tablas…")}</div>
       <div class="text-[11px]">
-        {tab.progress.sourceRows.toLocaleString()} filas del origen ·
-        {tab.progress.targetRows.toLocaleString()} del destino
+        {t("{source} filas del origen · {target} del destino", {
+          source: tab.progress.sourceRows.toLocaleString(),
+          target: tab.progress.targetRows.toLocaleString(),
+        })}
       </div>
     </div>
   {:else if tab.error}
     <div class="p-3"><Alert tone="bad">{tab.error}</Alert></div>
   {:else if !result}
-    <Empty icon="compare" title="Sin comparar" hint="Todavía no se leyó ninguna tabla." />
+    <Empty icon="compare" title={t("Sin comparar")} hint={t("Todavía no se leyó ninguna tabla.")} />
   {:else if view === "report"}
     <div class="min-h-0 flex-1 overflow-auto">
       {#each result.warnings as warning (warning)}
@@ -165,12 +168,12 @@
       {#if result.rows.length === 0}
         <Empty
           icon="check"
-          title="No hay diferencias"
-          hint="Las {result.counts.equal.toLocaleString()} filas comparadas son iguales de los dos lados."
+          title={t("No hay diferencias")}
+          hint={t("Las {count} filas comparadas son iguales de los dos lados.", { count: result.counts.equal.toLocaleString() })}
         />
       {:else}
         <div class="flex flex-wrap items-center gap-2 px-3 py-2">
-          {#each [["onlySource", "solo en el origen", result.counts.onlySource], ["onlyTarget", "solo en el destino", result.counts.onlyTarget], ["different", "distintas", result.counts.different]] as const as [status, label, total] (status)}
+          {#each [["onlySource", t("solo en el origen"), result.counts.onlySource], ["onlyTarget", t("solo en el destino"), result.counts.onlyTarget], ["different", t("distintas"), result.counts.different]] as const as [status, label, total] (status)}
             <button
               class="chip-toggle"
               aria-pressed={shown[status]}
@@ -192,7 +195,7 @@
               {#each headers as header, index (index)}
                 <th
                   class="px-2 py-1 font-medium {index < keyCount ? 'underline decoration-dotted' : ''}"
-                  title={index < keyCount ? "Columna de la clave" : ""}
+                  title={index < keyCount ? t("Columna de la clave") : ""}
                 >
                   {header}
                 </th>
@@ -231,7 +234,7 @@
 
         {#if result.truncated}
           <p class="px-3 py-2 text-[11px] muted">
-            Se listan las primeras {result.maxDiffs.toLocaleString()} diferencias.
+            {t("Se listan las primeras {count} diferencias.", { count: result.maxDiffs.toLocaleString() })}
           </p>
         {/if}
       {/if}
@@ -251,7 +254,7 @@
       {/each}
       {#if !tab.risks.destructive && riskCounts.destructive > 0}
         <span class="text-[11px] text-rose-700 dark:text-rose-300">
-          {riskCounts.destructive} DELETE fuera del script
+          {t("{count} DELETE fuera del script", { count: riskCounts.destructive })}
         </span>
       {/if}
 
@@ -259,23 +262,23 @@
 
       <button class="btn btn-ghost btn-sm" disabled={!script} onclick={copy}>
         <Icon name={copied ? "check" : "copy"} size={13} />
-        {copied ? "Copiado" : "Copiar"}
+        {copied ? t("Copiado") : t("Copiar")}
       </button>
       <button
         class="btn btn-primary btn-sm"
         disabled={!script}
-        title="Abre el script en una consulta contra {tab.target.database}, para revisarlo y correrlo"
+        title={t("Abre el script en una consulta contra {database}, para revisarlo y correrlo", { database: tab.target.database })}
         onclick={openInQuery}
       >
         <Icon name="sql" size={13} />
-        Abrir en consulta
+        {t("Abrir en consulta")}
       </button>
     </div>
 
     <div class="min-h-0 flex-1 overflow-auto p-3">
       {#if result.truncated}
         <Alert tone="warn" box class="mb-3">
-          El script cubre solo las primeras {result.maxDiffs.toLocaleString()} diferencias; hay más.
+          {t("El script cubre solo las primeras {count} diferencias; hay más.", { count: result.maxDiffs.toLocaleString() })}
         </Alert>
       {/if}
 
@@ -284,10 +287,10 @@
       {:else}
         <Empty
           icon="check"
-          title="Sin sentencias"
+          title={t("Sin sentencias")}
           hint={result.statements.length === 0
-            ? "No hay nada que sincronizar."
-            : "Los filtros de arriba dejaron fuera todas las sentencias."}
+            ? t("No hay nada que sincronizar.")
+            : t("Los filtros de arriba dejaron fuera todas las sentencias.")}
         />
       {/if}
     </div>

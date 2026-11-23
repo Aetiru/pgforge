@@ -1,4 +1,6 @@
 /** Cuánto lleva abierta una transacción, en la unidad que se lee de un vistazo. */
+
+import { t } from "./i18n.svelte";
 export function txElapsed(sinceMs: number, nowMs: number): string {
   const seconds = Math.max(0, Math.floor((nowMs - sinceMs) / 1000));
   if (seconds < 60) return `${seconds} s`;
@@ -20,8 +22,8 @@ export function txIsStale(sinceMs: number, nowMs: number): boolean {
 
 /** «3 sentencias · 14 filas»: lo que se pierde si se revierte. */
 export function txSummary(statements: number, rows: number): string {
-  const parts = [`${statements} ${statements === 1 ? "sentencia" : "sentencias"}`];
-  if (rows > 0) parts.push(`${rows} ${rows === 1 ? "fila" : "filas"}`);
+  const parts = [statements === 1 ? t("1 sentencia") : t("{statements} sentencias", { statements })];
+  if (rows > 0) parts.push(rows === 1 ? t("1 fila") : t("{rows} filas", { rows }));
   return parts.join(" · ");
 }
 

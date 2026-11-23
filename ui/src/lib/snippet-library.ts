@@ -10,6 +10,7 @@
  * escriben o borran llevan un comentario `-- cuidado:`; las abreviaturas son únicas, válidas, sin
  * avisos entre sí y distintas de las de fábrica.
  */
+import { t } from "./i18n.svelte";
 import type { SnippetLike } from "./snippet-check";
 
 export interface LibraryItem {
@@ -20,37 +21,49 @@ export interface LibraryItem {
   body: string;
 }
 
+// Categoría y descripción son getters: la biblioteca se arma al cargar el módulo y, como valores
+// fijos, quedarían en el idioma de ese momento.
 const item = (
-  category: string,
+  category: () => string,
   abbreviation: string,
-  description: string,
+  description: () => string,
   body: string,
-): LibraryItem => ({ id: `lib-${abbreviation}`, category, abbreviation, description, body });
+): LibraryItem => ({
+  id: `lib-${abbreviation}`,
+  get category() {
+    return category();
+  },
+  abbreviation,
+  get description() {
+    return description();
+  },
+  body,
+});
 
 export const LIBRARY: LibraryItem[] = [
   // ----------------------------------------------------------------------------- Consultas
   item(
-    "Consultas",
+    () => t("Consultas"),
     "ult",
-    "Últimas N filas por fecha",
+    () => t("Últimas N filas por fecha"),
     `SELECT *
 FROM \${tabla@tabla}
 ORDER BY \${fecha@columna} DESC
 LIMIT \${n@numero:20}`,
   ),
   item(
-    "Consultas",
+    () => t("Consultas"),
     "pag",
-    "Paginar con LIMIT y OFFSET",
+    () => t("Paginar con LIMIT y OFFSET"),
     `SELECT *
 FROM \${tabla@tabla}
 ORDER BY \${orden@columna}
 LIMIT \${tam@numero:50} OFFSET \${desde@numero:0}`,
   ),
   item(
-    "Consultas",
+    () => t("Consultas"),
     "topg",
-    "Primeras N filas de cada grupo",
+    () => t("Primeras N filas de cada grupo"),
     `SELECT *
 FROM (
     SELECT t.*,
@@ -60,26 +73,26 @@ FROM (
 WHERE x.pos <= \${n@numero:3}`,
   ),
   item(
-    "Consultas",
+    () => t("Consultas"),
     "txt",
-    "Buscar un texto en una columna",
+    () => t("Buscar un texto en una columna"),
     `SELECT *
 FROM \${tabla@tabla}
 WHERE \${columna@columna} ILIKE '%\${texto:}%'`,
   ),
   item(
-    "Consultas",
+    () => t("Consultas"),
     "huer",
-    "Filas sin relación en otra tabla",
+    () => t("Filas sin relación en otra tabla"),
     `SELECT a.*
 FROM \${tabla_a@tabla} a
 LEFT JOIN \${tabla_b@tabla} b ON b.\${fk@columna} = a.\${id@columna:id}
 WHERE b.\${fk@columna} IS NULL`,
   ),
   item(
-    "Consultas",
+    () => t("Consultas"),
     "exis",
-    "Filas que tienen alguna relacionada (EXISTS)",
+    () => t("Filas que tienen alguna relacionada (EXISTS)"),
     `SELECT *
 FROM \${tabla@tabla} t
 WHERE EXISTS (
@@ -89,9 +102,9 @@ WHERE EXISTS (
 )`,
   ),
   item(
-    "Consultas",
+    () => t("Consultas"),
     "caso",
-    "Columna calculada con CASE",
+    () => t("Columna calculada con CASE"),
     `SELECT \${columna@columna},
        CASE
            WHEN \${columna@columna} > \${limite@numero:0} THEN \${si:'sí'}
@@ -100,16 +113,16 @@ WHERE EXISTS (
 FROM \${tabla@tabla}`,
   ),
   item(
-    "Consultas",
+    () => t("Consultas"),
     "coal",
-    "Reemplazar nulos con COALESCE",
+    () => t("Reemplazar nulos con COALESCE"),
     `SELECT COALESCE(\${columna@columna}, \${valor:0}) AS \${alias:valor}
 FROM \${tabla@tabla}`,
   ),
   item(
-    "Consultas",
+    () => t("Consultas"),
     "mes",
-    "Filas de un mes",
+    () => t("Filas de un mes"),
     `SELECT *
 FROM \${tabla@tabla}
 WHERE \${fecha@columna} >= date_trunc('month', '\${mes@fecha}'::date)
@@ -118,9 +131,9 @@ WHERE \${fecha@columna} >= date_trunc('month', '\${mes@fecha}'::date)
 
   // --------------------------------------------------------------------------------- Datos
   item(
-    "Datos",
+    () => t("Datos"),
     "ups",
-    "Insertar o actualizar (upsert)",
+    () => t("Insertar o actualizar (upsert)"),
     `-- cuidado: pisa las filas que ya existan con esa clave
 INSERT INTO \${tabla@tabla} (\${columnas:id, nombre})
 VALUES (\${valores:1, 'valor'})
@@ -128,18 +141,18 @@ ON CONFLICT (\${clave@columna:id})
 DO UPDATE SET \${columna@columna} = EXCLUDED.\${columna@columna}`,
   ),
   item(
-    "Datos",
+    () => t("Datos"),
     "insel",
-    "Insertar desde un SELECT",
+    () => t("Insertar desde un SELECT"),
     `INSERT INTO \${destino@tabla} (\${columnas:id, nombre})
 SELECT \${columnas:id, nombre}
 FROM \${origen@tabla}
 WHERE \${condicion:true}`,
   ),
   item(
-    "Datos",
+    () => t("Datos"),
     "updf",
-    "UPDATE con valores de otra tabla",
+    () => t("UPDATE con valores de otra tabla"),
     `-- cuidado: modifica filas; revisa el WHERE antes de ejecutar
 UPDATE \${tabla@tabla} t
 SET \${columna@columna} = o.\${valor@columna}
@@ -148,9 +161,9 @@ WHERE o.\${id@columna:id} = t.\${id@columna:id}
 RETURNING t.*`,
   ),
   item(
-    "Datos",
+    () => t("Datos"),
     "delu",
-    "DELETE con USING y RETURNING",
+    () => t("DELETE con USING y RETURNING"),
     `-- cuidado: borra filas; comprueba antes con un SELECT del mismo WHERE
 DELETE FROM \${tabla@tabla} t
 USING \${otra@tabla} o
@@ -159,9 +172,9 @@ WHERE o.\${id@columna:id} = t.\${id@columna:id}
 RETURNING t.*`,
   ),
   item(
-    "Datos",
+    () => t("Datos"),
     "copt",
-    "Copiar una tabla (sin índices ni restricciones)",
+    () => t("Copiar una tabla (sin índices ni restricciones)"),
     `-- no copia índices, claves ni valores por omisión
 CREATE TABLE \${destino:copia} AS
 SELECT *
@@ -171,9 +184,9 @@ WHERE \${condicion:true}`,
 
   // ---------------------------------------------------------------------------- Diagnóstico
   item(
-    "Diagnóstico",
+    () => t("Diagnóstico"),
     "dup",
-    "Valores repetidos de una columna",
+    () => t("Valores repetidos de una columna"),
     `SELECT \${columna@columna}, count(*) AS veces
 FROM \${tabla@tabla}
 GROUP BY \${columna@columna}
@@ -181,9 +194,9 @@ HAVING count(*) > 1
 ORDER BY veces DESC`,
   ),
   item(
-    "Diagnóstico",
+    () => t("Diagnóstico"),
     "tam",
-    "Tamaño de las tablas",
+    () => t("Tamaño de las tablas"),
     `SELECT n.nspname AS esquema,
        c.relname AS tabla,
        pg_size_pretty(pg_total_relation_size(c.oid)) AS total,
@@ -197,9 +210,9 @@ ORDER BY pg_total_relation_size(c.oid) DESC
 LIMIT \${n@numero:20}`,
   ),
   item(
-    "Diagnóstico",
+    () => t("Diagnóstico"),
     "idxu",
-    "Índices que nunca se usaron",
+    () => t("Índices que nunca se usaron"),
     `-- cuidado: los usos cuentan desde el último reinicio de las estadísticas
 SELECT schemaname AS esquema,
        relname AS tabla,
@@ -211,9 +224,9 @@ WHERE idx_scan = 0
 ORDER BY pg_relation_size(indexrelid) DESC`,
   ),
   item(
-    "Diagnóstico",
+    () => t("Diagnóstico"),
     "act",
-    "Sesiones activas",
+    () => t("Sesiones activas"),
     `SELECT pid,
        usename,
        application_name,
@@ -226,9 +239,9 @@ WHERE state <> 'idle'
 ORDER BY query_start`,
   ),
   item(
-    "Diagnóstico",
+    () => t("Diagnóstico"),
     "blq",
-    "Sesiones bloqueadas y quién las bloquea",
+    () => t("Sesiones bloqueadas y quién las bloquea"),
     `SELECT pid,
        pg_blocking_pids(pid) AS bloqueada_por,
        state,
@@ -240,9 +253,9 @@ FROM pg_stat_activity
 WHERE cardinality(pg_blocking_pids(pid)) > 0`,
   ),
   item(
-    "Diagnóstico",
+    () => t("Diagnóstico"),
     "larg",
-    "Consultas que llevan mucho tiempo",
+    () => t("Consultas que llevan mucho tiempo"),
     `SELECT pid,
        usename,
        now() - query_start AS duracion,
@@ -254,9 +267,9 @@ WHERE state = 'active'
 ORDER BY duracion DESC`,
   ),
   item(
-    "Diagnóstico",
+    () => t("Diagnóstico"),
     "conx",
-    "Conexiones por estado",
+    () => t("Conexiones por estado"),
     `SELECT coalesce(state, 'sin permiso') AS estado,
        count(*) AS conexiones
 FROM pg_stat_activity
@@ -265,9 +278,9 @@ GROUP BY 1
 ORDER BY 2 DESC`,
   ),
   item(
-    "Diagnóstico",
+    () => t("Diagnóstico"),
     "muer",
-    "Tablas con más filas muertas",
+    () => t("Tablas con más filas muertas"),
     `SELECT schemaname AS esquema,
        relname AS tabla,
        n_live_tup,
@@ -281,37 +294,37 @@ LIMIT \${n@numero:20}`,
 
   // ------------------------------------------------------------------------ Mantenimiento
   item(
-    "Mantenimiento",
+    () => t("Mantenimiento"),
     "vac",
-    "VACUUM ANALYZE de una tabla",
+    () => t("VACUUM ANALYZE de una tabla"),
     `VACUUM (ANALYZE, VERBOSE) \${tabla@tabla}`,
   ),
   item(
-    "Mantenimiento",
+    () => t("Mantenimiento"),
     "reidx",
-    "Reconstruir un índice sin bloquear",
+    () => t("Reconstruir un índice sin bloquear"),
     `-- no puede correr dentro de una transacción
 REINDEX INDEX CONCURRENTLY \${indice:nombre_del_indice}`,
   ),
   item(
-    "Mantenimiento",
+    () => t("Mantenimiento"),
     "cidx",
-    "Crear un índice sin bloquear",
+    () => t("Crear un índice sin bloquear"),
     `-- no puede correr dentro de una transacción
 CREATE INDEX CONCURRENTLY IF NOT EXISTS \${nombre:idx_tabla_columna}
     ON \${tabla@tabla} (\${columna@columna})`,
   ),
   item(
-    "Mantenimiento",
+    () => t("Mantenimiento"),
     "matar",
-    "Cerrar una sesión por su pid",
+    () => t("Cerrar una sesión por su pid"),
     `-- cuidado: cierra la sesión y revierte su transacción abierta
 SELECT pg_terminate_backend(\${pid@numero})`,
   ),
   item(
-    "Mantenimiento",
+    () => t("Mantenimiento"),
     "lck",
-    "Ver los bloqueos que hay",
+    () => t("Ver los bloqueos que hay"),
     `SELECT l.pid,
        l.locktype,
        l.mode,
@@ -328,9 +341,9 @@ ORDER BY l.granted, l.pid`,
 
   // ------------------------------------------------------------------------------ Estructura
   item(
-    "Estructura",
+    () => t("Estructura"),
     "cols",
-    "Columnas de una tabla",
+    () => t("Columnas de una tabla"),
     `SELECT column_name, data_type, is_nullable, column_default
 FROM information_schema.columns
 WHERE table_schema = '\${esquema:public}'
@@ -338,9 +351,9 @@ WHERE table_schema = '\${esquema:public}'
 ORDER BY ordinal_position`,
   ),
   item(
-    "Estructura",
+    () => t("Estructura"),
     "fks",
-    "Claves foráneas de una tabla",
+    () => t("Claves foráneas de una tabla"),
     `SELECT conname AS restriccion,
        conrelid::regclass AS tabla,
        pg_get_constraintdef(oid) AS definicion
@@ -350,9 +363,9 @@ WHERE contype = 'f'
        OR confrelid = '\${tabla:esquema.tabla}'::regclass)`,
   ),
   item(
-    "Estructura",
+    () => t("Estructura"),
     "coment",
-    "Comentarios de las columnas de una tabla",
+    () => t("Comentarios de las columnas de una tabla"),
     `SELECT c.relname AS tabla,
        a.attname AS columna,
        d.description AS comentario

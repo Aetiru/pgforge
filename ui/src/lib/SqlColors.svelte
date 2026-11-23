@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
+  import { t } from "./i18n.svelte";
   import Sql from "./Sql.svelte";
   import { CUSTOM_ID, PALETTES, SQL_TOKENS, colorsOf, type KeywordWeight } from "./sql-palettes";
   import { sqlTheme } from "./sql-theme.svelte";
@@ -17,11 +18,12 @@ SELECT c.nombre, sum(p.total)::numeric(12,2) AS vendido
  GROUP BY c.nombre
  LIMIT 10;`;
 
-  const WEIGHTS: { value: KeywordWeight; label: string }[] = [
-    { value: 400, label: "Normal" },
-    { value: 500, label: "Media" },
-    { value: 700, label: "Negrita" },
-  ];
+  // Derivada: la etiqueta sigue al idioma vigente.
+  const WEIGHTS: { value: KeywordWeight; label: string }[] = $derived([
+    { value: 400, label: t("Normal") },
+    { value: 500, label: t("Media") },
+    { value: 700, label: t("Negrita") },
+  ]);
 
   const prefs = $derived(sqlTheme.prefs);
   // El selector de color es del tema que se está mirando; el otro se edita aparte.
@@ -32,9 +34,9 @@ SELECT c.nombre, sum(p.total)::numeric(12,2) AS vendido
 
 <div class="flex flex-col gap-3">
   <div class="flex items-center justify-between">
-    <span class="label">Colores del SQL</span>
-    <button class="btn btn-sm btn-ghost" onclick={() => sqlTheme.reset()} title="Vuelve a la paleta y los ajustes de fábrica">
-      Restablecer
+    <span class="label">{t("Colores del SQL")}</span>
+    <button class="btn btn-sm btn-ghost" onclick={() => sqlTheme.reset()} title={t("Vuelve a la paleta y los ajustes de fábrica")}>
+      {t("Restablecer")}
     </button>
   </div>
 
@@ -46,11 +48,11 @@ SELECT c.nombre, sum(p.total)::numeric(12,2) AS vendido
           hover:border-blue-400 dark:hover:border-blue-500
           {active ? 'border-blue-500 ring-2 ring-blue-500/20 dark:border-blue-500' : ''}"
         aria-pressed={active}
-        title={palette.description}
+        title={t(palette.description)}
         onclick={() => sqlTheme.setPalette(palette.id)}
       >
         <span class="flex w-full items-center justify-between">
-          <span class="text-sm font-medium">{palette.name}</span>
+          <span class="text-sm font-medium">{t(palette.name)}</span>
           {#if active}
             <Icon name="check" size={13} class="text-blue-600 dark:text-blue-400" />
           {/if}
@@ -71,8 +73,8 @@ SELECT c.nombre, sum(p.total)::numeric(12,2) AS vendido
 
   <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
     <div class="flex items-center gap-2 text-sm">
-      Palabras clave
-      <div class="seg" role="group" aria-label="Peso de las palabras clave">
+      {t("Palabras clave")}
+      <div class="seg" role="group" aria-label={t("Peso de las palabras clave")}>
         {#each WEIGHTS as weight (weight.value)}
           <button
             class="seg-item"
@@ -86,19 +88,19 @@ SELECT c.nombre, sum(p.total)::numeric(12,2) AS vendido
     </div>
     <label class="check text-sm">
       <input type="checkbox" checked={prefs.commentItalic} onchange={(event) => sqlTheme.setCommentItalic(event.currentTarget.checked)} />
-      Comentarios en cursiva
+      {t("Comentarios en cursiva")}
     </label>
-    <label class="check text-sm" title="Pinta las tablas y columnas con su propio color en vez del del texto">
+    <label class="check text-sm" title={t("Pinta las tablas y columnas con su propio color en vez del del texto")}>
       <input type="checkbox" checked={prefs.identTint} onchange={(event) => sqlTheme.setIdentTint(event.currentTarget.checked)} />
-      Distinguir nombres de tablas y columnas
+      {t("Distinguir nombres de tablas y columnas")}
     </label>
   </div>
 
   {#if prefs.palette === CUSTOM_ID}
     <div class="flex flex-col gap-2 rounded-md bg-zinc-50 p-2.5 dark:bg-zinc-900/60">
-      <div class="seg w-fit" role="group" aria-label="Tema que se edita">
-        <button class="seg-item" aria-pressed={editing === "light"} onclick={() => (editing = "light")}>Colores del claro</button>
-        <button class="seg-item" aria-pressed={editing === "dark"} onclick={() => (editing = "dark")}>Colores del oscuro</button>
+      <div class="seg w-fit" role="group" aria-label={t("Tema que se edita")}>
+        <button class="seg-item" aria-pressed={editing === "light"} onclick={() => (editing = "light")}>{t("Colores del claro")}</button>
+        <button class="seg-item" aria-pressed={editing === "dark"} onclick={() => (editing = "dark")}>{t("Colores del oscuro")}</button>
       </div>
       <div class="grid grid-cols-2 gap-x-4 gap-y-1.5">
         {#each SQL_TOKENS as token (token.key)}
@@ -109,11 +111,11 @@ SELECT c.nombre, sum(p.total)::numeric(12,2) AS vendido
               value={colorsOf(prefs, editing)[token.key]}
               oninput={(event) => sqlTheme.setColor(editing, token.key, event.currentTarget.value)}
             />
-            {token.label}
+            {t(token.label)}
           </label>
         {/each}
       </div>
-      <p class="text-[11px] muted">Para ver el otro tema, cambia el tema de la aplicación desde la barra lateral.</p>
+      <p class="text-[11px] muted">{t("Para ver el otro tema, cambia el tema de la aplicación desde la barra lateral.")}</p>
     </div>
   {/if}
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Icon from "./Icon.svelte";
   import { MAX_NOTE_LENGTH, normalizeTags } from "./notes";
@@ -44,40 +45,40 @@
     <button
       class="flex w-full items-center gap-2 text-left muted hover:text-zinc-900 dark:hover:text-zinc-100"
       onclick={() => (open = true)}
-      title="Notas y etiquetas de este objeto, guardadas en esta computadora"
+      title={t("Notas y etiquetas de este objeto, guardadas en esta computadora")}
     >
       <Icon name="edit" size={12} />
       {#if saved}
         {#each saved.tags as tag (tag)}<span class="tag tag-info">#{tag}</span>{/each}
         <span class="min-w-0 flex-1 truncate">{saved.note}</span>
       {:else}
-        <span>Agregar nota o etiquetas</span>
+        <span>{t("Agregar nota o etiquetas")}</span>
       {/if}
     </button>
   {:else}
     <div class="flex flex-col gap-1.5">
       <textarea
         class="field min-h-16 resize-y text-xs"
-        placeholder="Qué es, quién la usa, qué no tocar…"
+        placeholder={t("Qué es, quién la usa, qué no tocar…")}
         maxlength={MAX_NOTE_LENGTH}
         bind:value={text}
         onblur={save}
       ></textarea>
       <input
         class="field text-xs"
-        placeholder="#etiqueta #otra"
+        placeholder={t("#etiqueta #otra")}
         bind:value={tagsText}
         onblur={save}
         spellcheck="false"
       />
       <div class="flex items-center gap-2 muted">
-        <span>Se guarda en esta computadora, no en la base.</span>
+        <span>{t("Se guarda en esta computadora, no en la base.")}</span>
         <button
           class="btn btn-sm ml-auto"
           onclick={() => {
             save();
             open = false;
-          }}>Listo</button
+          }}>{t("Listo")}</button
         >
       </div>
     </div>

@@ -3,6 +3,7 @@
   import Alert from "../Alert.svelte";
   import Icon, { type IconName } from "../Icon.svelte";
   import { ago } from "../format";
+  import { t } from "../i18n.svelte";
 
   /**
    * El marco de cada pestaña de diagnóstico: título, «Actualizado hace …» y el botón de releer.
@@ -46,16 +47,16 @@
       <div class="flex items-center gap-2">
         <span class="text-[11px] muted" aria-live="polite">
           {#if loading}
-            Actualizando…
+            {t("Actualizando…")}
           {:else if loadedAt}
             {@const seconds = Math.max(0, Math.round((now - loadedAt) / 1000))}
-            {seconds < 5 ? "Actualizado ahora" : `Actualizado ${ago(seconds)}`}
+            {seconds < 5 ? t("Actualizado ahora") : t("Actualizado {time}", { time: ago(seconds) })}
           {/if}
         </span>
         {#if actions}{@render actions()}{/if}
         <button class="btn btn-sm" disabled={loading} onclick={onrefresh}>
           {#if loading}<span class="spinner"></span>{:else}<Icon name="refresh" size={12} />{/if}
-          Actualizar
+          {t("Actualizar")}
         </button>
       </div>
     </div>

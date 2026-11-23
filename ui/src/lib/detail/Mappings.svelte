@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "../i18n.svelte";
   /** Los mapeos de usuario de un servidor foráneo: qué rol local se autentica y con qué. */
   import Icon from "../Icon.svelte";
   import type { UserMapping } from "../ipc";
@@ -22,14 +23,14 @@
 </script>
 
 <Card
-  title="Mapeos de usuario"
+  title={t("Mapeos de usuario")}
   {error}
-  empty={mappings.length === 0 ? "No tiene mapeos de usuario." : null}
+  empty={mappings.length === 0 ? t("No tiene mapeos de usuario.") : null}
 >
   {#snippet actions()}
     <button class="btn btn-sm ml-auto" {...blocked} onclick={onnew}>
       <Icon name="plus" size={11} />
-      Mapeo
+      {t("Mapeo")}
     </button>
   {/snippet}
 
@@ -37,8 +38,8 @@
     <table class="list-table">
       <thead>
         <tr>
-          <th class="w-px whitespace-nowrap">Rol</th>
-          <th class="w-full">Opciones</th>
+          <th class="w-px whitespace-nowrap">{t("Rol")}</th>
+          <th class="w-full">{t("Opciones")}</th>
           <th></th>
         </tr>
       </thead>
@@ -48,7 +49,7 @@
             <td class="w-px font-medium whitespace-nowrap">{mapping.user}</td>
             <td class="max-w-0 truncate font-mono text-xs muted">
               {#if mapping.options === null}
-                (ocultas)
+                {t("(ocultas)")}
               {:else}
                 {mapping.options
                   .map(([key, value]) => (key === "password" ? `${key}=••••` : `${key}=${value}`))
@@ -59,8 +60,8 @@
               <div class="row-actions">
                 <button
                   class="btn btn-ghost btn-icon size-6"
-                  title="Editar el mapeo"
-                  aria-label="Editar el mapeo"
+                  title={t("Editar el mapeo")}
+                  aria-label={t("Editar el mapeo")}
                   {...blocked}
                   onclick={() => onedit(mapping)}
                 >
@@ -68,8 +69,8 @@
                 </button>
                 <button
                   class="btn btn-danger-ghost btn-icon size-6"
-                  title="Quitar el mapeo"
-                  aria-label="Quitar el mapeo"
+                  title={t("Quitar el mapeo")}
+                  aria-label={t("Quitar el mapeo")}
                   onclick={() => ondrop(mapping.user)}
                 >
                   <Icon name="trash" size={12} />

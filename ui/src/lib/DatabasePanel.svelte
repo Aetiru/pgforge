@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import Skeleton from "./Skeleton.svelte";
   /**
    * Una base abierta como pestaña: propiedades, esquemas, tablas y extensiones.
@@ -31,44 +32,48 @@
   const details = $derived(overview?.details ?? null);
 
   const VIEWS = $derived<{ id: View; label: string; count: number | null }[]>([
-    { id: "info", label: "Información", count: null },
-    { id: "schemas", label: "Esquemas", count: overview?.schemas.length ?? null },
-    { id: "tables", label: "Tablas", count: overview?.tables.length ?? null },
-    { id: "extensions", label: "Extensiones", count: overview?.extensions.length ?? null },
+    { id: "info", label: t("Información"), count: null },
+    { id: "schemas", label: t("Esquemas"), count: overview?.schemas.length ?? null },
+    { id: "tables", label: t("Tablas"), count: overview?.tables.length ?? null },
+    { id: "extensions", label: t("Extensiones"), count: overview?.extensions.length ?? null },
   ]);
 
-  const KIND: Record<string, string> = {
-    r: "tabla",
-    p: "particionada",
-    v: "vista",
-    m: "materializada",
-    f: "externa",
-  };
+  const KIND = $derived<Record<string, string>>({
+    r: t("tabla"),
+    p: t("particionada"),
+    v: t("vista"),
+    m: t("materializada"),
+    f: t("externa"),
+  });
 
   const properties = $derived.by<[string, string][]>(() => {
     if (!details) return [];
     return [
-      ["Nombre", details.name],
-      ["Propietario", details.owner],
-      ["Tamaño", bytes(details.sizeBytes)],
-      ["Codificación", details.encoding],
-      ["Colación", details.collation],
-      ["Tipo de carácter", details.ctype],
-      ["Espacio de tablas", details.tablespace],
+      [t("Nombre"), details.name],
+      [t("Propietario"), details.owner],
+      [t("Tamaño"), bytes(details.sizeBytes)],
+      [t("Codificación"), details.encoding],
+      [t("Colación"), details.collation],
+      [t("Tipo de carácter"), details.ctype],
+      [t("Espacio de tablas"), details.tablespace],
       [
-        "Conexiones",
+        t("Conexiones"),
         details.connections === null
           ? "—"
-          : `${details.connections}${details.connectionLimit >= 0 ? ` / ${details.connectionLimit}` : " (sin límite)"}`,
+          : details.connectionLimit >= 0
+            ? `${details.connections} / ${details.connectionLimit}`
+            : t("{n} (sin límite)", { n: details.connections }),
       ],
-      ["Acepta conexiones", details.allowConnections ? "sí" : "no"],
-      ["Plantilla", details.isTemplate ? "sí" : "no"],
-      ["Esquemas", String(overview?.schemas.length ?? 0)],
+      [t("Acepta conexiones"), details.allowConnections ? t("sí") : t("no")],
+      [t("Plantilla"), details.isTemplate ? t("sí") : t("no")],
+      [t("Esquemas"), String(overview?.schemas.length ?? 0)],
       [
-        "Tablas y vistas",
-        `${count(overview?.tables.length ?? 0)}${overview?.tablesTruncated ? " o más" : ""}`,
+        t("Tablas y vistas"),
+        overview?.tablesTruncated
+          ? t("{n} o más", { n: count(overview?.tables.length ?? 0) })
+          : count(overview?.tables.length ?? 0),
       ],
-      ["Extensiones", String(overview?.extensions.length ?? 0)],
+      [t("Extensiones"), String(overview?.extensions.length ?? 0)],
     ];
   });
 
@@ -81,34 +86,34 @@
     );
   });
 
-  const tableColumns: Column<TableSummary>[] = [
-    { key: "schema", header: "Esquema", width: 130, value: (t) => t.schema },
-    { key: "name", header: "Nombre", width: 260, value: (t) => t.name },
-    { key: "kind", header: "Tipo", width: 120, value: (t) => KIND[t.kind] ?? t.kind },
+  const tableColumns = $derived<Column<TableSummary>[]>([
+    { key: "schema", header: t("Esquema"), width: 130, value: (row) => row.schema },
+    { key: "name", header: t("Nombre"), width: 260, value: (row) => row.name },
+    { key: "kind", header: t("Tipo"), width: 120, value: (row) => KIND[row.kind] ?? row.kind },
     {
       key: "rows",
-      header: "Filas (est.)",
+      header: t("Filas (est.)"),
       width: 120,
       align: "right",
-      value: (t) => (t.kind === "v" ? "—" : count(Math.round(t.estimatedRows))),
-      sort: (t) => t.estimatedRows,
+      value: (row) => (row.kind === "v" ? "—" : count(Math.round(row.estimatedRows))),
+      sort: (row) => row.estimatedRows,
     },
     {
       key: "size",
-      header: "Tamaño",
+      header: t("Tamaño"),
       width: 110,
       align: "right",
-      value: (t) => (t.kind === "v" ? "—" : bytes(t.totalBytes)),
-      sort: (t) => t.totalBytes,
+      value: (row) => (row.kind === "v" ? "—" : bytes(row.totalBytes)),
+      sort: (row) => row.totalBytes,
     },
-  ];
+  ]);
 
-  const schemaColumns: Column<SchemaSummary>[] = [
-    { key: "name", header: "Esquema", width: 220, value: (s) => s.name },
-    { key: "owner", header: "Propietario", width: 160, value: (s) => s.owner },
+  const schemaColumns = $derived<Column<SchemaSummary>[]>([
+    { key: "name", header: t("Esquema"), width: 220, value: (s) => s.name },
+    { key: "owner", header: t("Propietario"), width: 160, value: (s) => s.owner },
     {
       key: "tables",
-      header: "Tablas",
+      header: t("Tablas"),
       width: 100,
       align: "right",
       value: (s) => count(s.tables),
@@ -116,19 +121,19 @@
     },
     {
       key: "views",
-      header: "Vistas",
+      header: t("Vistas"),
       width: 100,
       align: "right",
       value: (s) => count(s.views),
       sort: (s) => s.views,
     },
-  ];
+  ]);
 
-  const extensionColumns: Column<ExtensionSummary>[] = [
-    { key: "name", header: "Extensión", width: 220, value: (e) => e.name },
-    { key: "version", header: "Versión", width: 120, value: (e) => e.version },
-    { key: "schema", header: "Esquema", width: 160, value: (e) => e.schema },
-  ];
+  const extensionColumns = $derived<Column<ExtensionSummary>[]>([
+    { key: "name", header: t("Extensión"), width: 220, value: (e) => e.name },
+    { key: "version", header: t("Versión"), width: 120, value: (e) => e.version },
+    { key: "schema", header: t("Esquema"), width: 160, value: (e) => e.schema },
+  ]);
 
   async function openSelected() {
     const item = selectedTable;
@@ -179,7 +184,7 @@
       {:else}
         <Icon name="refresh" size={12} />
       {/if}
-      Actualizar
+      {t("Actualizar")}
     </button>
   </div>
 
@@ -193,11 +198,11 @@
   <div class="min-h-0 flex-1">
     {#if !overview}
       {#if tab.loading}
-        <Skeleton rows={6} label="Leyendo la base…" />
+        <Skeleton rows={6} label={t("Leyendo la base…")} />
       {:else if !tab.error}
-        <Empty icon="database" title="Sin datos" hint="No se pudo traer nada de la base todavía.">
+        <Empty icon="database" title={t("Sin datos")} hint={t("No se pudo traer nada de la base todavía.")}>
           <button class="btn btn-primary" onclick={() => tab.load()}>
-            <Icon name="refresh" size={12} /> Leer la base
+            <Icon name="refresh" size={12} /> {t("Leer la base")}
           </button>
         </Empty>
       {/if}
@@ -206,7 +211,7 @@
         <div class="mb-3 flex items-center gap-2">
           <Icon name="database" size={18} class="text-blue-600 dark:text-blue-400" />
           <h2 class="text-base font-semibold">{details?.name}</h2>
-          {#if details?.isTemplate}<span class="tag tag-neutral">plantilla</span>{/if}
+          {#if details?.isTemplate}<span class="tag tag-neutral">{t("plantilla")}</span>{/if}
         </div>
         {#if details?.comment}
           <p class="mb-3 text-sm muted">{details.comment}</p>
@@ -224,7 +229,7 @@
         rows={overview.schemas}
         rowKey={(item) => item.name}
         sortable
-        empty="Esta base no tiene esquemas propios."
+        empty={t("Esta base no tiene esquemas propios.")}
         onselect={(item) => {
           schemaFilter = item.name;
           view = "tables";
@@ -234,9 +239,9 @@
       <div class="flex h-full flex-col">
         <div class="toolbar divider-b">
           <label class="check">
-            Esquema
+            {t("Esquema")}
             <select class="field" bind:value={schemaFilter}>
-              <option value="">Todos</option>
+              <option value="">{t("Todos")}</option>
               {#each overview.schemas as item (item.name)}
                 <option value={item.name}>{item.name}</option>
               {/each}
@@ -244,21 +249,27 @@
           </label>
           <input
             class="field w-56 py-0.5 text-xs"
-            placeholder="Filtrar por nombre…"
+            placeholder={t("Filtrar por nombre…")}
             bind:value={needle}
           />
           <span class="ml-auto text-xs muted">
-            {count(tables.length)} de {count(overview.tables.length)}{overview.tablesTruncated
-              ? " (hay más: se muestran las más pesadas)"
-              : ""}
+            {overview.tablesTruncated
+              ? t("{shown} de {total} (hay más: se muestran las más pesadas)", {
+                  shown: count(tables.length),
+                  total: count(overview.tables.length),
+                })
+              : t("{shown} de {total}", {
+                  shown: count(tables.length),
+                  total: count(overview.tables.length),
+                })}
           </span>
           <button class="btn btn-sm btn-primary" disabled={!selectedTable} onclick={openSelected}>
             <Icon name="table" size={12} />
-            Datos
+            {t("Datos")}
           </button>
           <button class="btn btn-sm" disabled={!selectedTable} onclick={queryAll}>
             <Icon name="sql" size={12} />
-            Consulta
+            {t("Consulta")}
           </button>
         </div>
         <div class="min-h-0 flex-1">
@@ -269,7 +280,7 @@
             selectedKey={selectedTable ? tableKey(selectedTable) : null}
             onselect={(item) => (selectedTable = item)}
             sortable
-            empty="Ninguna tabla coincide."
+            empty={t("Ninguna tabla coincide.")}
           />
         </div>
       </div>
@@ -279,7 +290,7 @@
         rows={overview.extensions}
         rowKey={(item) => item.name}
         sortable
-        empty="No hay extensiones instaladas en esta base."
+        empty={t("No hay extensiones instaladas en esta base.")}
       />
     {/if}
   </div>

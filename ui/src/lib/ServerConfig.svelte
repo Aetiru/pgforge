@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import Skeleton from "./Skeleton.svelte";
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
@@ -66,8 +67,8 @@
   function afterSaved(pendingRestart: boolean) {
     editing = null;
     flash = pendingRestart
-      ? "Guardado. El cambio necesita reiniciar el servidor para tomar efecto."
-      : "Guardado y recargado.";
+      ? t("Guardado. El cambio necesita reiniciar el servidor para tomar efecto.")
+      : t("Guardado y recargado.");
     load();
   }
 </script>
@@ -82,30 +83,30 @@
       />
       <input
         class="field w-64 py-1 pr-3 pl-7"
-        placeholder="Buscar un parámetro"
+        placeholder={t("Buscar un parámetro")}
         bind:value={search}
       />
     </div>
 
-    <span class="text-xs muted">{filtered.length} de {settings.length} parámetros</span>
+    <span class="text-xs muted">{t("{shown} de {total} parámetros", { shown: filtered.length, total: settings.length })}</span>
 
     <button class="btn btn-sm ml-auto" onclick={load} disabled={loading}>
       <Icon name="refresh" size={11} />
-      Recargar
+      {t("Recargar")}
     </button>
   </div>
 
   {#if !isSuperuser}
     <Alert tone="warn">
-      Solo lectura: hace falta ser superusuario para cambiar la configuración con ALTER SYSTEM.
+      {t("Solo lectura: hace falta ser superusuario para cambiar la configuración con ALTER SYSTEM.")}
     </Alert>
   {/if}
 
   {#if pendingCount > 0}
     <Alert tone="warn">
-      Hay {pendingCount}
-      {pendingCount === 1 ? "parámetro" : "parámetros"} pendientes de un reinicio del servidor para tomar
-      efecto.
+      {pendingCount === 1
+        ? t("Hay 1 parámetro pendiente de un reinicio del servidor para tomar efecto.")
+        : t("Hay {n} parámetros pendientes de un reinicio del servidor para tomar efecto.", { n: pendingCount })}
     </Alert>
   {/if}
 
@@ -119,9 +120,9 @@
 
   <div class="min-h-0 flex-1 overflow-auto px-3 py-2">
     {#if loading}
-      <Skeleton rows={10} compact label="Leyendo la configuración…" />
+      <Skeleton rows={10} compact label={t("Leyendo la configuración…")} />
     {:else if filtered.length === 0}
-      <Empty icon="search" title="Sin coincidencias" hint="Probá con otro nombre de parámetro." />
+      <Empty icon="search" title={t("Sin coincidencias")} hint={t("Probá con otro nombre de parámetro.")} />
     {:else}
       {#each groups as [category, items] (category)}
         <div class="label mt-3 mb-1 first:mt-0">{category}</div>
@@ -142,10 +143,10 @@
               <!-- Sin valor no es un parámetro vacío: es uno que este rol no tiene permiso de leer. -->
               <span
                 class="w-40 shrink-0 truncate tabular-nums {setting.value === null ? 'muted' : ''}"
-                title={setting.value ?? "solo lo puede leer un superusuario"}
+                title={setting.value ?? t("solo lo puede leer un superusuario")}
               >
                 {#if setting.value === null}
-                  sin permiso
+                  {t("sin permiso")}
                 {:else}
                   {setting.value}{setting.unit ? ` ${setting.unit}` : ""}
                 {/if}
@@ -153,14 +154,14 @@
 
               <span class="flex shrink-0 gap-1">
                 {#if setting.pendingRestart}
-                  <span class="tag tag-warn">pendiente de reinicio</span>
+                  <span class="tag tag-warn">{t("pendiente de reinicio")}</span>
                 {:else if setting.context === "postmaster"}
-                  <span class="tag tag-neutral">necesita reinicio</span>
+                  <span class="tag tag-neutral">{t("necesita reinicio")}</span>
                 {:else if setting.context === "internal"}
-                  <span class="tag tag-neutral">solo lectura</span>
+                  <span class="tag tag-neutral">{t("solo lectura")}</span>
                 {/if}
                 {#if setting.source !== "default" && setting.context !== "internal"}
-                  <span class="tag tag-info" title="Distinto del valor por omisión">cambiado</span>
+                  <span class="tag tag-info" title={t("Distinto del valor por omisión")}>{t("cambiado")}</span>
                 {/if}
               </span>
 

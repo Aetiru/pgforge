@@ -3,6 +3,7 @@
   import Alert from "./Alert.svelte";
   import Confirm from "./Confirm.svelte";
   import Empty from "./Empty.svelte";
+  import { t } from "./i18n.svelte";
   import ExportDialog from "./ExportDialog.svelte";
   import { environmentOf, isReadOnly } from "./access.svelte";
   import { envBar, READ_ONLY_LOOK } from "./badges";
@@ -92,7 +93,7 @@
     try {
       const found = await routineDefinitions(tab.profileId, schema, name, tab.database);
       if (found.length === 0) {
-        tab.log("notice", `No se encontró una función o procedimiento llamado «${name}».`);
+        tab.log("notice", t("No se encontró una función o procedimiento llamado \"{name}\".", { name }));
         return;
       }
       const opened = await openQuery(tab.profileId, tab.database, name);
@@ -238,7 +239,7 @@
       if (item.outcome.kind !== "rows") return;
       out.push({
         id: `live:${index}`,
-        label: `En vivo #${index + 1} · ${count(item.outcome.rowCount)} filas`,
+        label: t("En vivo #{n} · {rows} filas", { n: index + 1, rows: count(item.outcome.rowCount) }),
         columns: item.outcome.columns,
         rows: item.outcome.rows,
         truncated: item.outcome.truncated,
@@ -248,7 +249,7 @@
       if (item.outcome.kind !== "rows") continue;
       out.push({
         id: `pin:${item.id}`,
-        label: `Anclado · ${item.label}`,
+        label: t("Anclado · {label}", { label: item.label }),
         columns: item.outcome.columns,
         rows: item.outcome.rows,
         truncated: item.outcome.truncated,
@@ -672,21 +673,21 @@
   // Dos grupos y no una sola tira: Resultados/Plan/Mensajes son el resultado de la corrida;
   // Historial/Guardadas son de dónde sacar el SQL para la siguiente. Mezclados en una sola `.seg` se
   // leían como si fueran la misma pregunta.
-  const RESULT_VIEWS = [
-    { value: "rows", label: "Resultados", icon: "table", hint: "Las filas que devolvió" },
-    { value: "plan", label: "Plan", icon: "plan", hint: "Cómo resolvió la consulta el servidor" },
+  const RESULT_VIEWS = $derived([
+    { value: "rows", label: t("Resultados"), icon: "table", hint: t("Las filas que devolvió") },
+    { value: "plan", label: t("Plan"), icon: "plan", hint: t("Cómo resolvió la consulta el servidor") },
     {
       value: "messages",
-      label: "Mensajes",
+      label: t("Mensajes"),
       icon: "info",
-      hint: "Los avisos del servidor y los errores de cada sentencia",
+      hint: t("Los avisos del servidor y los errores de cada sentencia"),
     },
-  ] as const;
+  ] as const);
 
-  const SOURCE_VIEWS = [
-    { value: "history", label: "Historial", icon: "clock", hint: "Lo que se ejecutó antes" },
-    { value: "saved", label: "Guardadas", icon: "star", hint: "Las consultas guardadas con nombre" },
-  ] as const;
+  const SOURCE_VIEWS = $derived([
+    { value: "history", label: t("Historial"), icon: "clock", hint: t("Lo que se ejecutó antes") },
+    { value: "saved", label: t("Guardadas"), icon: "star", hint: t("Las consultas guardadas con nombre") },
+  ] as const);
 
   /**
    * Alt+1…Alt+9 salta al resultado N; Alt+←/→ al anterior o siguiente. Solo mientras se está mirando
@@ -805,12 +806,12 @@
       />
     {/if}
 
-    <nav class="rail-compact {envBar(environment)}" aria-label="Ejecutar consulta">
+    <nav class="rail-compact {envBar(environment)}" aria-label={t("Ejecutar consulta")}>
       {#if tab.running}
         <button
           class="btn btn-danger-ghost btn-icon"
-          aria-label="Cancelar"
-          title="Cancela la consulta en curso"
+          aria-label={t("Cancelar")}
+          title={t("Cancela la consulta en curso")}
           onclick={() => tab.cancel()}
         >
           <Icon name="close" size={16} />
@@ -819,8 +820,8 @@
         <button
           class="btn btn-icon btn-run"
           disabled={tab.tabId === null}
-          aria-label="Ejecutar"
-          title={shortcutStore.hint("Ejecuta la selección, o la sentencia donde está el cursor", "editor.run")}
+          aria-label={t("Ejecutar")}
+          title={shortcutStore.hint(t("Ejecuta la selección, o la sentencia donde está el cursor"), "editor.run")}
           onclick={() => {
             const { text, cursor } = here();
             run(text, cursor);
@@ -831,8 +832,8 @@
         <button
           class="btn btn-ghost btn-icon"
           disabled={tab.tabId === null}
-          aria-label="Ejecutar el script entero"
-          title={shortcutStore.hint("Ejecuta todas las sentencias del editor", "editor.runScript")}
+          aria-label={t("Ejecutar el script entero")}
+          title={shortcutStore.hint(t("Ejecuta todas las sentencias del editor"), "editor.runScript")}
           onclick={runWholeScript}
         >
           <Icon name="play-all" size={16} />
@@ -846,9 +847,9 @@
       <button
         class="btn btn-ghost btn-icon"
         disabled={tab.tabId === null}
-        aria-label="Analizar"
+        aria-label={t("Analizar")}
         aria-haspopup="menu"
-        title="Plan estimado, plan medido y ensayo"
+        title={t("Plan estimado, plan medido y ensayo")}
         onclick={(event) => openRailMenu(event, "analyze")}
       >
         <Icon name="plan" size={16} />
@@ -858,9 +859,9 @@
 
       <button
         class="btn btn-ghost btn-icon"
-        aria-label="Archivo y formato"
+        aria-label={t("Archivo y formato")}
         aria-haspopup="menu"
-        title="Guardar como .sql, guardar con nombre y formatear"
+        title={t("Guardar como .sql, guardar con nombre y formatear")}
         onclick={(event) => openRailMenu(event, "file")}
       >
         <Icon name="save" size={16} />
@@ -871,8 +872,8 @@
       <button
         class="btn btn-ghost btn-icon"
         aria-pressed={outlineOpen}
-        aria-label="Esquema del script"
-        title={shortcutStore.hint("Lista las sentencias del script para saltar a cualquiera", "editor.outline")}
+        aria-label={t("Esquema del script")}
+        title={shortcutStore.hint(t("Lista las sentencias del script para saltar a cualquiera"), "editor.outline")}
         onclick={toggleOutline}
       >
         <Icon name="columns" size={16} />
@@ -882,8 +883,8 @@
            quiere una abreviatura mientras escribe la consulta que la pediría. -->
       <button
         class="btn btn-ghost btn-icon"
-        aria-label="Abreviaturas del editor"
-        title="Abreviaturas: escribí una y apretá Tab para expandirla"
+        aria-label={t("Abreviaturas del editor")}
+        title={t("Abreviaturas: escribí una y apretá Tab para expandirla")}
         onclick={() => (snippetsOpen = true)}
       >
         <Icon name="sql" size={16} />
@@ -891,8 +892,8 @@
 
       <button
         class="btn btn-ghost btn-icon"
-        aria-label="Versiones anteriores"
-        title={shortcutStore.hint("Versiones anteriores de este texto", "editor.versions")}
+        aria-label={t("Versiones anteriores")}
+        title={shortcutStore.hint(t("Versiones anteriores de este texto"), "editor.versions")}
         onclick={() => (versionsOpen = true)}
       >
         <Icon name="clock" size={16} />
@@ -906,10 +907,10 @@
       <button
         class="btn btn-ghost btn-icon btn-toggle"
         aria-pressed={autoFormat.enabled}
-        aria-label="Autoformatear"
+        aria-label={t("Autoformatear")}
         title={autoFormat.enabled
-          ? "Autoformatear encendido: el SQL se ordena solo antes de guardar y antes de ejecutar el script entero"
-          : "Autoformatear apagado: el SQL se ordena solo cuando apretás el botón de formatear"}
+          ? t("Autoformatear encendido: el SQL se ordena solo antes de guardar y antes de ejecutar el script entero")
+          : t("Autoformatear apagado: el SQL se ordena solo cuando apretás el botón de formatear")}
         onclick={() => autoFormat.set(!autoFormat.enabled)}
       >
         <Icon name="format-auto" size={16} />
@@ -920,7 +921,7 @@
       <span class="mt-auto"></span>
 
       {#if tab.running}
-        <span class="spinner my-1" title="Ejecutando…"></span>
+        <span class="spinner my-1" title={t("Ejecutando…")}></span>
       {/if}
     </nav>
   </div>
@@ -932,8 +933,7 @@
       : ''}"
     onmousedown={startResize}
     ondblclick={() => editorSplit.reset()}
-    title="Arrastrá para cambiar la altura del editor; doble clic para restablecerla. Vale para
-           todas las pestañas de consulta y se recuerda."
+    title={t("Arrastrá para cambiar la altura del editor; doble clic para restablecerla. Vale para todas las pestañas de consulta y se recuerda.")}
   >
     <div
       class="absolute inset-x-0 -top-[3px] h-[7px] cursor-row-resize transition-colors
@@ -950,11 +950,11 @@
            se esconde sin dejar de dónde agarrarlo no se vuelve a abrir. -->
       <button
         class="btn btn-ghost btn-icon btn-toggle"
-        aria-label={editorSplit.resultsHidden ? "Mostrar los resultados" : "Ocultar los resultados"}
+        aria-label={editorSplit.resultsHidden ? t("Mostrar los resultados") : t("Ocultar los resultados")}
         aria-pressed={!editorSplit.resultsHidden}
         title={editorSplit.resultsHidden
-          ? "Muestra de nuevo los resultados"
-          : "Pliega los resultados y le deja todo el alto al editor"}
+          ? t("Muestra de nuevo los resultados")
+          : t("Pliega los resultados y le deja todo el alto al editor")}
         onclick={() => editorSplit.toggleResults()}
       >
         <Icon name="panel-bottom" size={13} />
@@ -964,11 +964,11 @@
            pregunta —qué se queda con el espacio— hecha desde el otro lado. -->
       <button
         class="btn btn-ghost btn-icon btn-toggle"
-        aria-label={editorSplit.editorHidden ? "Restablecer el reparto" : "Maximizar los resultados"}
+        aria-label={editorSplit.editorHidden ? t("Restablecer el reparto") : t("Maximizar los resultados")}
         aria-pressed={!editorSplit.editorHidden}
         title={editorSplit.editorHidden
-          ? "Vuelve a mostrar el editor"
-          : "Pliega el editor y le deja todo el alto a la grilla"}
+          ? t("Vuelve a mostrar el editor")
+          : t("Pliega el editor y le deja todo el alto a la grilla")}
         onclick={() => editorSplit.toggleEditor()}
       >
         <Icon name="panel-top" size={13} />
@@ -1025,12 +1025,12 @@
         existe mientras hay una transacción.
       -->
       <div class="flex items-center gap-1.5">
-        <div class="seg" role="group" aria-label="Modo de transacción">
+        <div class="seg" role="group" aria-label={t("Modo de transacción")}>
           <button
             class="seg-item"
             aria-pressed={tab.autocommit}
             disabled={tab.tabId === null || tab.running}
-            title="Autocommit: cada ejecución se confirma sola"
+            title={t("Autocommit: cada ejecución se confirma sola")}
             onclick={() => pickMode(true)}
           >
             Auto
@@ -1039,14 +1039,14 @@
             class="seg-item seg-warn"
             aria-pressed={!tab.autocommit}
             disabled={tab.tabId === null || tab.running}
-            title="Manual: cada ejecución abre una transacción que se confirma con Commit"
+            title={t("Manual: cada ejecución abre una transacción que se confirma con Commit")}
             onclick={() => pickMode(false)}
           >
             Manual
           </button>
         </div>
         {#if !tab.autocommit && tab.txStatus === "idle"}
-          <span class="text-xs muted">Se abrirá al ejecutar</span>
+          <span class="text-xs muted">{t("Se abrirá al ejecutar")}</span>
         {/if}
       </div>
 
@@ -1062,10 +1062,10 @@
       {#if tab.view === "rows" && withRows}
         <span class="flex items-center gap-2 text-xs muted">
           <span class="tabular-nums">
-            {withRows.truncated ? "más de " : ""}<strong class="font-semibold text-zinc-800 dark:text-zinc-100"
+            {withRows.truncated ? t("más de") + " " : ""}<strong class="font-semibold text-zinc-800 dark:text-zinc-100"
               >{count(withRows.truncated ? withRows.rows.length : withRows.rowCount)}</strong
             >
-            {withRows.rowCount === 1 ? "fila" : "filas"} · {decimal(withRows.seconds * 1000, 0)} ms
+            {withRows.rowCount === 1 ? t("fila") : t("filas")} · {decimal(withRows.seconds * 1000, 0)} ms
           </span>
         </span>
       {/if}
@@ -1080,12 +1080,12 @@
       -->
       <span class="ml-auto flex items-center gap-1.5 text-xs muted">
         {#if isReadOnly(tab.profileId)}
-          <span class="tag tag-neutral" title={READ_ONLY_LOOK.title}>{READ_ONLY_LOOK.label}</span>
+          <span class="tag tag-neutral" title={t(READ_ONLY_LOOK.title)}>{t(READ_ONLY_LOOK.label)}</span>
         {/if}
         <!-- Contra qué base corre se elige acá y no cerrando la pestaña para abrir otra: es la
              misma consulta contra otra base, que es como se prueba algo entre desarrollo y
              producción. -->
-        <label class="flex items-center gap-1" title="Base sobre la que corre esta pestaña">
+        <label class="flex items-center gap-1" title={t("Base sobre la que corre esta pestaña")}>
           <Icon name="database" size={11} />
           <select
             class="field max-w-44 py-0.5 text-xs"
@@ -1126,9 +1126,9 @@
             <button
               class="btn btn-ghost btn-icon btn-toggle"
               aria-pressed={tab.showTypes}
-              aria-label="Tipos de las columnas"
+              aria-label={t("Tipos de las columnas")}
               disabled={tab.running}
-              title="Muestra el tipo de cada columna; se le pregunta al servidor sin ejecutar de nuevo"
+              title={t("Muestra el tipo de cada columna; se le pregunta al servidor sin ejecutar de nuevo")}
               onclick={() => tab.setShowTypes(!tab.showTypes)}
             >
               <Icon name="type" size={13} />
@@ -1139,11 +1139,11 @@
             <button
               class="btn btn-ghost btn-icon btn-toggle"
               aria-pressed={tab.editPlan !== null}
-              aria-label="Editar el resultado"
+              aria-label={t("Editar el resultado")}
               disabled={!tab.canTryEdit || tab.editBusy}
               title={tab.editPlan
-                ? "Salir de la edición (descarta lo no guardado)"
-                : "Editar las celdas del resultado cuando sale de una sola tabla"}
+                ? t("Salir de la edición (descarta lo no guardado)")
+                : t("Editar las celdas del resultado cuando sale de una sola tabla")}
               onclick={() => (tab.editPlan ? tab.cancelEdit() : tab.startEdit())}
             >
               <Icon name="edit" size={13} />
@@ -1154,8 +1154,8 @@
             <label
               class="flex items-center gap-1 text-xs muted"
               title={tab.canWatch
-                ? "Repite la consulta cada tanto mientras la ventana está a la vista"
-                : "Solo se puede vigilar una lectura simple, con autocommit encendido"}
+                ? t("Repite la consulta cada tanto mientras la ventana está a la vista")
+                : t("Solo se puede vigilar una lectura simple, con autocommit encendido")}
             >
               <Icon name="eye" size={12} />
               <select
@@ -1168,9 +1168,9 @@
                   else tab.startWatch(seconds);
                 }}
               >
-                <option value={0}>Vigilar: no</option>
+                <option value={0}>{t("Vigilar: no")}</option>
                 {#each WATCH_STEPS as seconds (seconds)}
-                  <option value={seconds}>cada {seconds} s</option>
+                  <option value={seconds}>{t("cada {seconds} s", { seconds })}</option>
                 {/each}
               </select>
             </label>
@@ -1179,7 +1179,7 @@
                  abrió la sesión. -->
             <label
               class="flex items-center gap-1 text-xs muted"
-              title="Cancela solo cualquier sentencia de esta pestaña que pase de este tiempo"
+              title={t("Cancela solo cualquier sentencia de esta pestaña que pase de este tiempo")}
             >
               <Icon name="clock" size={12} />
               <select
@@ -1192,7 +1192,7 @@
                 }}
               >
                 {#each TIMEOUT_OPTIONS as option (option.label)}
-                  <option value={String(option.ms)}>{option.label}</option>
+                  <option value={String(option.ms)}>{t(option.label)}</option>
                 {/each}
               </select>
             </label>
@@ -1201,9 +1201,9 @@
 
             <label
               class="flex items-center gap-1 text-xs muted"
-              title="Máximo de filas que se traen; para ver más, subilo y volvé a ejecutar"
+              title={t("Máximo de filas que se traen; para ver más, subilo y volvé a ejecutar")}
             >
-              <span>Máx.</span>
+              <span>{t("Máx.")}</span>
               <select
                 class="field py-0.5 text-xs"
                 value={paging.size}
@@ -1223,8 +1223,8 @@
             <button
               class="btn btn-ghost btn-icon"
               disabled={!tab.result}
-              aria-label="Anclar el resultado"
-              title="Ancla este resultado como una pestaña más, que no se pisa con la próxima ejecución"
+              aria-label={t("Anclar el resultado")}
+              title={t("Ancla este resultado como una pestaña más, que no se pisa con la próxima ejecución")}
               onclick={pinCurrent}
             >
               <Icon name="pin" size={13} />
@@ -1242,16 +1242,16 @@
               <button
                 class="btn btn-ghost btn-icon"
                 disabled={tab.ranSql.trim() === ""}
-                aria-label="Exportar el resultado"
-                title="Exporta todas las filas del resultado elegido, no solo las que se muestran"
+                aria-label={t("Exportar el resultado")}
+                title={t("Exporta todas las filas del resultado elegido, no solo las que se muestran")}
                 onclick={openExport}
               >
                 <Icon name="download" size={13} />
               </button>
               <button
                 class="btn btn-ghost btn-icon"
-                aria-label="Exportar a JSON o Markdown"
-                title="Escribe las filas cargadas como JSON o Markdown (respeta el máximo de filas)"
+                aria-label={t("Exportar a JSON o Markdown")}
+                title={t("Escribe las filas cargadas como JSON o Markdown (respeta el máximo de filas)")}
                 onclick={() => (fileExportOpen = true)}
               >
                 <Icon name="sql" size={13} />
@@ -1264,10 +1264,10 @@
           <button
             class="btn btn-ghost btn-icon"
             disabled={compareSources.length < 2}
-            aria-label="Comparar resultados"
+            aria-label={t("Comparar resultados")}
             title={compareSources.length < 2
-              ? "Hacen falta dos resultados con filas: anclá uno y ejecutá de nuevo"
-              : "Compara dos resultados celda por celda"}
+              ? t("Hacen falta dos resultados con filas: anclá uno y ejecutá de nuevo")
+              : t("Compara dos resultados celda por celda")}
             onclick={() => (compareOpen = true)}
           >
             <Icon name="compare" size={13} />
@@ -1320,8 +1320,8 @@
             </button>
             <button
               class="tab-close"
-              aria-label="Sacar el ancla"
-              title="Sacar el ancla"
+              aria-label={t("Sacar el ancla")}
+              title={t("Sacar el ancla")}
               onclick={() => tab.unpin(item.id)}
             >
               <Icon name="close" size={10} />
@@ -1337,10 +1337,10 @@
       {:else}
         <Empty
           icon="check"
-          title="{outcome.tag} · {count(outcome.affected)} {outcome.affected === 1
-            ? 'fila'
-            : 'filas'}"
-          hint="La sentencia no devuelve filas; el servidor informó cuántas tocó."
+          title={outcome.affected === 1
+            ? t("{tag} · {n} fila", { tag: outcome.tag, n: count(outcome.affected) })
+            : t("{tag} · {n} filas", { tag: outcome.tag, n: count(outcome.affected) })}
+          hint={t("La sentencia no devuelve filas; el servidor informó cuántas tocó.")}
         />
       {/if}
     {/snippet}
@@ -1359,7 +1359,7 @@
                  bg-white/90 px-2 py-1 shadow-sm dark:border-zinc-700 dark:bg-zinc-900/90"
         >
           <span class="spinner size-3.5"></span>
-          <span class="text-xs muted">Ejecutando… <Elapsed since={tab.runStartedAt} /></span>
+          <span class="text-xs muted">{t("Ejecutando…")} <Elapsed since={tab.runStartedAt} /></span>
           {#if tab.waiting}
             <span
               class="truncate text-xs {tab.waiting.blocked ? 'text-amber-700 dark:text-amber-400' : 'muted'}"
@@ -1368,7 +1368,7 @@
           {/if}
           <button class="btn btn-danger btn-sm" onclick={() => tab.cancel()}>
             <Icon name="close" size={11} />
-            Cancelar
+            {t("Cancelar")}
           </button>
         </div>
       {:else if tab.running}
@@ -1377,7 +1377,7 @@
                  bg-white/70 backdrop-blur-[1px] dark:bg-zinc-950/70"
         >
           <span class="spinner size-6 border-2"></span>
-          <p class="text-sm muted">Ejecutando… <Elapsed since={tab.runStartedAt} /></p>
+          <p class="text-sm muted">{t("Ejecutando…")} <Elapsed since={tab.runStartedAt} /></p>
           {#if tab.waiting}
             <div class="max-w-md px-4 text-center text-xs {tab.waiting.blocked ? 'text-amber-700 dark:text-amber-400' : 'muted'}">
               <p>{tab.waiting.summary}</p>
@@ -1388,7 +1388,7 @@
           {/if}
           <button class="btn btn-danger btn-sm" onclick={() => tab.cancel()}>
             <Icon name="close" size={11} />
-            Cancelar
+            {t("Cancelar")}
           </button>
         </div>
       {/if}
@@ -1407,17 +1407,19 @@
           {#if tab.editPlan}
             <div class="divider-b flex flex-wrap items-center gap-2 px-3 py-1 text-xs">
               <span>
-                Editando <b>{tab.editPlan.shape.schema}.{tab.editPlan.shape.name}</b>
-                · {tab.editedRowCount}
-                {tab.editedRowCount === 1 ? "fila con cambios" : "filas con cambios"}
+                {t("Editando")} <b>{tab.editPlan.shape.schema}.{tab.editPlan.shape.name}</b>
+                ·
+                {tab.editedRowCount === 1
+                  ? t("{n} fila con cambios", { n: tab.editedRowCount })
+                  : t("{n} filas con cambios", { n: tab.editedRowCount })}
               </span>
-              <span class="muted">Doble clic en una celda · nada se escribe hasta guardar</span>
+              <span class="muted">{t("Doble clic en una celda · nada se escribe hasta guardar")}</span>
               <span class="ml-auto flex gap-1.5">
-                <button class="btn btn-sm" onclick={() => tab.cancelEdit()}>Descartar</button>
+                <button class="btn btn-sm" onclick={() => tab.cancelEdit()}>{t("Descartar")}</button>
                 <button
                   class="btn btn-sm"
                   disabled={tab.editedRowCount === 0 || tab.editBusy}
-                  onclick={() => tab.showEditPreview()}>Ver SQL</button
+                  onclick={() => tab.showEditPreview()}>{t("Ver SQL")}</button
                 >
                 <button
                   class="btn btn-primary btn-sm"
@@ -1425,7 +1427,7 @@
                   onclick={() => tab.saveEdit()}
                 >
                   {#if tab.editBusy}<span class="spinner"></span>{/if}
-                  Guardar
+                  {t("Guardar")}
                 </button>
               </span>
             </div>
@@ -1447,17 +1449,16 @@
         {:else if result && result.outcome.kind === "command"}
           <Empty
             icon="check"
-            title="{result.outcome.tag} · {count(result.outcome.affected)} {result.outcome
-              .affected === 1
-              ? 'fila'
-              : 'filas'}"
-            hint="La sentencia no devuelve filas; el servidor informó cuántas tocó."
+            title={result.outcome.affected === 1
+              ? t("{tag} · {n} fila", { tag: result.outcome.tag, n: count(result.outcome.affected) })
+              : t("{tag} · {n} filas", { tag: result.outcome.tag, n: count(result.outcome.affected) })}
+            hint={t("La sentencia no devuelve filas; el servidor informó cuántas tocó.")}
           />
         {:else}
           <Empty
             icon="sql"
-            title="Todavía no ejecutaste nada"
-            hint="Escribí una consulta y ejecutala. Si hay varias sentencias, se ejecuta la del cursor; si hay una selección, se ejecuta la selección."
+            title={t("Todavía no ejecutaste nada")}
+            hint={t("Escribí una consulta y ejecutala. Si hay varias sentencias, se ejecuta la del cursor; si hay una selección, se ejecuta la selección.")}
           >
             <button
               class="btn btn-primary"
@@ -1467,14 +1468,14 @@
                 run(text, cursor);
               }}
             >
-              <Icon name="play" size={12} /> Ejecutar
+              <Icon name="play" size={12} /> {t("Ejecutar")}
             </button>
-            <button class="btn" onclick={() => (tab.view = "history")}>Ver el historial</button>
-            <button class="btn" onclick={() => (tab.view = "saved")}>Consultas guardadas</button>
+            <button class="btn" onclick={() => (tab.view = "history")}>{t("Ver el historial")}</button>
+            <button class="btn" onclick={() => (tab.view = "saved")}>{t("Consultas guardadas")}</button>
             <p class="basis-full pt-1 text-[11px] muted">
-              <kbd class="kbd">{shortcutStore.label("editor.run")}</kbd> la sentencia ·
-              <kbd class="kbd">{shortcutStore.label("editor.runScript")}</kbd> el script ·
-              <kbd class="kbd">{shortcutStore.label("app.tabs")}</kbd> pestañas
+              <kbd class="kbd">{shortcutStore.label("editor.run")}</kbd> {t("la sentencia")} ·
+              <kbd class="kbd">{shortcutStore.label("editor.runScript")}</kbd> {t("el script")} ·
+              <kbd class="kbd">{shortcutStore.label("app.tabs")}</kbd> {t("pestañas")}
             </p>
           </Empty>
         {/if}
@@ -1484,25 +1485,27 @@
             <div class="mb-2 flex items-center gap-1.5">
               <span class="text-xs font-medium">
                 {tab.plan.advice.length > 0
-                  ? `${tab.plan.advice.length} ${tab.plan.advice.length === 1 ? "sugerencia" : "sugerencias"}`
-                  : "Plan"}
+                  ? tab.plan.advice.length === 1
+                    ? t("{n} sugerencia", { n: tab.plan.advice.length })
+                    : t("{n} sugerencias", { n: tab.plan.advice.length })
+                  : t("Plan")}
               </span>
               <span class="ml-auto"></span>
               <button
                 class="btn btn-sm"
-                title="Copia el plan como texto, con la forma de psql"
+                title={t("Copia el plan como texto, con la forma de psql")}
                 onclick={() => copyPlan("text")}
               >
                 <Icon name={planCopied === "text" ? "check" : "copy"} size={11} />
-                {planCopied === "text" ? "Copiado" : "Copiar texto"}
+                {planCopied === "text" ? t("Copiado") : t("Copiar texto")}
               </button>
               <button
                 class="btn btn-sm"
-                title="Copia el JSON tal como lo devolvió el servidor, para pegarlo en un visor de planes"
+                title={t("Copia el JSON tal como lo devolvió el servidor, para pegarlo en un visor de planes")}
                 onclick={() => copyPlan("json")}
               >
                 <Icon name={planCopied === "json" ? "check" : "copy"} size={11} />
-                {planCopied === "json" ? "Copiado" : "Copiar JSON"}
+                {planCopied === "json" ? t("Copiado") : t("Copiar JSON")}
               </button>
             </div>
 
@@ -1517,21 +1520,21 @@
             <PlanTree node={tab.plan.root} heat={heat ?? planHeat(tab.plan.root)} />
             <p class="mt-3 flex flex-wrap gap-x-3 px-2 text-xs muted">
               {#if tab.plan.planningMs !== null}
-                <span>planificación {decimal(tab.plan.planningMs, 2)} ms</span>
+                <span>{t("planificación")} {decimal(tab.plan.planningMs, 2)} ms</span>
               {/if}
               {#if tab.plan.executionMs !== null}
-                <span>ejecución {decimal(tab.plan.executionMs, 2)} ms</span>
+                <span>{t("ejecución")} {decimal(tab.plan.executionMs, 2)} ms</span>
               {/if}
               {#if !tab.plan.analyzed}
-                <span class="tag tag-neutral">plan estimado, sin ejecutar</span>
+                <span class="tag tag-neutral">{t("plan estimado, sin ejecutar")}</span>
               {/if}
             </p>
           </div>
         {:else}
           <Empty
             icon="compass"
-            title="Sin plan"
-            hint="«Explicar» muestra cómo resolvería PostgreSQL la consulta sin ejecutarla; «Explicar y medir» la ejecuta y compara lo estimado con lo real."
+            title={t("Sin plan")}
+            hint={t("\"Explicar\" muestra cómo resolvería PostgreSQL la consulta sin ejecutarla; \"Explicar y medir\" la ejecuta y compara lo estimado con lo real.")}
           >
             <button
               class="btn btn-primary"
@@ -1541,7 +1544,7 @@
                 explain(text, cursor, estimate);
               }}
             >
-              <Icon name="plan" size={12} /> Explicar
+              <Icon name="plan" size={12} /> {t("Explicar")}
             </button>
             <button
               class="btn"
@@ -1551,7 +1554,7 @@
                 explain(text, cursor, analyze);
               }}
             >
-              <Icon name="gauge" size={12} /> Explicar y medir
+              <Icon name="gauge" size={12} /> {t("Explicar y medir")}
             </button>
           </Empty>
         {/if}
@@ -1568,8 +1571,8 @@
       {:else if tab.messages.length === 0}
         <Empty
           icon="info"
-          title="Sin mensajes"
-          hint="Acá aparecen los avisos del servidor (NOTICE, WARNING) y los errores de cada sentencia."
+          title={t("Sin mensajes")}
+          hint={t("Acá aparecen los avisos del servidor (NOTICE, WARNING) y los errores de cada sentencia.")}
         />
       {:else}
         <ul class="h-full overflow-auto p-2 font-mono text-xs select-text">
@@ -1690,81 +1693,81 @@
         class="row-menu"
         role="menuitem"
         disabled={tab.running}
-        title="Muestra el plan estimado sin ejecutar la consulta"
+        title={t("Muestra el plan estimado sin ejecutar la consulta")}
         onclick={() =>
           fromMenu(() => {
             const { text, cursor } = here();
             explain(text, cursor, estimate);
           })}
       >
-        <Icon name="plan" size={13} /> Explicar (plan estimado)
+        <Icon name="plan" size={13} /> {t("Explicar (plan estimado)")}
       </button>
       <button
         class="row-menu"
         role="menuitem"
         disabled={tab.running}
-        title="Ejecuta la consulta y muestra los tiempos reales"
+        title={t("Ejecuta la consulta y muestra los tiempos reales")}
         onclick={() =>
           fromMenu(() => {
             const { text, cursor } = here();
             explain(text, cursor, analyze);
           })}
       >
-        <Icon name="gauge" size={13} /> Explicar y medir (ejecuta)
+        <Icon name="gauge" size={13} /> {t("Explicar y medir (ejecuta)")}
       </button>
       <button
         class="row-menu"
         role="menuitem"
         disabled={tab.running || tab.rehearsing || tab.txStatus !== "idle"}
         title={tab.txStatus !== "idle"
-          ? "Hay una transacción abierta: confirmala o revertila para ensayar"
-          : "Lo corre adentro de BEGIN … ROLLBACK y muestra filas afectadas, errores y locks, sin dejar nada aplicado"}
+          ? t("Hay una transacción abierta: confirmala o revertila para ensayar")
+          : t("Lo corre adentro de BEGIN … ROLLBACK y muestra filas afectadas, errores y locks, sin dejar nada aplicado")}
         onclick={() => fromMenu(() => rehearse(here().text))}
       >
-        <Icon name="flask" size={13} /> Ensayar (sin aplicar)
+        <Icon name="flask" size={13} /> {t("Ensayar (sin aplicar)")}
       </button>
     {:else}
       <button
         class="row-menu"
         role="menuitem"
         title={tab.filePath
-          ? `Guarda en ${tab.filePath}`
-          : "Guarda el texto como archivo .sql"}
+          ? t("Guarda en {path}", { path: tab.filePath })
+          : t("Guarda el texto como archivo .sql")}
         onclick={() => fromMenu(() => saveQueryTab(tab, false))}
       >
-        <Icon name="save" size={13} /> Guardar como archivo .sql
+        <Icon name="save" size={13} /> {t("Guardar como archivo .sql")}
         <span class="kbd ml-auto">{shortcutStore.label("app.save")}</span>
       </button>
       <button
         class="row-menu"
         role="menuitem"
         title={tab.savedName
-          ? `Guarda los cambios en «${tab.savedName}»`
-          : "Guarda la consulta con un nombre para volver a abrirla"}
+          ? t("Guarda los cambios en \"{name}\"", { name: tab.savedName })
+          : t("Guarda la consulta con un nombre para volver a abrirla")}
         onclick={() => fromMenu(() => (saveOpen = true))}
       >
-        <Icon name="star" size={13} /> Guardar con un nombre
+        <Icon name="star" size={13} /> {t("Guardar con un nombre")}
       </button>
       <button
         class="row-menu"
         role="menuitem"
-        title="Ordena la selección si hay una, si no el documento entero"
+        title={t("Ordena la selección si hay una, si no el documento entero")}
         onclick={() =>
           fromMenu(() => {
             const { text, cursor } = here();
             doFormat(text, cursor);
           })}
       >
-        <Icon name="format" size={13} /> Formatear el SQL
+        <Icon name="format" size={13} /> {t("Formatear el SQL")}
         <span class="kbd ml-auto">{shortcutStore.label("editor.format")}</span>
       </button>
       <button
         class="row-menu"
         role="menuitem"
-        title="Mayúsculas de las palabras clave, sangría, coma al principio y líneas entre sentencias"
+        title={t("Mayúsculas de las palabras clave, sangría, coma al principio y líneas entre sentencias")}
         onclick={() => fromMenu(() => (formatOptionsOpen = true))}
       >
-        <Icon name="sliders" size={13} /> Opciones del formateador…
+        <Icon name="sliders" size={13} /> {t("Opciones del formateador…")}
       </button>
     {/if}
   </div>
@@ -1772,8 +1775,8 @@
 
 {#if tab.editPreview}
   <Modal
-    title="Esto es lo que se va a ejecutar"
-    subtitle="Van en una sola transacción: si alguna falla, no se aplica ninguna."
+    title={t("Esto es lo que se va a ejecutar")}
+    subtitle={t("Van en una sola transacción: si alguna falla, no se aplica ninguna.")}
     size="xl"
     busy={tab.editBusy}
     onclose={() => (tab.editPreview = null)}
@@ -1794,14 +1797,14 @@
     {/each}
 
     {#snippet footer()}
-      <button class="btn ml-auto" onclick={() => (tab.editPreview = null)}>Cerrar</button>
+      <button class="btn ml-auto" onclick={() => (tab.editPreview = null)}>{t("Cerrar")}</button>
       <button
         class="btn btn-primary"
         disabled={tab.editBusy}
         onclick={() => {
           tab.editPreview = null;
           void tab.saveEdit();
-        }}>Guardar</button
+        }}>{t("Guardar")}</button
       >
     {/snippet}
   </Modal>
@@ -1822,9 +1825,9 @@
 
 {#if varsAsk}
   <SnippetVarsDialog
-    title="Valores de la consulta"
-    description={"Cada {{nombre}} se reemplaza por lo que escribas, tal cual: si va entre comillas en la consulta, no las repitas."}
-    submitLabel="Ejecutar"
+    title={t("Valores de la consulta")}
+    description={t("Cada {{nombre}} se reemplaza por lo que escribas, tal cual: si va entre comillas en la consulta, no las repitas.")}
+    submitLabel={t("Ejecutar")}
     variables={varsAsk.variables}
     onsubmit={(values) => varsAsk?.resolve(values)}
     onclose={() => {
@@ -1836,9 +1839,9 @@
 
 {#if askAuto}
   <TxDecision
-    title="Hay una transacción abierta"
-    message="Encender el autocommit no confirma ni revierte lo que ya hiciste en esta transacción. ¿Qué hacemos con ella?"
-    keepLabel="Dejarla abierta"
+    title={t("Hay una transacción abierta")}
+    message={t("Encender el autocommit no confirma ni revierte lo que ya hiciste en esta transacción. ¿Qué hacemos con ella?")}
+    keepLabel={t("Dejarla abierta")}
     busy={deciding}
     onchoose={decideAuto}
     onclose={() => (askAuto = false)}
@@ -1847,10 +1850,9 @@
 
 {#if switching}
   <Confirm
-    title="Hay una transacción abierta"
-    message="Cambiar de base cierra la sesión de esta pestaña, y con ella se revierte todo lo que no
-             se haya confirmado. El texto del editor queda como está."
-    confirmLabel="Cambiar igual"
+    title={t("Hay una transacción abierta")}
+    message={t("Cambiar de base cierra la sesión de esta pestaña, y con ella se revierte todo lo que no se haya confirmado. El texto del editor queda como está.")}
+    confirmLabel={t("Cambiar igual")}
     onconfirm={() => {
       const database = switching;
       switching = null;
@@ -1869,15 +1871,15 @@
     columns={newIndex.columns}
     initialColumns={newIndex.target.columns}
     onclose={() => (newIndex = null)}
-    oncreated={() => tab.log("info", "El índice quedó creado.")}
+    oncreated={() => tab.log("info", t("El índice quedó creado."))}
   />
 {/if}
 
 {#if pending}
   <Confirm
-    title="Esto ejecuta la sentencia"
+    title={t("Esto ejecuta la sentencia")}
     message={pending.warning}
-    confirmLabel="Ejecutar igual"
+    confirmLabel={t("Ejecutar igual")}
     onconfirm={() => {
       const target = pending;
       pending = null;
@@ -1888,9 +1890,9 @@
 {/if}
 
 {#if tab.rehearsalOpen}
-  <Modal title="Ensayo" subtitle="BEGIN … ROLLBACK: no queda nada aplicado" size="xl" busy={tab.rehearsing} onclose={() => (tab.rehearsalOpen = false)}>
+  <Modal title={t("Ensayo")} subtitle={t("BEGIN … ROLLBACK: no queda nada aplicado")} size="xl" busy={tab.rehearsing} onclose={() => (tab.rehearsalOpen = false)}>
     {#if tab.rehearsing}
-      <p class="muted flex items-center gap-2 text-sm"><span class="spinner"></span> Ensayando…</p>
+      <p class="muted flex items-center gap-2 text-sm"><span class="spinner"></span> {t("Ensayando…")}</p>
     {:else if tab.rehearsalError}
       <Alert box tone="bad">{tab.rehearsalError}</Alert>
     {:else if tab.rehearsal}
@@ -1898,7 +1900,7 @@
     {/if}
 
     {#snippet footer()}
-      <button class="btn ml-auto" disabled={tab.rehearsing} onclick={() => (tab.rehearsalOpen = false)}>Cerrar</button>
+      <button class="btn ml-auto" disabled={tab.rehearsing} onclick={() => (tab.rehearsalOpen = false)}>{t("Cerrar")}</button>
     {/snippet}
   </Modal>
 {/if}

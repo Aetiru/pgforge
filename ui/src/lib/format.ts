@@ -1,5 +1,7 @@
 /** Formatos compartidos por las tablas del dashboard. */
 
+
+import { i18n, t } from "./i18n.svelte";
 const UNITS = ["B", "kB", "MB", "GB", "TB", "PB"];
 
 export function bytes(value: number | null | undefined): string {
@@ -32,13 +34,13 @@ export function duration(seconds: number | null | undefined): string {
 
 /** Igual que `duration`, pero para un instante del pasado. */
 export function ago(seconds: number | null | undefined): string {
-  if (seconds === null || seconds === undefined) return "nunca";
-  return `hace ${duration(seconds)}`;
+  if (seconds === null || seconds === undefined) return t("nunca");
+  return t("hace {duration}", { duration: duration(seconds) });
 }
 
 export function count(value: number | null | undefined): string {
   if (value === null || value === undefined) return "—";
-  return value.toLocaleString("es");
+  return value.toLocaleString(i18n.current);
 }
 
 export function percent(ratio: number | null | undefined, decimals = 1): string {

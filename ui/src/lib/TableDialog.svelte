@@ -3,6 +3,7 @@
   import Alert from "./Alert.svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
+  import { t } from "./i18n.svelte";
   import SqlPreview from "./SqlPreview.svelte";
   import { COMMON_TYPES, IDENTITY_OPTIONS } from "./column-form";
   import { blankColumn, tableChange, validateTable, type DraftColumn } from "./table-form";
@@ -34,6 +35,13 @@
 
   function removeColumn(key: string) {
     columns = columns.filter((column) => column.key !== key);
+  }
+
+  // Las etiquetas viven en `column-form.ts` (en español): se traducen al dibujar.
+  function identityLabel(value: string): string {
+    if (value === "always") return t("Siempre");
+    if (value === "byDefault") return t("Por defecto");
+    return t("Ninguna");
   }
 
   const change = () => tableChange(schema, name, columns);
@@ -72,7 +80,7 @@
       return;
     }
 
-    if (!(await confirmMutation(profileId, "Se va a modificar la estructura de la tabla.", sqlToApply))) return;
+    if (!(await confirmMutation(profileId, t("Se va a modificar la estructura de la tabla."), sqlToApply))) return;
 
     saving = true;
     try {
@@ -86,26 +94,26 @@
   }
 </script>
 
-<Modal title="Nueva tabla" subtitle="en el esquema {schema}" size="lg" busy={saving} {onclose}>
+<Modal title={t("Nueva tabla")} subtitle={t("en el esquema {schema}", { schema })} size="lg" busy={saving} {onclose}>
   <label class="flex flex-col gap-1">
-    <span class="label">Nombre</span>
-    <input class="field" data-autofocus bind:value={name} placeholder="clientes" />
+    <span class="label">{t("Nombre")}</span>
+    <input class="field" data-autofocus bind:value={name} placeholder={t("clientes")} />
   </label>
 
   <div class="mt-4 flex items-center justify-between">
-    <span class="label">Columnas</span>
+    <span class="label">{t("Columnas")}</span>
     <button class="btn btn-sm" onclick={addColumn}>
       <Icon name="plus" size={11} />
-      Columna
+      {t("Columna")}
     </button>
   </div>
 
   <!-- Los rótulos van una sola vez arriba y no repetidos en cada fila: con seis columnas, el
        formulario se leía como una lista de etiquetas y no como una tabla. -->
   <div class="mt-2 grid grid-cols-[8rem_10rem_8rem_9rem_auto_1.75rem] gap-1.5 px-2 text-[11px] muted">
-    <span>Nombre</span>
-    <span>Tipo</span>
-    <span>Identidad</span>
+    <span>{t("Nombre")}</span>
+    <span>{t("Tipo")}</span>
+    <span>{t("Identidad")}</span>
     <span>Default</span>
     <span></span>
     <span></span>
@@ -117,10 +125,10 @@
         class="grid grid-cols-[8rem_10rem_8rem_9rem_auto_1.75rem] items-center gap-1.5 rounded-md
                border border-zinc-200 p-1.5 dark:border-zinc-700"
       >
-        <input class="field" placeholder="nombre" bind:value={column.name} />
+        <input class="field" placeholder={t("nombre")} bind:value={column.name} />
         <input
           class="field"
-          placeholder="tipo"
+          placeholder={t("tipo")}
           list="pgforge-common-types"
           bind:value={column.typeName}
         />
@@ -134,7 +142,7 @@
           }}
         >
           {#each IDENTITY_OPTIONS as option (option.value)}
-            <option value={option.value}>{option.label}</option>
+            <option value={option.value}>{identityLabel(option.value)}</option>
           {/each}
         </select>
         <input
@@ -150,8 +158,8 @@
         </label>
         <button
           class="btn btn-ghost btn-icon size-7"
-          title="Quitar la columna"
-          aria-label="Quitar la columna"
+          title={t("Quitar la columna")}
+          aria-label={t("Quitar la columna")}
           disabled={columns.length === 1}
           onclick={() => removeColumn(column.key)}
         >
@@ -176,11 +184,11 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>{t("Ver SQL")}</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving}>
       {#if saving}<span class="spinner"></span>{/if}
-      Crear tabla
+      {t("Crear tabla")}
     </button>
   {/snippet}
 </Modal>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Skeleton from "./Skeleton.svelte";
+  import { t } from "./i18n.svelte";
   import type uPlot from "uplot";
   import Alert from "./Alert.svelte";
   import AlertsPanel from "./AlertsPanel.svelte";
@@ -116,8 +117,8 @@
     !usageWindow
       ? null
       : usageWindow.resetSeconds === null
-        ? "Los usos cuentan desde que se creó la base o desde la última caída del servidor: las estadísticas nunca se reiniciaron a mano."
-        : `Los usos cuentan desde que se reiniciaron las estadísticas, ${ago(usageWindow.resetSeconds)}: un índice que solo se usa a fin de mes puede figurar sin usos.`,
+        ? t("Los usos cuentan desde que se creó la base o desde la última caída del servidor: las estadísticas nunca se reiniciaron a mano.")
+        : t("Los usos cuentan desde que se reiniciaron las estadísticas, {since}: un índice que solo se usa a fin de mes puede figurar sin usos.", { since: ago(usageWindow.resetSeconds) }),
   );
   let statements = $state<StatementStat[]>([]);
   let selectedStatement = $state<StatementStat | null>(null);
@@ -170,7 +171,7 @@
 
     return [
       {
-        label: "Conexiones",
+        label: t("Conexiones"),
         icon: "plug" as const,
         value: `${metrics.totalConnections} / ${metrics.maxConnections}`,
         series: monitor.history.map((sample) => sample.connections) as (number | null)[],
@@ -179,10 +180,10 @@
             ? "bad"
             : "warn"
           : null,
-        hint: nearLimit ? "cerca del máximo configurado" : null,
+        hint: nearLimit ? t("cerca del máximo configurado") : null,
       },
       {
-        label: "Activas",
+        label: t("Activas"),
         icon: "play" as const,
         value: String(metrics.activeConnections),
         series: monitor.history.map((sample) => sample.active) as (number | null)[],
@@ -190,21 +191,21 @@
         hint: null,
       },
       {
-        label: "Inactivas en transacción",
+        label: t("Inactivas en transacción"),
         icon: "pin" as const,
         value: String(metrics.idleInTransaction),
         tone: metrics.idleInTransaction > 0 ? "warn" : null,
-        hint: metrics.idleInTransaction > 0 ? "retienen candados sin trabajar" : null,
+        hint: metrics.idleInTransaction > 0 ? t("retienen candados sin trabajar") : null,
       },
       {
-        label: "Esperando",
+        label: t("Esperando"),
         icon: "lock" as const,
         value: String(metrics.waitingConnections),
         tone: metrics.waitingConnections > 0 ? "bad" : null,
-        hint: metrics.waitingConnections > 0 ? "bloqueadas por otra sesión" : null,
+        hint: metrics.waitingConnections > 0 ? t("bloqueadas por otra sesión") : null,
       },
       {
-        label: "Transacciones/s",
+        label: t("Transacciones/s"),
         icon: "gauge" as const,
         value: decimal(metrics.transactionsPerSecond),
         series: monitor.history.map((sample) => sample.transactionsPerSecond),
@@ -212,7 +213,7 @@
         hint: null,
       },
       {
-        label: "Transacción más vieja",
+        label: t("Transacción más vieja"),
         icon: "clock" as const,
         value: duration(metrics.longestTransactionSeconds),
         tone: null,
@@ -251,7 +252,11 @@
 
   const health = $derived(metrics ? assessHealth(metrics) : { level: "ok" as const, issues: [] });
 
-  const HEALTH_TITLE = { ok: "Todo en orden", warn: "Para revisar", bad: "Requiere atención" } as const;
+  const HEALTH_TITLE = $derived({
+    ok: t("Todo en orden"),
+    warn: t("Para revisar"),
+    bad: t("Requiere atención"),
+  } as const);
   const HEALTH_BOX = {
     ok: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
     warn: "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300",
@@ -446,25 +451,27 @@
       }
       setTimeout(() => sessionsPanel?.refresh(), 2500);
     }
-    const verb = kind === "cancel" ? "cancelar la consulta de" : "terminar";
+    const missingText = missing > 0 ? t("; {count} ya no existían", { count: missing }) : "";
     actionFailed = failure !== null || (done === 0 && missing > 0);
     actionMessage =
       failure ??
       (pids.length === 1
         ? done === 1
           ? kind === "cancel"
-            ? `Se pidió cancelar la consulta del PID ${pids[0]}.`
-            : `Se terminó la sesión ${pids[0]}.`
-          : `El PID ${pids[0]} ya no existe.`
-        : `Se pidió ${verb} ${done} de ${pids.length} sesiones${missing > 0 ? `; ${missing} ya no existían` : ""}.`);
+            ? t("Se pidió cancelar la consulta del PID {pid}.", { pid: pids[0] })
+            : t("Se terminó la sesión {pid}.", { pid: pids[0] })
+          : t("El PID {pid} ya no existe.", { pid: pids[0] })
+        : kind === "cancel"
+          ? t("Se pidió cancelar la consulta de {done} de {total} sesiones{missing}.", { done, total: pids.length, missing: missingText })
+          : t("Se pidió terminar {done} de {total} sesiones{missing}.", { done, total: pids.length, missing: missingText }));
   }
 
-  const tableColumns: Column<TableStat>[] = [
-    { key: "schema", header: "Esquema", width: 130, value: (t) => t.schema },
-    { key: "table", header: "Tabla", width: 200, value: (t) => t.table },
+  const tableColumns = $derived<Column<TableStat>[]>([
+    { key: "schema", header: t("Esquema"), width: 130, value: (t) => t.schema },
+    { key: "table", header: t("Tabla"), width: 200, value: (t) => t.table },
     {
       key: "live",
-      header: "Filas vivas",
+      header: t("Filas vivas"),
       width: 110,
       align: "right",
       value: (t) => count(t.liveTuples),
@@ -472,7 +479,7 @@
     },
     {
       key: "dead",
-      header: "Muertas",
+      header: t("Muertas"),
       width: 100,
       align: "right",
       value: (t) => count(t.deadTuples),
@@ -480,7 +487,7 @@
     },
     {
       key: "ratio",
-      header: "% muertas (est.)",
+      header: t("% muertas (est.)"),
       width: 120,
       align: "right",
       value: (t) => percent(t.deadRatio),
@@ -489,7 +496,7 @@
     },
     {
       key: "total",
-      header: "Tamaño",
+      header: t("Tamaño"),
       width: 100,
       align: "right",
       value: (t) => bytes(t.totalBytes),
@@ -497,7 +504,7 @@
     },
     {
       key: "idx",
-      header: "Índices",
+      header: t("Índices"),
       width: 100,
       align: "right",
       value: (t) => bytes(t.indexBytes),
@@ -505,7 +512,7 @@
     },
     {
       key: "seq",
-      header: "Seq scans",
+      header: t("Seq scans"),
       width: 100,
       align: "right",
       value: (t) => count(t.sequentialScans),
@@ -513,7 +520,7 @@
     },
     {
       key: "iscan",
-      header: "Idx scans",
+      header: t("Idx scans"),
       width: 100,
       align: "right",
       value: (t) => count(t.indexScans),
@@ -521,27 +528,27 @@
     },
     {
       key: "vac",
-      header: "Último autovacuum",
+      header: t("Último autovacuum"),
       width: 160,
       value: (t) => ago(t.lastAutovacuumSeconds),
       sort: (t) => t.lastAutovacuumSeconds ?? Number.MAX_SAFE_INTEGER,
     },
-  ];
+  ]);
 
-  const redundantColumns: Column<Redundancy>[] = [
-    { key: "schema", header: "Esquema", width: 120, value: (r) => r.schema },
-    { key: "table", header: "Tabla", width: 180, value: (r) => r.table },
-    { key: "index", header: "Índice que sobra", width: 240, value: (r) => r.index },
-    { key: "coveredBy", header: "Ya lo cubre", width: 240, value: (r) => r.coveredBy },
+  const redundantColumns = $derived<Column<Redundancy>[]>([
+    { key: "schema", header: t("Esquema"), width: 120, value: (r) => r.schema },
+    { key: "table", header: t("Tabla"), width: 180, value: (r) => r.table },
+    { key: "index", header: t("Índice que sobra"), width: 240, value: (r) => r.index },
+    { key: "coveredBy", header: t("Ya lo cubre"), width: 240, value: (r) => r.coveredBy },
     {
       key: "kind",
-      header: "Por qué",
+      header: t("Por qué"),
       width: 150,
-      value: (r) => (r.kind === "duplicate" ? "mismas columnas" : "es el principio del otro"),
+      value: (r) => (r.kind === "duplicate" ? t("mismas columnas") : t("es el principio del otro")),
     },
     {
       key: "scans",
-      header: "Usos",
+      header: t("Usos"),
       width: 90,
       align: "right",
       value: (r) => count(r.scans),
@@ -549,13 +556,13 @@
     },
     {
       key: "size",
-      header: "Tamaño",
+      header: t("Tamaño"),
       width: 100,
       align: "right",
       value: (r) => bytes(r.bytes),
       sort: (r) => r.bytes,
     },
-  ];
+  ]);
 
   /**
    * Borra el índice elegido. Va con CONCURRENTLY salvo que sea un índice particionado, que el
@@ -563,7 +570,7 @@
    */
   async function dropRedundant(target: Redundancy) {
     droppingIndex = null;
-    if (!(await confirmMutation(profileId, "Se va a borrar un índice del servidor.", target.dropSql)))
+    if (!(await confirmMutation(profileId, t("Se va a borrar un índice del servidor."), target.dropSql)))
       return;
     try {
       const concurrently = target.dropSql.includes("CONCURRENTLY");
@@ -597,7 +604,7 @@
     if (
       !(await confirmMutation(
         profileId,
-        "Se va a borrar un índice del servidor.",
+        t("Se va a borrar un índice del servidor."),
         target.dropSql ?? `DROP INDEX ${target.schema}.${target.index}`,
       ))
     )
@@ -619,23 +626,23 @@
    * «Último uso» solo existe desde PG 16. Antes la columna saldría entera en «nunca», que se lee
    * como un dato y es una ausencia: mejor que no esté.
    */
-  const lastScanColumn: Column<IndexStat> = {
+  const lastScanColumn = $derived<Column<IndexStat>>({
     key: "lastScan",
-    header: "Último uso",
+    header: t("Último uso"),
     width: 120,
     align: "right",
     value: (i) => ago(i.lastScanSeconds),
     // Lo que nunca se usó va al fondo al ordenar de más reciente a más viejo.
     sort: (i) => i.lastScanSeconds ?? Number.MAX_VALUE,
-  };
+  });
 
   const indexColumns: Column<IndexStat>[] = $derived([
-    { key: "schema", header: "Esquema", width: 130, value: (i) => i.schema },
-    { key: "table", header: "Tabla", width: 200, value: (i) => i.table },
-    { key: "index", header: "Índice", width: 260, value: (i) => i.index },
+    { key: "schema", header: t("Esquema"), width: 130, value: (i) => i.schema },
+    { key: "table", header: t("Tabla"), width: 200, value: (i) => i.table },
+    { key: "index", header: t("Índice"), width: 260, value: (i) => i.index },
     {
       key: "scans",
-      header: "Usos",
+      header: t("Usos"),
       width: 100,
       align: "right",
       value: (i) => count(i.scans),
@@ -644,7 +651,7 @@
     ...(usageWindow?.tracksLastScan ? [lastScanColumn] : []),
     {
       key: "size",
-      header: "Tamaño",
+      header: t("Tamaño"),
       width: 100,
       align: "right",
       value: (i) => bytes(i.bytes),
@@ -652,17 +659,17 @@
     },
     {
       key: "kind",
-      header: "Tipo",
+      header: t("Tipo"),
       width: 120,
-      value: (i) => (i.isPrimary ? "primaria" : i.isUnique ? "única" : "secundario"),
+      value: (i) => (i.isPrimary ? t("primaria") : i.isUnique ? t("única") : t("secundario")),
     },
     {
       key: "state",
-      header: "Observación",
+      header: t("Observación"),
       width: 200,
       value: (i) =>
         // «Sin usos» y no «nunca se usó»: cuenta desde el último reinicio de las estadísticas.
-        !i.isValid ? "INVÁLIDO: hay que reconstruirlo" : i.unused ? "sin usos registrados" : "",
+        !i.isValid ? t("INVÁLIDO: hay que reconstruirlo") : i.unused ? t("sin usos registrados") : "",
       tone: (i) =>
         !i.isValid
           ? "text-rose-600 dark:text-rose-400"
@@ -682,7 +689,7 @@
    */
   async function openInQuery(sql: string, target?: string | null) {
     try {
-      const tab = await openQuery(profileId, target ?? database ?? "", "Consulta");
+      const tab = await openQuery(profileId, target ?? database ?? "", t("Consulta"));
       tab.sql = sql;
     } catch (error) {
       actionMessage = describeError(error);
@@ -702,7 +709,7 @@
         await openInQuery(withValuesHint(statement.query), target);
         return;
       }
-      const tab = await openQuery(profileId, target, "Plan");
+      const tab = await openQuery(profileId, target, t("Plan"));
       tab.sql = statement.query;
       await tab.explain(statement.query, 0, { analyze: false, buffers: false, verbose: true });
     } catch (error) {
@@ -710,19 +717,19 @@
     }
   }
 
-  const statementColumns: Column<StatementStat>[] = [
-    { key: "database", header: "Base", width: 120, value: (s) => s.database ?? "—" },
-    { key: "user", header: "Usuario", width: 110, value: (s) => s.user ?? "—" },
+  const statementColumns = $derived<Column<StatementStat>[]>([
+    { key: "database", header: t("Base"), width: 120, value: (s) => s.database ?? "—" },
+    { key: "user", header: t("Usuario"), width: 110, value: (s) => s.user ?? "—" },
     {
       key: "query",
-      header: "Sentencia",
+      header: t("Sentencia"),
       width: 620,
       value: (s) => oneLine(s.query, 400),
       title: (s) => s.query ?? undefined,
     },
     {
       key: "calls",
-      header: "Llamadas",
+      header: t("Llamadas"),
       width: 110,
       align: "right",
       value: (s) => count(s.calls),
@@ -730,7 +737,7 @@
     },
     {
       key: "total",
-      header: "Total",
+      header: t("Total"),
       width: 110,
       align: "right",
       value: (s) => duration(s.totalMs / 1000),
@@ -738,7 +745,7 @@
     },
     {
       key: "mean",
-      header: "Media",
+      header: t("Media"),
       width: 110,
       align: "right",
       value: (s) => duration(s.meanMs / 1000),
@@ -746,34 +753,34 @@
     },
     {
       key: "rows",
-      header: "Filas",
+      header: t("Filas"),
       width: 110,
       align: "right",
       value: (s) => count(s.rows),
       sort: (s) => s.rows,
     },
-  ];
+  ]);
 
-  const TABS: { value: Tab; label: string; icon: IconName }[] = [
-    { value: "sesiones", label: "Sesiones", icon: "gauge" },
-    { value: "tablas", label: "Tablas", icon: "table" },
-    { value: "indices", label: "Índices", icon: "index" },
-    { value: "duplicados", label: "Índices de más", icon: "compare" },
-    { value: "bloat", label: "Bloat", icon: "warn" },
-    { value: "consultas", label: "Consultas lentas", icon: "sql" },
-    { value: "prevencion", label: "Prevención", icon: "lock" },
-    { value: "espacio", label: "Espacio", icon: "database" },
-    { value: "cache", label: "Caché", icon: "chart" },
-    { value: "conexiones", label: "Conexiones", icon: "plug" },
-    { value: "servidor", label: "Servidor", icon: "sliders" },
-  ];
+  const TABS = $derived<{ value: Tab; label: string; icon: IconName }[]>([
+    { value: "sesiones", label: t("Sesiones"), icon: "gauge" },
+    { value: "tablas", label: t("Tablas"), icon: "table" },
+    { value: "indices", label: t("Índices"), icon: "index" },
+    { value: "duplicados", label: t("Índices de más"), icon: "compare" },
+    { value: "bloat", label: t("Bloat"), icon: "warn" },
+    { value: "consultas", label: t("Consultas lentas"), icon: "sql" },
+    { value: "prevencion", label: t("Prevención"), icon: "lock" },
+    { value: "espacio", label: t("Espacio"), icon: "database" },
+    { value: "cache", label: t("Caché"), icon: "chart" },
+    { value: "conexiones", label: t("Conexiones"), icon: "plug" },
+    { value: "servidor", label: t("Servidor"), icon: "sliders" },
+  ]);
 
-  const bloatColumns: Column<TableBloat>[] = [
-    { key: "schema", header: "Esquema", width: 130, value: (t) => t.schema },
-    { key: "table", header: "Tabla", width: 200, value: (t) => t.table },
+  const bloatColumns = $derived<Column<TableBloat>[]>([
+    { key: "schema", header: t("Esquema"), width: 130, value: (t) => t.schema },
+    { key: "table", header: t("Tabla"), width: 200, value: (t) => t.table },
     {
       key: "total",
-      header: "Tamaño",
+      header: t("Tamaño"),
       width: 110,
       align: "right",
       value: (t) => bytes(t.totalBytes),
@@ -781,7 +788,7 @@
     },
     {
       key: "free",
-      header: "Libre (est.)",
+      header: t("Libre (est.)"),
       width: 110,
       align: "right",
       value: (t) => bytes(t.freeBytes),
@@ -789,7 +796,7 @@
     },
     {
       key: "freeRatio",
-      header: "% libre",
+      header: t("% libre"),
       width: 100,
       align: "right",
       value: (t) => percent(t.freeRatio),
@@ -798,14 +805,14 @@
     },
     {
       key: "deadRatio",
-      header: "% muertas",
+      header: t("% muertas"),
       width: 100,
       align: "right",
       value: (t) => percent(t.deadRatio),
       sort: (t) => t.deadRatio,
       tone: (t) => (t.deadRatio > 0.2 ? "text-amber-600 dark:text-amber-400" : undefined),
     },
-  ];
+  ]);
 
   /** Cuántas sesiones esperan a otra: el número que decide si hay que mirar la pestaña. */
   const blocked = $derived(backends.filter((backend) => backend.blockedBy.length > 0).length);
@@ -814,16 +821,16 @@
 {#snippet refreshControl()}
   <span class="text-[11px] muted" aria-live="polite">
     {#if statsLoading}
-      Actualizando…
+      {t("Actualizando…")}
     {:else if statsLoadedAt}
       {@const seconds = Math.max(0, Math.round((now - statsLoadedAt) / 1000))}
-      {seconds < 5 ? "Actualizado ahora" : `Actualizado ${ago(seconds)}`}
+      {seconds < 5 ? t("Actualizado ahora") : t("Actualizado {since}", { since: ago(seconds) })}
     {/if}
   </span>
   <button
     class="btn btn-sm"
     disabled={statsLoading}
-    title="Volver a leer estas estadísticas del servidor: no se actualizan solas"
+    title={t("Volver a leer estas estadísticas del servidor: no se actualizan solas")}
     onclick={() => loadStats(tab)}
   >
     {#if statsLoading}
@@ -831,7 +838,7 @@
     {:else}
       <Icon name="refresh" size={12} />
     {/if}
-    Actualizar
+    {t("Actualizar")}
   </button>
 {/snippet}
 
@@ -859,8 +866,8 @@
     {/if}
 
     {#if databases.length > 1}
-      <label class="check" title="Base cuyas tablas, índices y sentencias se muestran">
-        Base
+      <label class="check" title={t("Base cuyas tablas, índices y sentencias se muestran")}>
+        {t("Base")}
         <select
           class="field py-0.5 text-xs"
           value={database}
@@ -876,11 +883,11 @@
     {#if database}
       <button
         class="btn btn-sm"
-        title={`VACUUM, ANALYZE o REINDEX sobre toda la base ${database}`}
+        title={t("VACUUM, ANALYZE o REINDEX sobre toda la base {name}", { name: database })}
         onclick={() => (maintenanceTarget = { kind: "database", name: database! })}
       >
         <Icon name="gauge" size={12} />
-        Mantenimiento de la base
+        {t("Mantenimiento de la base")}
       </button>
     {/if}
 
@@ -888,11 +895,11 @@
 
     <button
       class="btn btn-sm"
-      title="Guarda un informe de salud del servidor para pasarlo al equipo o adjuntarlo a un ticket"
+      title={t("Guarda un informe de salud del servidor para pasarlo al equipo o adjuntarlo a un ticket")}
       onclick={() => (reporting = true)}
     >
       <Icon name="download" size={12} />
-      Informe
+      {t("Informe")}
     </button>
 
     <!-- Filtros e intervalo son de la muestra en vivo: en las pestañas de estadísticas no hacen nada,
@@ -905,7 +912,7 @@
         onchange={(event) =>
           monitor.setFilter({ ...monitor.filter, includeIdle: event.currentTarget.checked })}
       />
-      Inactivas
+      {t("Inactivas")}
     </label>
 
     <label class="check">
@@ -915,7 +922,7 @@
         onchange={(event) =>
           monitor.setFilter({ ...monitor.filter, includeBackground: event.currentTarget.checked })}
       />
-      Procesos internos
+      {t("Procesos internos")}
     </label>
     {/if}
 
@@ -924,11 +931,11 @@
     <button
       class="btn btn-sm"
       aria-pressed={showAlerts}
-      title="Reglas de alerta con aviso del sistema; solo corren mientras este monitoreo está abierto"
+      title={t("Reglas de alerta con aviso del sistema; solo corren mientras este monitoreo está abierto")}
       onclick={() => (showAlerts = !showAlerts)}
     >
       <Icon name="warn" size={12} />
-      Alertas
+      {t("Alertas")}
     </button>
 
     {#if tab === "sesiones"}
@@ -936,7 +943,7 @@
       <Icon name="clock" size={11} />
       <select
         class="field py-0.5 text-xs"
-        title="Cada cuánto se toma una muestra de las sesiones y las métricas"
+        title={t("Cada cuánto se toma una muestra de las sesiones y las métricas")}
         value={monitor.intervalMs}
         onchange={(event) => monitor.setInterval(Number(event.currentTarget.value))}
       >
@@ -969,11 +976,11 @@
         <button
           class="btn btn-sm btn-ghost ml-auto"
           aria-pressed={showCharts}
-          title="Muestra u oculta los gráficos de actividad en vivo"
+          title={t("Muestra u oculta los gráficos de actividad en vivo")}
           onclick={toggleCharts}
         >
           <Icon name="chart" size={12} />
-          Gráficos
+          {t("Gráficos")}
         </button>
       </div>
       {#if showAlerts}
@@ -1003,7 +1010,7 @@
         {/each}
       </div>
     {:else}
-      <Skeleton rows={6} label="Tomando la primera muestra…" />
+      <Skeleton rows={6} label={t("Tomando la primera muestra…")} />
     {/if}
 
     {#if tab === "sesiones" && showCharts}
@@ -1017,21 +1024,21 @@
                 ></span>
                 <span class="relative inline-flex size-1.5 rounded-full bg-emerald-500"></span>
               </span>
-              Actividad en vivo
+              {t("Actividad en vivo")}
             </span>
-            <span class="text-[11px] muted">muestra cada {monitor.intervalMs / 1000}s</span>
+            <span class="text-[11px] muted">{t("muestra cada {seconds}s", { seconds: monitor.intervalMs / 1000 })}</span>
           </div>
           <div class="grid grid-cols-2 divide-x divide-zinc-200 xl:grid-cols-4 dark:divide-zinc-700">
-            <Chart label="Conexiones" data={connectionsSeries} />
-            <Chart label="Activas" data={activeSeries} color="#f59e0b" />
+            <Chart label={t("Conexiones")} data={connectionsSeries} />
+            <Chart label={t("Activas")} data={activeSeries} color="#f59e0b" />
             <Chart
-              label="Transacciones/s"
+              label={t("Transacciones/s")}
               data={tpsSeries}
               color="#10b981"
               formatValue={oneDecimal}
             />
             <Chart
-              label="Aciertos de caché"
+              label={t("Aciertos de caché")}
               data={cacheSeries}
               color="#8b5cf6"
               formatValue={asPercent}
@@ -1066,7 +1073,7 @@
         <div class="card-head justify-between">
           <span class="card-title flex items-center gap-1.5">
             <Icon name="table" size={13} />
-            Estadísticas de tablas
+            {t("Estadísticas de tablas")}
           </span>
           <div class="flex items-center gap-2">
             {@render refreshControl()}
@@ -1075,15 +1082,14 @@
         </div>
         <div class="toolbar divider-b">
           <span class="text-xs muted">
-            La proporción de tuplas muertas es una estimación sobre los contadores de estadísticas,
-            no una medición del espacio desperdiciado.
+            {t("La proporción de tuplas muertas es una estimación sobre los contadores de estadísticas, no una medición del espacio desperdiciado.")}
           </span>
           <button
             class="btn btn-sm ml-auto"
             disabled={!selectedTable}
             title={selectedTable
-              ? `VACUUM, ANALYZE o REINDEX sobre ${selectedTable.schema}.${selectedTable.table}`
-              : "Elegí una tabla de la lista"}
+              ? t("VACUUM, ANALYZE o REINDEX sobre {name}", { name: `${selectedTable.schema}.${selectedTable.table}` })
+              : t("Elegí una tabla de la lista")}
             onclick={() =>
               selectedTable &&
               (maintenanceTarget = {
@@ -1093,7 +1099,7 @@
               })}
           >
             <Icon name="gauge" size={12} />
-            Mantenimiento
+            {t("Mantenimiento")}
           </button>
         </div>
         {#if tablesError}
@@ -1107,7 +1113,7 @@
             selectedKey={selectedTable ? `${selectedTable.schema}.${selectedTable.table}` : null}
             onselect={(table) => (selectedTable = table)}
             sortable
-            empty="No hay estadísticas de tablas en esta base."
+            empty={t("No hay estadísticas de tablas en esta base.")}
           />
         </div>
       </div>
@@ -1118,7 +1124,7 @@
         <div class="card-head justify-between">
           <span class="card-title flex items-center gap-1.5">
             <Icon name="index" size={13} />
-            Estadísticas de índices
+            {t("Estadísticas de índices")}
           </span>
           <div class="flex items-center gap-2">
             {@render refreshControl()}
@@ -1127,14 +1133,14 @@
         </div>
         <div class="toolbar divider-b">
           <span class="text-xs muted">
-            Un índice que quedó inválido se reconstruye con REINDEX.
+            {t("Un índice que quedó inválido se reconstruye con REINDEX.")}
           </span>
           <button
             class="btn btn-sm ml-auto"
             disabled={!selectedIndex}
             title={selectedIndex
-              ? `REINDEX sobre ${selectedIndex.schema}.${selectedIndex.index}`
-              : "Elegí un índice de la lista"}
+              ? t("REINDEX sobre {name}", { name: `${selectedIndex.schema}.${selectedIndex.index}` })
+              : t("Elegí un índice de la lista")}
             onclick={() =>
               selectedIndex &&
               (maintenanceTarget = {
@@ -1144,20 +1150,20 @@
               })}
           >
             <Icon name="gauge" size={12} />
-            Mantenimiento
+            {t("Mantenimiento")}
           </button>
           <button
             class="btn btn-sm btn-danger"
             disabled={!selectedIndex?.dropSql}
             title={!selectedIndex
-              ? "Elegí un índice de la lista"
+              ? t("Elegí un índice de la lista")
               : selectedIndex.protectedBy
-                ? `No se puede borrar: ${selectedIndex.protectedBy}`
+                ? t("No se puede borrar: {reason}", { reason: selectedIndex.protectedBy })
                 : selectedIndex.dropSql}
             onclick={() => (droppingStat = selectedIndex)}
           >
             <Icon name="trash" size={12} />
-            Borrar el índice…
+            {t("Borrar el índice…")}
           </button>
         </div>
         {#if countingSince}
@@ -1180,7 +1186,7 @@
             selectedKey={selectedIndex ? `${selectedIndex.schema}.${selectedIndex.index}` : null}
             onselect={(index) => (selectedIndex = index)}
             sortable
-            empty="No hay estadísticas de índices en esta base."
+            empty={t("No hay estadísticas de índices en esta base.")}
           />
         </div>
       </div>
@@ -1191,7 +1197,7 @@
         <div class="card-head justify-between">
           <span class="card-title flex items-center gap-1.5">
             <Icon name="compare" size={13} />
-            Índices que sobran
+            {t("Índices que sobran")}
           </span>
           <div class="flex items-center gap-2">
             {@render refreshControl()}
@@ -1200,20 +1206,18 @@
         </div>
         <div class="toolbar divider-b">
           <span class="text-xs muted">
-            Un índice que otro ya cubre ocupa disco y hace más lenta cada escritura sin acelerar
-            ninguna lectura. Lo que sostiene algo —una restricción, una clave foránea, la identidad
-            de réplica, el orden de un CLUSTER— nunca aparece acá.
+            {t("Un índice que otro ya cubre ocupa disco y hace más lenta cada escritura sin acelerar ninguna lectura. Lo que sostiene algo —una restricción, una clave foránea, la identidad de réplica, el orden de un CLUSTER— nunca aparece acá.")}
           </span>
           <button
             class="btn btn-sm btn-danger ml-auto"
             disabled={!selectedRedundant}
             title={selectedRedundant
-              ? `DROP INDEX sobre ${selectedRedundant.schema}.${selectedRedundant.index}`
-              : "Elegí un índice de la lista"}
+              ? t("DROP INDEX sobre {name}", { name: `${selectedRedundant.schema}.${selectedRedundant.index}` })
+              : t("Elegí un índice de la lista")}
             onclick={() => (droppingIndex = selectedRedundant)}
           >
             <Icon name="trash" size={12} />
-            Borrar el índice…
+            {t("Borrar el índice…")}
           </button>
         </div>
         {#if dropError}
@@ -1230,7 +1234,7 @@
               selectedKey={selectedRedundant ? keyOf(selectedRedundant) : null}
               onselect={(item) => (selectedRedundant = item)}
               sortable
-              empty="Ningún índice de esta base está cubierto por otro."
+              empty={t("Ningún índice de esta base está cubierto por otro.")}
             />
           {/if}
         </div>
@@ -1242,7 +1246,7 @@
         <div class="card-head justify-between">
           <span class="card-title flex items-center gap-1.5">
             <Icon name="warn" size={13} />
-            Bloat estimado
+            {t("Bloat estimado")}
           </span>
           <div class="flex items-center gap-2">
             {@render refreshControl()}
@@ -1251,15 +1255,14 @@
         </div>
         <div class="toolbar divider-b">
           <span class="text-xs muted">
-            Medición aproximada con pgstattuple: el espacio libre se recupera con VACUUM FULL, que
-            bloquea la tabla mientras corre.
+            {t("Medición aproximada con pgstattuple: el espacio libre se recupera con VACUUM FULL, que bloquea la tabla mientras corre.")}
           </span>
           <button
             class="btn btn-sm ml-auto"
             disabled={!selectedBloat}
             title={selectedBloat
-              ? `VACUUM sobre ${selectedBloat.schema}.${selectedBloat.table}`
-              : "Elegí una tabla de la lista"}
+              ? t("VACUUM sobre {name}", { name: `${selectedBloat.schema}.${selectedBloat.table}` })
+              : t("Elegí una tabla de la lista")}
             onclick={() =>
               selectedBloat &&
               (maintenanceTarget = {
@@ -1269,7 +1272,7 @@
               })}
           >
             <Icon name="gauge" size={12} />
-            Mantenimiento
+            {t("Mantenimiento")}
           </button>
         </div>
         <div class="min-h-0 flex-1">
@@ -1278,8 +1281,8 @@
           {:else if bloatAvailable === false}
             <Empty
               icon="info"
-              title="Falta la extensión pgstattuple"
-              hint="Ejecutá CREATE EXTENSION pgstattuple; en esta base para estimar el bloat de las tablas."
+              title={t("Falta la extensión pgstattuple")}
+              hint={t("Ejecutá CREATE EXTENSION pgstattuple; en esta base para estimar el bloat de las tablas.")}
             />
           {:else}
             <DataGrid
@@ -1289,7 +1292,7 @@
               selectedKey={selectedBloat ? `${selectedBloat.schema}.${selectedBloat.table}` : null}
               onselect={(table) => (selectedBloat = table)}
               sortable
-              empty="No hay tablas con bloat que estimar en esta base."
+              empty={t("No hay tablas con bloat que estimar en esta base.")}
             />
           {/if}
         </div>
@@ -1311,7 +1314,7 @@
         <div class="card-head justify-between">
           <span class="card-title flex items-center gap-1.5">
             <Icon name="sql" size={13} />
-            Consultas más lentas
+            {t("Consultas más lentas")}
           </span>
           <div class="flex items-center gap-2">
             {@render refreshControl()}
@@ -1320,34 +1323,33 @@
         </div>
         <div class="toolbar divider-b">
           <span class="text-xs muted">
-            El texto viene normalizado: los valores aparecen como $1, $2. Al abrirlo en una consulta
-            hay que completarlos antes de explicar.
+            {t("El texto viene normalizado: los valores aparecen como $1, $2. Al abrirlo en una consulta hay que completarlos antes de explicar.")}
           </span>
           <button
             class="btn btn-sm ml-auto"
             disabled={!selectedStatement?.query}
             title={selectedStatement?.query
               ? needsValues(selectedStatement.query)
-                ? "Abre la sentencia para que le pongas valores a los parámetros y la expliques"
-                : "Muestra el plan estimado de esta sentencia, sin ejecutarla"
-              : "Elegí una consulta de la lista"}
+                ? t("Abre la sentencia para que le pongas valores a los parámetros y la expliques")
+                : t("Muestra el plan estimado de esta sentencia, sin ejecutarla")
+              : t("Elegí una consulta de la lista")}
             onclick={() => selectedStatement && explainStatement(selectedStatement)}
           >
             <Icon name="plan" size={12} />
-            Explicar
+            {t("Explicar")}
           </button>
           <button
             class="btn btn-sm"
             disabled={!selectedStatement?.query}
             title={selectedStatement?.query
-              ? "Abre una pestaña de consulta con este texto"
-              : "Elegí una consulta de la lista"}
+              ? t("Abre una pestaña de consulta con este texto")
+              : t("Elegí una consulta de la lista")}
             onclick={() =>
               selectedStatement?.query &&
               openInQuery(selectedStatement.query, selectedStatement.database)}
           >
             <Icon name="play" size={12} />
-            Abrir en una consulta
+            {t("Abrir en una consulta")}
           </button>
         </div>
         <div class="min-h-0 flex-1">
@@ -1356,8 +1358,8 @@
           {:else if statementsAvailable === false}
             <Empty
               icon="info"
-              title="Falta la extensión pg_stat_statements"
-              hint="Agregala a shared_preload_libraries, reiniciá el servidor y ejecutá CREATE EXTENSION pg_stat_statements; en esta base."
+              title={t("Falta la extensión pg_stat_statements")}
+              hint={t("Agregala a shared_preload_libraries, reiniciá el servidor y ejecutá CREATE EXTENSION pg_stat_statements; en esta base.")}
             />
           {:else}
             <DataGrid
@@ -1370,7 +1372,7 @@
                 : null}
               onselect={(statement) => (selectedStatement = statement)}
               sortable
-              empty="Todavía no hay consultas registradas."
+              empty={t("Todavía no hay consultas registradas.")}
             />
           {/if}
         </div>
@@ -1381,30 +1383,27 @@
 
 {#if confirming}
   {@const many = confirming.pids.length > 1}
+  {@const cancelTitle = many ? t("Cancelar las consultas") : t("Cancelar la consulta")}
+  {@const terminateTitle = many ? t("Terminar las sesiones") : t("Terminar la sesión")}
   <Confirm
-    title={confirming.kind === "cancel"
-      ? many ? "Cancelar las consultas" : "Cancelar la consulta"
-      : many ? "Terminar las sesiones" : "Terminar la sesión"}
+    title={confirming.kind === "cancel" ? cancelTitle : terminateTitle}
     message={confirming.kind === "cancel"
       ? many
-        ? `Se le pide al servidor que aborte la consulta de ${confirming.pids.length} sesiones (PID ${confirming.pids.join(", ")}). Las sesiones siguen conectadas y sus transacciones quedan abiertas pero abortadas.`
-        : `Se le pide al servidor que aborte la consulta del PID ${confirming.pids[0]}. La sesión sigue conectada y su transacción queda abierta pero abortada.`
+        ? t("Se le pide al servidor que aborte la consulta de {count} sesiones (PID {pids}). Las sesiones siguen conectadas y sus transacciones quedan abiertas pero abortadas.", { count: confirming.pids.length, pids: confirming.pids.join(", ") })
+        : t("Se le pide al servidor que aborte la consulta del PID {pid}. La sesión sigue conectada y su transacción queda abierta pero abortada.", { pid: confirming.pids[0] })
       : many
-        ? `Se cierran ${confirming.pids.length} sesiones por completo (PID ${confirming.pids.join(", ")}): sus transacciones se revierten y los clientes pierden la conexión sin aviso.`
-        : `Se cierra la sesión ${confirming.pids[0]} por completo: su transacción se revierte y el cliente pierde la conexión sin aviso.`}
-    confirmLabel={confirming.kind === "cancel"
-      ? many ? "Cancelar las consultas" : "Cancelar la consulta"
-      : many ? "Terminar las sesiones" : "Terminar la sesión"}
+        ? t("Se cierran {count} sesiones por completo (PID {pids}): sus transacciones se revierten y los clientes pierden la conexión sin aviso.", { count: confirming.pids.length, pids: confirming.pids.join(", ") })
+        : t("Se cierra la sesión {pid} por completo: su transacción se revierte y el cliente pierde la conexión sin aviso.", { pid: confirming.pids[0] })}
+    confirmLabel={confirming.kind === "cancel" ? cancelTitle : terminateTitle}
     onconfirm={() => confirming && act(confirming.pids, confirming.kind)}
     onclose={() => (confirming = null)}
   />
 {/if}
-
 {#if droppingIndex}
   <Confirm
-    title="Borrar «{droppingIndex.index}»"
-    message="{droppingIndex.coveredBy} cubre lo mismo, así que las consultas que hoy usan este índice pueden seguir usando aquel. Se ejecuta: {droppingIndex.dropSql}"
-    confirmLabel="Borrar el índice"
+    title={t("Borrar «{name}»", { name: droppingIndex.index })}
+    message={t("{covered} cubre lo mismo, así que las consultas que hoy usan este índice pueden seguir usando aquel. Se ejecuta: {sql}", { covered: droppingIndex.coveredBy, sql: droppingIndex.dropSql })}
+    confirmLabel={t("Borrar el índice")}
     danger
     onconfirm={() => droppingIndex && dropRedundant(droppingIndex)}
     onclose={() => (droppingIndex = null)}
@@ -1413,11 +1412,11 @@
 
 {#if droppingStat}
   <Confirm
-    title="Borrar «{droppingStat.index}»"
-    message="{droppingStat.scans === 0
-      ? 'No registra usos desde el último reinicio de las estadísticas.'
-      : `Registra ${count(droppingStat.scans)} usos: las consultas que hoy lo usan van a tener que resolverse de otra forma.`} Se ejecuta: {droppingStat.dropSql}"
-    confirmLabel="Borrar el índice"
+    title={t("Borrar «{name}»", { name: droppingStat.index })}
+    message={droppingStat.scans === 0
+      ? t("No registra usos desde el último reinicio de las estadísticas. Se ejecuta: {sql}", { sql: droppingStat.dropSql ?? "" })
+      : t("Registra {count} usos: las consultas que hoy lo usan van a tener que resolverse de otra forma. Se ejecuta: {sql}", { count: count(droppingStat.scans), sql: droppingStat.dropSql ?? "" })}
+    confirmLabel={t("Borrar el índice")}
     danger
     onconfirm={() => droppingStat && dropStat(droppingStat)}
     onclose={() => (droppingStat = null)}
@@ -1427,7 +1426,7 @@
 {#if reporting}
   <ReportDialog
     {profileId}
-    server={explorer.profiles.find((p) => p.id === profileId)?.name ?? "servidor"}
+    server={explorer.profiles.find((p) => p.id === profileId)?.name ?? t("servidor")}
     database={monitor.database ?? database ?? ""}
     metrics={monitor.snapshot?.metrics ?? null}
     onclose={() => (reporting = false)}

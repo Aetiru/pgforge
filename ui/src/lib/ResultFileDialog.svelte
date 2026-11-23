@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import Alert from "./Alert.svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
@@ -38,7 +39,7 @@
     try {
       // El archivo lo elige un diálogo abierto desde Rust: `sqlWriteFile` solo acepta esa ruta.
       const path = await pickSave({
-        title: "Exportar el resultado",
+        title: t("Exportar el resultado"),
         defaultPath: `resultado.${current.extension}`,
         filters: [{ name: current.label, extensions: [current.extension] }],
       });
@@ -55,7 +56,7 @@
   }
 </script>
 
-<Modal title="Exportar el resultado" size="sm" {busy} {onclose}>
+<Modal title={t("Exportar el resultado")} size="sm" {busy} {onclose}>
   <div class="seg" role="tablist">
     {#each FORMATS as item (item.value)}
       <button
@@ -66,26 +67,29 @@
       >
     {/each}
   </div>
-  <p class="mt-2 text-xs muted">{current.hint}.</p>
+  <p class="mt-2 text-xs muted">{t(current.hint)}.</p>
   <p class="mt-2 text-xs muted">
-    Se escriben las {count(rows.length)} filas que están cargadas. Para CSV, texto o binario —que
-    sí vuelven al servidor y traen todas— usá «Exportar» de la barra.
+    {t(
+      "Se escriben las {count} filas que están cargadas. Para CSV, texto o binario —que sí vuelven al servidor y traen todas— usá \"Exportar\" de la barra.",
+      { count: count(rows.length) },
+    )}
   </p>
 
   {#if truncated}
     <Alert tone="warn" box class="mt-3">
-      El resultado quedó cortado por el techo de filas: el archivo no tiene todas. Subí el máximo y
-      volvé a ejecutar, o exportá en CSV.
+      {t(
+        "El resultado quedó cortado por el techo de filas: el archivo no tiene todas. Subí el máximo y volvé a ejecutar, o exportá en CSV.",
+      )}
     </Alert>
   {/if}
   {#if error}<Alert tone="bad" box class="mt-3">{error}</Alert>{/if}
-  {#if saved}<Alert tone="ok" box class="mt-3 break-all">Guardado en {saved}.</Alert>{/if}
+  {#if saved}<Alert tone="ok" box class="mt-3 break-all">{t("Guardado en {path}.", { path: saved })}</Alert>{/if}
 
   {#snippet footer()}
-    <button class="btn ml-auto" disabled={busy} onclick={onclose}>Cerrar</button>
+    <button class="btn ml-auto" disabled={busy} onclick={onclose}>{t("Cerrar")}</button>
     <button class="btn btn-primary" disabled={busy} onclick={save}>
       <Icon name="download" size={12} />
-      Guardar…
+      {t("Guardar…")}
     </button>
   {/snippet}
 </Modal>

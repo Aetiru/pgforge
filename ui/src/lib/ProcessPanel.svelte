@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { i18n, t } from "./i18n.svelte";
   import Empty from "./Empty.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
   import Sql from "./Sql.svelte";
@@ -34,7 +35,7 @@
   let open = $state<string | null>(null);
 
   function secondsLabel(seconds: number): string {
-    return seconds === 0 ? "de todo" : `de más de ${seconds} s`;
+    return seconds === 0 ? t("de todo") : t("de más de {n} s", { n: seconds });
   }
 
   $effect(() => {
@@ -59,26 +60,27 @@
 <div class="@container/tasks flex h-full flex-col">
   <div class="toolbar">
     <span class="text-xs font-medium">
-      {tasks.running.length}
-      {tasks.running.length === 1 ? "proceso en curso" : "procesos en curso"}
+      {tasks.running.length === 1
+        ? t("{n} proceso en curso", { n: tasks.running.length })
+        : t("{n} procesos en curso", { n: tasks.running.length })}
     </span>
     <label
       class="check ml-auto @max-sm/tasks:ml-0 @max-sm/tasks:basis-full"
-      title="Un aviso del sistema cuando termina algo que tardó"
+      title={t("Un aviso del sistema cuando termina algo que tardó")}
     >
       <input
         type="checkbox"
         checked={notify.enabled}
         onchange={(event) => notify.setEnabled(event.currentTarget.checked)}
       />
-      Avisar al terminar
+      {t("Avisar al terminar")}
     </label>
 
     <select
       class="field min-w-0 flex-1 py-0.5 text-xs @sm/tasks:flex-none"
       disabled={!notify.enabled}
-      aria-label="A partir de cuánto avisar"
-      title="Por debajo de esto no se avisa: el resultado aparece mientras todavía se está mirando"
+      aria-label={t("A partir de cuánto avisar")}
+      title={t("Por debajo de esto no se avisa: el resultado aparece mientras todavía se está mirando")}
       value={notify.minSeconds}
       onchange={(event) => notify.setMinSeconds(Number(event.currentTarget.value))}
     >
@@ -92,15 +94,15 @@
       disabled={tasks.finished.length === 0}
       onclick={() => tasks.clearFinished()}
     >
-      Limpiar los terminados
+      {t("Limpiar los terminados")}
     </button>
   </div>
 
   {#if tasks.all.length === 0}
     <Empty
       icon="clock"
-      title="No hay procesos"
-      hint="Acá aparecen el mantenimiento, la creación de índices, los backups y las copias de datos mientras corren. Se los puede dejar corriendo y seguir usando la aplicación."
+      title={t("No hay procesos")}
+      hint={t("Acá aparecen el mantenimiento, la creación de índices, los backups y las copias de datos mientras corren. Se los puede dejar corriendo y seguir usando la aplicación.")}
     />
   {:else}
     <div class="min-h-0 flex-1 overflow-auto p-2 @sm/tasks:p-3">
@@ -135,7 +137,7 @@
                 </p>
               </div>
 
-              <span class="shrink-0 text-xs muted" title="Empezó a las {new Date(run.startedAt).toLocaleTimeString('es')}">
+              <span class="shrink-0 text-xs muted" title={t("Empezó a las {time}", { time: new Date(run.startedAt).toLocaleTimeString(i18n.current) })}>
                 {elapsedText(run.startedAt, run.finishedAt, now)}
               </span>
 
@@ -143,16 +145,16 @@
                 <button
                   class="btn btn-danger btn-sm shrink-0"
                   disabled={run.canceling}
-                  title="Cancelar el proceso"
+                  title={t("Cancelar el proceso")}
                   onclick={() => run.cancel()}
                 >
-                  {run.canceling ? "Cancelando…" : "Cancelar"}
+                  {run.canceling ? t("Cancelando…") : t("Cancelar")}
                 </button>
               {:else}
                 <button
                   class="btn btn-ghost btn-icon shrink-0"
-                  aria-label="Sacarlo de la lista"
-                  title="Sacarlo de la lista"
+                  aria-label={t("Sacarlo de la lista")}
+                  title={t("Sacarlo de la lista")}
                   onclick={() => tasks.remove(run)}
                 >
                   <Icon name="close" size={11} />
@@ -161,9 +163,9 @@
 
               <button
                 class="btn btn-ghost btn-icon shrink-0"
-                aria-label="Ver el detalle"
+                aria-label={t("Ver el detalle")}
                 aria-expanded={open === run.taskId}
-                title="Ver el SQL y lo que fue informando"
+                title={t("Ver el SQL y lo que fue informando")}
                 onclick={() => toggle(run)}
               >
                 <Icon
@@ -207,7 +209,7 @@
                     {/each}
                   </div>
                 {:else if !run.command}
-                  <p class="text-xs muted">Todavía no informó nada.</p>
+                  <p class="text-xs muted">{t("Todavía no informó nada.")}</p>
                 {/if}
               </div>
             {/if}

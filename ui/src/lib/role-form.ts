@@ -7,6 +7,7 @@
  * atrapa nada de eso.
  */
 
+import { t } from "./i18n.svelte";
 import type { RoleAttributes, RoleChange, RoleInfo } from "./ipc";
 
 export interface RoleForm {
@@ -153,12 +154,12 @@ export function roleChanges(
 }
 
 export function validateRole(form: RoleForm): string | null {
-  if (!form.name.trim()) return "Poné un nombre para el rol.";
+  if (!form.name.trim()) return t("Poné un nombre para el rol.");
   if (
     form.connectionLimit !== null &&
     (!Number.isInteger(form.connectionLimit) || form.connectionLimit < 0)
   ) {
-    return "El límite de conexiones tiene que ser un número entero no negativo.";
+    return t("El límite de conexiones tiene que ser un número entero no negativo.");
   }
   return null;
 }

@@ -1,3 +1,4 @@
+import { t } from "./i18n.svelte";
 import type { TableStat } from "./ipc";
 
 /**
@@ -25,7 +26,7 @@ export function tableHints(stat: TableStat): TableHint[] {
   if (stat.deadTuples >= MIN_DEAD_TUPLES && (stat.deadRatio ?? 0) >= DEAD_RATIO) {
     hints.push({
       level: "warn",
-      text: `${Math.round((stat.deadRatio ?? 0) * 100)} % de las filas están muertas: conviene un VACUUM`,
+      text: t("{round} % de las filas están muertas: conviene un VACUUM", { round: Math.round((stat.deadRatio ?? 0) * 100) }),
     });
   }
 
@@ -33,7 +34,7 @@ export function tableHints(stat: TableStat): TableHint[] {
   if (stat.lastAnalyzeSeconds === null && stat.liveTuples > 0) {
     hints.push({
       level: "warn",
-      text: "Sin ANALYZE registrado: el planificador está estimando a ciegas",
+      text: t("Sin ANALYZE registrado: el planificador está estimando a ciegas"),
     });
   }
 
@@ -45,7 +46,7 @@ export function tableHints(stat: TableStat): TableHint[] {
   ) {
     hints.push({
       level: "info",
-      text: "Se la lee mucho de punta a punta: puede faltar un índice para sus consultas más frecuentes",
+      text: t("Se la lee mucho de punta a punta: puede faltar un índice para sus consultas más frecuentes"),
     });
   }
 

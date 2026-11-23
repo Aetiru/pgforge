@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
@@ -84,8 +85,8 @@
   }
 
   function validate(): string | null {
-    if (!existing && !name.trim()) return "Poné un nombre para la vista.";
-    if (!query.trim()) return "Poné la consulta de la vista.";
+    if (!existing && !name.trim()) return t("Poné un nombre para la vista.");
+    if (!query.trim()) return t("Poné la consulta de la vista.");
     return null;
   }
 
@@ -122,7 +123,7 @@
       return;
     }
 
-    if (!(await confirmMutation(profileId, "Se va a modificar una vista.", sqlToApply))) return;
+    if (!(await confirmMutation(profileId, t("Se va a modificar una vista."), sqlToApply))) return;
 
     saving = true;
     try {
@@ -138,10 +139,10 @@
 
 <Modal
   title={existing
-    ? `Editar ${existing.name}`
+    ? t("Editar {name}", { name: existing.name })
     : materialized
-      ? "Nueva vista materializada"
-      : "Nueva vista"}
+      ? t("Nueva vista materializada")
+      : t("Nueva vista")}
   subtitle={schema}
   size="lg"
   busy={saving}
@@ -149,25 +150,25 @@
 >
   <div class="grid grid-cols-2 gap-3">
     <label class="flex flex-col gap-1">
-      <span class="label">Nombre</span>
+      <span class="label">{t("Nombre")}</span>
       <input class="field" data-autofocus bind:value={name} disabled={existing !== null} />
     </label>
 
     <label class="flex flex-col gap-1">
-      <span class="label">Columnas (opcional, separadas por coma)</span>
-      <input class="field" bind:value={columnsText} placeholder="Postgres las infiere solo" />
+      <span class="label">{t("Columnas (opcional, separadas por coma)")}</span>
+      <input class="field" bind:value={columnsText} placeholder={t("Postgres las infiere solo")} />
     </label>
   </div>
 
   <div class="mt-3 flex flex-col gap-1">
-    <span class="label">Consulta</span>
+    <span class="label">{t("Consulta")}</span>
     {#if loadingQuery}
       <p
         class="flex items-center justify-center gap-2 rounded-md border border-zinc-200 px-2 py-8
                text-sm muted dark:border-zinc-700"
       >
         <span class="spinner"></span>
-        Leyendo la definición…
+        {t("Leyendo la definición…")}
       </p>
     {:else}
       <!-- El mismo editor que la pestaña de consultas: resaltado y numeración, no un textarea. -->
@@ -180,7 +181,7 @@
   {#if materialized}
     <label class="check mt-3">
       <input type="checkbox" bind:checked={withData} />
-      Poblar de inmediato (WITH DATA)
+      {t("Poblar de inmediato (WITH DATA)")}
     </label>
   {/if}
 
@@ -194,12 +195,12 @@
 
   {#snippet footer()}
     <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving || loadingQuery}>
-      Ver SQL
+      {t("Ver SQL")}
     </button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving || loadingQuery}>
       {#if saving}<span class="spinner"></span>{/if}
-      {existing ? "Guardar" : "Crear"}
+      {existing ? t("Guardar") : t("Crear")}
     </button>
   {/snippet}
 </Modal>

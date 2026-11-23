@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
   import Sql from "./Sql.svelte";
   import type { Advice, AdviceKind, IndexTarget } from "./ipc";
@@ -64,14 +65,14 @@
             <div class="flex shrink-0 items-center gap-1.5">
               <button class="btn btn-sm" onclick={() => copy(item.sql ?? "")}>
                 <Icon name={copied === item.sql ? "check" : "copy"} size={11} />
-                {copied === item.sql ? "Copiado" : "Copiar"}
+                {copied === item.sql ? t("Copiado") : t("Copiar")}
               </button>
               <!-- Copiar y pegar el mismo texto en otra ventana era el paso que sobraba: el diálogo
                    se abre con esta tabla y estas columnas, y de ahí sigue el camino de siempre
                    —vista previa, confirmación de producción, tarea en segundo plano—. -->
               {#if item.index}
                 <button class="btn btn-primary btn-sm" onclick={() => oncreateIndex(item.index!)}>
-                  Crear el índice…
+                  {t("Crear el índice…")}
                 </button>
               {/if}
             </div>
@@ -84,7 +85,8 @@
   <!-- Sin medir no hay nada honesto que sugerir: cuántas filas descarta un filtro es justo lo que
        no se sabe hasta ejecutar. -->
   <p class="text-xs muted">
-    «Explicar y medir» ejecuta la consulta y compara lo estimado con lo real; con eso se pueden
-    señalar los recorridos completos que sobran y los índices que faltan.
+    {t(
+      "\"Explicar y medir\" ejecuta la consulta y compara lo estimado con lo real; con eso se pueden señalar los recorridos completos que sobran y los índices que faltan.",
+    )}
   </p>
 {/if}

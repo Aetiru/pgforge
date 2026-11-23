@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import Icon from "./Icon.svelte";
   import Self from "./PlanTree.svelte";
   import { count, decimal } from "./format";
@@ -38,7 +39,7 @@
   ];
 
   const subtitle = $derived.by(() => {
-    if (node.index && node.relation) return `${node.relation} vía ${node.index}`;
+    if (node.index && node.relation) return t("{relation} vía {index}", { relation: node.relation, index: node.index });
     return node.relation ?? node.index ?? "";
   });
 
@@ -65,7 +66,7 @@
         <button
           class="grid size-4 shrink-0 translate-y-0.5 place-items-center rounded text-zinc-400
                  hover:text-zinc-900 dark:hover:text-zinc-100"
-          aria-label={open ? "Plegar la rama" : "Desplegar la rama"}
+          aria-label={open ? t("Plegar la rama") : t("Desplegar la rama")}
           onclick={() => (open = !open)}
         >
           <Icon name="chevron" size={11} class="transition-transform {open ? 'rotate-90' : ''}" />
@@ -81,7 +82,7 @@
       {#if !open && node.children.length > 0}
         <span class="tag tag-neutral">
           +{node.children.length}
-          {node.children.length === 1 ? "rama" : "ramas"}
+          {node.children.length === 1 ? t("rama") : t("ramas")}
         </span>
       {/if}
 
@@ -95,36 +96,36 @@
           <span
             class={heavy ? "font-medium text-rose-600 dark:text-rose-400" : "muted"}
             title={heat.measure === "ms"
-              ? "Parte del tiempo total que gasta este nodo, sin contar a sus hijos"
-              : "Parte del costo total que estima el planificador para este nodo, sin contar a sus hijos"}
+              ? t("Parte del tiempo total que gasta este nodo, sin contar a sus hijos")
+              : t("Parte del costo total que estima el planificador para este nodo, sin contar a sus hijos")}
           >
             {decimal(percent, percent < 10 ? 1 : 0)} %
           </span>
         {/if}
-        <span class="muted">costo {decimal(node.totalCost, 2)}</span>
+        <span class="muted">{t("costo {cost}", { cost: decimal(node.totalCost, 2) })}</span>
       </span>
     </div>
 
     <div class="relative flex flex-wrap items-baseline gap-x-3 pl-6 text-xs muted">
       {#if node.actualRows !== null}
         <span class={node.misestimated ? "text-amber-600 dark:text-amber-400" : ""}>
-          filas {count(node.planRows)} estimadas / {count(node.actualRows)} reales
+          {t("filas {estimated} estimadas / {actual} reales", { estimated: count(node.planRows), actual: count(node.actualRows) })}
           {#if node.misestimated}⚠{/if}
         </span>
       {:else}
-        <span>filas {count(node.planRows)} estimadas</span>
+        <span>{t("filas {estimated} estimadas", { estimated: count(node.planRows) })}</span>
       {/if}
 
       {#if node.loops !== null && node.loops > 1}
-        <span>{count(node.loops)} vueltas</span>
+        <span>{t("{n} vueltas", { n: count(node.loops) })}</span>
       {/if}
 
       {#if node.rowsRemoved !== null && node.rowsRemoved > 0}
-        <span>descartó {count(node.rowsRemoved)}</span>
+        <span>{t("descartó {n}", { n: count(node.rowsRemoved) })}</span>
       {/if}
 
       {#if node.sharedReadBlocks !== null && node.sharedReadBlocks > 0}
-        <span>{count(node.sharedReadBlocks)} bloques del disco</span>
+        <span>{t("{n} bloques del disco", { n: count(node.sharedReadBlocks) })}</span>
       {/if}
     </div>
 

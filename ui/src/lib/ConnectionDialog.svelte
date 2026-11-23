@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { t } from "./i18n.svelte";
   import { pickOpen } from "./ipc";
   import Alert from "./Alert.svelte";
   import Icon from "./Icon.svelte";
@@ -107,19 +108,19 @@
   // arriba, lo que se toca una vez por servidor detrás. La validación tiene que poder traer al
   // usuario de vuelta a la pestaña del campo que falla, o el error señala algo que no está en pantalla.
   type Section = "general" | "connection" | "ssh";
-  const SECTIONS: { value: Section; label: string }[] = [
-    { value: "general", label: "General" },
-    { value: "connection", label: "Conexión" },
+  const SECTIONS = $derived<{ value: Section; label: string }[]>([
+    { value: "general", label: t("General") },
+    { value: "connection", label: t("Conexión") },
     { value: "ssh", label: "SSH" },
-  ];
+  ]);
   let section = $state<Section>("general");
 
-  const ENVIRONMENTS: { value: Environment | ""; label: string }[] = [
-    { value: "", label: "Sin marcar" },
-    { value: "dev", label: "Desarrollo" },
-    { value: "test", label: "Pruebas" },
-    { value: "prod", label: "Producción" },
-  ];
+  const ENVIRONMENTS = $derived<{ value: Environment | ""; label: string }[]>([
+    { value: "", label: t("Sin marcar") },
+    { value: "dev", label: t("Desarrollo") },
+    { value: "test", label: t("Pruebas") },
+    { value: "prod", label: t("Producción") },
+  ]);
 
   const SERVER_COLORS: ServerColor[] = [
     "red",
@@ -132,21 +133,21 @@
     "pink",
   ];
 
-  const SSL_MODES: { value: SslMode; label: string }[] = [
-    { value: "disable", label: "Sin cifrado" },
-    { value: "prefer", label: "Preferir cifrado" },
-    { value: "require", label: "Exigir cifrado (sin validar)" },
-    { value: "verifyCa", label: "Validar la cadena del certificado" },
-    { value: "verifyFull", label: "Validar cadena y nombre del servidor" },
-  ];
+  const SSL_MODES = $derived<{ value: SslMode; label: string }[]>([
+    { value: "disable", label: t("Sin cifrado") },
+    { value: "prefer", label: t("Preferir cifrado") },
+    { value: "require", label: t("Exigir cifrado (sin validar)") },
+    { value: "verifyCa", label: t("Validar la cadena del certificado") },
+    { value: "verifyFull", label: t("Validar cadena y nombre del servidor") },
+  ]);
 
   async function pickKey() {
-    const chosen = await pickOpen({ title: "Elegir la clave privada SSH" });
+    const chosen = await pickOpen({ title: t("Elegir la clave privada SSH") });
     if (typeof chosen === "string" && form.tunnel) form.tunnel.privateKey = chosen;
   }
 
   async function pickRootCert() {
-    const chosen = await pickOpen({ title: "Elegir el certificado raíz" });
+    const chosen = await pickOpen({ title: t("Elegir el certificado raíz") });
     if (typeof chosen === "string") form.rootCert = chosen;
   }
 
@@ -161,7 +162,7 @@
     testing = true;
     try {
       await sshTest($state.snapshot(form), sshPassword || undefined, trustHostKey);
-      testResult = { ok: true, message: "El túnel funciona: el bastión alcanza el servidor." };
+      testResult = { ok: true, message: t("El túnel funciona: el bastión alcanza el servidor.") };
     } catch (e) {
       const host = sshHostKey(e);
       if (host) {
@@ -178,12 +179,12 @@
     error = null;
     if (!form.name.trim()) {
       section = "general";
-      error = "Poné un nombre para identificar el servidor.";
+      error = t("Poné un nombre para identificar el servidor.");
       return;
     }
     if (form.tunnel && !form.tunnel.host.trim()) {
       section = "ssh";
-      error = "El túnel SSH necesita el host del bastión, o desactivalo.";
+      error = t("El túnel SSH necesita el host del bastión, o desactivalo.");
       return;
     }
 
@@ -204,7 +205,7 @@
 </script>
 
 <Modal
-  title={profile ? "Editar servidor" : "Nuevo servidor"}
+  title={profile ? t("Editar servidor") : t("Nuevo servidor")}
   subtitle="{form.user}@{form.host}:{form.port}/{form.database}"
   busy={saving}
   {onclose}
@@ -224,8 +225,8 @@
 
   <div class="grid grid-cols-2 gap-3" class:hidden={section !== "general"}>
     <label class="flex flex-col gap-1">
-      <span class="label">Nombre</span>
-      <input class="field" data-autofocus bind:value={form.name} placeholder="Producción" />
+      <span class="label">{t("Nombre")}</span>
+      <input class="field" data-autofocus bind:value={form.name} placeholder={t("Producción")} />
     </label>
 
     <!--
@@ -233,12 +234,12 @@
       administrar aparte, una carpeta es el nombre que comparten unos servidores.
     -->
     <label class="flex flex-col gap-1">
-      <span class="label">Carpeta</span>
+      <span class="label">{t("Carpeta")}</span>
       <input
         class="field"
         list="carpetas-de-conexiones"
-        placeholder="Sin carpeta"
-        title="Agrupa este servidor con los demás que tengan el mismo nombre de carpeta. Una barra anida: «Clientes/ACME» se dibuja adentro de «Clientes»"
+        placeholder={t("Sin carpeta")}
+        title={t("Agrupa este servidor con los demás que tengan el mismo nombre de carpeta. Una barra anida: «Clientes/ACME» se dibuja adentro de «Clientes»")}
         bind:value={form.group}
       />
       <datalist id="carpetas-de-conexiones">
@@ -250,7 +251,7 @@
         <!-- No bloquea: el usuario puede haberlo elegido a propósito. Guardarlo bien y no verlo en
              esta ventana se parecía a que el guardado hubiera fallado, sin ningún aviso. -->
         <Alert tone="warn" class="mt-1">
-          Esto no va a verse en esta ventana: queda fuera de «{explorer.workspace?.rootGroup}».
+          {t("Esto no va a verse en esta ventana: queda fuera de «{folder}».", { folder: explorer.workspace?.rootGroup ?? "" })}
         </Alert>
       {/if}
     </label>
@@ -261,14 +262,14 @@
       ni pensar en contraste contra el tema oscuro.
     -->
     <label class="col-span-2 flex flex-col gap-1">
-      <span class="label">Color</span>
+      <span class="label">{t("Color")}</span>
       <div class="flex items-center gap-1.5">
         <button
           type="button"
           class="grid size-6 shrink-0 place-items-center rounded-full border border-dashed
                  border-zinc-400 text-[10px] text-zinc-400 dark:border-zinc-500 dark:text-zinc-500
                  {form.color === undefined ? 'ring-2 ring-blue-500 ring-offset-1' : ''}"
-          title="Sin color"
+          title={t("Sin color")}
           onclick={() => (form.color = undefined)}
         >
           <Icon name="close" size={11} />
@@ -290,8 +291,8 @@
          los busca al dar de alta un servidor. El entorno decide el marco de color de toda la ventana
          y cuánto se pregunta antes de modificar algo. -->
     <div class="col-span-2 flex flex-col gap-1.5">
-      <span class="label">Entorno</span>
-      <div class="seg w-fit" role="group" aria-label="Entorno del servidor">
+      <span class="label">{t("Entorno")}</span>
+      <div class="seg w-fit" role="group" aria-label={t("Entorno del servidor")}>
         {#each ENVIRONMENTS as item (item.value)}
           <button
             type="button"
@@ -311,42 +312,40 @@
       </div>
       <p class="text-xs {form.environment === 'prod' ? 'text-rose-600 dark:text-rose-400' : 'muted'}">
         {#if form.environment === "prod"}
-          Toda la ventana se enmarca en rojo mientras se mira este servidor, y cada modificación pide
-          una confirmación de más.
+          {t("Toda la ventana se enmarca en rojo mientras se mira este servidor, y cada modificación pide una confirmación de más.")}
         {:else if form.environment}
-          Se enmarca la ventana con el color del entorno mientras se mira este servidor.
+          {t("Se enmarca la ventana con el color del entorno mientras se mira este servidor.")}
         {:else}
-          Sin marcar no cambia nada a la vista. Marcá producción para no confundirlo con desarrollo.
+          {t("Sin marcar no cambia nada a la vista. Marcá producción para no confundirlo con desarrollo.")}
         {/if}
       </p>
     </div>
 
     <label class="check col-span-2">
       <input type="checkbox" bind:checked={form.readOnly} />
-      Conexión de solo lectura
+      {t("Conexión de solo lectura")}
     </label>
     <p class="col-span-2 -mt-2 text-xs muted">
-      Abre cada conexión con <code>default_transaction_read_only</code>: el rechazo lo hace el
-      servidor, así vale igual para el explorador, el editor de SQL y las importaciones.
+      {t("Abre cada conexión con {setting}: el rechazo lo hace el servidor, así vale igual para el explorador, el editor de SQL y las importaciones.", { setting: "default_transaction_read_only" })}
     </p>
 
     <label class="flex flex-col gap-1">
-      <span class="label">Servidor</span>
+      <span class="label">{t("Servidor")}</span>
       <input class="field" bind:value={form.host} />
     </label>
 
     <label class="flex flex-col gap-1">
-      <span class="label">Puerto</span>
+      <span class="label">{t("Puerto")}</span>
       <input class="field" type="number" bind:value={form.port} />
     </label>
 
     <label class="flex flex-col gap-1">
-      <span class="label">Base de datos predeterminada</span>
+      <span class="label">{t("Base de datos predeterminada")}</span>
       <input
         class="field"
         bind:value={form.database}
         list="pgforge-databases"
-        title="Es la base a la que se conecta y la que queda abierta en el árbol cada vez que se conecta"
+        title={t("Es la base a la que se conecta y la que queda abierta en el árbol cada vez que se conecta")}
       />
       <datalist id="pgforge-databases">
         {#each knownDatabases as name (name)}
@@ -355,18 +354,18 @@
       </datalist>
       <span class="text-[11px] muted">
         {knownDatabases.length > 0
-          ? "Elegí una de las bases del servidor o escribí otra."
-          : "Conectá el servidor una vez para poder elegirla de la lista."}
+          ? t("Elegí una de las bases del servidor o escribí otra.")
+          : t("Conectá el servidor una vez para poder elegirla de la lista.")}
       </span>
     </label>
 
     <label class="flex flex-col gap-1">
-      <span class="label">Usuario</span>
+      <span class="label">{t("Usuario")}</span>
       <input class="field" bind:value={form.user} />
     </label>
 
     <label class="flex flex-col gap-1">
-      <span class="label">Contraseña</span>
+      <span class="label">{t("Contraseña")}</span>
       <input
         class="field"
         type="password"
@@ -379,7 +378,7 @@
     </label>
 
     <label class="flex flex-col gap-1">
-      <span class="label">Cifrado</span>
+      <span class="label">{t("Cifrado")}</span>
       <select class="field" bind:value={form.sslMode}>
         {#each SSL_MODES as mode (mode.value)}
           <option value={mode.value}>{mode.label}</option>
@@ -389,99 +388,97 @@
 
     <label class="check col-span-2">
       <input type="checkbox" bind:checked={form.savePassword} />
-      Recordar la contraseña en el almacén de credenciales del sistema
+      {t("Recordar la contraseña en el almacén de credenciales del sistema")}
     </label>
   </div>
 
   <div class="grid grid-cols-2 gap-3" class:hidden={section !== "connection"}>
     <label class="flex flex-col gap-1">
-      <span class="label">Límite por sentencia (ms)</span>
+      <span class="label">{t("Límite por sentencia (ms)")}</span>
       <input
         class="field"
         type="number"
         min="0"
-        placeholder="El del servidor"
+        placeholder={t("El del servidor")}
         value={form.statementTimeoutMs ?? ""}
         onchange={(event) => (form.statementTimeoutMs = optionalNumber(event.currentTarget.value))}
       />
     </label>
 
     <label class="flex flex-col gap-1">
-      <span class="label">Espera al conectar (s)</span>
+      <span class="label">{t("Espera al conectar (s)")}</span>
       <input class="field" type="number" min="1" bind:value={form.connectTimeoutSecs} />
     </label>
 
     <label class="flex flex-col gap-1">
-      <span class="label">Certificado raíz</span>
+      <span class="label">{t("Certificado raíz")}</span>
       <div class="flex gap-2">
         <input
           class="field grow"
           bind:value={form.rootCert}
           readonly
-          placeholder="Vacío: las CA del sistema"
+          placeholder={t("Vacío: las CA del sistema")}
         />
-        <button type="button" class="btn btn-sm" onclick={pickRootCert}>Elegir…</button>
+        <button type="button" class="btn btn-sm" onclick={pickRootCert}>{t("Elegir…")}</button>
       </div>
     </label>
 
     <label class="check col-span-2">
       <input type="checkbox" bind:checked={form.connectOnStart} />
-      Conectar al abrir la aplicación
+      {t("Conectar al abrir la aplicación")}
     </label>
     <p class="col-span-2 -mt-2 text-xs muted">
-      Conectar solo no puede preguntar la contraseña: sirve con la recordada o con un servidor que no
-      la pide. Si no acepta, queda desconectado y se conecta a mano como siempre.
+      {t("Conectar solo no puede preguntar la contraseña: sirve con la recordada o con un servidor que no la pide. Si no acepta, queda desconectado y se conecta a mano como siempre.")}
     </p>
 
     <label class="check col-span-2">
       <input type="checkbox" bind:checked={form.autocommit} />
-      Autocommit en las pestañas de consulta
+      {t("Autocommit en las pestañas de consulta")}
     </label>
     <p class="col-span-2 -mt-2 text-xs muted">
-      Apagado, cada ejecución abre una transacción que hay que confirmar con Commit. Es el valor
-      inicial: cada pestaña lo puede cambiar por su cuenta.
+      {t("Apagado, cada ejecución abre una transacción que hay que confirmar con Commit. Es el valor inicial: cada pestaña lo puede cambiar por su cuenta.")}
     </p>
   </div>
 
   <div class:hidden={section !== "ssh"}>
     <label class="check">
       <input type="checkbox" bind:checked={tunnelOn} />
-      Conectar a través de un túnel SSH (bastión)
+      {t("Conectar a través de un túnel SSH (bastión)")}
     </label>
 
     {#if form.tunnel}
       <div class="mt-3 grid grid-cols-2 gap-3">
       <label class="flex flex-col gap-1">
-        <span class="label">Bastión</span>
+        <span class="label">{t("Bastión")}</span>
         <input class="field" bind:value={form.tunnel.host} placeholder="bastion.interno" />
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="label">Puerto SSH</span>
+        <span class="label">{t("Puerto SSH")}</span>
         <input class="field" type="number" bind:value={form.tunnel.port} />
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="label">Usuario SSH</span>
+        <span class="label">{t("Usuario SSH")}</span>
         <input class="field" bind:value={form.tunnel.user} placeholder="deploy" />
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="label">Clave privada</span>
+        <span class="label">{t("Clave privada")}</span>
         <div class="flex gap-2">
           <input
             class="field grow"
             bind:value={form.tunnel.privateKey}
             readonly
-            placeholder="Vacío: autenticar por contraseña"
+            placeholder={t("Vacío: autenticar por contraseña")}
           />
-          <button type="button" class="btn btn-sm" onclick={pickKey}>Elegir…</button>
+          <button type="button" class="btn btn-sm" onclick={pickKey}>{t("Elegir…")}</button>
         </div>
       </label>
 
       <label class="col-span-2 flex flex-col gap-1">
         <span class="label">
-          {form.tunnel.privateKey ? "Frase de la clave (si tiene)" : "Contraseña del bastión"}
+          {form.tunnel.privateKey ? t("Frase de la clave (si tiene)") : t("Contraseña del bastión")}
         </span>
         <input class="field" type="password" bind:value={sshPassword} autocomplete="off" />
       </label>
@@ -493,15 +490,14 @@
       -->
       {#if form.sslMode === "verifyFull"}
         <p class="col-span-2 text-xs muted">
-          Por un túnel, el nombre se valida contra «{form.host || "el servidor"}»: el certificado del
-          servidor tiene que estar emitido para ese nombre, no para el puerto local del túnel.
+          {t("Por un túnel, el nombre se valida contra «{host}»: el certificado del servidor tiene que estar emitido para ese nombre, no para el puerto local del túnel.", { host: form.host || t("el servidor") })}
         </p>
       {/if}
 
       <div class="col-span-2 flex items-center gap-3">
         <button type="button" class="btn btn-sm" onclick={() => testTunnel()} disabled={testing}>
           {#if testing}<span class="spinner"></span>{/if}
-          Probar túnel
+          {t("Probar túnel")}
         </button>
         {#if testResult}
           <span class="text-xs {testResult.ok ? 'text-emerald-600 dark:text-emerald-400' : 'muted'}">
@@ -513,11 +509,11 @@
       {#if testTrust}
         <Alert tone={testTrust.changed ? "bad" : "warn"} box class="col-span-2">
           {testTrust.changed
-            ? "La clave del bastión cambió respecto de la registrada."
-            : "El bastión no está en tu known_hosts."}
-          Huella SHA256: {testTrust.fingerprint}.
+            ? t("La clave del bastión cambió respecto de la registrada.")
+            : t("El bastión no está en tu known_hosts.")}
+          {t("Huella SHA256: {fingerprint}.", { fingerprint: testTrust.fingerprint })}
           <button type="button" class="btn btn-sm mt-2" onclick={() => testTunnel(true)}>
-            Confiar y volver a probar
+            {t("Confiar y volver a probar")}
           </button>
         </Alert>
       {/if}
@@ -531,13 +527,13 @@
 
   {#snippet footer()}
     <span class="basis-full text-xs muted">
-      La contraseña nunca se guarda en los archivos de la aplicación.
+      {t("La contraseña nunca se guarda en los archivos de la aplicación.")}
     </span>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
-    <button class="btn" onclick={() => submit(false)} disabled={saving}>Guardar</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
+    <button class="btn" onclick={() => submit(false)} disabled={saving}>{t("Guardar")}</button>
     <button class="btn btn-primary" onclick={() => submit(true)} disabled={saving}>
       {#if saving}<span class="spinner"></span>{/if}
-      Guardar y conectar
+      {t("Guardar y conectar")}
     </button>
   {/snippet}
 </Modal>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { gridZoom } from "./grid.svelte";
 
   /**
@@ -9,20 +10,20 @@
    */
 </script>
 
-<div class="flex items-center" title="Tamaño de la grilla — Ctrl + rueda">
+<div class="flex items-center" title={t("Tamaño de la grilla — Ctrl + rueda")}>
   <button
     class="btn btn-ghost btn-icon btn-sm text-[11px]"
     disabled={!gridZoom.canShrink}
-    aria-label="Achicar la grilla"
-    title="Achicar"
+    aria-label={t("Achicar la grilla")}
+    title={t("Achicar")}
     onclick={() => gridZoom.smaller()}
   >
     A−
   </button>
   <button
     class="btn btn-ghost btn-sm px-1 text-[10px] tabular-nums muted"
-    aria-label="Volver al tamaño normal"
-    title="Volver al tamaño normal"
+    aria-label={t("Volver al tamaño normal")}
+    title={t("Volver al tamaño normal")}
     onclick={() => gridZoom.reset()}
   >
     {gridZoom.size}
@@ -30,8 +31,8 @@
   <button
     class="btn btn-ghost btn-icon btn-sm text-sm"
     disabled={!gridZoom.canGrow}
-    aria-label="Agrandar la grilla"
-    title="Agrandar"
+    aria-label={t("Agrandar la grilla")}
+    title={t("Agrandar")}
     onclick={() => gridZoom.bigger()}
   >
     A+

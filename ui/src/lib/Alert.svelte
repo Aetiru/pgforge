@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import Icon, { type IconName } from "./Icon.svelte";
+  import { t } from "./i18n.svelte";
 
   /**
    * Un aviso: el error que cortó una operación, la advertencia de que algo es de solo lectura, o la
@@ -37,7 +38,7 @@
     <button
       class="btn btn-ghost btn-icon -my-0.5 -mr-1 size-6 shrink-0 text-current opacity-70
              hover:bg-black/5 hover:text-current dark:hover:bg-white/10"
-      aria-label="Descartar el aviso"
+      aria-label={t("Descartar el aviso")}
       onclick={onclose}
     >
       <Icon name="close" size={12} />

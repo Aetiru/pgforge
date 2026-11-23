@@ -8,14 +8,16 @@
  * se escribe como literal con las comillas duplicadas. Es puro y con Vitest.
  */
 
+
+import { t } from "./i18n.svelte";
 export type FilterOp = "eq" | "neq" | "contains" | "isNull" | "notNull";
 
 export const FILTER_OPS: { value: FilterOp; label: string; needsValue: boolean }[] = [
-  { value: "eq", label: "es igual a", needsValue: true },
-  { value: "neq", label: "es distinto de", needsValue: true },
-  { value: "contains", label: "contiene", needsValue: true },
-  { value: "isNull", label: "es nulo", needsValue: false },
-  { value: "notNull", label: "no es nulo", needsValue: false },
+  { value: "eq", get label() { return t("es igual a"); }, needsValue: true },
+  { value: "neq", get label() { return t("es distinto de"); }, needsValue: true },
+  { value: "contains", get label() { return t("contiene"); }, needsValue: true },
+  { value: "isNull", get label() { return t("es nulo"); }, needsValue: false },
+  { value: "notNull", get label() { return t("no es nulo"); }, needsValue: false },
 ];
 
 /** Identificador entre comillas dobles, con las que tenga adentro duplicadas. */
@@ -59,7 +61,7 @@ export function clause(
   types?: readonly string[],
 ): { sql: string } | { error: string } {
   const index = columns.indexOf(filter.column);
-  if (index === -1) return { error: `La columna «${filter.column}» no existe en la tabla.` };
+  if (index === -1) return { error: t("La columna «{column}» no existe en la tabla.", { column: filter.column }) };
 
   const ident = quoteIdent(filter.column);
   const asText = AS_TEXT.has((types?.[index] ?? "").trim().toLowerCase());
@@ -74,7 +76,7 @@ export function clause(
 
   const value = filter.value ?? "";
   if (filter.op === "contains") {
-    if (value === "") return { error: "Escribí el texto que tiene que contener." };
+    if (value === "") return { error: t("Escribí el texto que tiene que contener.") };
     // `::text` también acá: ILIKE no existe sobre números ni fechas.
     return { sql: `${ident}::text ILIKE ${quoteLiteral(`%${escapeLike(value)}%`)}` };
   }

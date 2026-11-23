@@ -10,6 +10,7 @@
  * Es una ayuda, no un cartel: si el servidor no contesta o la función no existe, no aparece nada.
  */
 
+import { t } from "../i18n.svelte";
 import { StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
 import {
   EditorView,
@@ -135,7 +136,7 @@ function signatureDom(signatures: RoutineSignature[], argIndex: number, listAll:
   if (signatures.length > listed.length) {
     const more = document.createElement("div");
     more.className = "cm-signature-comment";
-    more.textContent = `y ${signatures.length - listed.length} sobrecargas más`;
+    more.textContent = t("y {signatures} sobrecargas más", { signatures: signatures.length - listed.length });
     dom.appendChild(more);
   }
   return dom;

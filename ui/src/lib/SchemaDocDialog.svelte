@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Icon from "./Icon.svelte";
@@ -53,7 +54,7 @@
     try {
       // La ruta sale de un diálogo abierto desde Rust: `sqlWriteFile` solo acepta esa.
       const path = await pickSave({
-        title: "Guardar la documentación",
+        title: t("Guardar la documentación"),
         defaultPath: `${target.database}-${target.schema}.md`,
         filters: [{ name: "Markdown", extensions: ["md"] }],
       });
@@ -66,15 +67,15 @@
   }
 </script>
 
-<Modal title="Documentar el esquema" subtitle="{target.database} · {target.schema}" size="xl" {onclose}>
+<Modal title={t("Documentar el esquema")} subtitle="{target.database} · {target.schema}" size="xl" {onclose}>
   <div class="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
     <label class="check">
       <input type="checkbox" bind:checked={withDiagram} />
-      Diagrama de relaciones (Mermaid)
+      {t("Diagrama de relaciones (Mermaid)")}
     </label>
     <label class="check">
       <input type="checkbox" bind:checked={withNotes} />
-      Notas y etiquetas de esta computadora
+      {t("Notas y etiquetas de esta computadora")}
     </label>
   </div>
 
@@ -88,18 +89,17 @@
              text-xs whitespace-pre-wrap select-text dark:border-zinc-700 dark:bg-zinc-800/60"
       >{markdown}</pre>
     <p class="mt-2 text-xs muted">
-      Sale de lo que hay en la base ahora, incluidos los comentarios de tablas y columnas. Para
-      actualizarla, vuelve a generarla.
+      {t("Sale de lo que hay en la base ahora, incluidos los comentarios de tablas y columnas. Para actualizarla, vuelve a generarla.")}
     </p>
   {/if}
-  {#if saved}<Alert tone="ok" box class="mt-3 break-all">Guardado en {saved}.</Alert>{/if}
+  {#if saved}<Alert tone="ok" box class="mt-3 break-all">{t("Guardado en {path}.", { path: saved })}</Alert>{/if}
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose}>Cerrar</button>
-    <button class="btn" disabled={!graph} onclick={copy}>{copied ? "Copiado ✓" : "Copiar"}</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cerrar")}</button>
+    <button class="btn" disabled={!graph} onclick={copy}>{copied ? t("Copiado ✓") : t("Copiar")}</button>
     <button class="btn btn-primary" disabled={!graph} onclick={save}>
       <Icon name="download" size={12} />
-      Guardar .md…
+      {t("Guardar .md…")}
     </button>
   {/snippet}
 </Modal>

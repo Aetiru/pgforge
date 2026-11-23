@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import DataGrid, { type Column } from "./DataGrid.svelte";
   import { boolText, isBoolType } from "./format";
   import { geometryText, geometryTextOrNull, isGeometryType } from "./geometry";
@@ -176,5 +177,5 @@
   sortable
   editable={editing ? (_row, column) => editing.editable[positionOf(column)] === true : undefined}
   onedit={editing ? (row, column, value) => editing.onedit(row.index, positionOf(column), value) : undefined}
-  empty="La consulta no devolvió ninguna fila."
+  empty={t("La consulta no devolvió ninguna fila.")}
 />

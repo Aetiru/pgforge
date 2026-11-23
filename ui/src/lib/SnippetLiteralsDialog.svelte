@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Empty from "./Empty.svelte";
   import Modal from "./Modal.svelte";
@@ -26,12 +27,18 @@
   // El diálogo se monta por cada cuerpo: los literales se leen una vez y las casillas son suyas.
   const found = untrack(() => findLiterals(body));
 
-  const KIND: Record<LiteralKind, string> = {
-    string: "texto",
-    number: "número",
-    date: "fecha",
-    timestamp: "fecha y hora",
-  };
+  function kindLabel(kind: LiteralKind): string {
+    switch (kind) {
+      case "string":
+        return t("texto");
+      case "number":
+        return t("número");
+      case "date":
+        return t("fecha");
+      case "timestamp":
+        return t("fecha y hora");
+    }
+  }
 
   // Todos marcados salvo lo que casi nunca se quiere variable: los números sueltos son lo más
   // ruidoso de una consulta, y sacarlos con un clic es más fácil que marcar uno por uno.
@@ -61,21 +68,21 @@
 </script>
 
 <Modal
-  title="Convertir valores en variables"
-  subtitle="Al expandir la abreviatura se preguntará cada uno, con lo escrito como valor por omisión."
+  title={t("Convertir valores en variables")}
+  subtitle={t("Al expandir la abreviatura se preguntará cada uno, con lo escrito como valor por omisión.")}
   size="lg"
   onclose={onskip}
 >
   {#if rows.length === 0}
-    <Empty icon="info" title="No hay valores fijos para convertir" />
+    <Empty icon="info" title={t("No hay valores fijos para convertir")} />
   {:else}
     <table class="list-table">
       <thead>
         <tr>
           <th class="w-8"></th>
-          <th>Valor</th>
-          <th class="w-28">Tipo</th>
-          <th class="w-48">Nombre de la variable</th>
+          <th>{t("Valor")}</th>
+          <th class="w-28">{t("Tipo")}</th>
+          <th class="w-48">{t("Nombre de la variable")}</th>
         </tr>
       </thead>
       <tbody>
@@ -84,16 +91,16 @@
             <td>
               <input
                 type="checkbox"
-                aria-label="Convertir {row.literal.text}"
+                aria-label={t("Convertir {text}", { text: row.literal.text })}
                 bind:checked={row.checked}
               />
             </td>
             <td class="font-mono">{row.literal.text}</td>
-            <td class="text-xs muted">{KIND[row.literal.kind]}</td>
+            <td class="text-xs muted">{kindLabel(row.literal.kind)}</td>
             <td>
               <input
                 class="field w-full font-mono"
-                aria-label="Nombre para {row.literal.text}"
+                aria-label={t("Nombre para {text}", { text: row.literal.text })}
                 bind:value={row.name}
                 disabled={!row.checked}
                 spellcheck="false"
@@ -104,16 +111,16 @@
       </tbody>
     </table>
 
-    <p class="label mt-3 mb-1">Así queda</p>
+    <p class="label mt-3 mb-1">{t("Así queda")}</p>
     <div class="max-h-48 overflow-auto rounded border border-zinc-200 p-2 dark:border-zinc-700">
       <Sql code={result} />
     </div>
   {/if}
 
   {#snippet footer()}
-    <button class="btn btn-ghost" onclick={onskip}>Dejar como está</button>
+    <button class="btn btn-ghost" onclick={onskip}>{t("Dejar como está")}</button>
     <button class="btn btn-primary" disabled={chosen === 0} onclick={() => onapply(result)}>
-      Convertir {chosen === 1 ? "el elegido" : `los ${chosen} elegidos`}
+      {chosen === 1 ? t("Convertir el elegido") : t("Convertir los {n} elegidos", { n: chosen })}
     </button>
   {/snippet}
 </Modal>

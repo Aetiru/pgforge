@@ -1,3 +1,4 @@
+import { t } from "./i18n.svelte";
 import type { IconName } from "./Icon.svelte";
 import {
   folderOf,
@@ -95,45 +96,42 @@ const TAGS: Record<NodeTag, { label: string; tone: string; title: string }> = {
   login: {
     label: "login",
     tone: "tag-info",
-    title: "El rol puede iniciar sesión",
+    get title() { return t("El rol puede iniciar sesión"); },
   },
   group: {
-    label: "grupo",
+    get label() { return t("grupo"); },
     tone: "tag-neutral",
-    title: "El rol no puede iniciar sesión: existe para agrupar privilegios",
+    get title() { return t("El rol no puede iniciar sesión: existe para agrupar privilegios"); },
   },
   superuser: {
-    label: "superusuario",
+    get label() { return t("superusuario"); },
     tone: "tag-warn",
-    title: "El rol se saltea todos los controles de permisos",
+    get title() { return t("El rol se saltea todos los controles de permisos"); },
   },
   partition: {
-    label: "partición",
+    get label() { return t("partición"); },
     tone: "tag-neutral",
-    title: "La tabla es una partición de otra",
+    get title() { return t("La tabla es una partición de otra"); },
   },
   rowSecurity: {
     label: "RLS",
     tone: "tag-info",
-    title: "Seguridad por fila activa: la tabla puede devolver menos filas de las que tiene",
+    get title() { return t("Seguridad por fila activa: la tabla puede devolver menos filas de las que tiene"); },
   },
   noPrimaryKey: {
-    label: "sin PK",
+    get label() { return t("sin PK"); },
     tone: "tag-warn",
-    title:
-      "La tabla no tiene clave primaria: la grilla la abre en solo lectura y la replicación lógica no puede identificar sus filas. Agregarle una la arregla.",
+    get title() { return t("La tabla no tiene clave primaria: la grilla la abre en solo lectura y la replicación lógica no puede identificar sus filas. Agregarle una la arregla."); },
   },
   invalid: {
-    label: "inválido",
+    get label() { return t("inválido"); },
     tone: "tag-bad",
-    title:
-      "El índice quedó inválido —un CREATE INDEX CONCURRENTLY que falló—: el planificador no lo usa. Hay que borrarlo y rehacerlo.",
+    get title() { return t("El índice quedó inválido —un CREATE INDEX CONCURRENTLY que falló—: el planificador no lo usa. Hay que borrarlo y rehacerlo."); },
   },
   notPopulated: {
-    label: "sin datos",
+    get label() { return t("sin datos"); },
     tone: "tag-warn",
-    title:
-      "La vista materializada se creó WITH NO DATA: consultarla falla hasta que se haga un REFRESH.",
+    get title() { return t("La vista materializada se creó WITH NO DATA: consultarla falla hasta que se haga un REFRESH."); },
   },
 };
 
@@ -182,7 +180,7 @@ const ENVIRONMENTS: Record<
     wash: "bg-emerald-500/[0.06]",
     frame: "border-t-2 border-t-emerald-500/70",
     ribbon: "bg-emerald-600 text-white",
-    title: "Servidor de desarrollo",
+    get title() { return t("Servidor de desarrollo"); },
   },
   test: {
     label: "test",
@@ -193,7 +191,7 @@ const ENVIRONMENTS: Record<
     wash: "bg-blue-500/[0.06]",
     frame: "border-t-2 border-t-blue-500/70",
     ribbon: "bg-blue-600 text-white",
-    title: "Servidor de pruebas",
+    get title() { return t("Servidor de pruebas"); },
   },
   prod: {
     label: "prod",
@@ -207,7 +205,7 @@ const ENVIRONMENTS: Record<
     frame: "border-t-[3px] border-t-rose-500/90",
     ribbon:
       "bg-rose-500/10 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400",
-    title: "Servidor de producción: cada modificación pide una confirmación de más",
+    get title() { return t("Servidor de producción: cada modificación pide una confirmación de más"); },
   },
 };
 
@@ -289,14 +287,14 @@ export function envFrame(environment: Environment | null) {
  * pisarse — uno es la línea del borde (`spine`), el otro un punto junto al nombre.
  */
 const SERVER_COLORS: Record<ServerColor, { label: string; dot: string }> = {
-  red: { label: "Rojo", dot: "bg-red-500" },
-  orange: { label: "Naranja", dot: "bg-orange-500" },
-  amber: { label: "Ámbar", dot: "bg-amber-500" },
-  green: { label: "Verde", dot: "bg-green-500" },
-  teal: { label: "Verde azulado", dot: "bg-teal-500" },
-  blue: { label: "Azul", dot: "bg-blue-500" },
-  purple: { label: "Violeta", dot: "bg-purple-500" },
-  pink: { label: "Rosa", dot: "bg-pink-500" },
+  red: { get label() { return t("Rojo"); }, dot: "bg-red-500" },
+  orange: { get label() { return t("Naranja"); }, dot: "bg-orange-500" },
+  amber: { get label() { return t("Ámbar"); }, dot: "bg-amber-500" },
+  green: { get label() { return t("Verde"); }, dot: "bg-green-500" },
+  teal: { get label() { return t("Verde azulado"); }, dot: "bg-teal-500" },
+  blue: { get label() { return t("Azul"); }, dot: "bg-blue-500" },
+  purple: { get label() { return t("Violeta"); }, dot: "bg-purple-500" },
+  pink: { get label() { return t("Rosa"); }, dot: "bg-pink-500" },
 };
 
 export function serverColorLook(color: ServerColor) {
@@ -306,37 +304,37 @@ export function serverColorLook(color: ServerColor) {
 /** Conexión abierta en solo lectura: el servidor rechaza toda escritura. */
 export const READ_ONLY_LOOK = {
   icon: "lock" as IconName,
-  label: "solo lectura",
+  get label() { return t("solo lectura"); },
   tone: "tag-neutral",
-  title: "La conexión se abre en solo lectura: el servidor rechaza cualquier escritura",
+  get title() { return t("La conexión se abre en solo lectura: el servidor rechaza cualquier escritura"); },
 };
 
 /** Nombre legible del tipo de nodo, para el panel de propiedades. */
 export function kindLabel(kind: NodeKind | null): string {
-  if (kind === null) return "Servidor";
-  if (folderOf(kind) !== null) return "Carpeta";
+  if (kind === null) return t("Servidor");
+  if (folderOf(kind) !== null) return t("Carpeta");
 
   const names: Record<string, string> = {
-    database: "Base de datos",
-    schema: "Esquema",
-    table: "Tabla",
-    partitionedTable: "Tabla particionada",
-    foreignTable: "Tabla externa",
-    view: "Vista",
-    materializedView: "Vista materializada",
-    sequence: "Secuencia",
-    function: "Función",
-    procedure: "Procedimiento",
-    type: "Tipo",
-    column: "Columna",
-    index: "Índice",
-    constraint: "Restricción",
-    trigger: "Disparador",
-    policy: "Política",
-    role: "Rol",
-    extension: "Extensión",
-    foreignDataWrapper: "Wrapper foráneo",
-    foreignServer: "Servidor foráneo",
+    database: t("Base de datos"),
+    schema: t("Esquema"),
+    table: t("Tabla"),
+    partitionedTable: t("Tabla particionada"),
+    foreignTable: t("Tabla externa"),
+    view: t("Vista"),
+    materializedView: t("Vista materializada"),
+    sequence: t("Secuencia"),
+    function: t("Función"),
+    procedure: t("Procedimiento"),
+    type: t("Tipo"),
+    column: t("Columna"),
+    index: t("Índice"),
+    constraint: t("Restricción"),
+    trigger: t("Disparador"),
+    policy: t("Política"),
+    role: t("Rol"),
+    extension: t("Extensión"),
+    foreignDataWrapper: t("Wrapper foráneo"),
+    foreignServer: t("Servidor foráneo"),
   };
   return names[kind as string] ?? String(kind);
 }
@@ -363,13 +361,13 @@ export function compareLook(kind: CompareObject): NodeLook {
 export function compareLabel(kind: CompareObject): string {
   switch (kind) {
     case "enum":
-      return "Enumeración";
+      return t("Enumeración");
     case "composite":
-      return "Tipo compuesto";
+      return t("Tipo compuesto");
     case "domain":
-      return "Dominio";
+      return t("Dominio");
     case "range":
-      return "Rango";
+      return t("Rango");
     default:
       return kindLabel(kind);
   }

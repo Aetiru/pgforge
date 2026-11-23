@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import DataGrid, { type Column } from "../DataGrid.svelte";
   import { connectionLevel } from "../health";
+  import { t } from "../i18n.svelte";
   import { count, duration, percent } from "../format";
   import { connectionReport, type ConnectionGroup, type ConnectionReport } from "../ipc";
   import { Loader } from "./loader.svelte";
@@ -34,18 +35,18 @@
   const level = $derived(report.data ? connectionLevel(report.data.total, usable) : "ok");
   const hidden = $derived(report.data?.groups.some((g) => g.user === null) ?? false);
 
-  const columns: Column<ConnectionGroup>[] = [
+  const columns = $derived<Column<ConnectionGroup>[]>([
     {
       key: "app",
-      header: "Aplicación",
+      header: t("Aplicación"),
       width: 220,
-      value: (g) => g.application ?? (g.user === null ? "(sin permiso para verlas)" : "(sin nombre)"),
+      value: (g) => g.application ?? (g.user === null ? t("(sin permiso para verlas)") : t("(sin nombre)")),
     },
-    { key: "user", header: "Rol", width: 140, value: (g) => g.user ?? "—" },
-    { key: "addr", header: "Dirección", width: 150, value: (g) => g.address ?? "local" },
+    { key: "user", header: t("Rol"), width: 140, value: (g) => g.user ?? "—" },
+    { key: "addr", header: t("Dirección"), width: 150, value: (g) => g.address ?? t("local") },
     {
       key: "total",
-      header: "Total",
+      header: t("Total"),
       width: 80,
       align: "right",
       value: (g) => count(g.total),
@@ -53,7 +54,7 @@
     },
     {
       key: "active",
-      header: "Activas",
+      header: t("Activas"),
       width: 90,
       align: "right",
       value: (g) => count(g.active),
@@ -61,7 +62,7 @@
     },
     {
       key: "idle",
-      header: "Inactivas",
+      header: t("Inactivas"),
       width: 100,
       align: "right",
       value: (g) => count(g.idle),
@@ -70,7 +71,7 @@
     },
     {
       key: "tx",
-      header: "En transacción",
+      header: t("En transacción"),
       width: 130,
       align: "right",
       value: (g) => count(g.idleInTransaction),
@@ -79,17 +80,17 @@
     },
     {
       key: "oldest",
-      header: "Inactiva más vieja",
+      header: t("Inactiva más vieja"),
       width: 160,
       align: "right",
       value: (g) => duration(g.oldestIdleSeconds),
       sort: (g) => g.oldestIdleSeconds ?? -1,
     },
-  ];
+  ]);
 </script>
 
 <PanelFrame
-  title="Conexiones"
+  title={t("Conexiones")}
   icon="plug"
   loading={report.loading}
   loadedAt={report.loadedAt}
@@ -102,8 +103,8 @@
       <div class="flex flex-col gap-1">
         <div class="flex items-baseline gap-2 text-xs">
           <span class="text-base font-semibold">{count(r.total)}</span>
-          <span class="muted">de {count(usable)} disponibles</span>
-          <span class="muted">· máximo {count(r.maxConnections)}, {count(r.reserved)} reservadas a superusuarios</span>
+          <span class="muted">{t("de {n} disponibles", { n: count(usable) })}</span>
+          <span class="muted">· {t("máximo {max}, {reserved} reservadas a superusuarios", { max: count(r.maxConnections), reserved: count(r.reserved) })}</span>
         </div>
         <div class="h-2 rounded bg-zinc-200 dark:bg-zinc-700">
           <div
@@ -115,8 +116,8 @@
       </div>
       {#if hidden}
         <p class="text-xs muted">
-          Este rol no ve el detalle de las sesiones de otros roles: solo cuenta cuántas son. Hace
-          falta el rol <span class="font-mono">pg_read_all_stats</span> para ver de quién son.
+          {t("Este rol no ve el detalle de las sesiones de otros roles: solo cuenta cuántas son.")}
+          {t("Hace falta el rol")} <span class="font-mono">pg_read_all_stats</span> {t("para ver de quién son.")}
         </p>
       {/if}
     {/if}
@@ -126,7 +127,7 @@
         rows={report.data?.groups ?? []}
         rowKey={(g) => `${g.application}|${g.user}|${g.address}`}
         sortable
-        empty="No hay conexiones de usuarios."
+        empty={t("No hay conexiones de usuarios.")}
       />
     </div>
   </div>

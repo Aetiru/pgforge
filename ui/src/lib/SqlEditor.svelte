@@ -19,6 +19,7 @@
   } from "@codemirror/view";
   import { basicSetup } from "codemirror";
   import { untrack } from "svelte";
+  import { t } from "./i18n.svelte";
   import { sqlHighlight } from "./sql-highlight";
   import { sqlNesting } from "./sql-nested";
   import { errorMarkField, markOf, setErrorMark, toEditorIndex } from "./sql-error-mark";
@@ -859,7 +860,7 @@
     const text = view.state.doc.toString();
     const range = rangeToRun(text, view.state.selection.main.head, kind);
     if (!range) {
-      flashNotice(view, kind === "until" ? "No hay ninguna sentencia hasta acá." : "No hay ninguna sentencia desde acá.");
+      flashNotice(view, kind === "until" ? t("No hay ninguna sentencia hasta acá.") : t("No hay ninguna sentencia desde acá."));
       return;
     }
     onrunrange?.(range);
@@ -869,7 +870,7 @@
     if (!view) return;
     const spec = starTransaction(view.state, relations);
     if (!spec) {
-      flashNotice(view, "No hay un * para expandir acá, o falta conocer alguna tabla del FROM.");
+      flashNotice(view, t("No hay un * para expandir acá, o falta conocer alguna tabla del FROM."));
       return;
     }
     view.dispatch(view.state.update(spec));
@@ -889,7 +890,7 @@
       body = found?.text ?? "";
     }
     if (body.trim() === "") {
-      if (view) flashNotice(view, "No hay nada que guardar: selecciona SQL o ponte sobre una sentencia.");
+      if (view) flashNotice(view, t("No hay nada que guardar: selecciona SQL o ponte sobre una sentencia."));
       return;
     }
     onsavesnippet?.(body);
@@ -908,7 +909,7 @@
     if (!view) return;
     const spec = transformTransaction(view.state, kind);
     if (!spec) {
-      flashNotice(view, "El texto ya está así: no hay nada que cambiar.");
+      flashNotice(view, t("El texto ya está así: no hay nada que cambiar."));
       return;
     }
     view.dispatch(view.state.update(spec));
@@ -924,7 +925,7 @@
     try {
       const list = pasteAsList(await navigator.clipboard.readText());
       if (list === null) {
-        flashNotice(view, "Lo copiado no es una columna: pega normal con Ctrl+V.");
+        flashNotice(view, t("Lo copiado no es una columna: pega normal con Ctrl+V."));
         return;
       }
       view.dispatch(
@@ -932,7 +933,7 @@
       );
       view.focus();
     } catch {
-      flashNotice(view, "No se pudo leer el portapapeles: usa Ctrl+Mayús+V.");
+      flashNotice(view, t("No se pudo leer el portapapeles: usa Ctrl+Mayús+V."));
     }
   }
 
@@ -945,7 +946,7 @@
     const text = view.state.doc.toString();
     const info = aliasAt(text, pos);
     if (!info) {
-      flashNotice(view, "No hay un alias ni una CTE bajo el cursor.");
+      flashNotice(view, t("No hay un alias ni una CTE bajo el cursor."));
       return;
     }
     renaming = { info, pos, text };
@@ -958,7 +959,7 @@
     // Todas las apariciones en una sola transacción: un `Ctrl+Z` las deshace juntas. Si el texto
     // cambió mientras el diálogo estaba abierto, las posiciones ya no valen y no se toca nada.
     if (view.state.doc.toString() !== current.text) {
-      flashNotice(view, "El texto cambió mientras tanto: vuelve a pedir el renombrado.");
+      flashNotice(view, t("El texto cambió mientras tanto: vuelve a pedir el renombrado."));
       return;
     }
     view.dispatch(

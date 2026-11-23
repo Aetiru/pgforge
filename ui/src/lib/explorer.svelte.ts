@@ -1,3 +1,4 @@
+import { t } from "./i18n.svelte";
 import {
   connect as ipcConnect,
   disconnect as ipcDisconnect,
@@ -119,10 +120,12 @@ function serverRow(profile: ConnectionProfile, level: number): Row {
 function groupDetail(servers: Row[]): string {
   // Una carpeta recién creada todavía no tiene nada: decirlo con palabras es más claro que un «0»
   // y le explica al usuario que ahí adentro se arrastran servidores.
-  if (servers.length === 0) return "vacía";
+  if (servers.length === 0) return t("vacía");
   const connected = servers.filter((server) => server.connected).length;
   return connected > 0
-    ? `${servers.length} · ${connected} conectado${connected === 1 ? "" : "s"}`
+    ? connected === 1
+      ? t("{total} · 1 conectado", { total: servers.length })
+      : t("{total} · {connected} conectados", { total: servers.length, connected })
     : `${servers.length}`;
 }
 
@@ -134,7 +137,7 @@ function groupDetail(servers: Row[]): string {
  * cantidad de filas. Solo aparece si hay al menos una carpeta: sin ninguna, «sin carpeta» sería el
  * título de la lista entera.
  */
-const LOOSE_LABEL = "Sin carpeta";
+const looseLabel = () => t("Sin carpeta");
 
 /**
  * Las carpetas anidan con `/`: `Clientes/ACME` se dibuja adentro de `Clientes`.
@@ -190,7 +193,7 @@ function groupRow(name: string | null, level: number, children: Row[]): Row {
     group: name ?? undefined,
     node: null,
     level,
-    label: name === null ? LOOSE_LABEL : leafName(name),
+    label: name === null ? looseLabel() : leafName(name),
     detail: groupDetail(serversUnder(children)),
     hasChildren: children.length > 0,
     // Si estaba cerrada la última vez, sigue cerrada: es lo primero que se toca cuando hay veinte
@@ -687,7 +690,7 @@ class Explorer {
     const row = this.rowFor(profileId);
     if (!row || !row.connected || row.down) return;
     row.down = true;
-    row.error = "sin conexión";
+    row.error = t("sin conexión");
   }
 
   /** `true` si el servidor está marcado como caído. */
@@ -748,7 +751,9 @@ class Explorer {
         shown = visible.shown;
         row.hiddenCount = visible.hiddenCount;
         row.detail =
-          visible.hiddenCount > 0 ? `${shown.length} de ${nodes.length}` : String(nodes.length);
+          visible.hiddenCount > 0
+            ? t("{shown} de {total}", { shown: shown.length, total: nodes.length })
+            : String(nodes.length);
       }
       row.children = this.arrange(
         row,

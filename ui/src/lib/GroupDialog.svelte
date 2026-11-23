@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Icon from "./Icon.svelte";
@@ -26,13 +27,13 @@
   const target = $derived(normalizeGroup(value));
 
   function validate(): string | null {
-    if (!target) return "Poné un nombre, o deshacé la carpeta si no la querés más.";
+    if (!target) return t("Poné un nombre, o deshacé la carpeta si no la querés más.");
     if (target !== name && explorer.groups.includes(target)) {
-      return `Ya existe una carpeta «${target}».`;
+      return t("Ya existe una carpeta «{name}».", { name: target });
     }
     // Meterla adentro de sí misma no tiene destino posible: la carpeta que la contendría es ella.
     if (target !== name && target.startsWith(`${name}/`)) {
-      return "Una carpeta no puede quedar adentro de sí misma.";
+      return t("Una carpeta no puede quedar adentro de sí misma.");
     }
     return null;
   }
@@ -62,14 +63,16 @@
 </script>
 
 <Modal
-  title="Carpeta «{name}»"
-  subtitle="{servers.length} {servers.length === 1 ? 'servidor' : 'servidores'}"
+  title={t("Carpeta «{name}»", { name })}
+  subtitle={servers.length === 1
+    ? t("{n} servidor", { n: servers.length })
+    : t("{n} servidores", { n: servers.length })}
   size="sm"
   {busy}
   {onclose}
 >
   <label class="flex flex-col gap-1">
-    <span class="label">Nombre</span>
+    <span class="label">{t("Nombre")}</span>
     <input
       class="field"
       data-autofocus
@@ -81,9 +84,9 @@
   </label>
 
   <p class="mt-2 text-xs muted">
-    La carpeta agrupa conexiones guardadas: no toca nada en los servidores. Se puede arrastrar un
-    servidor del árbol para meterlo o sacarlo. Una barra anida: renombrarla a «Clientes/ACME» la
-    mueve adentro de «Clientes», y lo que ya tenga adentro se muda con ella.
+    {t(
+      "La carpeta agrupa conexiones guardadas: no toca nada en los servidores. Se puede arrastrar un servidor del árbol para meterlo o sacarlo. Una barra anida: renombrarla a «Clientes/ACME» la mueve adentro de «Clientes», y lo que ya tenga adentro se muda con ella.",
+    )}
   </p>
 
   {#if servers.length > 0}
@@ -108,12 +111,12 @@
          que tenga adentro suben un escalón. -->
     <button class="btn btn-danger-ghost" disabled={busy} onclick={() => run(undefined)}>
       <Icon name="trash" size={12} />
-      Deshacer la carpeta
+      {t("Deshacer la carpeta")}
     </button>
-    <button class="btn ml-auto" disabled={busy} onclick={onclose}>Cancelar</button>
+    <button class="btn ml-auto" disabled={busy} onclick={onclose}>{t("Cancelar")}</button>
     <button class="btn btn-primary" disabled={busy} onclick={submit}>
       {#if busy}<span class="spinner"></span>{/if}
-      Guardar
+      {t("Guardar")}
     </button>
   {/snippet}
 </Modal>

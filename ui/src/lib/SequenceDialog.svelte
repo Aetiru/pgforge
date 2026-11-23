@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
@@ -109,21 +110,21 @@
   }
 
   function validate(): string | null {
-    if (!existing && !name.trim()) return "Poné un nombre para la secuencia.";
+    if (!existing && !name.trim()) return t("Poné un nombre para la secuencia.");
     for (const [label, text] of [
-      ["El incremento", increment],
-      ["El mínimo", minValue],
-      ["El máximo", maxValue],
-      ["El valor inicial", start],
-      ["El caché", cache],
-      ["El reinicio", restart],
+      [t("El incremento"), increment],
+      [t("El mínimo"), minValue],
+      [t("El máximo"), maxValue],
+      [t("El valor inicial"), start],
+      [t("El caché"), cache],
+      [t("El reinicio"), restart],
     ] as const) {
-      if (text.trim() !== "" && num(text) === null) return `${label} tiene que ser un entero.`;
+      if (text.trim() !== "" && num(text) === null) return t("{label} tiene que ser un entero.", { label });
     }
-    if (num(increment) === 0) return "El incremento no puede ser cero.";
+    if (num(increment) === 0) return t("El incremento no puede ser cero.");
     const min = num(minValue);
     const max = num(maxValue);
-    if (min !== null && max !== null && min > max) return "El mínimo es mayor que el máximo.";
+    if (min !== null && max !== null && min > max) return t("El mínimo es mayor que el máximo.");
     return null;
   }
 
@@ -160,7 +161,7 @@
       return;
     }
 
-    if (!(await confirmMutation(profileId, "Se va a modificar una secuencia.", sqlToApply))) return;
+    if (!(await confirmMutation(profileId, t("Se va a modificar una secuencia."), sqlToApply))) return;
 
     saving = true;
     try {
@@ -175,7 +176,7 @@
 </script>
 
 <Modal
-  title={existing ? `Editar ${existing.name}` : "Nueva secuencia"}
+  title={existing ? t("Editar {name}", { name: existing.name }) : t("Nueva secuencia")}
   subtitle={schema}
   size="lg"
   busy={saving}
@@ -184,17 +185,17 @@
   {#if loading}
     <p class="flex items-center justify-center gap-2 py-8 text-sm muted">
       <span class="spinner"></span>
-      Leyendo la definición…
+      {t("Leyendo la definición…")}
     </p>
   {:else}
     <div class="grid grid-cols-2 gap-3">
       <label class="flex flex-col gap-1">
-        <span class="label">Nombre</span>
+        <span class="label">{t("Nombre")}</span>
         <input class="field" data-autofocus bind:value={name} disabled={existing !== null} />
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="label">Tipo</span>
+        <span class="label">{t("Tipo")}</span>
         <select class="field" bind:value={dataType}>
           {#each TYPES as type (type)}
             <option value={type}>{type}</option>
@@ -205,53 +206,51 @@
 
     <div class="mt-3 grid grid-cols-3 gap-3">
       <label class="flex flex-col gap-1">
-        <span class="label">Incremento</span>
+        <span class="label">{t("Incremento")}</span>
         <input class="field" bind:value={increment} />
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="label">Valor inicial</span>
+        <span class="label">{t("Valor inicial")}</span>
         <input class="field" bind:value={start} />
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="label">Caché</span>
+        <span class="label">{t("Caché")}</span>
         <input class="field" bind:value={cache} />
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="label">Mínimo</span>
-        <input class="field" bind:value={minValue} placeholder="lo elige el servidor" />
+        <span class="label">{t("Mínimo")}</span>
+        <input class="field" bind:value={minValue} placeholder={t("lo elige el servidor")} />
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="label">Máximo</span>
-        <input class="field" bind:value={maxValue} placeholder="lo elige el servidor" />
+        <span class="label">{t("Máximo")}</span>
+        <input class="field" bind:value={maxValue} placeholder={t("lo elige el servidor")} />
       </label>
 
       <label class="check self-end pb-2">
         <input type="checkbox" bind:checked={cycle} />
-        Vuelve a empezar al llegar al tope
+        {t("Vuelve a empezar al llegar al tope")}
       </label>
     </div>
 
     {#if existing}
       <div class="divider-t mt-4 pt-3">
         <label class="flex flex-col gap-1">
-          <span class="label">Reiniciar ahora</span>
-          <input class="field" bind:value={restart} placeholder="dejalo vacío para no moverla" />
+          <span class="label">{t("Reiniciar ahora")}</span>
+          <input class="field" bind:value={restart} placeholder={t("dejalo vacío para no moverla")} />
         </label>
         <p class="mt-1 text-xs muted">
-          El valor inicial dice a dónde vuelve la secuencia cuando alguien la reinicie; esto la mueve
-          ahora.
+          {t("El valor inicial dice a dónde vuelve la secuencia cuando alguien la reinicie; esto la mueve ahora.")}
           {#if info}
-            Valor actual: {info.lastValue ?? "sin usar todavía"}.
+            {t("Valor actual: {value}.", { value: info.lastValue ?? t("sin usar todavía") })}
           {/if}
         </p>
         {#if info?.ownedBy}
           <p class="mt-2 text-xs muted">
-            Pertenece a {info.ownedBy.schema}.{info.ownedBy.table}.{info.ownedBy.column}: al borrar
-            esa columna se borra la secuencia con ella.
+            {t("Pertenece a {owner}: al borrar esa columna se borra la secuencia con ella.", { owner: `${info.ownedBy.schema}.${info.ownedBy.table}.${info.ownedBy.column}` })}
           </p>
         {/if}
       </div>
@@ -268,12 +267,12 @@
 
   {#snippet footer()}
     <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving || loading}>
-      Ver SQL
+      {t("Ver SQL")}
     </button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving || loading}>
       {#if saving}<span class="spinner"></span>{/if}
-      {existing ? "Guardar" : "Crear"}
+      {existing ? t("Guardar") : t("Crear")}
     </button>
   {/snippet}
 </Modal>

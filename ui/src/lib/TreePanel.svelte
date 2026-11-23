@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
@@ -205,7 +206,9 @@
     if (
       !(await confirmMutation(
         first.row.profileId,
-        `Se va a correr VACUUM ANALYZE sobre ${markedObjectRefs.length} tablas.`,
+        t("Se va a correr VACUUM ANALYZE sobre {count} tablas.", {
+          count: markedObjectRefs.length,
+        }),
       ))
     ) {
       return;
@@ -236,7 +239,7 @@
       const shapes = await Promise.all(
         picked.map(({ row, ref }) => dataOpen(row.profileId, ref.oid, ref.database)),
       );
-      const tab = await openQuery(first.row.profileId, first.ref.database, "Consulta");
+      const tab = await openQuery(first.row.profileId, first.ref.database, t("Consulta"));
       tab.sql = shapes.map((shape) => buildSql(shape, "select")).join("\n");
     } catch (error) {
       bulkError = describeError(error);
@@ -977,7 +980,7 @@
   bind:clientHeight={viewportHeight}
   role="tree"
   tabindex="0"
-  aria-label="Servidores y objetos"
+  aria-label={t("Servidores y objetos")}
   aria-activedescendant={explorer.selected ? `tree-${explorer.selected.key}` : undefined}
 >
   <div bind:clientHeight={alertH}>
@@ -995,7 +998,7 @@
     -->
     <Empty
       icon="warn"
-      title="No se pudo abrir este workspace"
+      title={t("No se pudo abrir este workspace")}
       hint={explorer.workspaceError}
     />
   {:else if explorer.hits !== null}
@@ -1007,15 +1010,16 @@
     <div class="flex items-center gap-2 px-3 py-1.5 text-[10px] muted">
       {#if explorer.searching}
         <span class="spinner"></span>
-        <span>Buscando en el servidor…</span>
+        <span>{t("Buscando en el servidor…")}</span>
       {:else}
         <span>
-          {explorer.hits.length}
-          {explorer.hits.length === 1 ? "coincidencia" : "coincidencias"} en el servidor
+          {explorer.hits.length === 1
+            ? t("{count} coincidencia en el servidor", { count: explorer.hits.length })
+            : t("{count} coincidencias en el servidor", { count: explorer.hits.length })}
         </span>
       {/if}
       <button class="btn btn-ghost btn-sm ml-auto" onclick={() => explorer.clearHits()}>
-        Volver al árbol
+        {t("Volver al árbol")}
       </button>
     </div>
 
@@ -1024,8 +1028,11 @@
     {:else if explorer.hits.length === 0 && !explorer.searching}
       <Empty
         icon="search"
-        title="Sin coincidencias en el servidor"
-        hint="No hay ninguna tabla, vista, secuencia, función ni tipo cuyo nombre contenga «{explorer.search}» en esa base."
+        title={t("Sin coincidencias en el servidor")}
+        hint={t(
+          "No hay ninguna tabla, vista, secuencia, función ni tipo cuyo nombre contenga \"{search}\" en esa base.",
+          { search: explorer.search },
+        )}
       />
     {:else}
       {#each explorer.hits as hit (`${hit.schema}.${hit.oid}`)}
@@ -1033,7 +1040,7 @@
         <button
           class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 pl-3 text-left text-[13px]
                  hover:bg-zinc-100 dark:hover:bg-zinc-700/70"
-          title="Revelar en el árbol"
+          title={t("Revelar en el árbol")}
           onclick={() => explorer.revealHit(hit)}
         >
           <Icon name={look.icon} class={look.tone} />
@@ -1048,36 +1055,39 @@
   {:else if explorer.roots.length === 0}
     <Empty
       icon="server"
-      title="Todavía no hay servidores"
-      hint="Agregá una conexión para empezar a explorar sus bases, esquemas y tablas."
+      title={t("Todavía no hay servidores")}
+      hint={t("Agregá una conexión para empezar a explorar sus bases, esquemas y tablas.")}
     >
       {#if onnew}
         <button class="btn btn-primary" onclick={onnew}>
           <Icon name="plus" size={12} />
-          Nuevo servidor
+          {t("Nuevo servidor")}
         </button>
       {/if}
     </Empty>
   {:else if rows.length === 0 && explorer.onlyConnected && needle === ""}
     <Empty
       icon="plug"
-      title="Ningún servidor conectado"
-      hint="El árbol está mostrando solo los servidores conectados y todavía no hay ninguno."
+      title={t("Ningún servidor conectado")}
+      hint={t("El árbol está mostrando solo los servidores conectados y todavía no hay ninguno.")}
     >
       <button class="btn" onclick={() => (explorer.onlyConnected = false)}>
-        Mostrar todos los servidores
+        {t("Mostrar todos los servidores")}
       </button>
     </Empty>
   {:else if rows.length === 0}
     <Empty
       icon="search"
-      title="Sin coincidencias"
-      hint="La búsqueda solo alcanza a lo que ya se cargó del árbol: abrí los nodos donde puede estar «{explorer.search}»."
+      title={t("Sin coincidencias")}
+      hint={t(
+        "La búsqueda solo alcanza a lo que ya se cargó del árbol: abrí los nodos donde puede estar \"{search}\".",
+        { search: explorer.search },
+      )}
     >
       {#if explorer.onlyConnected}
         <!-- Con el filtro puesto, lo que falta puede estar en un servidor que el árbol no muestra. -->
         <button class="btn" onclick={() => (explorer.onlyConnected = false)}>
-          Buscar también en los servidores sin conectar
+          {t("Buscar también en los servidores sin conectar")}
         </button>
       {/if}
     </Empty>
@@ -1088,14 +1098,14 @@
              o tres que se usan estaban enterrados. Acceso directo, no una segunda copia del árbol. -->
         <div class="border-b border-zinc-200/80 pb-1 dark:border-zinc-700">
           <p class="px-3 pt-1.5 pb-0.5 text-[10px] font-semibold tracking-wide uppercase muted">
-            Fijados
+            {t("Fijados")}
           </p>
           {#each pinnedRows as row (row.key)}
             {@const environment = environmentOf(row.profileId)}
             <button
               class="flex w-full items-center gap-1.5 py-1 pr-2 pl-3 text-left text-[13px]
                      hover:bg-zinc-100 dark:hover:bg-zinc-700/70"
-              title={row.connected ? "Ir al servidor" : "Conectar"}
+              title={row.connected ? t("Ir al servidor") : t("Conectar")}
               onclick={() => {
                 if (explorer.needsConnection(row)) {
                   onconnect(row.profileId);
@@ -1129,7 +1139,7 @@
         -->
         <div class="border-b border-zinc-200/80 pb-1.5 dark:border-zinc-700">
           <div class="flex items-center px-3 pt-1.5 pb-1">
-            <p class="text-[10px] font-semibold tracking-wide uppercase muted">Recientes</p>
+            <p class="text-[10px] font-semibold tracking-wide uppercase muted">{t("Recientes")}</p>
             <!-- Con varias bases conectadas la lista llegaba a seis filas de dos líneas y empujaba el
                  árbol fuera de la primera pantalla: se ven tres y el resto está a un clic. -->
             {#if recentRows.length > RECENTS_SHOWN}
@@ -1137,7 +1147,9 @@
                 class="ml-auto text-[10px] muted underline-offset-2 hover:underline"
                 onclick={() => (recentsAll = !recentsAll)}
               >
-                {recentsAll ? "ver menos" : `ver ${recentRows.length - RECENTS_SHOWN} más`}
+                {recentsAll
+                  ? t("ver menos")
+                  : t("ver {count} más", { count: recentRows.length - RECENTS_SHOWN })}
               </button>
             {/if}
           </div>
@@ -1188,8 +1200,8 @@
               <button
                 class="btn btn-ghost btn-icon size-5 shrink-0 opacity-0 group-hover/recent:opacity-100
                        focus-visible:opacity-100"
-                title="Quitar de recientes"
-                aria-label="Quitar de recientes"
+                title={t("Quitar de recientes")}
+                aria-label={t("Quitar de recientes")}
                 tabindex="-1"
                 onclick={(event) => {
                   event.stopPropagation();
@@ -1205,8 +1217,9 @@
 
       {#if needle !== ""}
         <p class="px-3 py-1.5 text-[10px] muted">
-          {rows.length}
-          {rows.length === 1 ? "coincidencia" : "coincidencias"} entre lo ya cargado
+          {rows.length === 1
+            ? t("{count} coincidencia entre lo ya cargado", { count: rows.length })
+            : t("{count} coincidencias entre lo ya cargado", { count: rows.length })}
         </p>
       {/if}
     </div>
@@ -1229,7 +1242,7 @@
                  text-[10px] font-semibold tracking-wide uppercase muted dark:bg-zinc-800"
           style="height: {SECTION_HEIGHT}px; padding-left: {INDENT_BASE +
             sticky.level * INDENT + 22}px"
-          title="Ir a {sticky.label}"
+          title={t("Ir a {name}", { name: sticky.label })}
           tabindex="-1"
           onclick={() => {
             const at = rows.findIndex((row) => row.key === sticky!.key);
@@ -1387,8 +1400,12 @@
               if (row.loading) explorer.cancelLoad(row);
               else explorer.toggle(row);
             }}
-            aria-label={row.loading ? "Cancelar la lectura" : row.expanded ? "Contraer" : "Expandir"}
-            title={row.loading ? "Cancelar la lectura" : undefined}
+            aria-label={row.loading
+              ? t("Cancelar la lectura")
+              : row.expanded
+                ? t("Contraer")
+                : t("Expandir")}
+            title={row.loading ? t("Cancelar la lectura") : undefined}
             tabindex="-1"
             disabled={!row.loading && (!row.hasChildren || explorer.needsConnection(row))}
           >
@@ -1434,10 +1451,10 @@
                   class="dot absolute -right-1 -bottom-1 ring-2 ring-zinc-50 dark:ring-zinc-900
                          {row.down ? 'dot-down' : row.connected ? 'dot-on' : 'dot-off'}"
                   title={row.down
-                    ? "El servidor dejó de responder"
+                    ? t("El servidor dejó de responder")
                     : row.connected
-                      ? "Conectado"
-                      : "Sin conectar"}
+                      ? t("Conectado")
+                      : t("Sin conectar")}
                 ></span>
               {/if}
             </span>
@@ -1518,7 +1535,7 @@
                     class="shrink-0 font-mono tabular-nums {latencyMs < LATENCY_WARN_MS
                       ? 'text-emerald-600 dark:text-emerald-400'
                       : 'text-amber-600 dark:text-amber-400'}"
-                    title="Ida y vuelta contra el servidor: {latencyMs} ms"
+                    title={t("Ida y vuelta contra el servidor: {ms} ms", { ms: latencyMs })}
                   >
                     {latencyMs}&nbsp;ms
                   </span>
@@ -1569,8 +1586,8 @@
               <button
                 class="btn btn-ghost btn-icon size-6 opacity-0 focus-visible:opacity-100
                        group-hover:opacity-100"
-                title="Renombrar o deshacer la carpeta"
-                aria-label="Editar la carpeta"
+                title={t("Renombrar o deshacer la carpeta")}
+                aria-label={t("Editar la carpeta")}
                 tabindex="-1"
                 onclick={(event) => {
                   event.stopPropagation();
@@ -1585,8 +1602,8 @@
               <button
                 class="btn btn-ghost btn-icon size-6 opacity-0 focus-visible:opacity-100
                        group-hover:opacity-100"
-                title="Volver a leer este nodo del servidor"
-                aria-label="Recargar"
+                title={t("Volver a leer este nodo del servidor")}
+                aria-label={t("Recargar")}
                 tabindex="-1"
                 onclick={(event) => {
                   event.stopPropagation();
@@ -1608,8 +1625,8 @@
                 <button
                   class="btn btn-ghost btn-icon size-6 opacity-0 focus-visible:opacity-100
                          group-hover:opacity-100"
-                  title="Nueva consulta"
-                  aria-label="Nueva consulta"
+                  title={t("Nueva consulta")}
+                  aria-label={t("Nueva consulta")}
                   tabindex="-1"
                   onclick={(event) => {
                     event.stopPropagation();
@@ -1622,8 +1639,8 @@
               <button
                 class="btn btn-ghost btn-icon size-6 opacity-0 focus-visible:opacity-100
                        group-hover:opacity-100"
-                title="Desconectar"
-                aria-label="Desconectar"
+                title={t("Desconectar")}
+                aria-label={t("Desconectar")}
                 tabindex="-1"
                 onclick={(event) => {
                   event.stopPropagation();
@@ -1639,8 +1656,8 @@
             {#if isServer && row.down}
               <button
                 class="btn btn-ghost btn-icon size-6 text-rose-600 dark:text-rose-400"
-                title="El servidor dejó de responder. Reconectar."
-                aria-label="Reconectar"
+                title={t("El servidor dejó de responder. Reconectar.")}
+                aria-label={t("Reconectar")}
                 tabindex="-1"
                 onclick={(event) => {
                   event.stopPropagation();
@@ -1660,8 +1677,8 @@
                        focus-visible:opacity-100 dark:text-blue-400 {isSelected
                   ? ''
                   : 'opacity-0'}"
-                title="Conectar"
-                aria-label="Conectar"
+                title={t("Conectar")}
+                aria-label={t("Conectar")}
                 tabindex="-1"
                 onclick={(event) => {
                   event.stopPropagation();
@@ -1683,8 +1700,8 @@
                 {#if object.hasRows}
                   <button
                     class="btn btn-ghost btn-icon size-6"
-                    title="Ver los datos"
-                    aria-label="Ver los datos"
+                    title={t("Ver los datos")}
+                    aria-label={t("Ver los datos")}
                     tabindex="-1"
                     onclick={(event) => {
                       event.stopPropagation();
@@ -1695,8 +1712,8 @@
                   </button>
                   <button
                     class="btn btn-ghost btn-icon size-6"
-                    title="Consulta nueva con un SELECT de esta tabla"
-                    aria-label="Consulta nueva"
+                    title={t("Consulta nueva con un SELECT de esta tabla")}
+                    aria-label={t("Consulta nueva")}
                     tabindex="-1"
                     onclick={(event) => {
                       event.stopPropagation();
@@ -1708,8 +1725,8 @@
                 {/if}
                 <button
                   class="btn btn-ghost btn-icon size-6"
-                  title="Copiar el nombre: {object.qualified}"
-                  aria-label="Copiar el nombre"
+                  title={t("Copiar el nombre: {name}", { name: object.qualified })}
+                  aria-label={t("Copiar el nombre")}
                   tabindex="-1"
                   onclick={(event) => {
                     event.stopPropagation();
@@ -1750,34 +1767,34 @@
       >
         <span class="min-w-0 truncate pl-1 text-[11px]">
           <b class="tabular-nums">{markedObjectRefs.length}</b>
-          tabla{markedObjectRefs.length === 1 ? "" : "s"} marcada{markedObjectRefs.length === 1 ? "" : "s"}
+          {markedObjectRefs.length === 1 ? t("tabla marcada") : t("tablas marcadas")}
         </span>
         <span class="divider-r h-4"></span>
-        <button class="btn btn-sm btn-ghost" title="Copiar los nombres, uno por línea" onclick={copyMarkedNames}>
-          Copiar nombres
+        <button class="btn btn-sm btn-ghost" title={t("Copiar los nombres, uno por línea")} onclick={copyMarkedNames}>
+          {t("Copiar nombres")}
         </button>
         <button
           class="btn btn-sm btn-ghost"
           disabled={markedObjectRefs.length > BULK_LIMIT}
           title={markedObjectRefs.length > BULK_LIMIT
-            ? `Hasta ${BULK_LIMIT} tablas`
-            : "Una consulta con el SELECT de cada una"}
+            ? t("Hasta {count} tablas", { count: BULK_LIMIT })
+            : t("Una consulta con el SELECT de cada una")}
           onclick={selectMarked}
         >
-          SELECT de todas
+          {t("SELECT de todas")}
         </button>
         <button
           class="btn btn-sm btn-ghost"
           disabled={isReadOnly(markedObjectRefs[0].row.profileId) || markedObjectRefs.length > BULK_LIMIT}
-          title="VACUUM ANALYZE de cada una, en segundo plano"
+          title={t("VACUUM ANALYZE de cada una, en segundo plano")}
           onclick={maintainMarked}
         >
-          Mantenimiento
+          {t("Mantenimiento")}
         </button>
         <button
           class="btn btn-ghost btn-icon ml-auto size-7"
-          title="Quitar las marcas"
-          aria-label="Quitar las marcas"
+          title={t("Quitar las marcas")}
+          aria-label={t("Quitar las marcas")}
           onclick={() => explorer.clearMarks()}
         >
           <Icon name="close" size={12} />
@@ -1792,21 +1809,22 @@
                p-1.5 text-[13px] dark:border-zinc-700 dark:bg-zinc-800"
       >
         <span class="min-w-0 truncate pl-1 text-[11px]">
-          <b class="tabular-nums">{markedCount}</b> marcado{markedCount === 1 ? "" : "s"}
+          <b class="tabular-nums">{markedCount}</b>
+          {markedCount === 1 ? t("marcado") : t("marcados")}
         </span>
         <span class="divider-r h-4"></span>
         <button
           class="btn btn-ghost btn-icon size-7"
-          title="Desconectar los {markedCount}"
-          aria-label="Desconectar los marcados"
+          title={t("Desconectar los {count}", { count: markedCount })}
+          aria-label={t("Desconectar los marcados")}
           onclick={disconnectMarked}
         >
           <Icon name="unplug" size={13} />
         </button>
         <button
           class="btn btn-ghost btn-icon size-7"
-          title="Mover a una carpeta"
-          aria-label="Mover a una carpeta"
+          title={t("Mover a una carpeta")}
+          aria-label={t("Mover a una carpeta")}
           aria-expanded={moveMenuOpen}
           onclick={(event) => {
             event.stopPropagation();
@@ -1817,8 +1835,8 @@
         </button>
         <button
           class="btn btn-ghost btn-icon ml-auto size-7"
-          title="Quitar las marcas"
-          aria-label="Quitar las marcas"
+          title={t("Quitar las marcas")}
+          aria-label={t("Quitar las marcas")}
           onclick={() => explorer.clearMarks()}
         >
           <Icon name="close" size={12} />
@@ -1834,7 +1852,7 @@
             tabindex="-1"
             onclick={(event) => event.stopPropagation()}
           >
-            <button class="row-menu" onclick={() => moveMarked(null)}>Sin carpeta</button>
+            <button class="row-menu" onclick={() => moveMarked(null)}>{t("Sin carpeta")}</button>
             {#if explorer.groups.length > 0}
               <div class="divider-t my-1"></div>
               {#each explorer.groups as group (group)}
@@ -1874,30 +1892,31 @@
     {#if menuIsServer && markedCount > 1}
       <button class="row-menu" onclick={disconnectMarked}>
         <span class="flex items-center gap-2">
-          <Icon name="unplug" size={13} /> Desconectar los {markedCount}
+          <Icon name="unplug" size={13} />
+          {t("Desconectar los {count}", { count: markedCount })}
         </span>
       </button>
       <p class="px-2 py-1 text-[10px] muted">
-        Arrastralos a una carpeta para moverlos todos juntos.
+        {t("Arrastralos a una carpeta para moverlos todos juntos.")}
       </p>
       <div class="divider-t my-1"></div>
     {/if}
 
     {#if explorer.needsConnection(menu.row)}
       <button class="row-menu" onclick={connect}>
-        <span class="flex items-center gap-2"><Icon name="plug" size={13} /> Conectar</span>
+        <span class="flex items-center gap-2"><Icon name="plug" size={13} /> {t("Conectar")}</span>
       </button>
     {:else if menuIsServer}
       <button class="row-menu" onclick={disconnect}>
         <span class="flex items-center gap-2">
-          <Icon name="unplug" size={13} /> Desconectar
+          <Icon name="unplug" size={13} /> {t("Desconectar")}
         </span>
       </button>
     {/if}
 
     {#if menuQuery}
       <button class="row-menu" onclick={newQuery}>
-        <span class="flex items-center gap-2"><Icon name="sql" size={13} /> Nueva consulta</span>
+        <span class="flex items-center gap-2"><Icon name="sql" size={13} /> {t("Nueva consulta")}</span>
         <span class="muted">Ctrl+Q</span>
       </button>
     {/if}
@@ -1911,13 +1930,13 @@
           if (row?.node) void openDatabase(row.profileId, row.node.label);
         }}
       >
-        <span class="flex items-center gap-2"><Icon name="database" size={13} /> Abrir la base</span>
+        <span class="flex items-center gap-2"><Icon name="database" size={13} /> {t("Abrir la base")}</span>
       </button>
     {/if}
 
     {#if menuQuery && menuData !== null}
       <button class="row-menu" onclick={openData}>
-        <span class="flex items-center gap-2"><Icon name="table" size={13} /> Ver los datos</span>
+        <span class="flex items-center gap-2"><Icon name="table" size={13} /> {t("Ver los datos")}</span>
       </button>
     {/if}
 
@@ -1926,34 +1945,34 @@
         <button class="row-menu" onclick={() => setOrder(mode.value)}>
           <span class="flex items-center gap-2">
             <span class="w-3 text-center">{treeView.order === mode.value ? "✓" : ""}</span>
-            {mode.label}
+            {t(mode.label)}
           </span>
         </button>
       {/each}
       <button class="row-menu" onclick={toggleGroup}>
         <span class="flex items-center gap-2">
           <span class="w-3 text-center">{treeView.group ? "✓" : ""}</span>
-          Agrupar por prefijo (fact_, dim_…)
+          {t("Agrupar por prefijo (fact_, dim_…)")}
         </span>
       </button>
     {/if}
 
     {#if menuSchemasFolder}
       <button class="row-menu" onclick={chooseSchemas}>
-        <span class="flex items-center gap-2"><Icon name="schema" size={13} /> Elegir esquemas visibles…</span>
+        <span class="flex items-center gap-2"><Icon name="schema" size={13} /> {t("Elegir esquemas visibles…")}</span>
       </button>
     {/if}
 
     {#if menuQuery && menuData !== null && menu?.row.node?.schema}
       <button class="row-menu" onclick={generateSql}>
-        <span class="flex items-center gap-2"><Icon name="sql" size={13} /> Generar SQL…</span>
+        <span class="flex items-center gap-2"><Icon name="sql" size={13} /> {t("Generar SQL…")}</span>
       </button>
     {/if}
 
     {#if menuTable}
       <button class="row-menu" onclick={compareData}>
         <span class="flex items-center gap-2">
-          <Icon name="compare" size={13} /> Comparar datos con otra tabla
+          <Icon name="compare" size={13} /> {t("Comparar datos con otra tabla")}
         </span>
       </button>
     {/if}
@@ -1961,22 +1980,22 @@
     {#if menuSchema}
       <button class="row-menu" onclick={openErd}>
         <span class="flex items-center gap-2">
-          <Icon name="diagram" size={13} /> Diagrama del esquema
+          <Icon name="diagram" size={13} /> {t("Diagrama del esquema")}
         </span>
       </button>
       <button class="row-menu" onclick={documentSchema}>
         <span class="flex items-center gap-2">
-          <Icon name="info" size={13} /> Documentar el esquema…
+          <Icon name="info" size={13} /> {t("Documentar el esquema…")}
         </span>
       </button>
       <button class="row-menu" onclick={compare}>
         <span class="flex items-center gap-2">
-          <Icon name="compare" size={13} /> Comparar con otro servidor
+          <Icon name="compare" size={13} /> {t("Comparar con otro servidor")}
         </span>
       </button>
       <button class="row-menu" onclick={openMatrix}>
         <span class="flex items-center gap-2">
-          <Icon name="role" size={13} /> Matriz de permisos
+          <Icon name="role" size={13} /> {t("Matriz de permisos")}
         </span>
       </button>
     {/if}
@@ -1984,14 +2003,14 @@
     {#if menuRole}
       <button class="row-menu" onclick={openRoleCapabilities}>
         <span class="flex items-center gap-2">
-          <Icon name="role" size={13} /> Qué puede hacer
+          <Icon name="role" size={13} /> {t("Qué puede hacer")}
         </span>
       </button>
     {/if}
 
     {#if menuName}
       <button class="row-menu" onclick={copyName}>
-        <span class="flex items-center gap-2"><Icon name="copy" size={13} /> Copiar el nombre</span>
+        <span class="flex items-center gap-2"><Icon name="copy" size={13} /> {t("Copiar el nombre")}</span>
       </button>
     {/if}
 
@@ -1999,7 +2018,7 @@
       <button class="row-menu" onclick={toggleBookmark}>
         <span class="flex items-center gap-2">
           <Icon name="star" size={13} />
-          {bookmarks.has(menuBookmark) ? "Quitar de marcadores" : "Agregar a marcadores"}
+          {bookmarks.has(menuBookmark) ? t("Quitar de marcadores") : t("Agregar a marcadores")}
         </span>
       </button>
     {/if}
@@ -2007,14 +2026,14 @@
     {#if menuIsServer}
       <button class="row-menu" onclick={copyUrl}>
         <span class="flex items-center gap-2">
-          <Icon name="copy" size={13} /> Copiar la cadena de conexión
+          <Icon name="copy" size={13} /> {t("Copiar la cadena de conexión")}
         </span>
       </button>
     {/if}
 
     {#if menu.row.hasChildren && !explorer.needsConnection(menu.row)}
       <button class="row-menu" onclick={reload}>
-        <span class="flex items-center gap-2"><Icon name="refresh" size={13} /> Refrescar</span>
+        <span class="flex items-center gap-2"><Icon name="refresh" size={13} /> {t("Refrescar")}</span>
       </button>
     {/if}
 
@@ -2036,27 +2055,27 @@
       >
         <span class="flex items-center gap-2">
           <Icon name="star" size={13} />
-          {menu && pins.has(menu.row.profileId) ? "Quitar de fijados" : "Fijar arriba"}
+          {menu && pins.has(menu.row.profileId) ? t("Quitar de fijados") : t("Fijar arriba")}
         </span>
       </button>
 
       {#if onedit}
         <button class="row-menu" onclick={editServer}>
-          <span class="flex items-center gap-2"><Icon name="edit" size={13} /> Editar</span>
+          <span class="flex items-center gap-2"><Icon name="edit" size={13} /> {t("Editar")}</span>
         </button>
       {/if}
 
       {#if onduplicate}
         <button class="row-menu" onclick={duplicateServer}>
           <span class="flex items-center gap-2">
-            <Icon name="copy" size={13} /> Duplicar
+            <Icon name="copy" size={13} /> {t("Duplicar")}
           </span>
         </button>
       {/if}
 
       {#if ondelete}
         <button class="row-menu text-rose-600 dark:text-rose-400" onclick={deleteServer}>
-          <span class="flex items-center gap-2"><Icon name="trash" size={13} /> Eliminar</span>
+          <span class="flex items-center gap-2"><Icon name="trash" size={13} /> {t("Eliminar")}</span>
         </button>
       {/if}
     {/if}

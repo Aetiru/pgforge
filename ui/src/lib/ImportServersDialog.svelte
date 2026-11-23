@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { pickOpen } from "./ipc";
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
@@ -95,7 +96,7 @@
    * en vez de sumarse a ella: es otra fuente, no un agregado a la que ya se trajo.
    */
   async function chooseDbeaverWorkspace() {
-    const root = await pickOpen({ directory: true, title: "Carpeta raíz del workspace de DBeaver" });
+    const root = await pickOpen({ directory: true, title: t("Carpeta raíz del workspace de DBeaver") });
     if (typeof root !== "string") return;
 
     loading = true;
@@ -166,8 +167,8 @@
 </script>
 
 <Modal
-  title="Importar servidores"
-  subtitle="De los archivos de libpq y de DBeaver"
+  title={t("Importar servidores")}
+  subtitle={t("De los archivos de libpq y de DBeaver")}
   size="lg"
   busy={saving}
   {onclose}
@@ -181,19 +182,19 @@
       onclick={chooseDbeaverWorkspace}
     >
       <Icon name="folder" size={12} />
-      Elegir carpeta de workspace de DBeaver…
+      {t("Elegir carpeta de workspace de DBeaver…")}
     </button>
   </div>
 
   {#if loading}
-    <p class="flex items-center gap-2 text-sm muted"><span class="spinner"></span> Buscando…</p>
+    <p class="flex items-center gap-2 text-sm muted"><span class="spinner"></span> {t("Buscando…")}</p>
   {:else if nuevos.length === 0}
     <Empty
       icon="server"
       title={candidates.length === 0
-        ? "No se encontró ningún servidor configurado"
-        : "Todos los que se encontraron ya están cargados"}
-      hint="Se miran ~/.pgpass, ~/.pg_service.conf y el data-sources.json de DBeaver."
+        ? t("No se encontró ningún servidor configurado")
+        : t("Todos los que se encontraron ya están cargados")}
+      hint={t("Se miran ~/.pgpass, ~/.pg_service.conf y el data-sources.json de DBeaver.")}
     />
   {:else}
     <div class="rounded-md border border-zinc-200 dark:border-zinc-700">
@@ -208,14 +209,14 @@
             <span class="min-w-0 flex-1 truncate">
               {candidate.name}
               <span class="muted">
-                · {candidate.user || user.trim() || "sin usuario"}@{candidate.host}:{candidate.port}/{candidate.database}
+                · {candidate.user || user.trim() || t("sin usuario")}@{candidate.host}:{candidate.port}/{candidate.database}
               </span>
             </span>
             {#if candidate.environment === "prod"}
-              <span class="tag tag-bad shrink-0">producción</span>
+              <span class="tag tag-bad shrink-0">{t("producción")}</span>
             {/if}
             {#if candidate.group}
-              <span class="tag tag-neutral shrink-0" title="Carpeta en la otra herramienta">
+              <span class="tag tag-neutral shrink-0" title={t("Carpeta en la otra herramienta")}>
                 {candidate.group}
               </span>
             {/if}
@@ -229,25 +230,24 @@
 
     <div class="mt-3 grid grid-cols-2 gap-3">
       <label class="flex flex-col gap-1">
-        <span class="label">Carpeta para todos</span>
-        <input class="field" bind:value={group} placeholder="la que ya tenían" />
+        <span class="label">{t("Carpeta para todos")}</span>
+        <input class="field" bind:value={group} placeholder={t("la que ya tenían")} />
       </label>
       <label class="flex flex-col gap-1">
         <span class="label">
-          Usuario {sinUsuario > 0 ? `(${sinUsuario} sin uno)` : "(solo si falta)"}
+          {t("Usuario")} {sinUsuario > 0 ? t("({n} sin uno)", { n: sinUsuario }) : t("(solo si falta)")}
         </span>
         <input class="field" bind:value={user} data-autofocus placeholder="postgres" />
       </label>
     </div>
 
     <p class="mt-2 text-xs muted">
-      No se importa ninguna contraseña, ni siquiera las que están en texto plano en «.pgpass»: se
-      piden al conectar y se guardan en el almacén del sistema solo si se pide recordarlas.
+      {t("No se importa ninguna contraseña, ni siquiera las que están en texto plano en «.pgpass»: se piden al conectar y se guardan en el almacén del sistema solo si se pide recordarlas.")}
     </p>
 
     {#if outOfWorkspaceScope}
       <Alert tone="warn" class="mt-2">
-        Esto no va a verse en esta ventana: queda fuera de «{explorer.workspace?.rootGroup}».
+        {t("Esto no va a verse en esta ventana: queda fuera de «{root}».", { root: explorer.workspace?.rootGroup ?? "" })}
       </Alert>
     {/if}
   {/if}
@@ -257,10 +257,10 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving || nuevos.length === 0}>
       {#if saving}<span class="spinner"></span>{/if}
-      Importar {chosen.size > 0 ? `(${nuevos.filter((c) => chosen.has(key(c))).length})` : ""}
+      {t("Importar")} {chosen.size > 0 ? `(${nuevos.filter((c) => chosen.has(key(c))).length})` : ""}
     </button>
   {/snippet}
 </Modal>

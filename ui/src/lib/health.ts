@@ -1,3 +1,4 @@
+import { t } from "./i18n.svelte";
 import type { Metrics } from "./ipc";
 
 /**
@@ -48,7 +49,11 @@ export function assessHealth(metrics: Metrics): Health {
     const percent = Math.round((metrics.totalConnections / metrics.maxConnections) * 100);
     issues.push({
       level: connections,
-      text: `Conexiones al ${percent} % del máximo (${metrics.totalConnections} de ${metrics.maxConnections})`,
+      text: t("Conexiones al {percent} % del máximo ({totalConnections} de {maxConnections})", {
+        percent,
+        totalConnections: metrics.totalConnections,
+        maxConnections: metrics.maxConnections,
+      }),
     });
   }
 
@@ -56,7 +61,7 @@ export function assessHealth(metrics: Metrics): Health {
     const n = metrics.waitingConnections;
     issues.push({
       level: "bad",
-      text: `${n} ${n === 1 ? "sesión espera" : "sesiones esperan"} a otra`,
+      text: n === 1 ? t("1 sesión espera a otra") : t("{n} sesiones esperan a otra", { n }),
     });
   }
 
@@ -64,16 +69,18 @@ export function assessHealth(metrics: Metrics): Health {
     const n = metrics.idleInTransaction;
     issues.push({
       level: "warn",
-      text: `${n} ${n === 1 ? "sesión" : "sesiones"} inactiva${n === 1 ? "" : "s"} en transacción: retienen candados sin trabajar`,
+      text: n === 1
+        ? t("1 sesión inactiva en transacción: retiene candados sin trabajar")
+        : t("{n} sesiones inactivas en transacción: retienen candados sin trabajar", { n }),
     });
   }
 
   const longest = metrics.longestTransactionSeconds;
   if (longest !== null) {
     if (longest > 3600) {
-      issues.push({ level: "bad", text: "Hay una transacción abierta hace más de una hora" });
+      issues.push({ level: "bad", text: t("Hay una transacción abierta hace más de una hora") });
     } else if (longest > 300) {
-      issues.push({ level: "warn", text: "Hay una transacción abierta hace más de cinco minutos" });
+      issues.push({ level: "warn", text: t("Hay una transacción abierta hace más de cinco minutos") });
     }
   }
 
@@ -82,7 +89,7 @@ export function assessHealth(metrics: Metrics): Health {
   if (metrics.cacheHitRatio !== null && metrics.cacheHitRatio < 0.9) {
     issues.push({
       level: "warn",
-      text: `Aciertos de caché en ${(metrics.cacheHitRatio * 100).toFixed(1)} %`,
+      text: t("Aciertos de caché en {ratio} %", { ratio: (metrics.cacheHitRatio * 100).toFixed(1) }),
     });
   }
 

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { pickSave } from "./ipc";
+  import { t } from "./i18n.svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
   import { tasks } from "./tasks.svelte";
@@ -30,30 +31,31 @@
 
   /** Nombre para el título y para proponer el archivo. */
   const label = $derived(
-    source.kind === "table" ? `${source.schema}.${source.table}` : "resultado de la consulta",
+    source.kind === "table" ? `${source.schema}.${source.table}` : t("resultado de la consulta"),
   );
-  const fileName = $derived(source.kind === "table" ? source.table : "consulta");
+  const fileName = $derived(source.kind === "table" ? source.table : t("consulta"));
 
-  const FORMATS: { value: CopyFormat; label: string; hint: string; extension: string }[] = [
+  const FORMATS = $derived<{ value: CopyFormat; label: string; hint: string; extension: string }[]>([
+
     {
       value: "csv",
       label: "CSV",
-      hint: "valores separados por comas, con comillas donde hace falta",
+      hint: t("valores separados por comas, con comillas donde hace falta"),
       extension: "csv",
     },
     {
       value: "text",
-      label: "Texto",
-      hint: "el formato de COPY: campos separados por tabulador, sin comillas",
+      label: t("Texto"),
+      hint: t("el formato de COPY: campos separados por tabulador, sin comillas"),
       extension: "tsv",
     },
     {
       value: "binary",
-      label: "Binario",
-      hint: "compacto, pero no portable entre versiones de PostgreSQL",
+      label: t("Binario"),
+      hint: t("compacto, pero no portable entre versiones de PostgreSQL"),
       extension: "bin",
     },
-  ];
+  ]);
 
   let format = $state<CopyFormat>("csv");
   let path = $state("");
@@ -105,7 +107,7 @@
 
   async function choose() {
     const chosen = await pickSave({
-      title: "Dónde guardar la exportación",
+      title: t("Dónde guardar la exportación"),
       defaultPath: `${fileName}.${FORMATS.find((f) => f.value === format)?.extension}`,
     });
     if (typeof chosen === "string") path = chosen;
@@ -123,7 +125,7 @@
   }
 </script>
 
-<Modal title="Exportar" subtitle={label} size="lg" {onclose}>
+<Modal title={t("Exportar")} subtitle={label} size="lg" {onclose}>
   <div class="seg" role="tablist">
     {#each FORMATS as item (item.value)}
       <button
@@ -141,38 +143,38 @@
 
   <div class="mt-3 flex items-end gap-2">
     <label class="flex min-w-0 flex-1 flex-col gap-1">
-      <span class="label">Archivo</span>
+      <span class="label">{t("Archivo")}</span>
       <input
         class="field font-mono text-xs"
         bind:value={path}
         readonly
-        title="La ruta se elige con el botón: solo se aceptan rutas elegidas en el diálogo del sistema"
+        title={t("La ruta se elige con el botón: solo se aceptan rutas elegidas en el diálogo del sistema")}
       />
     </label>
-    <button class="btn" onclick={choose}>Elegir…</button>
+    <button class="btn" onclick={choose}>{t("Elegir…")}</button>
   </div>
 
   {#if !isBinary}
     {#if isCsv}
       <label class="check mt-3">
         <input type="checkbox" bind:checked={header} />
-        Primera línea con los nombres de columna
+        {t("Primera línea con los nombres de columna")}
       </label>
     {/if}
 
     <div class="mt-3 flex flex-wrap gap-4">
       <label class="flex flex-col gap-1">
-        <span class="label">Delimitador</span>
+        <span class="label">{t("Delimitador")}</span>
         <input
           class="field w-20 font-mono"
           maxlength="1"
           bind:value={delimiter}
-          placeholder={isCsv ? "," : "tab"}
+          placeholder={isCsv ? "," : t("tab")}
         />
       </label>
       {#if isCsv}
         <label class="flex flex-col gap-1">
-          <span class="label">Comillas</span>
+          <span class="label">{t("Comillas")}</span>
           <input
             class="field w-20 font-mono"
             maxlength="1"
@@ -182,11 +184,11 @@
         </label>
       {/if}
       <label class="flex flex-col gap-1">
-        <span class="label">Texto para NULL</span>
+        <span class="label">{t("Texto para NULL")}</span>
         <input
           class="field w-28 font-mono"
           bind:value={nullText}
-          placeholder={isCsv ? "(vacío)" : "\\N"}
+          placeholder={isCsv ? t("(vacío)") : "\\N"}
         />
       </label>
     </div>
@@ -202,13 +204,13 @@
   {/if}
 
   <p class="mt-2 text-xs muted">
-    Corre en segundo plano: se sigue y se cancela desde la vista de procesos.
+    {t("Corre en segundo plano: se sigue y se cancela desde la vista de procesos.")}
   </p>
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose}>Cerrar</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cerrar")}</button>
     <button class="btn btn-primary" onclick={run} disabled={!path || command === null}>
-      Exportar
+      {t("Exportar")}
     </button>
   {/snippet}
 </Modal>

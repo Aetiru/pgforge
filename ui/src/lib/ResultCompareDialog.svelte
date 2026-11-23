@@ -11,6 +11,7 @@
 </script>
 
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
@@ -55,10 +56,10 @@
   }
 </script>
 
-<Modal title="Comparar resultados" subtitle={diffSummary(diff)} size="xl" {onclose}>
+<Modal title={t("Comparar resultados")} subtitle={diffSummary(diff)} size="xl" {onclose}>
   <div class="grid grid-cols-2 gap-3">
     <label class="flex min-w-0 flex-col gap-1">
-      <span class="label">Resultado A (antes)</span>
+      <span class="label">{t("Resultado A (antes)")}</span>
       <select class="field" bind:value={leftId}>
         {#each sources as source (source.id)}
           <option value={source.id}>{source.label}</option>
@@ -66,7 +67,7 @@
       </select>
     </label>
     <label class="flex min-w-0 flex-col gap-1">
-      <span class="label">Resultado B (después)</span>
+      <span class="label">{t("Resultado B (después)")}</span>
       <select class="field" bind:value={rightId}>
         {#each sources as source (source.id)}
           <option value={source.id}>{source.label}</option>
@@ -77,36 +78,35 @@
 
   <div class="mt-3 flex flex-wrap items-center gap-3">
     <label class="flex items-center gap-1.5 text-xs muted">
-      <span>Emparejar por</span>
+      <span>{t("Emparejar por")}</span>
       <select class="field py-0.5 text-xs" bind:value={keyColumn}>
-        <option value="">posición de la fila</option>
+        <option value="">{t("posición de la fila")}</option>
         {#each keys as name (name)}
-          <option value={name}>columna {name}</option>
+          <option value={name}>{t("columna {name}", { name })}</option>
         {/each}
       </select>
     </label>
     <label class="check">
       <input type="checkbox" bind:checked={onlyDiffs} />
-      Solo las diferencias
+      {t("Solo las diferencias")}
     </label>
   </div>
 
   {#if left.truncated || right.truncated}
     <Alert tone="warn" box class="mt-3">
-      Uno de los resultados vino cortado por el techo de filas: se compara lo que se trajo, no la
-      consulta entera.
+      {t("Uno de los resultados vino cortado por el techo de filas: se compara lo que se trajo, no la consulta entera.")}
     </Alert>
   {/if}
   {#if diff.onlyLeft.length > 0 || diff.onlyRight.length > 0}
     <Alert tone="warn" box class="mt-3">
-      Se comparan las columnas con el mismo nombre en los dos lados.
-      {#if diff.onlyLeft.length > 0}Solo en A: {diff.onlyLeft.join(", ")}.{/if}
-      {#if diff.onlyRight.length > 0}Solo en B: {diff.onlyRight.join(", ")}.{/if}
+      {t("Se comparan las columnas con el mismo nombre en los dos lados.")}
+      {#if diff.onlyLeft.length > 0}{t("Solo en A: {columns}.", { columns: diff.onlyLeft.join(", ") })}{/if}
+      {#if diff.onlyRight.length > 0}{t("Solo en B: {columns}.", { columns: diff.onlyRight.join(", ") })}{/if}
     </Alert>
   {/if}
 
   {#if diff.columns.length === 0}
-    <Alert tone="bad" box class="mt-3">Los dos resultados no tienen ninguna columna en común.</Alert>
+    <Alert tone="bad" box class="mt-3">{t("Los dos resultados no tienen ninguna columna en común.")}</Alert>
   {:else}
     <div class="table-scroll mt-3 max-h-[50vh] overflow-y-auto">
       <table class="list-table font-mono text-xs">
@@ -127,8 +127,8 @@
             >
               <td class="muted">
                 {row.key ?? index + 1}
-                {#if row.status === "added"}<span title="Solo en B"> +</span>{/if}
-                {#if row.status === "removed"}<span title="Solo en A"> −</span>{/if}
+                {#if row.status === "added"}<span title={t("Solo en B")}> +</span>{/if}
+                {#if row.status === "removed"}<span title={t("Solo en A")}> −</span>{/if}
               </td>
               {#each diff.columns as _, c (c)}
                 <td class={row.changed[c] ? "diff-cell-changed" : ""}>
@@ -143,17 +143,17 @@
             </tr>
           {/each}
           {#if visible.length === 0}
-            <tr><td colspan={diff.columns.length + 1} class="muted">Sin diferencias.</td></tr>
+            <tr><td colspan={diff.columns.length + 1} class="muted">{t("Sin diferencias.")}</td></tr>
           {/if}
         </tbody>
       </table>
     </div>
     {#if hidden > 0}
-      <p class="mt-1 text-xs muted">Se muestran {SHOWN_MAX}; faltan {hidden} filas más.</p>
+      <p class="mt-1 text-xs muted">{t("Se muestran {shown}; faltan {hidden} filas más.", { shown: SHOWN_MAX, hidden })}</p>
     {/if}
   {/if}
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose}>Cerrar</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cerrar")}</button>
   {/snippet}
 </Modal>

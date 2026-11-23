@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { i18n, t } from "./i18n.svelte";
   import { onMount } from "svelte";
   import Alert from "./Alert.svelte";
   import Confirm from "./Confirm.svelte";
@@ -76,7 +77,7 @@
       copied = true;
       setTimeout(() => (copied = false), 1500);
     } catch {
-      error = "No se pudo copiar: abrí la versión y copiala a mano.";
+      error = t("No se pudo copiar: abrí la versión y copiala a mano.");
     }
   }
 
@@ -92,26 +93,26 @@
     }
   }
 
-  const stamp = (at: number) => new Date(at * 1000).toLocaleString("es");
+  const stamp = (at: number) => new Date(at * 1000).toLocaleString(i18n.current);
 </script>
 
 <Modal
-  title="Versiones anteriores de este texto"
-  subtitle="Se guarda una copia al ejecutar, a los 90 segundos sin teclear y al cerrar la pestaña."
+  title={t("Versiones anteriores de este texto")}
+  subtitle={t("Se guarda una copia al ejecutar, a los 90 segundos sin teclear y al cerrar la pestaña.")}
   size="2xl"
   {onclose}
 >
   {#if error}<Alert tone="bad" box class="mb-2">{error}</Alert>{/if}
 
   {#if list === null}
-    <p class="text-xs muted">Leyendo las copias…</p>
+    <p class="text-xs muted">{t("Leyendo las copias…")}</p>
   {:else if list.length === 0}
     <p class="py-8 text-center text-sm muted">
-      Todavía no hay copias de esta pestaña. Se van guardando solas mientras trabajás.
+      {t("Todavía no hay copias de esta pestaña. Se van guardando solas mientras trabajás.")}
     </p>
   {:else}
     <div class="grid h-[26rem] gap-3 md:grid-cols-[17rem_minmax(0,1fr)]">
-      <ul class="min-h-0 overflow-auto rounded-md border border-zinc-200 dark:border-zinc-700" role="listbox" aria-label="Copias guardadas">
+      <ul class="min-h-0 overflow-auto rounded-md border border-zinc-200 dark:border-zinc-700" role="listbox" aria-label={t("Copias guardadas")}>
         {#each list as version (version.id)}
           <li role="option" aria-selected={selected?.id === version.id}>
             <button
@@ -122,7 +123,7 @@
             >
               <span class="flex items-baseline justify-between gap-2">
                 <span class="font-semibold">{relativeTime(version.at, now)}</span>
-                <span class="muted">{count(version.size)} car.</span>
+                <span class="muted">{t("{n} car.", { n: count(version.size) })}</span>
               </span>
               <span class="truncate font-mono muted">{version.preview}</span>
             </button>
@@ -135,7 +136,7 @@
           {#if selected}{stamp(selected.at)}{/if}
         </div>
         <div class="min-h-0 flex-1 overflow-auto rounded-md border border-zinc-200 p-2 select-text dark:border-zinc-700">
-          {#if text !== null}<Sql code={text} />{:else}<span class="text-xs muted">Leyendo…</span>{/if}
+          {#if text !== null}<Sql code={text} />{:else}<span class="text-xs muted">{t("Leyendo…")}</span>{/if}
         </div>
       </div>
     </div>
@@ -145,30 +146,30 @@
     <button
       class="btn btn-danger-ghost"
       disabled={!list || list.length === 0}
-      title="Borra todas las copias de esta pestaña"
+      title={t("Borra todas las copias de esta pestaña")}
       onclick={() => (confirmClear = true)}
     >
-      <Icon name="trash" size={12} /> Borrar las copias
+      <Icon name="trash" size={12} /> {t("Borrar las copias")}
     </button>
     <button class="btn ml-auto" disabled={text === null} onclick={copy}>
-      <Icon name="copy" size={12} /> {copied ? "Copiado" : "Copiar"}
+      <Icon name="copy" size={12} /> {copied ? t("Copiado") : t("Copiar")}
     </button>
     <button
       class="btn btn-primary"
       disabled={text === null}
-      title="Reemplaza el texto del editor por esta copia; Ctrl+Z lo deshace"
+      title={t("Reemplaza el texto del editor por esta copia; Ctrl+Z lo deshace")}
       onclick={restore}
     >
-      <Icon name="undo" size={12} /> Restaurar
+      <Icon name="undo" size={12} /> {t("Restaurar")}
     </button>
   {/snippet}
 </Modal>
 
 {#if confirmClear}
   <Confirm
-    title="Borrar las copias"
-    message="Se borran todas las copias guardadas de esta pestaña. El texto que hay en el editor no se toca."
-    confirmLabel="Borrar las copias"
+    title={t("Borrar las copias")}
+    message={t("Se borran todas las copias guardadas de esta pestaña. El texto que hay en el editor no se toca.")}
+    confirmLabel={t("Borrar las copias")}
     onconfirm={clearAll}
     onclose={() => (confirmClear = false)}
   />

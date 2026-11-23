@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
+  import { t } from "./i18n.svelte";
   import OptionsEditor, {
     deltaIsEmpty,
     rowsFrom,
@@ -54,7 +55,7 @@
   }
 
   function validate(): string | null {
-    if (!existing && !user.trim()) return "Poné el rol del mapeo (o PUBLIC).";
+    if (!existing && !user.trim()) return t("Poné el rol del mapeo (o PUBLIC).");
     return null;
   }
 
@@ -90,29 +91,28 @@
 </script>
 
 <Modal
-  title={existing ? `Mapeo de ${existing.user}` : "Nuevo mapeo de usuario"}
-  subtitle="USER MAPPING · servidor {server}"
+  title={existing ? t("Mapeo de {user}", { user: existing.user }) : t("Nuevo mapeo de usuario")}
+  subtitle={t("USER MAPPING · servidor {server}", { server })}
   busy={saving}
   {onclose}
 >
   <label class="flex flex-col gap-1">
-    <span class="label">Rol</span>
+    <span class="label">{t("Rol")}</span>
     <input
       class="field"
       data-autofocus
       bind:value={user}
       disabled={existing !== null}
-      placeholder="rol, o PUBLIC / CURRENT_USER"
+      placeholder={t("rol, o PUBLIC / CURRENT_USER")}
     />
   </label>
 
   <div class="mt-3">
-    <span class="label">Opciones</span>
-    <p class="mb-1 text-xs muted">Para postgres_fdw: user, password.</p>
+    <span class="label">{t("Opciones")}</span>
+    <p class="mb-1 text-xs muted">{t("Para postgres_fdw: user, password.")}</p>
     {#if optionsHidden}
       <Alert tone="warn" box>
-        No se pueden ver las opciones de este mapeo (hay que ser su dueño o superusuario). Lo que
-        agregues acá se suma; lo existente no se toca.
+        {t("No se pueden ver las opciones de este mapeo (hay que ser su dueño o superusuario). Lo que agregues acá se suma; lo existente no se toca.")}
       </Alert>
     {/if}
     <OptionsEditor bind:rows />
@@ -127,11 +127,11 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>{t("Ver SQL")}</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving}>
       {#if saving}<span class="spinner"></span>{/if}
-      {existing ? "Guardar" : "Crear"}
+      {existing ? t("Guardar") : t("Crear")}
     </button>
   {/snippet}
 </Modal>

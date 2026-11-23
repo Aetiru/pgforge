@@ -15,6 +15,8 @@
  * Todo acá es puro: lo que depende de `localStorage` o del DOM está en `shortcuts.svelte.ts`.
  */
 
+
+import { t } from "./i18n.svelte";
 /** Dónde vale el atajo. `global` lo atiende la ventana, así que se solapa con todo lo demás. */
 export type Scope = "global" | "editor" | "results" | "grid" | "tree";
 
@@ -30,54 +32,54 @@ export interface ShortcutDef {
 }
 
 export const SHORTCUTS: ShortcutDef[] = [
-  { id: "app.palette", label: "Paleta de comandos", group: "Aplicación", scope: "global", default: "Mod-k" },
-  { id: "app.search", label: "Buscar objetos en el servidor", group: "Aplicación", scope: "global", default: "Mod-Shift-p" },
-  { id: "app.newQuery", label: "Nueva consulta", group: "Aplicación", scope: "global", default: "Mod-q" },
-  { id: "app.open", label: "Abrir un archivo SQL", group: "Aplicación", scope: "global", default: "Mod-o" },
-  { id: "app.save", label: "Guardar la consulta", group: "Aplicación", scope: "global", default: "Mod-s" },
-  { id: "app.saveAs", label: "Guardar como…", group: "Aplicación", scope: "global", default: "Mod-Shift-s" },
-  { id: "app.sidebar", label: "Mostrar u ocultar el panel lateral", group: "Aplicación", scope: "global", default: "Mod-b" },
-  { id: "app.inspector", label: "Mostrar u ocultar el inspector", group: "Aplicación", scope: "global", default: "Mod-i" },
-  { id: "app.tabs", label: "Buscar entre las pestañas abiertas", group: "Aplicación", scope: "global", default: "Mod-p" },
-  { id: "app.lastTab", label: "Saltar a la pestaña anterior", group: "Aplicación", scope: "global", default: "Mod-Tab" },
-  { id: "app.back", label: "Volver a la pestaña que se miraba antes", group: "Aplicación", scope: "global", default: "Alt-Shift-ArrowLeft" },
-  { id: "app.forward", label: "Avanzar a la pestaña siguiente del recorrido", group: "Aplicación", scope: "global", default: "Alt-Shift-ArrowRight" },
-  { id: "app.zoomIn", label: "Agrandar toda la interfaz", group: "Aplicación", scope: "global", default: "Mod-Alt-=" },
-  { id: "app.zoomOut", label: "Achicar toda la interfaz", group: "Aplicación", scope: "global", default: "Mod-Alt--" },
-  { id: "app.zoomReset", label: "Interfaz a su tamaño (100 %)", group: "Aplicación", scope: "global", default: "Mod-Alt-0" },
-  { id: "app.shortcuts", label: "Esta chuleta de atajos", group: "Aplicación", scope: "global", default: "F1" },
+  { id: "app.palette", get label() { return t("Paleta de comandos"); }, get group() { return t("Aplicación"); }, scope: "global", default: "Mod-k" },
+  { id: "app.search", get label() { return t("Buscar objetos en el servidor"); }, get group() { return t("Aplicación"); }, scope: "global", default: "Mod-Shift-p" },
+  { id: "app.newQuery", get label() { return t("Nueva consulta"); }, get group() { return t("Aplicación"); }, scope: "global", default: "Mod-q" },
+  { id: "app.open", get label() { return t("Abrir un archivo SQL"); }, get group() { return t("Aplicación"); }, scope: "global", default: "Mod-o" },
+  { id: "app.save", get label() { return t("Guardar la consulta"); }, get group() { return t("Aplicación"); }, scope: "global", default: "Mod-s" },
+  { id: "app.saveAs", get label() { return t("Guardar como…"); }, get group() { return t("Aplicación"); }, scope: "global", default: "Mod-Shift-s" },
+  { id: "app.sidebar", get label() { return t("Mostrar u ocultar el panel lateral"); }, get group() { return t("Aplicación"); }, scope: "global", default: "Mod-b" },
+  { id: "app.inspector", get label() { return t("Mostrar u ocultar el inspector"); }, get group() { return t("Aplicación"); }, scope: "global", default: "Mod-i" },
+  { id: "app.tabs", get label() { return t("Buscar entre las pestañas abiertas"); }, get group() { return t("Aplicación"); }, scope: "global", default: "Mod-p" },
+  { id: "app.lastTab", get label() { return t("Saltar a la pestaña anterior"); }, get group() { return t("Aplicación"); }, scope: "global", default: "Mod-Tab" },
+  { id: "app.back", get label() { return t("Volver a la pestaña que se miraba antes"); }, get group() { return t("Aplicación"); }, scope: "global", default: "Alt-Shift-ArrowLeft" },
+  { id: "app.forward", get label() { return t("Avanzar a la pestaña siguiente del recorrido"); }, get group() { return t("Aplicación"); }, scope: "global", default: "Alt-Shift-ArrowRight" },
+  { id: "app.zoomIn", get label() { return t("Agrandar toda la interfaz"); }, get group() { return t("Aplicación"); }, scope: "global", default: "Mod-Alt-=" },
+  { id: "app.zoomOut", get label() { return t("Achicar toda la interfaz"); }, get group() { return t("Aplicación"); }, scope: "global", default: "Mod-Alt--" },
+  { id: "app.zoomReset", get label() { return t("Interfaz a su tamaño (100 %)"); }, get group() { return t("Aplicación"); }, scope: "global", default: "Mod-Alt-0" },
+  { id: "app.shortcuts", get label() { return t("Esta chuleta de atajos"); }, get group() { return t("Aplicación"); }, scope: "global", default: "F1" },
 
-  { id: "editor.run", label: "Ejecutar la sentencia o la selección", group: "Editor", scope: "editor", default: "Mod-Enter" },
-  { id: "editor.runScript", label: "Ejecutar el script entero", group: "Editor", scope: "editor", default: "Mod-Shift-Enter" },
-  { id: "editor.commit", label: "Confirmar la transacción (Commit)", group: "Editor", scope: "editor", default: "Mod-Alt-Enter" },
-  { id: "editor.rollback", label: "Revertir la transacción (Rollback)", group: "Editor", scope: "editor", default: "Mod-Alt-Backspace" },
-  { id: "editor.format", label: "Formatear el SQL", group: "Editor", scope: "editor", default: "Mod-Shift-f" },
-  { id: "editor.runToCursor", label: "Ejecutar hasta el cursor (inicio del script hasta el fin de la sentencia actual)", group: "Editor", scope: "editor", default: "Alt-Shift-Enter" },
-  { id: "editor.runFromCursor", label: "Ejecutar desde el cursor (desde el inicio de la sentencia actual hasta el final)", group: "Editor", scope: "editor", default: "Mod-Alt-Shift-Enter" },
-  { id: "editor.expandStar", label: "Expandir el * a la lista de columnas", group: "Editor", scope: "editor", default: "Mod-Shift-e" },
-  { id: "editor.rename", label: "Renombrar el alias bajo el cursor", group: "Editor", scope: "editor", default: "F2" },
-  { id: "editor.outline", label: "Mostrar u ocultar el esquema del script", group: "Editor", scope: "editor", default: "Mod-Shift-l" },
-  { id: "editor.insertObject", label: "Insertar un objeto buscándolo", group: "Editor", scope: "editor", default: "Mod-Shift-o" },
-  { id: "editor.pasteList", label: "Pegar el portapapeles como lista IN", group: "Editor", scope: "editor", default: "Mod-Shift-v", fixed: true },
-  { id: "editor.versions", label: "Versiones anteriores de este texto", group: "Editor", scope: "editor", default: "Mod-Alt-h" },
-  { id: "editor.saveSnippet", label: "Guardar la selección como abreviatura", group: "Editor", scope: "editor", default: "Mod-Shift-a" },
-  { id: "editor.snippetPicker", label: "Elegir una abreviatura (con vista previa)", group: "Editor", scope: "editor", default: "Mod-Alt-j" },
-  { id: "editor.expand", label: "Expandir una abreviatura / saltar al hueco siguiente", group: "Editor", scope: "editor", default: "Tab", fixed: true },
-  { id: "editor.cancel", label: "Cancelar la consulta en curso", group: "Editor", scope: "editor", default: "Escape", fixed: true },
-  { id: "editor.zoomIn", label: "Agrandar la letra del SQL", group: "Editor", scope: "editor", default: "Mod-=", fixed: true },
-  { id: "editor.zoomOut", label: "Achicar la letra del SQL", group: "Editor", scope: "editor", default: "Mod--", fixed: true },
-  { id: "editor.zoomReset", label: "Letra del SQL a su tamaño", group: "Editor", scope: "editor", default: "Mod-0", fixed: true },
+  { id: "editor.run", get label() { return t("Ejecutar la sentencia o la selección"); }, get group() { return t("Editor"); }, scope: "editor", default: "Mod-Enter" },
+  { id: "editor.runScript", get label() { return t("Ejecutar el script entero"); }, get group() { return t("Editor"); }, scope: "editor", default: "Mod-Shift-Enter" },
+  { id: "editor.commit", get label() { return t("Confirmar la transacción (Commit)"); }, get group() { return t("Editor"); }, scope: "editor", default: "Mod-Alt-Enter" },
+  { id: "editor.rollback", get label() { return t("Revertir la transacción (Rollback)"); }, get group() { return t("Editor"); }, scope: "editor", default: "Mod-Alt-Backspace" },
+  { id: "editor.format", get label() { return t("Formatear el SQL"); }, get group() { return t("Editor"); }, scope: "editor", default: "Mod-Shift-f" },
+  { id: "editor.runToCursor", get label() { return t("Ejecutar hasta el cursor (inicio del script hasta el fin de la sentencia actual)"); }, get group() { return t("Editor"); }, scope: "editor", default: "Alt-Shift-Enter" },
+  { id: "editor.runFromCursor", get label() { return t("Ejecutar desde el cursor (desde el inicio de la sentencia actual hasta el final)"); }, get group() { return t("Editor"); }, scope: "editor", default: "Mod-Alt-Shift-Enter" },
+  { id: "editor.expandStar", get label() { return t("Expandir el * a la lista de columnas"); }, get group() { return t("Editor"); }, scope: "editor", default: "Mod-Shift-e" },
+  { id: "editor.rename", get label() { return t("Renombrar el alias bajo el cursor"); }, get group() { return t("Editor"); }, scope: "editor", default: "F2" },
+  { id: "editor.outline", get label() { return t("Mostrar u ocultar el esquema del script"); }, get group() { return t("Editor"); }, scope: "editor", default: "Mod-Shift-l" },
+  { id: "editor.insertObject", get label() { return t("Insertar un objeto buscándolo"); }, get group() { return t("Editor"); }, scope: "editor", default: "Mod-Shift-o" },
+  { id: "editor.pasteList", get label() { return t("Pegar el portapapeles como lista IN"); }, get group() { return t("Editor"); }, scope: "editor", default: "Mod-Shift-v", fixed: true },
+  { id: "editor.versions", get label() { return t("Versiones anteriores de este texto"); }, get group() { return t("Editor"); }, scope: "editor", default: "Mod-Alt-h" },
+  { id: "editor.saveSnippet", get label() { return t("Guardar la selección como abreviatura"); }, get group() { return t("Editor"); }, scope: "editor", default: "Mod-Shift-a" },
+  { id: "editor.snippetPicker", get label() { return t("Elegir una abreviatura (con vista previa)"); }, get group() { return t("Editor"); }, scope: "editor", default: "Mod-Alt-j" },
+  { id: "editor.expand", get label() { return t("Expandir una abreviatura / saltar al hueco siguiente"); }, get group() { return t("Editor"); }, scope: "editor", default: "Tab", fixed: true },
+  { id: "editor.cancel", get label() { return t("Cancelar la consulta en curso"); }, get group() { return t("Editor"); }, scope: "editor", default: "Escape", fixed: true },
+  { id: "editor.zoomIn", get label() { return t("Agrandar la letra del SQL"); }, get group() { return t("Editor"); }, scope: "editor", default: "Mod-=", fixed: true },
+  { id: "editor.zoomOut", get label() { return t("Achicar la letra del SQL"); }, get group() { return t("Editor"); }, scope: "editor", default: "Mod--", fixed: true },
+  { id: "editor.zoomReset", get label() { return t("Letra del SQL a su tamaño"); }, get group() { return t("Editor"); }, scope: "editor", default: "Mod-0", fixed: true },
 
-  { id: "results.next", label: "Resultado siguiente", group: "Resultados", scope: "results", default: "Alt-.", fixed: true },
-  { id: "results.prev", label: "Resultado anterior", group: "Resultados", scope: "results", default: "Alt-ArrowLeft", fixed: true },
-  { id: "results.n", label: "Ir al resultado N (1 a 9)", group: "Resultados", scope: "results", default: "Alt-1", fixed: true },
+  { id: "results.next", get label() { return t("Resultado siguiente"); }, get group() { return t("Resultados"); }, scope: "results", default: "Alt-.", fixed: true },
+  { id: "results.prev", get label() { return t("Resultado anterior"); }, get group() { return t("Resultados"); }, scope: "results", default: "Alt-ArrowLeft", fixed: true },
+  { id: "results.n", get label() { return t("Ir al resultado N (1 a 9)"); }, get group() { return t("Resultados"); }, scope: "results", default: "Alt-1", fixed: true },
 
-  { id: "grid.copy", label: "Copiar el rango (TSV)", group: "Grilla", scope: "grid", default: "Mod-c", fixed: true },
-  { id: "grid.copyCsv", label: "Copiar el rango con encabezados (CSV)", group: "Grilla", scope: "grid", default: "Mod-Shift-c", fixed: true },
-  { id: "grid.filter", label: "Filtrar lo ya cargado", group: "Grilla", scope: "grid", default: "Mod-f", fixed: true },
-  { id: "grid.viewer", label: "Ver el valor de la celda", group: "Grilla", scope: "grid", default: "Space", fixed: true },
+  { id: "grid.copy", get label() { return t("Copiar el rango (TSV)"); }, get group() { return t("Grilla"); }, scope: "grid", default: "Mod-c", fixed: true },
+  { id: "grid.copyCsv", get label() { return t("Copiar el rango con encabezados (CSV)"); }, get group() { return t("Grilla"); }, scope: "grid", default: "Mod-Shift-c", fixed: true },
+  { id: "grid.filter", get label() { return t("Filtrar lo ya cargado"); }, get group() { return t("Grilla"); }, scope: "grid", default: "Mod-f", fixed: true },
+  { id: "grid.viewer", get label() { return t("Ver el valor de la celda"); }, get group() { return t("Grilla"); }, scope: "grid", default: "Space", fixed: true },
 
-  { id: "tree.rename", label: "Renombrar la carpeta o editar el servidor", group: "Árbol y pestañas", scope: "tree", default: "F2", fixed: true },
+  { id: "tree.rename", get label() { return t("Renombrar la carpeta o editar el servidor"); }, get group() { return t("Árbol y pestañas"); }, scope: "tree", default: "F2", fixed: true },
 ];
 
 const MODIFIERS = new Set(["Control", "Meta", "Shift", "Alt", "AltGraph", "OS"]);
@@ -183,13 +185,13 @@ export function matchesEvent(
  */
 export function validateCombo(text: string): string | null {
   const parsed = parseCombo(text);
-  if (!parsed) return "Esa tecla no se puede usar como atajo.";
+  if (!parsed) return t("Esa tecla no se puede usar como atajo.");
   const isFunction = /^F\d+$/.test(parsed.key);
   if (!parsed.mod && !parsed.alt && !isFunction) {
-    return "Tiene que llevar Ctrl o Alt (o ser una tecla de función): una tecla suelta se comería lo que se escribe.";
+    return t("Tiene que llevar Ctrl o Alt (o ser una tecla de función): una tecla suelta se comería lo que se escribe.");
   }
   if (parsed.shift && SYMBOLS.has(parsed.key)) {
-    return "Con Mayús, los símbolos cambian según el teclado: usá una letra, un número o una tecla de función.";
+    return t("Con Mayús, los símbolos cambian según el teclado: usá una letra, un número o una tecla de función.");
   }
   return null;
 }
@@ -200,19 +202,21 @@ const KEY_LABEL: Record<string, string> = {
   ArrowUp: "↑",
   ArrowDown: "↓",
   Escape: "Esc",
-  Space: "Espacio",
 };
 
 /** El texto con que se muestra: `Ctrl+Mayús+F`. */
 export function formatCombo(combo: string | null, mac = false): string {
-  if (combo === null) return "Sin asignar";
+  if (combo === null) return t("Sin asignar");
   const parsed = parseCombo(combo);
   if (!parsed) return combo;
-  const key = KEY_LABEL[parsed.key] ?? (parsed.key.length === 1 ? parsed.key.toUpperCase() : parsed.key);
+  const key =
+    parsed.key === "Space"
+      ? t("Espacio")
+      : (KEY_LABEL[parsed.key] ?? (parsed.key.length === 1 ? parsed.key.toUpperCase() : parsed.key));
   return [
     parsed.mod ? (mac ? "⌘" : "Ctrl") : "",
     parsed.alt ? (mac ? "⌥" : "Alt") : "",
-    parsed.shift ? (mac ? "⇧" : "Mayús") : "",
+    parsed.shift ? (mac ? "⇧" : t("Mayús")) : "",
     key,
   ]
     .filter((part) => part !== "")

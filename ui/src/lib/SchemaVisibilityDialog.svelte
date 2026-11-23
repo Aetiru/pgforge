@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
@@ -59,16 +60,16 @@
   }
 </script>
 
-<Modal title="Esquemas visibles" subtitle={database} size="md" {onclose}>
+<Modal title={t("Esquemas visibles")} subtitle={database} size="md" {onclose}>
   {#if error}
     <Alert tone="bad" box>{error}</Alert>
   {:else if !names}
     <Skeleton rows={6} />
   {:else}
     <div class="flex items-center gap-2">
-      <input class="field min-w-0 flex-1" placeholder="Filtrar…" bind:value={filter} spellcheck="false" />
-      <button class="btn btn-sm" onclick={() => setAll(true)}>Ver todos</button>
-      <button class="btn btn-sm" onclick={() => setAll(false)}>Ocultar todos</button>
+      <input class="field min-w-0 flex-1" placeholder={t("Filtrar…")} bind:value={filter} spellcheck="false" />
+      <button class="btn btn-sm" onclick={() => setAll(true)}>{t("Ver todos")}</button>
+      <button class="btn btn-sm" onclick={() => setAll(false)}>{t("Ocultar todos")}</button>
     </div>
     <div class="mt-3 max-h-72 overflow-auto rounded-md border border-zinc-200 p-1 dark:border-zinc-700">
       {#each shown as name (name)}
@@ -77,17 +78,21 @@
           <span class="font-mono text-xs">{name}</span>
         </label>
       {:else}
-        <p class="p-2 text-xs muted">Ningún esquema coincide.</p>
+        <p class="p-2 text-xs muted">{t("Ningún esquema coincide.")}</p>
       {/each}
     </div>
     <p class="mt-2 text-xs muted">
-      {hiddenCount === 0 ? "Se ven todos." : `${hiddenCount} oculto${hiddenCount === 1 ? "" : "s"}.`}
-      Ocultar solo cambia el árbol de esta computadora; no toca nada en la base.
+      {hiddenCount === 0
+        ? t("Se ven todos.")
+        : hiddenCount === 1
+          ? t("1 oculto.")
+          : t("{n} ocultos.", { n: hiddenCount })}
+      {t("Ocultar solo cambia el árbol de esta computadora; no toca nada en la base.")}
     </p>
   {/if}
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose}>Cancelar</button>
-    <button class="btn btn-primary" disabled={!names} onclick={save}>Guardar</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cancelar")}</button>
+    <button class="btn btn-primary" disabled={!names} onclick={save}>{t("Guardar")}</button>
   {/snippet}
 </Modal>

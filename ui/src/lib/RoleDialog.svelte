@@ -4,6 +4,7 @@
   import Alert from "./Alert.svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
+  import { t } from "./i18n.svelte";
   import SqlPreview from "./SqlPreview.svelte";
   import {
     describeError,
@@ -104,7 +105,7 @@
     }
     try {
       const statements = await rolePreview(changes());
-      preview = statements.map((statement) => statement.sql).join(";\n\n") || "Nada que aplicar.";
+      preview = statements.map((statement) => statement.sql).join(";\n\n") || t("Nada que aplicar.");
     } catch (e) {
       error = describeError(e);
     }
@@ -134,7 +135,7 @@
       return;
     }
 
-    if (!(await confirmMutation(profileId, "Se va a modificar un rol del servidor.", sqlToApply))) return;
+    if (!(await confirmMutation(profileId, t("Se va a modificar un rol del servidor."), sqlToApply))) return;
 
     saving = true;
     try {
@@ -149,18 +150,18 @@
 </script>
 
 <Modal
-  title={existing ? `Editar el rol ${existing.name}` : "Nuevo rol"}
-  subtitle="Los roles son del servidor entero, no de una base"
+  title={existing ? t("Editar el rol {name}", { name: existing.name }) : t("Nuevo rol")}
+  subtitle={t("Los roles son del servidor entero, no de una base")}
   busy={saving}
   {onclose}
 >
   <label class="flex flex-col gap-1">
-    <span class="label">Nombre</span>
+    <span class="label">{t("Nombre")}</span>
     <input class="field" data-autofocus bind:value={form.name} />
   </label>
 
   <div class="mt-3">
-    <span class="label">Atributos</span>
+    <span class="label">{t("Atributos")}</span>
     <div class="mt-1 grid grid-cols-2 gap-x-4 gap-y-1.5">
       <label class="check"><input type="checkbox" bind:checked={form.login} /> LOGIN</label>
       <label class="check"><input type="checkbox" bind:checked={form.superuser} /> SUPERUSER</label>
@@ -174,25 +175,25 @@
 
   <div class="mt-3 grid grid-cols-2 gap-3">
     <label class="flex flex-col gap-1">
-      <span class="label">Límite de conexiones</span>
+      <span class="label">{t("Límite de conexiones")}</span>
       <input
         class="field"
         type="number"
         min="0"
         step="1"
         bind:value={form.connectionLimit}
-        placeholder="sin límite"
+        placeholder={t("sin límite")}
       />
     </label>
     <label class="flex flex-col gap-1">
-      <span class="label">Válido hasta</span>
+      <span class="label">{t("Válido hasta")}</span>
       <input class="field" type="date" bind:value={form.validUntil} />
     </label>
   </div>
 
   <label class="mt-3 flex flex-col gap-1">
     <span class="label">
-      Contraseña {existing ? "(vacía = no cambiarla)" : "(opcional)"}
+      {t("Contraseña")} {existing ? t("(vacía = no cambiarla)") : t("(opcional)")}
     </span>
     <div class="relative">
       <input
@@ -204,8 +205,8 @@
       <button
         type="button"
         class="btn btn-ghost btn-icon absolute top-1/2 right-0.5 size-6 -translate-y-1/2"
-        title={showPassword ? "Ocultar la contraseña" : "Mostrar la contraseña"}
-        aria-label={showPassword ? "Ocultar la contraseña" : "Mostrar la contraseña"}
+        title={showPassword ? t("Ocultar la contraseña") : t("Mostrar la contraseña")}
+        aria-label={showPassword ? t("Ocultar la contraseña") : t("Mostrar la contraseña")}
         onclick={() => (showPassword = !showPassword)}
       >
         <Icon name={showPassword ? "eye-off" : "eye"} size={14} />
@@ -215,9 +216,9 @@
 
   <div class="mt-3 flex flex-col gap-1">
     <span class="label">
-      Miembro de
+      {t("Miembro de")}
       {#if form.memberOf.length > 0}
-        <span class="font-normal muted">({form.memberOf.length} elegidos)</span>
+        <span class="font-normal muted">({t("{n} elegidos", { n: form.memberOf.length })})</span>
       {/if}
     </span>
     {#if loadingMemberships}
@@ -226,7 +227,7 @@
                dark:border-zinc-700"
       >
         <span class="spinner"></span>
-        Leyendo las membresías…
+        {t("Leyendo las membresías…")}
       </p>
     {:else}
       <!--
@@ -238,7 +239,7 @@
           <input
             class="field w-full rounded-b-none border-0 border-b border-zinc-200 py-1 text-xs
                    dark:border-zinc-700"
-            placeholder="Filtrar los roles"
+            placeholder={t("Filtrar los roles")}
             bind:value={memberFilter}
           />
         {/if}
@@ -254,7 +255,7 @@
             </label>
           {:else}
             <p class="py-1 text-xs muted">
-              {options.length === 0 ? "No hay otros roles en el servidor." : "Ningún rol coincide."}
+              {options.length === 0 ? t("No hay otros roles en el servidor.") : t("Ningún rol coincide.")}
             </p>
           {/each}
         </div>
@@ -265,7 +266,7 @@
   {#if existing}
     <label class="check mt-2">
       <input type="checkbox" bind:checked={form.adminOption} />
-      Las membresías nuevas quedan con ADMIN OPTION
+      {t("Las membresías nuevas quedan con ADMIN OPTION")}
     </label>
   {/if}
 
@@ -278,11 +279,11 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>{t("Ver SQL")}</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving}>
       {#if saving}<span class="spinner"></span>{/if}
-      {existing ? "Guardar" : "Crear rol"}
+      {existing ? t("Guardar") : t("Crear rol")}
     </button>
   {/snippet}
 </Modal>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   /**
    * El panel del nodo elegido en el árbol.
    *
@@ -414,7 +415,7 @@
   /** Prende, apaga o fuerza el filtro sin salir de la sección: es un solo ALTER TABLE. */
   async function applySwitch(change: PolicyChange) {
     if (!selected || !node) return;
-    if (!(await confirmMutation(selected.profileId, "Se va a cambiar la seguridad de la tabla.")))
+    if (!(await confirmMutation(selected.profileId, t("Se va a cambiar la seguridad de la tabla."))))
       return;
     securityError = null;
     try {
@@ -513,38 +514,38 @@
 
   const privilegeSection = $derived({
     id: "privileges" as const,
-    label: "Privilegios",
+    label: t("Privilegios"),
     count: privileges ? privilegeGroups.length : null,
   });
 
   const sections = $derived.by<{ id: SectionId; label: string; count: number | null }[]>(() => {
-    if (isServer) return [{ id: "info", label: "Propiedades", count: null }];
+    if (isServer) return [{ id: "info", label: t("Propiedades"), count: null }];
     if (flags.isDatabase) {
-      return [{ id: "info", label: "Propiedades", count: null }, privilegeSection];
+      return [{ id: "info", label: t("Propiedades"), count: null }, privilegeSection];
     }
     if (flags.isTable) {
       return [
-        { id: "columns", label: "Columnas", count: shape?.columns.length ?? null },
-        { id: "indexes", label: "Índices", count: indexes?.length ?? null },
-        { id: "constraints", label: "Restricciones", count: constraints?.length ?? null },
+        { id: "columns", label: t("Columnas"), count: shape?.columns.length ?? null },
+        { id: "indexes", label: t("Índices"), count: indexes?.length ?? null },
+        { id: "constraints", label: t("Restricciones"), count: constraints?.length ?? null },
         { id: "triggers", label: "Triggers", count: triggers?.length ?? null },
-        { id: "security", label: "Seguridad por fila", count: security?.policies.length ?? null },
-        { id: "dependencies", label: "Dependencias", count: dependencies?.length ?? null },
-        { id: "stats", label: "Estadísticas", count: null },
+        { id: "security", label: t("Seguridad por fila"), count: security?.policies.length ?? null },
+        { id: "dependencies", label: t("Dependencias"), count: dependencies?.length ?? null },
+        { id: "stats", label: t("Estadísticas"), count: null },
         privilegeSection,
         { id: "ddl", label: "DDL", count: null },
       ];
     }
     if (flags.isView || flags.isMaterializedView) {
       return [
-        { id: "dependencies", label: "Dependencias", count: dependencies?.length ?? null },
+        { id: "dependencies", label: t("Dependencias"), count: dependencies?.length ?? null },
         ...(flags.hasPrivileges ? [privilegeSection] : []),
         { id: "ddl", label: "DDL", count: null },
       ];
     }
     if (flags.isForeignServer) {
       return [
-        { id: "mappings", label: "Mapeos de usuario", count: mappings.length },
+        { id: "mappings", label: t("Mapeos de usuario"), count: mappings.length },
         { id: "ddl", label: "DDL", count: null },
       ];
     }
@@ -1080,7 +1081,7 @@
 
   async function confirmRevoke() {
     if (!revokeTarget || !selected || !node || !privilegeSubject) return;
-    if (!(await confirmMutation(selected.profileId, "Se van a revocar privilegios."))) return;
+    if (!(await confirmMutation(selected.profileId, t("Se van a revocar privilegios.")))) return;
     revoking = true;
     revokeError = null;
     try {
@@ -1115,7 +1116,7 @@
 
   async function confirmRefresh() {
     if (!refreshTarget || !selected) return;
-    if (!(await confirmMutation(selected.profileId, "Se va a recalcular la vista materializada.")))
+    if (!(await confirmMutation(selected.profileId, t("Se va a recalcular la vista materializada."))))
       return;
     refreshing = true;
     refreshError = null;
@@ -1154,7 +1155,7 @@
     if (!dropTarget || !selected || !node) return;
     // El SQL real lo arma `runDrop`; acá solo hace falta que la guarda de producción vea el `DROP`.
     const sql = `DROP ${dropTarget.kind} ${"label" in dropTarget ? dropTarget.label : dropTarget.name}`;
-    if (!(await confirmMutation(selected.profileId, "Se va a eliminar un objeto del servidor.", sql)))
+    if (!(await confirmMutation(selected.profileId, t("Se va a eliminar un objeto del servidor."), sql)))
       return;
     dropping = true;
     dropError = null;
@@ -1191,8 +1192,8 @@
   {#if !selected}
     <Empty
       icon="compass"
-      title="Nada seleccionado"
-      hint="Elegí un servidor, una base o un objeto del árbol de la izquierda para ver su detalle, su DDL y las acciones que admite."
+      title={t("Nada seleccionado")}
+      hint={t("Elegí un servidor, una base o un objeto del árbol de la izquierda para ver su detalle, su DDL y las acciones que admite.")}
     />
   {:else}
     <header class="divider-b px-3 py-2 @md/detail:px-5 @md/detail:py-3">
@@ -1210,11 +1211,11 @@
           <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <h2 class="max-w-full min-w-0 truncate text-base font-medium" title={selected.label}>{selected.label}</h2>
             <span class="tag tag-neutral shrink-0">
-              {isGroup ? "Carpeta de conexiones" : kindLabel(node?.kind ?? null)}
+              {isGroup ? t("Carpeta de conexiones") : kindLabel(node?.kind ?? null)}
             </span>
             {#if isServer}
               <span class="tag shrink-0 {selected.connected ? 'tag-ok' : 'tag-neutral'}">
-                {selected.connected ? "conectado" : "sin conectar"}
+                {selected.connected ? t("conectado") : t("sin conectar")}
               </span>
             {/if}
           </div>
@@ -1235,7 +1236,7 @@
       {#if blocked.disabled}
         <p class="mt-2 flex items-center gap-1.5 text-xs muted">
           <Icon name="lock" size={12} />
-          Conexión de solo lectura: las acciones que modifican están desactivadas.
+          {t("Conexión de solo lectura: las acciones que modifican están desactivadas.")}
         </p>
       {/if}
     </header>
@@ -1252,21 +1253,25 @@
     {:else if isServer && !selected.connected}
       <Empty
         icon="server"
-        title="El servidor está sin conectar"
-        hint="Conectate para explorar sus bases, esquemas y objetos."
+        title={t("El servidor está sin conectar")}
+        hint={t("Conectate para explorar sus bases, esquemas y objetos.")}
       >
         <button class="btn btn-primary" onclick={() => onconnect(selected.profileId)}>
-          Conectar
+          {t("Conectar")}
         </button>
       </Empty>
     {:else if flags.isFolder && sections.length === 0}
       <Empty
         icon="folder"
-        title="Una carpeta del árbol"
-        hint="Agrupa objetos del mismo tipo; no tiene un DDL propio. Abrila en el árbol para ver lo que contiene."
+        title={t("Una carpeta del árbol")}
+        hint={t("Agrupa objetos del mismo tipo; no tiene un DDL propio. Abrila en el árbol para ver lo que contiene.")}
       />
     {:else if sections.length === 0}
-      <Empty icon="info" title="Sin detalle" hint="Este nodo no tiene propiedades para mostrar." />
+      <Empty
+        icon="info"
+        title={t("Sin detalle")}
+        hint={t("Este nodo no tiene propiedades para mostrar.")}
+      />
     {:else}
       {#if sections.length > 1}
         <!-- La tira desplaza en vez de estirarse: con siete secciones no entra en un inspector
@@ -1733,9 +1738,9 @@
 
 {#if mappingDrop}
   <Confirm
-    title="Quitar el mapeo"
-    message="¿Quitar el mapeo de usuario de {mappingDrop.user}?"
-    confirmLabel="Quitar"
+    title={t("Quitar el mapeo")}
+    message={t("¿Quitar el mapeo de usuario de {user}?", { user: mappingDrop.user })}
+    confirmLabel={t("Quitar")}
     onconfirm={confirmMappingDrop}
     onclose={() => (mappingDrop = null)}
   />
@@ -1803,11 +1808,12 @@
 
 {#if revokeTarget}
   <Confirm
-    title="Revocar privilegios"
-    message="¿Revocarle todos los privilegios a {revokeTarget.grantee} ({revokeTarget.privileges
-      .join(', ')
-      .toUpperCase()})?"
-    confirmLabel="Revocar"
+    title={t("Revocar privilegios")}
+    message={t("¿Revocarle todos los privilegios a {grantee} ({privileges})?", {
+      grantee: revokeTarget.grantee,
+      privileges: revokeTarget.privileges.join(", ").toUpperCase(),
+    })}
+    confirmLabel={t("Revocar")}
     busy={revoking}
     error={revokeError}
     onconfirm={confirmRevoke}
@@ -1819,16 +1825,16 @@
   >
     <label class="check">
       <input type="checkbox" bind:checked={revokeCascade} />
-      CASCADE (también revoca lo que depende de esto)
+      {t("CASCADE (también revoca lo que depende de esto)")}
     </label>
   </Confirm>
 {/if}
 
 {#if refreshTarget}
   <Confirm
-    title="Refrescar la vista materializada"
-    message="¿Volver a calcular los datos de {refreshTarget.name}? Puede tardar tanto como la consulta que la define."
-    confirmLabel="Refrescar"
+    title={t("Refrescar la vista materializada")}
+    message={t("¿Volver a calcular los datos de {name}? Puede tardar tanto como la consulta que la define.", { name: refreshTarget.name })}
+    confirmLabel={t("Refrescar")}
     danger={false}
     busy={refreshing}
     error={refreshError}
@@ -1841,16 +1847,16 @@
   >
     <label class="check">
       <input type="checkbox" bind:checked={refreshConcurrently} />
-      CONCURRENTLY (no bloquea a los lectores; necesita un índice único)
+      {t("CONCURRENTLY (no bloquea a los lectores; necesita un índice único)")}
     </label>
   </Confirm>
 {/if}
 
 {#if dropTarget}
   <Confirm
-    title="Eliminar"
+    title={t("Eliminar")}
     message={dropQuestion(dropTarget)}
-    confirmLabel="Eliminar"
+    confirmLabel={t("Eliminar")}
     busy={dropping}
     error={dropError}
     onconfirm={confirmDrop}
@@ -1859,34 +1865,33 @@
     {#if dropTarget.kind === "index"}
       <label class="check">
         <input type="checkbox" bind:checked={dropConcurrently} />
-        CONCURRENTLY (no bloquea la tabla; no se puede combinar con CASCADE)
+        {t("CONCURRENTLY (no bloquea la tabla; no se puede combinar con CASCADE)")}
       </label>
     {:else if dropTarget.kind === "role"}
       <label class="check">
         <input type="checkbox" bind:checked={reassignFirst} />
-        Reasignar primero lo que el rol posee
+        {t("Reasignar primero lo que el rol posee")}
       </label>
       {#if reassignFirst}
         <label class="mt-2 flex flex-col gap-1">
-          <span class="label">Nuevo dueño</span>
+          <span class="label">{t("Nuevo dueño")}</span>
           <input class="field" bind:value={reassignTo} placeholder="CURRENT_USER" />
         </label>
         <p class="mt-1.5 text-xs muted">
-          Se ejecuta un REASSIGN OWNED y un DROP OWNED, que solo alcanzan a la base conectada
-          ({node?.database}). Si el rol tiene objetos en otra base, hay que repetirlo desde ahí.
+          {t("Se ejecuta un REASSIGN OWNED y un DROP OWNED, que solo alcanzan a la base conectada ({database}). Si el rol tiene objetos en otra base, hay que repetirlo desde ahí.", { database: node?.database ?? "" })}
         </p>
       {/if}
       <!-- Una base no admite CASCADE; lo que se le puede pedir es que eche a las sesiones. -->
     {:else if dropTarget.kind === "database"}
       <label class="check">
         <input type="checkbox" bind:checked={dropCascade} />
-        FORCE (echa a las sesiones conectadas en vez de fallar)
+        {t("FORCE (echa a las sesiones conectadas en vez de fallar)")}
       </label>
       <!-- Una política no admite CASCADE: nada puede depender de ella. -->
     {:else if dropTarget.kind !== "policy"}
       <label class="check">
         <input type="checkbox" bind:checked={dropCascade} />
-        CASCADE (también borra lo que depende de esto)
+        {t("CASCADE (también borra lo que depende de esto)")}
       </label>
     {/if}
   </Confirm>

@@ -1,6 +1,7 @@
 <script lang="ts">
   /** Las restricciones de la tabla, con la definición tal como la devuelve `pg_get_constraintdef`. */
   import Icon from "../Icon.svelte";
+  import { t } from "../i18n.svelte";
   import type { ConstraintInfo } from "../ipc";
   import Card from "./Card.svelte";
 
@@ -24,16 +25,16 @@
 </script>
 
 <Card
-  title="Restricciones"
-  loading={loading ? "Leyendo restricciones…" : null}
+  title={t("Restricciones")}
+  loading={loading ? t("Leyendo restricciones…") : null}
   {error}
-  empty={constraints && constraints.length === 0 ? "No tiene restricciones propias." : null}
+  empty={constraints && constraints.length === 0 ? t("No tiene restricciones propias.") : null}
 >
   {#snippet actions()}
     {#if canCreate}
       <button class="btn btn-sm ml-auto" {...blocked} onclick={onnew}>
         <Icon name="plus" size={11} />
-        Restricción
+        {t("Restricción")}
       </button>
     {/if}
   {/snippet}
@@ -43,8 +44,8 @@
       <table class="list-table">
         <thead>
           <tr>
-            <th class="w-px whitespace-nowrap">Nombre</th>
-            <th class="w-full">Definición</th>
+            <th class="w-px whitespace-nowrap">{t("Nombre")}</th>
+            <th class="w-full">{t("Definición")}</th>
             <th></th>
           </tr>
         </thead>
@@ -62,8 +63,8 @@
                 <div class="row-actions">
                   <button
                     class="btn btn-danger-ghost btn-icon size-6"
-                    title="Eliminar la restricción"
-                    aria-label="Eliminar la restricción"
+                    title={t("Eliminar la restricción")}
+                    aria-label={t("Eliminar la restricción")}
                     {...blocked}
                     onclick={() => ondrop(constraint.name)}
                   >

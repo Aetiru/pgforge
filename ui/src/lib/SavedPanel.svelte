@@ -5,6 +5,7 @@
   import Icon from "./Icon.svelte";
   import { describeError, savedDelete, savedList, type SavedQuery } from "./ipc";
   import { forgetSaved } from "./query.svelte";
+  import { t } from "./i18n.svelte";
 
   let {
     onpick,
@@ -81,7 +82,7 @@
       />
       <input
         class="field w-full py-1 pl-7"
-        placeholder="Filtrar por nombre o por lo que dice la consulta"
+        placeholder={t("Filtrar por nombre o por lo que dice la consulta")}
         bind:value={filter}
         onkeydown={(event) => {
           if (event.key === "Escape") filter = "";
@@ -89,7 +90,7 @@
       />
     </div>
 
-    <button class="btn btn-sm btn-ghost" title="Volver a leer la lista" onclick={load}>
+    <button class="btn btn-sm btn-ghost" title={t("Volver a leer la lista")} onclick={load}>
       <Icon name="refresh" size={11} />
     </button>
   </div>
@@ -99,10 +100,10 @@
   {:else if shown.length === 0}
     <Empty
       icon="save"
-      title={entries.length === 0 ? "Todavía no guardaste ninguna consulta" : "Sin coincidencias"}
+      title={entries.length === 0 ? t("Todavía no guardaste ninguna consulta") : t("Sin coincidencias")}
       hint={entries.length === 0
-        ? "«Guardar» le pone nombre a lo que está en el editor y la deja acá, en esta máquina, para abrirla cuando haga falta."
-        : "Probá con otra parte del nombre o del texto."}
+        ? t("«Guardar» le pone nombre a lo que está en el editor y la deja acá, en esta máquina, para abrirla cuando haga falta.")
+        : t("Probá con otra parte del nombre o del texto.")}
     />
   {:else}
     <ul class="min-h-0 flex-1 overflow-auto">
@@ -116,7 +117,7 @@
           <button
             class="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left
                    @sm/saved:flex-row @sm/saved:items-baseline @sm/saved:gap-2"
-            title="Traer esta consulta al editor"
+            title={t("Traer esta consulta al editor")}
             onclick={() => onpick(entry)}
           >
             <span class="max-w-full shrink-0 truncate text-sm">{entry.name}</span>
@@ -127,7 +128,7 @@
 
           <span
             class="hidden shrink-0 text-xs tabular-nums muted @sm/saved:inline"
-            title="Última vez que se guardó"
+            title={t("Última vez que se guardó")}
           >
             {when(entry.updatedAt)}
           </span>
@@ -135,8 +136,8 @@
           <div class="row-actions shrink-0">
             <button
               class="btn btn-icon btn-sm btn-danger-ghost"
-              title="Borrar «{entry.name}»"
-              aria-label="Borrar"
+              title={t("Borrar «{name}»", { name: entry.name })}
+              aria-label={t("Borrar")}
               onclick={() => (confirmDelete = entry)}
             >
               <Icon name="trash" size={11} />
@@ -150,9 +151,9 @@
 
 {#if confirmDelete}
   <Confirm
-    title="Borrar «{confirmDelete.name}»"
-    message="La consulta guardada se borra de esta máquina. Lo que esté abierto en el editor no se toca."
-    confirmLabel="Borrar"
+    title={t("Borrar «{name}»", { name: confirmDelete.name })}
+    message={t("La consulta guardada se borra de esta máquina. Lo que esté abierto en el editor no se toca.")}
+    confirmLabel={t("Borrar")}
     onconfirm={() => confirmDelete && remove(confirmDelete)}
     onclose={() => (confirmDelete = null)}
   />

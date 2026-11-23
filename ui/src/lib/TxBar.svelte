@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
+  import { t } from "./i18n.svelte";
   import type { QueryTab } from "./query.svelte";
   import { shortcutStore } from "./shortcuts.svelte";
   import { txElapsed, txIsStale, txSummary } from "./tx-view";
@@ -42,17 +43,17 @@
   >
     <Icon name={failed ? "warn" : "edit"} size={13} />
     <span class="font-semibold">
-      {#if prodName}PRODUCCIÓN · {prodName} · {/if}{failed ? "Transacción abortada" : "Transacción abierta"}
+      {#if prodName}{t("PRODUCCIÓN")} · {prodName} · {/if}{failed ? t("Transacción abortada") : t("Transacción abierta")}
     </span>
 
     <span class="min-w-0 flex-1">
       {#if failed}
-        Una sentencia falló: el servidor rechaza todo lo que siga hasta que hagas Rollback.
+        {t("Una sentencia falló: el servidor rechaza todo lo que siga hasta que hagas Rollback.")}
       {:else}
         {txSummary(tab.txStatements, tab.txRows)}
-        {#if tab.txSince !== null}· hace {txElapsed(tab.txSince, now)}{/if}
+        {#if tab.txSince !== null}· {t("hace {time}", { time: txElapsed(tab.txSince, now) })}{/if}
         {#if stale}
-          · la sesión retiene candados mientras no la cierres
+          · {t("la sesión retiene candados mientras no la cierres")}
         {/if}
       {/if}
     </span>
@@ -60,7 +61,7 @@
     <button
       class="btn btn-sm btn-danger-ghost"
       disabled={busy}
-      title={shortcutStore.hint("Descarta todo lo hecho desde que se abrió la transacción", "editor.rollback")}
+      title={shortcutStore.hint(t("Descarta todo lo hecho desde que se abrió la transacción"), "editor.rollback")}
       onclick={() => tab.rollback()}
     >
       <Icon name="undo" size={12} />
@@ -70,7 +71,7 @@
       <button
         class="btn btn-sm btn-primary"
         disabled={busy}
-        title={shortcutStore.hint("Confirma la transacción abierta en esta pestaña", "editor.commit")}
+        title={shortcutStore.hint(t("Confirma la transacción abierta en esta pestaña"), "editor.commit")}
         onclick={() => tab.commit()}
       >
         <Icon name="check" size={12} />

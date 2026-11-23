@@ -7,6 +7,7 @@
 </script>
 
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   /**
    * Una fila del árbol de scripts, recursiva: se dibuja a sí misma para cada subcarpeta.
    *
@@ -78,7 +79,7 @@
   <button
     class="relative grid size-4 shrink-0 place-items-center rounded text-zinc-400
            hover:text-zinc-900 dark:hover:text-zinc-100"
-    aria-label={open ? "Contraer" : "Expandir"}
+    aria-label={open ? t("Contraer") : t("Expandir")}
     onclick={(event) => {
       event.stopPropagation();
       scripts.setOpen(folder.path, !open);

@@ -7,6 +7,7 @@
  * entre comillas en la plantilla y uno numérico o booleano no, porque la variable se reemplaza
  * **tal cual**. Es puro y con Vitest.
  */
+import { t } from "./i18n.svelte";
 import type { TableShape } from "./ipc";
 
 export type GenerateKind = "select" | "insert" | "update" | "delete";
@@ -73,7 +74,7 @@ export function generateSql(shape: TableShape, kind: GenerateKind): string {
     }
     case "insert": {
       const columns = writable(shape);
-      if (columns.length === 0) return `-- ${table} no tiene columnas que se puedan escribir.\n`;
+      if (columns.length === 0) return t("-- {table} no tiene columnas que se puedan escribir.\n", { table });
       const names = columns.map((column) => sqlIdent(column.name)).join(", ");
       const values = columns.map((column) => placeholder(column.name, column.typeName)).join(", ");
       return `INSERT INTO ${table} (${names})\nVALUES (${values});\n`;
@@ -83,18 +84,18 @@ export function generateSql(shape: TableShape, kind: GenerateKind): string {
       // La clave no se cambia por omisión: es lo que señala la fila.
       const columns = writable(shape).filter((column) => !key.has(column.name));
       const conditions = keyConditions(shape);
-      if (columns.length === 0) return `-- ${table} no tiene columnas distintas de la clave para actualizar.\n`;
+      if (columns.length === 0) return t("-- {table} no tiene columnas distintas de la clave para actualizar.\n", { table });
       const set = columns
         .map((column) => `${sqlIdent(column.name)} = ${placeholder(column.name, column.typeName)}`)
         .join(",\n    ");
       return conditions.length === 0
-        ? `-- ${table} no tiene clave: agregá el WHERE que señale la fila antes de ejecutar.\nUPDATE ${table}\nSET ${set}\nWHERE false;\n`
+        ? t("-- {table} no tiene clave: agregá el WHERE que señale la fila antes de ejecutar.\nUPDATE {table}\nSET {set}\nWHERE false;\n", { table, set })
         : `UPDATE ${table}\nSET ${set}\nWHERE ${conditions.join("\n  AND ")};\n`;
     }
     case "delete": {
       const conditions = keyConditions(shape);
       return conditions.length === 0
-        ? `-- ${table} no tiene clave: agregá el WHERE que señale la fila antes de ejecutar.\nDELETE FROM ${table}\nWHERE false;\n`
+        ? t("-- {table} no tiene clave: agregá el WHERE que señale la fila antes de ejecutar.\nDELETE FROM {table}\nWHERE false;\n", { table })
         : `DELETE FROM ${table}\nWHERE ${conditions.join("\n  AND ")};\n`;
     }
   }

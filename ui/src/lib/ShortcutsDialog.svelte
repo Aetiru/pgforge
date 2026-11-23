@@ -1,5 +1,6 @@
 <script lang="ts">
   import Alert from "./Alert.svelte";
+  import { t } from "./i18n.svelte";
   import Modal from "./Modal.svelte";
   import { SHORTCUTS, comboFromEvent, formatCombo } from "./shortcuts";
   import { MAC, shortcutStore } from "./shortcuts.svelte";
@@ -58,8 +59,8 @@
 </script>
 
 <Modal
-  title="Atajos de teclado"
-  subtitle="Los que tienen «Cambiar» se pueden reasignar; el resto los atiende cada pantalla"
+  title={t("Atajos de teclado")}
+  subtitle={t("Los que tienen \"Cambiar\" se pueden reasignar; el resto los atiende cada pantalla")}
   size="lg"
   {onclose}
 >
@@ -70,26 +71,26 @@
   <div class="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
     {#each groups as group (group.name)}
       <section>
-        <h3 class="label mb-1">{group.name}</h3>
+        <h3 class="label mb-1">{t(group.name)}</h3>
         <table class="list-table">
           <tbody>
             {#each group.items as def (def.id)}
               {@const clash = shortcutStore.conflicts.get(def.id)}
               <tr>
                 <td>
-                  {def.label}
+                  {t(def.label)}
                   {#if clash}
                     <span
                       class="ml-1 text-xs text-amber-700 dark:text-amber-400"
-                      title="La misma combinación la usa: {clash.map(labelOf).join(', ')}"
+                      title={t("La misma combinación la usa: {others}", { others: clash.map(labelOf).map((l) => t(l)).join(", ") })}
                     >
-                      ⚠ se pisa con {clash.map(labelOf).join(', ')}
+                      {t("⚠ se pisa con {others}", { others: clash.map(labelOf).map((l) => t(l)).join(", ") })}
                     </span>
                   {/if}
                 </td>
                 <td class="w-44 text-right">
                   {#if capturing === def.id}
-                    <span class="text-xs muted">Apretá la combinación… (Esc cancela)</span>
+                    <span class="text-xs muted">{t("Apretá la combinación… (Esc cancela)")}</span>
                   {:else}
                     <span class="kbd">{formatCombo(shortcutStore.combo(def.id), MAC)}</span>
                   {/if}
@@ -105,24 +106,24 @@
                           capturing = capturing === def.id ? null : def.id;
                         }}
                       >
-                        Cambiar
+                        {t("Cambiar")}
                       </button>
                       <button
                         class="btn btn-sm"
                         disabled={shortcutStore.combo(def.id) === null}
-                        title="Deja el atajo sin asignar"
+                        title={t("Deja el atajo sin asignar")}
                         onclick={() => shortcutStore.set(def.id, null)}
                       >
-                        Quitar
+                        {t("Quitar")}
                       </button>
                       {#if shortcutStore.isCustom(def.id)}
                         <button class="btn btn-sm" onclick={() => shortcutStore.reset(def.id)}>
-                          Restablecer
+                          {t("Restablecer")}
                         </button>
                       {/if}
                     </div>
                   {:else}
-                    <span class="block text-right text-xs muted">fijo</span>
+                    <span class="block text-right text-xs muted">{t("fijo")}</span>
                   {/if}
                 </td>
               </tr>
@@ -135,8 +136,8 @@
 
   {#snippet footer()}
     <button class="btn btn-ghost mr-auto" onclick={() => shortcutStore.resetAll()}>
-      Restablecer todos
+      {t("Restablecer todos")}
     </button>
-    <button class="btn btn-primary" onclick={onclose}>Listo</button>
+    <button class="btn btn-primary" onclick={onclose}>{t("Listo")}</button>
   {/snippet}
 </Modal>

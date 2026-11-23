@@ -7,17 +7,19 @@
  * pudo editar a mano) no llega al CSS sin validar.
  */
 
+
+import { t } from "./i18n.svelte";
 export type SqlToken = "keyword" | "string" | "number" | "type" | "function" | "operator" | "comment" | "ident";
 
 export const SQL_TOKENS: { key: SqlToken; label: string }[] = [
-  { key: "keyword", label: "Palabras clave" },
-  { key: "string", label: "Cadenas" },
-  { key: "number", label: "Números, true, false, null" },
-  { key: "type", label: "Tipos" },
-  { key: "function", label: "Funciones" },
-  { key: "operator", label: "Operadores" },
-  { key: "comment", label: "Comentarios" },
-  { key: "ident", label: "Nombres de tablas y columnas" },
+  { key: "keyword", get label() { return t("Palabras clave"); } },
+  { key: "string", get label() { return t("Cadenas"); } },
+  { key: "number", get label() { return t("Números, true, false, null"); } },
+  { key: "type", get label() { return t("Tipos"); } },
+  { key: "function", get label() { return t("Funciones"); } },
+  { key: "operator", get label() { return t("Operadores"); } },
+  { key: "comment", get label() { return t("Comentarios"); } },
+  { key: "ident", get label() { return t("Nombres de tablas y columnas"); } },
 ];
 
 export type SqlColors = Record<SqlToken, string>;
@@ -35,43 +37,43 @@ export interface SqlPalette {
 export const PALETTES: SqlPalette[] = [
   {
     id: "actual",
-    name: "Actual",
-    description: "Azul, verde, violeta, ámbar y celeste: siete tonos distintos.",
+    get name() { return t("Actual"); },
+    get description() { return t("Azul, verde, violeta, ámbar y celeste: siete tonos distintos."); },
     light: { keyword: "#2a5476", string: "#047857", number: "#6d28d9", type: "#b45309", function: "#0369a1", operator: "#626a7a", comment: "#7d8596", ident: "#2c4a66" },
     dark: { keyword: "#6b9cc6", string: "#34d399", number: "#a78bfa", type: "#fbbf24", function: "#38bdf8", operator: "#7d8596", comment: "#626a7a", ident: "#a9c4de" },
   },
   {
     id: "semantica",
-    name: "Semántica",
-    description: "Un tono por significado, bien separados.",
+    get name() { return t("Semántica"); },
+    get description() { return t("Un tono por significado, bien separados."); },
     light: { keyword: "#1f4e9c", string: "#1a7f37", number: "#b35900", type: "#0b7285", function: "#7a3e9d", operator: "#5c6475", comment: "#8a92a3", ident: "#2a3f5f" },
     dark: { keyword: "#7aa2f7", string: "#7ec787", number: "#f0a35e", type: "#5fc3d3", function: "#c39be0", operator: "#98a0b3", comment: "#6b7385", ident: "#b4c7e8" },
   },
   {
     id: "calma",
-    name: "Calma",
-    description: "Casi monocromo, con el azul de pgForge en las palabras clave. La más descansada.",
+    get name() { return t("Calma"); },
+    get description() { return t("Casi monocromo, con el azul de pgForge en las palabras clave. La más descansada."); },
     light: { keyword: "#336791", string: "#5b7f55", number: "#94643a", type: "#66748a", function: "#252a36", operator: "#8890a0", comment: "#9aa1af", ident: "#3c5774" },
     dark: { keyword: "#7fb0d8", string: "#9bbf94", number: "#d0a070", type: "#9aa8bd", function: "#e1e4ea", operator: "#7d8596", comment: "#5f6778", ident: "#a8c3dc" },
   },
   {
     id: "contraste",
-    name: "Alto contraste",
-    description: "Tonos profundos en claro y brillantes en oscuro.",
+    get name() { return t("Alto contraste"); },
+    get description() { return t("Tonos profundos en claro y brillantes en oscuro."); },
     light: { keyword: "#0b2a5b", string: "#0b5c1d", number: "#8a2a00", type: "#5a1a8a", function: "#004a63", operator: "#1d2230", comment: "#4b5262", ident: "#12335c" },
     dark: { keyword: "#9ec1ff", string: "#8ef0a0", number: "#ffb27a", type: "#e0b3ff", function: "#7fdcf5", operator: "#e6e9f0", comment: "#a3abbd", ident: "#c6dcff" },
   },
   {
     id: "calida",
-    name: "Cálida",
-    description: "Naranja para las palabras clave, al estilo de los IDE de escritorio.",
+    get name() { return t("Cálida"); },
+    get description() { return t("Naranja para las palabras clave, al estilo de los IDE de escritorio."); },
     light: { keyword: "#a8480f", string: "#3a7a2c", number: "#1a62a0", type: "#7d4a9c", function: "#8c6400", operator: "#6b6254", comment: "#8f8a7f", ident: "#5a4a34" },
     dark: { keyword: "#e8915a", string: "#a9c97a", number: "#6fb3e8", type: "#c79be0", function: "#e5c45f", operator: "#a39d8f", comment: "#7a766b", ident: "#e2cdb0" },
   },
   {
     id: "papel",
-    name: "Papel",
-    description: "Tonos de tierra apagados para el tema Papel: pizarra, salvia, terracota y ocre.",
+    get name() { return t("Papel"); },
+    get description() { return t("Tonos de tierra apagados para el tema Papel: pizarra, salvia, terracota y ocre."); },
     light: { keyword: "#3f5f8a", string: "#4f6f45", number: "#9a5b2e", type: "#6e5681", function: "#7f5d1c", operator: "#6a6256", comment: "#6f6657", ident: "#3b4a63" },
     dark: { keyword: "#7fb0d8", string: "#9bbf94", number: "#d0a070", type: "#b9a3cf", function: "#d9bd6a", operator: "#7d8596", comment: "#5f6778", ident: "#a8c3dc" },
     // Comentarios y operadores a 4,5:1 o más contra el crema: el gris de la paleta clara se perdía.

@@ -7,6 +7,7 @@
  * que siguen se ejecutan después, en la misma transacción, y tienen que hablar del nombre nuevo—.
  */
 
+import { t } from "./i18n.svelte";
 import type { Identity, TableChange, TableColumn } from "./ipc";
 
 /** Tipos comunes, solo como sugerencia: el que valida un tipo de verdad es el servidor. */
@@ -26,9 +27,9 @@ export const COMMON_TYPES = [
 ];
 
 export const IDENTITY_OPTIONS: { value: Identity | ""; label: string }[] = [
-  { value: "", label: "Ninguna" },
-  { value: "always", label: "Siempre" },
-  { value: "byDefault", label: "Por defecto" },
+  { value: "", get label() { return t("Ninguna"); } },
+  { value: "always", get label() { return t("Siempre"); } },
+  { value: "byDefault", get label() { return t("Por defecto"); } },
 ];
 
 export interface ColumnForm {
@@ -56,8 +57,8 @@ export function columnForm(column: TableColumn | null): ColumnForm {
 }
 
 export function validateColumn(form: ColumnForm): string | null {
-  if (!form.name.trim()) return "Poné un nombre para la columna.";
-  if (!form.typeName.trim()) return "Poné un tipo para la columna.";
+  if (!form.name.trim()) return t("Poné un nombre para la columna.");
+  if (!form.typeName.trim()) return t("Poné un tipo para la columna.");
   return null;
 }
 

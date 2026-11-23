@@ -1,6 +1,7 @@
 <script lang="ts">
   /** Los triggers de la tabla: cuándo se disparan y qué función ejecutan. */
   import Icon from "../Icon.svelte";
+  import { t } from "../i18n.svelte";
   import { triggerSummary } from "../detail-node";
   import type { TriggerInfo } from "../ipc";
   import Card from "./Card.svelte";
@@ -31,15 +32,15 @@
 
 <Card
   title="Triggers"
-  loading={loading ? "Leyendo triggers…" : null}
+  loading={loading ? t("Leyendo triggers…") : null}
   {error}
-  empty={triggers && triggers.length === 0 ? "No tiene triggers propios." : null}
+  empty={triggers && triggers.length === 0 ? t("No tiene triggers propios.") : null}
 >
   {#snippet actions()}
     {#if canCreate}
       <button class="btn btn-sm ml-auto" {...blocked} onclick={onnew}>
         <Icon name="plus" size={11} />
-        Trigger
+        {t("Trigger")}
       </button>
     {/if}
   {/snippet}
@@ -49,9 +50,9 @@
       <table class="list-table">
         <thead>
           <tr>
-            <th class="w-px whitespace-nowrap">Nombre</th>
-            <th class="w-px whitespace-nowrap">Cuándo</th>
-            <th class="w-full">Ejecuta</th>
+            <th class="w-px whitespace-nowrap">{t("Nombre")}</th>
+            <th class="w-px whitespace-nowrap">{t("Cuándo")}</th>
+            <th class="w-full">{t("Ejecuta")}</th>
             <th></th>
           </tr>
         </thead>
@@ -64,7 +65,7 @@
                 {#if onopenfunction}
                   <button
                     class="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-blue-600 dark:hover:text-blue-400"
-                    title="Abrir el código de la función"
+                    title={t("Abrir el código de la función")}
                     onclick={() => onopenfunction(trigger)}
                   >
                     {trigger.functionSchema}.{trigger.functionName}()
@@ -77,8 +78,8 @@
                 <div class="row-actions">
                   <button
                     class="btn btn-ghost btn-icon size-6"
-                    title="Editar el trigger"
-                    aria-label="Editar el trigger"
+                    title={t("Editar el trigger")}
+                    aria-label={t("Editar el trigger")}
                     {...blocked}
                     onclick={() => onedit(trigger)}
                   >
@@ -86,8 +87,8 @@
                   </button>
                   <button
                     class="btn btn-danger-ghost btn-icon size-6"
-                    title="Eliminar el trigger"
-                    aria-label="Eliminar el trigger"
+                    title={t("Eliminar el trigger")}
+                    aria-label={t("Eliminar el trigger")}
                     {...blocked}
                     onclick={() => ondrop(trigger.name)}
                   >

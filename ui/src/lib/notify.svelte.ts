@@ -20,6 +20,7 @@
  * sería un cartel del sistema antes de que el usuario hiciera nada.
  */
 
+import { t } from "./i18n.svelte";
 import {
   isPermissionGranted,
   requestPermission,
@@ -140,7 +141,7 @@ class Notify {
 
     await this.send(
       seconds,
-      run.status === "failed" ? `Falló: ${what}` : `Terminó: ${what}`,
+      run.status === "failed" ? t("Falló: {what}", { what }) : t("Terminó: {what}", { what }),
       `${run.server}${run.database ? ` / ${run.database}` : ""} · ${duration(seconds)}`,
       run.taskId,
     );
@@ -150,7 +151,7 @@ class Notify {
   async queryEnded(init: { server: string; database: string; seconds: number; failed: boolean }) {
     await this.send(
       init.seconds,
-      init.failed ? "La consulta falló" : "La consulta terminó",
+      init.failed ? t("La consulta falló") : t("La consulta terminó"),
       `${init.server}${init.database ? ` / ${init.database}` : ""} · ${duration(init.seconds)}`,
     );
   }

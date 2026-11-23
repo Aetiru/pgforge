@@ -42,6 +42,7 @@
 </script>
 
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import Icon from "./Icon.svelte";
 
   let { rows = $bindable() }: { rows: OptionRow[] } = $props();
@@ -57,13 +58,13 @@
 <div class="flex flex-col gap-1.5">
   {#each rows as row, index (index)}
     <div class="flex items-center gap-1.5">
-      <input class="field flex-1" placeholder="clave" bind:value={row.key} />
-      <input class="field flex-[2]" placeholder="valor" bind:value={row.value} />
+      <input class="field flex-1" placeholder={t("clave")} bind:value={row.key} />
+      <input class="field flex-[2]" placeholder={t("valor")} bind:value={row.value} />
       <button
         type="button"
         class="btn btn-ghost btn-icon shrink-0"
-        title="Quitar la opción"
-        aria-label="Quitar la opción"
+        title={t("Quitar la opción")}
+        aria-label={t("Quitar la opción")}
         onclick={() => remove(index)}
       >
         <Icon name="close" size={12} />
@@ -72,6 +73,6 @@
   {/each}
   <button type="button" class="btn btn-ghost btn-sm self-start" onclick={add}>
     <Icon name="plus" size={11} />
-    Agregar opción
+    {t("Agregar opción")}
   </button>
 </div>

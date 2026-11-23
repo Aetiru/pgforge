@@ -6,13 +6,14 @@
  * iba a rechazar y dice por qué, en vez de dejar que se apriete para recibir el error.
  */
 
+import { t } from "./i18n.svelte";
 import type { MigrationItem, MigrationState } from "./ipc";
 
 export const STATE_LABEL: Record<MigrationState, string> = {
-  pending: "Pendiente",
-  applied: "Aplicada",
-  changed: "Modificada",
-  failed: "Falló",
+  get pending() { return t("Pendiente"); },
+  get applied() { return t("Aplicada"); },
+  get changed() { return t("Modificada"); },
+  get failed() { return t("Falló"); },
 };
 
 /** Clases `tag-*` de `app.css`. */
@@ -24,11 +25,10 @@ export const STATE_TONE: Record<MigrationState, string> = {
 };
 
 export const STATE_HINT: Record<MigrationState, string> = {
-  pending: "Todavía no se aplicó a este servidor y esta base",
-  applied: "Se aplicó y el archivo sigue igual",
-  changed:
-    "Se aplicó, pero el archivo cambió después: lo que hay en el servidor ya no es lo que dice la carpeta",
-  failed: "El último intento terminó con error; se puede reintentar",
+  get pending() { return t("Todavía no se aplicó a este servidor y esta base"); },
+  get applied() { return t("Se aplicó y el archivo sigue igual"); },
+  get changed() { return t("Se aplicó, pero el archivo cambió después: lo que hay en el servidor ya no es lo que dice la carpeta"); },
+  get failed() { return t("El último intento terminó con error; se puede reintentar"); },
 };
 
 /** `V012` — el número tal como va en el nombre del archivo. */
@@ -46,32 +46,32 @@ export function descriptionText(description: string): string {
  * ninguna modificada en el medio, y siempre la primera pendiente.
  */
 export function applyBlocker(items: MigrationItem[], item: MigrationItem): string | null {
-  if (item.state === "applied") return "Ya está aplicada";
+  if (item.state === "applied") return t("Ya está aplicada");
   const changed = items.find((other) => other.state === "changed");
   if (changed) {
-    return `${versionLabel(changed.version)} se aplicó con otro contenido: resolverlo antes de aplicar más`;
+    return t("{versionLabel} se aplicó con otro contenido: resolverlo antes de aplicar más", { versionLabel: versionLabel(changed.version) });
   }
   const before = items.find(
     (other) => other.version < item.version && (other.state === "pending" || other.state === "failed"),
   );
-  if (before) return `Antes falta aplicar ${versionLabel(before.version)}`;
+  if (before) return t("Antes falta aplicar {versionLabel}", { versionLabel: versionLabel(before.version) });
   return null;
 }
 
 /** Por qué no se puede deshacer `item`, o `null`. Solo la última aplicada, y con su `U…`. */
 export function revertBlocker(items: MigrationItem[], item: MigrationItem): string | null {
-  if (item.state !== "applied" && item.state !== "changed") return "No está aplicada";
-  if (!item.hasDown) return `No tiene un script de reversa (U${versionLabel(item.version).slice(1)}__…)`;
+  if (item.state !== "applied" && item.state !== "changed") return t("No está aplicada");
+  if (!item.hasDown) return t("No tiene un script de reversa (U{versionLabel}__…)", { versionLabel: versionLabel(item.version).slice(1) });
   const later = items.find(
     (other) => other.version > item.version && (other.state === "applied" || other.state === "changed"),
   );
-  if (later) return `${versionLabel(later.version)} se aplicó después: deshacer empezando por la última`;
+  if (later) return t("{versionLabel} se aplicó después: deshacer empezando por la última", { versionLabel: versionLabel(later.version) });
   return null;
 }
 
 /** La descripción que se propone al guardar: la del comparar, o vacía si no hay nada que decir. */
 export function suggestDescription(schema: string): string {
-  return schema ? `sincronizar ${schema}` : "";
+  return schema ? t("sincronizar {schema}", { schema }) : "";
 }
 
 /** Huella corta para mostrar; la entera va en el `title`. */

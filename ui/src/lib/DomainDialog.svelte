@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { confirmMutation } from "./access.svelte";
+  import { t } from "./i18n.svelte";
   import Alert from "./Alert.svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
@@ -143,9 +144,9 @@
   }
 
   function validate(): string | null {
-    if (!existing && !name.trim()) return "Poné un nombre para el dominio.";
-    if (!dataType.trim()) return "Poné el tipo base del dominio.";
-    if (existing && changes().length === 0) return "No hay nada que cambiar.";
+    if (!existing && !name.trim()) return t("Poné un nombre para el dominio.");
+    if (!dataType.trim()) return t("Poné el tipo base del dominio.");
+    if (existing && changes().length === 0) return t("No hay nada que cambiar.");
     return null;
   }
 
@@ -182,7 +183,7 @@
       return;
     }
 
-    if (!(await confirmMutation(profileId, "Se va a modificar un dominio.", sqlToApply))) return;
+    if (!(await confirmMutation(profileId, t("Se va a modificar un dominio."), sqlToApply))) return;
 
     saving = true;
     try {
@@ -197,7 +198,7 @@
 </script>
 
 <Modal
-  title={existing ? `Editar ${existing.name}` : "Nuevo dominio"}
+  title={existing ? t("Editar {name}", { name: existing.name }) : t("Nuevo dominio")}
   subtitle={schema}
   size="lg"
   busy={saving}
@@ -206,52 +207,52 @@
   {#if loading}
     <p class="flex items-center justify-center gap-2 py-8 text-sm muted">
       <span class="spinner"></span>
-      Leyendo la definición…
+      {t("Leyendo la definición…")}
     </p>
   {:else}
     <div class="grid grid-cols-2 gap-3">
       <label class="flex flex-col gap-1">
-        <span class="label">Nombre</span>
+        <span class="label">{t("Nombre")}</span>
         <input class="field" data-autofocus bind:value={name} disabled={existing !== null} />
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="label">Tipo base</span>
+        <span class="label">{t("Tipo base")}</span>
         <input class="field" bind:value={dataType} disabled={existing !== null} />
       </label>
     </div>
 
     <div class="mt-3 grid grid-cols-2 gap-3">
       <label class="flex flex-col gap-1">
-        <span class="label">Valor por omisión</span>
-        <input class="field" bind:value={defaultValue} placeholder="expresión SQL, opcional" />
+        <span class="label">{t("Valor por omisión")}</span>
+        <input class="field" bind:value={defaultValue} placeholder={t("expresión SQL, opcional")} />
       </label>
 
       <label class="check self-end pb-2">
         <input type="checkbox" bind:checked={notNull} />
-        No admite NULL
+        {t("No admite NULL")}
       </label>
     </div>
 
     <div class="mt-4 flex flex-col gap-2">
-      <span class="label">Restricciones</span>
+      <span class="label">{t("Restricciones")}</span>
       {#each rows as row, index (index)}
         <div class="flex items-center gap-2">
           <input
             class="field w-40"
-            placeholder="nombre (opcional)"
+            placeholder={t("nombre (opcional)")}
             bind:value={row.name}
             disabled={row.original !== ""}
           />
           <input class="field flex-1" placeholder="VALUE > 0" bind:value={row.check} />
-          <label class="check shrink-0" title="No revisa lo que ya está guardado">
+          <label class="check shrink-0" title={t("No revisa lo que ya está guardado")}>
             <input type="checkbox" bind:checked={row.notValid} />
             NOT VALID
           </label>
           <button
             class="btn btn-icon"
-            title="Quitar"
-            aria-label="Quitar restricción"
+            title={t("Quitar")}
+            aria-label={t("Quitar restricción")}
             onclick={() => (rows = rows.filter((_, i) => i !== index))}
           >
             <Icon name="trash" size={12} />
@@ -264,11 +265,11 @@
           (rows = [...rows, { original: "", name: "", check: "", notValid: false }])}
       >
         <Icon name="plus" size={11} />
-        Agregar restricción
+        {t("Agregar restricción")}
       </button>
       <p class="text-xs muted">
-        <code>VALUE</code> es el valor que se está validando. La expresión va cruda al servidor, que
-        es quien la valida.
+        <code>VALUE</code>
+        {t("es el valor que se está validando. La expresión va cruda al servidor, que es quien la valida.")}
       </p>
     </div>
   {/if}
@@ -283,12 +284,12 @@
 
   {#snippet footer()}
     <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving || loading}>
-      Ver SQL
+      {t("Ver SQL")}
     </button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving || loading}>
       {#if saving}<span class="spinner"></span>{/if}
-      {existing ? "Guardar" : "Crear"}
+      {existing ? t("Guardar") : t("Crear")}
     </button>
   {/snippet}
 </Modal>

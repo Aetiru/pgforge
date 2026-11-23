@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Icon from "./Icon.svelte";
+  import { t } from "./i18n.svelte";
   import Modal from "./Modal.svelte";
   import { describeError, savedSave } from "./ipc";
   import type { QueryTab } from "./query.svelte";
@@ -28,8 +29,8 @@
   let busy = $state(false);
 
   function validate(): string | null {
-    if (!name.trim()) return "Poné un nombre: es con lo que la vas a buscar después.";
-    if (!tab.sql.trim()) return "El editor está vacío, no hay nada que guardar.";
+    if (!name.trim()) return t("Poné un nombre: es con lo que la vas a buscar después.");
+    if (!tab.sql.trim()) return t("El editor está vacío, no hay nada que guardar.");
     return null;
   }
 
@@ -63,14 +64,14 @@
 </script>
 
 <Modal
-  title={tab.savedId === null ? "Guardar la consulta" : "Guardar los cambios"}
-  subtitle="{tab.database} · {tab.sql.trim().split('\n').length} líneas"
+  title={tab.savedId === null ? t("Guardar la consulta") : t("Guardar los cambios")}
+  subtitle={t("{database} · {n} líneas", { database: tab.database, n: tab.sql.trim().split("\n").length })}
   size="sm"
   {busy}
   {onclose}
 >
   <label class="flex flex-col gap-1">
-    <span class="label">Nombre</span>
+    <span class="label">{t("Nombre")}</span>
     <input
       class="field"
       data-autofocus
@@ -84,16 +85,15 @@
   {#if tab.savedId !== null}
     <label class="check mt-3">
       <input type="checkbox" bind:checked={overwrite} />
-      Reescribir «{tab.savedName}»
+      {t("Reescribir \"{name}\"", { name: tab.savedName ?? "" })}
     </label>
     <p class="mt-1 text-xs muted">
-      Sin marcar queda una consulta nueva y la de antes se conserva tal como estaba.
+      {t("Sin marcar queda una consulta nueva y la de antes se conserva tal como estaba.")}
     </p>
   {/if}
 
   <p class="mt-3 text-xs muted">
-    Se guarda en esta máquina, junto con el historial, no en el servidor. Queda anotado contra qué
-    base se escribió, pero se puede abrir contra cualquier otra.
+    {t("Se guarda en esta máquina, junto con el historial, no en el servidor. Queda anotado contra qué base se escribió, pero se puede abrir contra cualquier otra.")}
   </p>
 
   {#if error}
@@ -101,10 +101,10 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn ml-auto" disabled={busy} onclick={onclose}>Cancelar</button>
+    <button class="btn ml-auto" disabled={busy} onclick={onclose}>{t("Cancelar")}</button>
     <button class="btn btn-primary" disabled={busy} onclick={submit}>
       {#if busy}<span class="spinner"></span>{:else}<Icon name="save" size={12} />{/if}
-      Guardar
+      {t("Guardar")}
     </button>
   {/snippet}
 </Modal>

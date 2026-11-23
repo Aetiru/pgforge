@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
@@ -88,17 +89,17 @@
 </script>
 
 <Modal
-  title="Elegir de {linkLabel(link)}"
+  title={t("Elegir de {label}", { label: linkLabel(link) })}
   subtitle={current.some((value) => value !== null)
-    ? `Ahora: ${current.map((value) => value ?? "NULL").join(", ")}`
-    : "Ahora: NULL"}
+    ? t("Ahora: {value}", { value: current.map((value) => value ?? "NULL").join(", ") })
+    : t("Ahora: NULL")}
   size="xl"
   {onclose}
 >
   <!-- svelte-ignore a11y_autofocus -->
   <input
     class="field w-full"
-    placeholder="Buscar en {linkLabel(link)}…"
+    placeholder={t("Buscar en {label}…", { label: linkLabel(link) })}
     autofocus
     bind:value={search}
     spellcheck="false"
@@ -128,20 +129,24 @@
               {/each}
             </tr>
           {:else}
-            <tr><td class="muted" colspan={shown.length || 1}>Ninguna fila coincide.</td></tr>
+            <tr><td class="muted" colspan={shown.length || 1}>{t("Ninguna fila coincide.")}</td></tr>
           {/each}
         </tbody>
       </table>
     </div>
     <p class="mt-2 text-xs muted">
-      {page.next !== null ? `Se muestran las primeras ${LIMIT}: afiná la búsqueda para ver otras.` : `${page.rows.length} filas.`}
+      {page.next !== null
+        ? t("Se muestran las primeras {n}: afiná la búsqueda para ver otras.", { n: LIMIT })
+        : page.rows.length === 1
+          ? t("1 fila.")
+          : t("{n} filas.", { n: page.rows.length })}
     </p>
   {/if}
 
   {#snippet footer()}
     <button class="btn" onclick={() => onpick(Object.fromEntries(link.otherColumns.map((name) => [name, null])))}>
-      Poner NULL
+      {t("Poner NULL")}
     </button>
-    <button class="btn ml-auto" onclick={onclose}>Cancelar</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cancelar")}</button>
   {/snippet}
 </Modal>

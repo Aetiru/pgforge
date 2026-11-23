@@ -12,6 +12,8 @@
  * interfaz.
  */
 
+
+import { t } from "./i18n.svelte";
 export interface ResultData {
   columns: string[];
   rows: (string | null)[][];
@@ -125,7 +127,7 @@ export function diffResults(a: ResultData, b: ResultData, options: DiffOptions):
 
   const keyCols = options.key;
   if (keyCols.length === 0 || keyCols.some((name) => !columns.includes(name))) {
-    throw new Error("La clave tiene que ser una columna que esté en los dos resultados.");
+    throw new Error(t("La clave tiene que ser una columna que esté en los dos resultados."));
   }
   const kl = keyCols.map((name) => a.columns.indexOf(name));
   const kr = keyCols.map((name) => b.columns.indexOf(name));
@@ -162,12 +164,14 @@ export function diffSummary(result: DiffResult): string {
   const { same: s, changed, added, removed, cells } = result.counts;
   const columnsDiffer = result.onlyLeft.length + result.onlyRight.length > 0;
   if (changed === 0 && added === 0 && removed === 0 && !columnsDiffer) {
-    return `Idénticos: ${s} ${s === 1 ? "fila" : "filas"} sin diferencias.`;
+    return s === 1
+      ? t("Idénticos: 1 fila sin diferencias.")
+      : t("Idénticos: {s} filas sin diferencias.", { s });
   }
   return [
-    `${changed} ${changed === 1 ? "fila cambiada" : "filas cambiadas"} (${cells} ${cells === 1 ? "celda" : "celdas"})`,
-    `${added} ${added === 1 ? "agregada" : "agregadas"}`,
-    `${removed} ${removed === 1 ? "quitada" : "quitadas"}`,
-    `${s} ${s === 1 ? "igual" : "iguales"}`,
+    `${changed === 1 ? t("1 fila cambiada") : t("{changed} filas cambiadas", { changed })} (${cells === 1 ? t("1 celda") : t("{cells} celdas", { cells })})`,
+    added === 1 ? t("1 agregada") : t("{added} agregadas", { added }),
+    removed === 1 ? t("1 quitada") : t("{removed} quitadas", { removed }),
+    s === 1 ? t("1 igual") : t("{s} iguales", { s }),
   ].join(" · ");
 }

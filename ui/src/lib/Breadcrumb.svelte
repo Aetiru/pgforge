@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
+  import { t } from "./i18n.svelte";
 
   let { server, database, title }: { server: string; database: string; title: string } = $props();
 
@@ -14,7 +15,7 @@
 {#if parts.length > 1}
   <nav
     class="divider-b flex h-6 shrink-0 items-center gap-1 overflow-hidden px-3 text-[11px] muted"
-    aria-label="Ubicación"
+    aria-label={t("Ubicación")}
   >
     {#each parts as part, index (index)}
       {#if index > 0}
