@@ -74,14 +74,24 @@
       // Mismo caso que el booleano: el tipo viene con confianza, así que no hace falta el
       // heurístico por valor que usa el resultado de una consulta (`ResultGrid`).
       const geometry = isGeometryType(column.typeName);
-      const longest = sample.reduce(
-        (max, row) => Math.max(max, (tab.value(row, index) ?? NULL).length),
-        column.name.length,
-      );
       // Por tipo del catálogo: `numeric(12,2)` también, aunque no esté en `NUMERIC` tal cual.
       const numericType = /^(smallint|integer|bigint|numeric|decimal|real|double precision|int[248]|float[48])\b/.test(
         column.typeName.toLowerCase(),
       );
+      // Se mide el texto que se dibuja y no el que viaja (ver `ResultGrid`): «t» pasa a «false» y
+      // un número gana un punto cada tres cifras.
+      const longest = sample.reduce((max, row) => {
+        const raw = tab.value(row, index);
+        const text =
+          raw === null
+            ? NULL
+            : bool
+              ? boolText(raw)
+              : numericType
+                ? numberFormat.show(raw)
+                : timeZone.show(raw);
+        return Math.max(max, text.length);
+      }, column.name.length);
 
       return {
         key: `${index}-${column.name}`,

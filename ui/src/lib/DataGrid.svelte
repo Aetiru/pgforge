@@ -1167,6 +1167,10 @@
             llevar cada una su `top`: mover una capa ya compuesta no cuesta nada, y posicionar
             cuarenta filas a mano rehace la disposición en cada cuadro del desplazamiento.
 
+            Sin desplazamiento (`start === 0`) no hay capa ni `transform`: no hay nada que mover, y
+            en WebKitGTK la capa compuesta dejaba la última fila de un resultado corto pintada a
+            medias —«f» en vez de «false»— hasta que el ratón forzaba el repintado.
+
             La clave es la posición absoluta de la fila, no su identidad. En una lista con ventana
             deslizante los nodos se reciclan por posición de todos modos, y una clave derivada de
             los datos obliga a que sean únicos: pg_stat_statements, por ejemplo, distingue sus filas
@@ -1174,8 +1178,8 @@
             render.
           -->
           <div
-            class="absolute inset-x-0 top-0 will-change-transform"
-            style="transform: translateY({start * rowHeight}px)"
+            class="absolute inset-x-0 top-0 {start > 0 ? 'will-change-transform' : ''}"
+            style={start > 0 ? `transform: translateY(${start * rowHeight}px)` : undefined}
           >
             {#each visible as row, index (start + index)}
               {@const at = start + index}
