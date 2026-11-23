@@ -1487,7 +1487,7 @@
             con el ancho entero de la fila, que era lo que se le comían el host, el entorno y el
             botón de conectar. El nombre cede espacio último; el detalle se achica primero.
           -->
-          <span class="flex min-w-0 flex-1 flex-col justify-center gap-px">
+          <span class="flex min-w-0 flex-auto flex-col justify-center gap-px">
             <span class="flex min-w-0 items-center gap-1.5">
               <span
                 class="min-w-0 truncate {isServer ? 'text-[12px] font-semibold' : ''}
@@ -1602,7 +1602,7 @@
             {/if}
           </span>
 
-          <span class="ml-auto flex shrink-0 items-center gap-0.5 pl-1">
+          <span class="ml-auto flex min-w-0 shrink items-center gap-0.5 pl-1">
             {#if isGroup && row.group !== undefined && ongroup}
               <button
                 class="btn btn-ghost btn-icon size-6 opacity-0 focus-visible:opacity-100
@@ -1717,7 +1717,7 @@
               que las del servidor: ocultas hasta pasar por encima o enfocar la fila.
             -->
             {#if object}
-              <span class="flex shrink-0 items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+              <span class="flex max-w-0 shrink-0 items-center overflow-hidden opacity-0 group-hover:max-w-32 group-hover:opacity-100 focus-within:max-w-32 focus-within:opacity-100">
                 {#if object.hasRows}
                   <button
                     class="btn btn-ghost btn-icon size-6"
@@ -1768,7 +1768,7 @@
             {#if row.detail && section}
               <span class="seg-count tabular-nums">{row.detail}</span>
             {:else if row.detail && !isServer}
-              <span class="max-w-28 truncate text-[11px] muted" title={row.detail}>{row.detail}</span>
+              <span class="min-w-0 max-w-28 shrink-[100] truncate text-[11px] muted" title={row.detail}>{row.detail}</span>
             {/if}
           </span>
         </div>
