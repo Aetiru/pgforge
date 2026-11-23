@@ -7,6 +7,7 @@
  * la aplicación hay que volver a elegirla, y lo único que se recuerda es dónde abrir el diálogo.
  */
 
+import { t } from "./i18n.svelte";
 import { Tab, tabs } from "./tabs.svelte";
 import { describeError, migrationOverview, pickOpen, type MigrationOverview } from "./ipc";
 
@@ -42,7 +43,7 @@ export class MigrationsTab extends Tab {
   error = $state<string | null>(null);
 
   constructor(profileId: string, database: string, folder: string | null) {
-    super(profileId, database, `Migraciones · ${database}`);
+    super(profileId, database, t("Migraciones · {database}", { database }));
     this.folder = folder;
   }
 
@@ -64,7 +65,7 @@ export class MigrationsTab extends Tab {
   async chooseFolder() {
     const chosen = await pickOpen({
       directory: true,
-      title: "Carpeta de migraciones",
+      title: t("Carpeta de migraciones"),
       defaultPath: remembered(this.profileId, this.database),
     });
     if (!chosen) return;

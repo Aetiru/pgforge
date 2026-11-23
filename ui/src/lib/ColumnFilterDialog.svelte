@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
@@ -33,20 +34,20 @@
   }
 </script>
 
-<Modal title="Filtrar «{column}»" subtitle="Se suma al WHERE con AND" size="sm" {onclose}>
+<Modal title={t("Filtrar «{column}»", { column })} subtitle={t("Se suma al WHERE con AND")} size="sm" {onclose}>
   <div class="space-y-3">
     <label class="flex flex-col gap-1">
-      <span class="label">Condición</span>
+      <span class="label">{t("Condición")}</span>
       <select class="field" bind:value={op}>
         {#each FILTER_OPS as item (item.value)}
-          <option value={item.value}>{item.label}</option>
+          <option value={item.value}>{t(item.label)}</option>
         {/each}
       </select>
     </label>
 
     {#if needsValue}
       <label class="flex flex-col gap-1">
-        <span class="label">Valor</span>
+        <span class="label">{t("Valor")}</span>
         <input
           class="field font-mono"
           data-autofocus
@@ -60,8 +61,7 @@
     {/if}
 
     <p class="text-xs muted">
-      El valor se escribe como texto entre comillas: no hace falta escaparlo. «Contiene» no
-      distingue mayúsculas.
+      {t("El valor se escribe como texto entre comillas: no hace falta escaparlo. «Contiene» no distingue mayúsculas.")}
     </p>
     {#if "sql" in built}
       <pre class="rounded bg-zinc-50 p-2 font-mono text-xs break-words whitespace-pre-wrap select-text dark:bg-zinc-800/60">{built.sql}</pre>
@@ -70,7 +70,7 @@
   </div>
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose}>Cancelar</button>
-    <button class="btn btn-primary" onclick={submit}>Aplicar</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cancelar")}</button>
+    <button class="btn btn-primary" onclick={submit}>{t("Aplicar")}</button>
   {/snippet}
 </Modal>

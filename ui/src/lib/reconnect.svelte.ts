@@ -1,3 +1,4 @@
+import { t } from "./i18n.svelte";
 import { onServerDown } from "./ipc/core";
 import { explorer } from "./explorer.svelte";
 import { tabs } from "./tabs.svelte";
@@ -40,11 +41,11 @@ class Reconnector {
     const delay = delayBefore(attempt);
     if (delay === null) {
       this.stop(profileId);
-      explorer.setDownNote(profileId, "sin conexión");
+      explorer.setDownNote(profileId, t("sin conexión"));
       return;
     }
     this.attempts = { ...this.attempts, [profileId]: attempt };
-    explorer.setDownNote(profileId, `reconectando… intento ${attempt} de ${MAX_ATTEMPTS}`);
+    explorer.setDownNote(profileId, t("reconectando… intento {attempt} de {MAX_ATTEMPTS}", { attempt, MAX_ATTEMPTS }));
     this.timers.set(
       profileId,
       setTimeout(() => void this.attempt(profileId, attempt), delay * 1000),
@@ -64,7 +65,7 @@ class Reconnector {
     } catch (error) {
       if (givesUp(error)) {
         this.stop(profileId);
-        explorer.setDownNote(profileId, "sin conexión");
+        explorer.setDownNote(profileId, t("sin conexión"));
         return;
       }
       this.schedule(profileId, attempt + 1);

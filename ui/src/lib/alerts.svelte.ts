@@ -1,3 +1,4 @@
+import { t } from "./i18n.svelte";
 import {
   ALERT_KEYS,
   RULE_SPECS,
@@ -162,7 +163,7 @@ class Alerts {
         kind: "resolved",
         level: "warn",
         title: resolved.title,
-        detail: "Se resolvió",
+        detail: t("Se resolvió"),
         at: resolved.at,
       });
     }

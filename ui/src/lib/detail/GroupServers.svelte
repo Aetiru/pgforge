@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "../i18n.svelte";
   /**
    * Una carpeta de conexiones no tiene catálogo que mostrar: lo único que contiene son conexiones,
    * así que el panel es la lista de esas conexiones con lo que se puede hacer con cada una.
@@ -21,8 +22,8 @@
 
 <div class="card overflow-hidden">
   <div class="card-head">
-    <span class="card-title">Servidores de la carpeta</span>
-    <span class="ml-auto text-xs muted">Arrastrá un servidor del árbol para meterlo o sacarlo</span>
+    <span class="card-title">{t("Servidores de la carpeta")}</span>
+    <span class="ml-auto text-xs muted">{t("Arrastrá un servidor del árbol para meterlo o sacarlo")}</span>
   </div>
 
   <div class="table-scroll">
@@ -41,17 +42,17 @@
               <div class="row-actions">
                 {#if server.connected}
                   <button class="btn btn-sm" onclick={() => ondisconnect(server.profileId)}>
-                    Desconectar
+                    {t("Desconectar")}
                   </button>
                 {:else}
                   <button class="btn btn-sm" onclick={() => onconnect(server.profileId)}>
-                    Conectar
+                    {t("Conectar")}
                   </button>
                 {/if}
                 <button
                   class="btn btn-ghost btn-icon size-6"
-                  title="Editar el servidor"
-                  aria-label="Editar el servidor"
+                  title={t("Editar el servidor")}
+                  aria-label={t("Editar el servidor")}
                   onclick={() => onedit(server.profileId)}
                 >
                   <Icon name="edit" size={12} />

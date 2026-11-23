@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Icon from "./Icon.svelte";
@@ -38,14 +39,14 @@
   let saved = $state<MigrationSaved | null>(null);
 
   async function choose() {
-    const chosen = await pickOpen({ directory: true, title: "Carpeta de migraciones" });
+    const chosen = await pickOpen({ directory: true, title: t("Carpeta de migraciones") });
     if (chosen) folder = chosen;
   }
 
   function validate(): string | null {
-    if (!description.trim()) return "Poné una descripción: es lo que va en el nombre del archivo.";
-    if (!folder) return "Elegí la carpeta donde guardar la migración.";
-    if (withDown && !down.trim()) return "Escribí el script de reversa, o desmarcá la opción.";
+    if (!description.trim()) return t("Poné una descripción: es lo que va en el nombre del archivo.");
+    if (!folder) return t("Elegí la carpeta donde guardar la migración.");
+    if (withDown && !down.trim()) return t("Escribí el script de reversa, o desmarcá la opción.");
     return null;
   }
 
@@ -70,50 +71,49 @@
 </script>
 
 <Modal
-  title="Guardar como migración"
-  subtitle="{schema} en {database}"
+  title={t("Guardar como migración")}
+  subtitle={t("{schema} en {database}", { schema, database })}
   size="lg"
   {busy}
   {onclose}
 >
   {#if saved}
     <Alert tone="ok" box>
-      Guardada como <span class="font-mono select-text">{saved.upFile}</span>
+      {t("Guardada como")} <span class="font-mono select-text">{saved.upFile}</span>
       {#if saved.downFile}
-        y <span class="font-mono select-text">{saved.downFile}</span>
-      {/if}. Queda pendiente: no se aplicó a ningún servidor.
+        {t("y")} <span class="font-mono select-text">{saved.downFile}</span>
+      {/if}. {t("Queda pendiente: no se aplicó a ningún servidor.")}
     </Alert>
   {:else}
     <label class="flex flex-col gap-1">
-      <span class="label">Descripción</span>
+      <span class="label">{t("Descripción")}</span>
       <input class="field" data-autofocus bind:value={description} />
     </label>
     <p class="mt-1 text-xs muted">
-      Va en el nombre del archivo, sin tildes ni símbolos: <span class="font-mono">V012__sincronizar_public.sql</span>.
-      El número es el siguiente a los que ya hay en la carpeta.
+      {t("Va en el nombre del archivo, sin tildes ni símbolos:")} <span class="font-mono">V012__sincronizar_public.sql</span>.
+      {t("El número es el siguiente a los que ya hay en la carpeta.")}
     </p>
 
     <div class="mt-3 flex flex-col gap-1">
-      <span class="label">Carpeta</span>
+      <span class="label">{t("Carpeta")}</span>
       <div class="flex gap-2">
-        <input class="field flex-1 font-mono" readonly value={folder ?? ""} placeholder="Sin elegir" />
-        <button class="btn" onclick={choose}><Icon name="folder" size={12} /> Elegir…</button>
+        <input class="field flex-1 font-mono" readonly value={folder ?? ""} placeholder={t("Sin elegir")} />
+        <button class="btn" onclick={choose}><Icon name="folder" size={12} /> {t("Elegir…")}</button>
       </div>
     </div>
 
     <label class="check mt-3">
       <input type="checkbox" bind:checked={withDown} />
-      Agregar un script de reversa (<span class="font-mono">U…</span>)
+      {t("Agregar un script de reversa")} (<span class="font-mono">U…</span>)
     </label>
     {#if withDown}
       <textarea
         class="field mt-1 h-28 w-full font-mono text-xs"
         bind:value={down}
-        placeholder="-- Lo que deja el esquema como estaba antes"
+        placeholder={t("-- Lo que deja el esquema como estaba antes")}
       ></textarea>
       <p class="mt-1 text-xs muted">
-        pgforge no lo deduce: un script de reversa mal armado es peor que ninguno. Sin él, la
-        migración se puede aplicar pero no deshacer desde la aplicación.
+        {t("pgforge no lo deduce: un script de reversa mal armado es peor que ninguno. Sin él, la migración se puede aplicar pero no deshacer desde la aplicación.")}
       </p>
     {/if}
 
@@ -124,13 +124,13 @@
 
   {#snippet footer()}
     {#if saved}
-      <button class="btn ml-auto" onclick={onclose}>Cerrar</button>
-      <button class="btn btn-primary" onclick={openList}>Abrir migraciones</button>
+      <button class="btn ml-auto" onclick={onclose}>{t("Cerrar")}</button>
+      <button class="btn btn-primary" onclick={openList}>{t("Abrir migraciones")}</button>
     {:else}
-      <button class="btn ml-auto" disabled={busy} onclick={onclose}>Cancelar</button>
+      <button class="btn ml-auto" disabled={busy} onclick={onclose}>{t("Cancelar")}</button>
       <button class="btn btn-primary" disabled={busy} onclick={submit}>
         {#if busy}<span class="spinner"></span>{:else}<Icon name="save" size={12} />{/if}
-        Guardar
+        {t("Guardar")}
       </button>
     {/if}
   {/snippet}

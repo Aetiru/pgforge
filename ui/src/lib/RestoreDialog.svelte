@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import { pickOpen } from "./ipc";
   import { confirmMutation, isReadOnly, readOnlyReason } from "./access.svelte";
@@ -111,8 +112,8 @@
 
   async function choose() {
     const chosen = isDirectory
-      ? await pickOpen({ directory: true, title: "El directorio del backup a restaurar" })
-      : await pickOpen({ title: "El archivo del backup a restaurar" });
+      ? await pickOpen({ directory: true, title: t("El directorio del backup a restaurar") })
+      : await pickOpen({ title: t("El archivo del backup a restaurar") });
     if (typeof chosen === "string") source = chosen;
   }
 
@@ -122,7 +123,7 @@
    * la vista de procesos.
    */
   async function run() {
-    if (!(await confirmMutation(profileId, "Se va a restaurar un respaldo sobre esta base."))) {
+    if (!(await confirmMutation(profileId, t("Se va a restaurar un respaldo sobre esta base.")))) {
       return;
     }
 
@@ -136,57 +137,57 @@
   }
 </script>
 
-<Modal title="Restaurar" subtitle="base {target}" size="lg" {onclose}>
+<Modal title={t("Restaurar")} subtitle={t("base {name}", { name: target })} size="lg" {onclose}>
   <div class="seg" role="tablist">
     {#each FORMATS as item (item.value)}
       <button
         class="seg-item"
         role="tab"
         aria-selected={format === item.value}
-        title={item.hint}
+        title={t(item.hint)}
         onclick={() => (format = item.value)}
       >
-        {item.label}
+        {t(item.label)}
       </button>
     {/each}
   </div>
-  <p class="mt-1 text-xs muted">{FORMATS.find((item) => item.value === format)?.hint}</p>
+  <p class="mt-1 text-xs muted">{t(FORMATS.find((item) => item.value === format)?.hint ?? "")}</p>
 
   <div class="mt-3 flex items-end gap-2">
     <label class="flex min-w-0 flex-1 flex-col gap-1">
-      <span class="label">{isDirectory ? "Directorio del backup" : "Archivo del backup"}</span>
+      <span class="label">{isDirectory ? t("Directorio del backup") : t("Archivo del backup")}</span>
       <input
         class="field font-mono text-xs"
         bind:value={source}
         readonly
-        title="La ruta se elige con el botón: solo se aceptan rutas elegidas en el diálogo del sistema"
+        title={t("La ruta se elige con el botón: solo se aceptan rutas elegidas en el diálogo del sistema")}
       />
     </label>
-    <button class="btn" onclick={choose}>Elegir…</button>
+    <button class="btn" onclick={choose}>{t("Elegir…")}</button>
   </div>
 
   <label class="mt-3 flex flex-col gap-1">
-    <span class="label">Base destino</span>
+    <span class="label">{t("Base destino")}</span>
     <input class="field" bind:value={target} disabled={create} />
     {#if create}
-      <span class="text-xs muted">Con «crear la base» el destino lo define el propio backup.</span>
+      <span class="text-xs muted">{t("Con \"crear la base\" el destino lo define el propio backup.")}</span>
     {/if}
   </label>
 
   <div class="mt-3">
-    <span class="label">Qué restaurar</span>
+    <span class="label">{t("Qué restaurar")}</span>
     <div class="mt-1 flex flex-col gap-1.5">
       <label class="check">
         <input type="radio" value="all" bind:group={contents} />
-        El esquema y los datos
+        {t("El esquema y los datos")}
       </label>
       <label class="check">
         <input type="radio" value="schema" bind:group={contents} />
-        Solo el esquema
+        {t("Solo el esquema")}
       </label>
       <label class="check">
         <input type="radio" value="data" bind:group={contents} />
-        Solo los datos
+        {t("Solo los datos")}
       </label>
     </div>
   </div>
@@ -194,35 +195,35 @@
   <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
     <label class="check">
       <input type="checkbox" bind:checked={clean} />
-      Limpiar (eliminar cada objeto antes de recrearlo)
+      {t("Limpiar (eliminar cada objeto antes de recrearlo)")}
     </label>
     {#if clean}
       <label class="check">
         <input type="checkbox" bind:checked={ifExists} />
-        …y no fallar si todavía no existe
+        {t("…y no fallar si todavía no existe")}
       </label>
     {/if}
     <label class="check">
       <input type="checkbox" bind:checked={create} />
-      Crear la base destino
+      {t("Crear la base destino")}
     </label>
     <label class="check">
       <input type="checkbox" bind:checked={singleTransaction} />
-      Una sola transacción (revierte si algo falla)
+      {t("Una sola transacción (revierte si algo falla)")}
     </label>
     <label class="check">
       <input type="checkbox" bind:checked={noOwner} />
-      Sin los dueños
+      {t("Sin los dueños")}
     </label>
     <label class="check">
       <input type="checkbox" bind:checked={noPrivileges} />
-      Sin los privilegios
+      {t("Sin los privilegios")}
     </label>
   </div>
 
   {#if admiteJobs}
     <label class="mt-3 flex flex-col gap-1">
-      <span class="label">Trabajos en paralelo</span>
+      <span class="label">{t("Trabajos en paralelo")}</span>
       <input
         class="field w-24"
         type="number"
@@ -248,13 +249,13 @@
   {/if}
 
   <p class="mt-2 text-xs muted">
-    Corre en segundo plano: se sigue y se cancela desde la vista de procesos.
+    {t("Corre en segundo plano: se sigue y se cancela desde la vista de procesos.")}
   </p>
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose}>Cerrar</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cerrar")}</button>
     <button class="btn btn-primary" onclick={run} disabled={command.length === 0} {...blocked}>
-      Restaurar
+      {t("Restaurar")}
     </button>
   {/snippet}
 </Modal>

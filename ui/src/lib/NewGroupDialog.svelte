@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
   import { explorer, groupStartsWith } from "./explorer.svelte";
@@ -24,9 +25,9 @@
   });
 
   function validate(): string | null {
-    if (!name) return "Poné un nombre para la carpeta.";
+    if (!name) return t("Poné un nombre para la carpeta.");
     if (explorer.groups.includes(name) || explorer.pendingGroups.includes(name)) {
-      return `Ya existe una carpeta «${name}».`;
+      return t("Ya existe una carpeta \"{name}\".", { name });
     }
     return null;
   }
@@ -39,9 +40,9 @@
   }
 </script>
 
-<Modal title="Nueva carpeta" size="sm" {onclose}>
+<Modal title={t("Nueva carpeta")} size="sm" {onclose}>
   <label class="flex flex-col gap-1">
-    <span class="label">Nombre</span>
+    <span class="label">{t("Nombre")}</span>
     <input
       class="field"
       data-autofocus
@@ -53,14 +54,16 @@
   </label>
 
   <p class="mt-2 text-xs muted">
-    La carpeta agrupa conexiones guardadas: no toca nada en los servidores. Arrastrá servidores del
-    árbol para meterlos. Una barra anida —«Clientes/ACME» se dibuja adentro de «Clientes»—. Una
-    carpeta que quede vacía no se guarda: desaparece al cerrar la aplicación.
+    {t(
+      "La carpeta agrupa conexiones guardadas: no toca nada en los servidores. Arrastrá servidores del árbol para meterlos. Una barra anida —\"Clientes/ACME\" se dibuja adentro de \"Clientes\"—. Una carpeta que quede vacía no se guarda: desaparece al cerrar la aplicación.",
+    )}
   </p>
 
   {#if outOfWorkspaceScope}
     <Alert tone="warn" class="mt-2">
-      Esto no va a verse en esta ventana: queda fuera de «{explorer.workspace?.rootGroup}».
+      {t("Esto no va a verse en esta ventana: queda fuera de \"{root}\".", {
+        root: explorer.workspace?.rootGroup ?? "",
+      })}
     </Alert>
   {/if}
 
@@ -69,7 +72,7 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose}>Cancelar</button>
-    <button class="btn btn-primary" onclick={submit}>Crear</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cancelar")}</button>
+    <button class="btn btn-primary" onclick={submit}>{t("Crear")}</button>
   {/snippet}
 </Modal>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
@@ -99,7 +100,7 @@
       return;
     }
 
-    if (!(await confirmMutation(profileId, "Se va a modificar una política de seguridad.", sqlToApply))) return;
+    if (!(await confirmMutation(profileId, t("Se va a modificar una política de seguridad."), sqlToApply))) return;
 
     saving = true;
     try {
@@ -114,7 +115,7 @@
 </script>
 
 <Modal
-  title={existing ? `Editar la política ${existing.name}` : "Nueva política"}
+  title={existing ? t("Editar la política {name}", { name: existing.name }) : t("Nueva política")}
   subtitle="{schema}.{table}"
   size="lg"
   busy={saving}
@@ -122,20 +123,18 @@
 >
   {#if existing}
     <p class="mb-3 text-xs muted">
-      PostgreSQL no deja cambiar el comando ni el carácter restrictivo de una política que ya
-      existe: se borra y se vuelve a crear con lo que quede acá, todo dentro de la misma
-      transacción.
+      {t("PostgreSQL no deja cambiar el comando ni el carácter restrictivo de una política que ya existe: se borra y se vuelve a crear con lo que quede acá, todo dentro de la misma transacción.")}
     </p>
   {/if}
 
   <div class="grid grid-cols-2 gap-3">
     <label class="flex flex-col gap-1">
-      <span class="label">Nombre</span>
+      <span class="label">{t("Nombre")}</span>
       <input class="field" data-autofocus bind:value={form.name} />
     </label>
 
     <label class="flex flex-col gap-1">
-      <span class="label">Comando</span>
+      <span class="label">{t("Comando")}</span>
       <select class="field" bind:value={form.command}>
         {#each COMMAND_OPTIONS as option (option.value)}
           <option value={option.value}>{option.label}</option>
@@ -145,55 +144,54 @@
   </div>
 
   <label class="mt-3 flex flex-col gap-1">
-    <span class="label">Roles</span>
-    <input class="field" bind:value={form.roles} placeholder="ana, beto — vacío es PUBLIC" />
+    <span class="label">{t("Roles")}</span>
+    <input class="field" bind:value={form.roles} placeholder={t("ana, beto — vacío es PUBLIC")} />
     <span class="text-xs muted">
-      Separados por coma. Sin roles la política alcanza a todo el mundo.
+      {t("Separados por coma. Sin roles la política alcanza a todo el mundo.")}
     </span>
   </label>
 
   <div class="mt-3">
-    <span class="label">Cómo se combina con las demás</span>
+    <span class="label">{t("Cómo se combina con las demás")}</span>
     <div class="mt-1 flex flex-col gap-1.5">
       <label class="check">
         <input type="radio" value="permissive" bind:group={form.kind} />
-        Permisiva: suma a lo que dejan pasar las otras
+        {t("Permisiva: suma a lo que dejan pasar las otras")}
       </label>
       <label class="check">
         <input type="radio" value="restrictive" bind:group={form.kind} />
-        Restrictiva: recorta lo que las permisivas dejaron pasar
+        {t("Restrictiva: recorta lo que las permisivas dejaron pasar")}
       </label>
     </div>
   </div>
 
   {#if acceptsUsing}
     <label class="mt-3 flex flex-col gap-1">
-      <span class="label">USING — qué filas se ven</span>
+      <span class="label">{t("USING — qué filas se ven")}</span>
       <input
         class="field font-mono"
         bind:value={form.using}
-        placeholder="condición SQL, p. ej. dueno = current_user"
+        placeholder={t("condición SQL, p. ej. dueno = current_user")}
       />
     </label>
   {:else}
     <p class="mt-3 text-xs muted">
-      Una política de INSERT no lleva USING: no hay filas previas que filtrar.
+      {t("Una política de INSERT no lleva USING: no hay filas previas que filtrar.")}
     </p>
   {/if}
 
   {#if acceptsCheck}
     <label class="mt-3 flex flex-col gap-1">
-      <span class="label">WITH CHECK — qué filas se pueden escribir</span>
+      <span class="label">{t("WITH CHECK — qué filas se pueden escribir")}</span>
       <input
         class="field font-mono"
         bind:value={form.check}
-        placeholder="condición SQL; vacío repite la de USING"
+        placeholder={t("condición SQL; vacío repite la de USING")}
       />
     </label>
   {:else}
     <p class="mt-3 text-xs muted">
-      Una política de {form.command === "select" ? "SELECT" : "DELETE"} no lleva WITH CHECK: no escribe ninguna
-      fila que verificar.
+      {t("Una política de {command} no lleva WITH CHECK: no escribe ninguna fila que verificar.", { command: form.command === "select" ? "SELECT" : "DELETE" })}
     </p>
   {/if}
 
@@ -206,11 +204,11 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>{t("Ver SQL")}</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving}>
       {#if saving}<span class="spinner"></span>{/if}
-      {existing ? "Guardar" : "Crear política"}
+      {existing ? t("Guardar") : t("Crear política")}
     </button>
   {/snippet}
 </Modal>

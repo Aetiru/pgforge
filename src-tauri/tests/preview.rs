@@ -256,6 +256,31 @@ fn la_vista_previa_de_un_rol_muestra_la_sentencia_literal_que_se_va_a_ejecutar()
 }
 
 #[test]
+fn la_plantilla_de_acceso_de_un_rol_llega_con_los_nombres_que_manda_la_interfaz() {
+    // `futureTables` y `level` en camelCase: el olvido de `rename_all_fields` se cae acá y no en
+    // tiempo de ejecución con «missing field».
+    let changes: Vec<RoleChange> = payload(json!([{
+        "kind": "grantSchemaAccess",
+        "role": "ana",
+        "schema": "ventas",
+        "level": "write",
+        "futureTables": true
+    }]));
+
+    let sql: Vec<String> = commands::ddl::role_preview(changes)
+        .unwrap()
+        .into_iter()
+        .map(|statement| statement.sql)
+        .collect();
+    assert_eq!(sql.len(), 5, "{sql:?}");
+    assert_eq!(sql[0], "GRANT USAGE ON SCHEMA ventas TO ana");
+    assert!(
+        sql[3].starts_with("ALTER DEFAULT PRIVILEGES IN SCHEMA ventas"),
+        "{sql:?}"
+    );
+}
+
+#[test]
 fn un_grant_sobre_una_tabla_traduce_los_privilegios_elegidos() {
     let changes: Vec<PrivilegeChange> = payload(json!([{
         "kind": "grant",

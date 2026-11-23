@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import Alert from "./Alert.svelte";
   import AuditDialog from "./AuditDialog.svelte";
   import Confirm from "./Confirm.svelte";
@@ -110,7 +111,7 @@
       />
       <input
         class="field w-full py-1 pl-7"
-        placeholder="Buscar en el historial"
+        placeholder={t("Buscar en el historial")}
         bind:value={search}
         oninput={searchSoon}
         onkeydown={(event) => {
@@ -123,23 +124,23 @@
       />
     </div>
 
-    <label class="check" title="La búsqueda por texto siempre mira el historial completo">
+    <label class="check" title={t("La búsqueda por texto siempre mira el historial completo")}>
       <input type="checkbox" bind:checked={onlyThisServer} disabled={search.trim() !== ""} />
-      Solo este servidor
+      {t("Solo este servidor")}
     </label>
 
     <button
       class="btn btn-sm btn-ghost"
-      title="Filtrar por servidor, base, fechas y origen, y exportar a CSV o JSON"
+      title={t("Filtrar por servidor, base, fechas y origen, y exportar a CSV o JSON")}
       onclick={() => (auditOpen = true)}
     >
       <Icon name="clock" size={11} />
-      Auditoría…
+      {t("Auditoría…")}
     </button>
 
     <button class="btn btn-sm btn-danger-ghost" onclick={() => (confirmClear = true)}>
       <Icon name="trash" size={11} />
-      Vaciar
+      {t("Vaciar")}
     </button>
   </div>
 
@@ -148,10 +149,10 @@
   {:else if entries.length === 0}
     <Empty
       icon="clock"
-      title={search.trim() === "" ? "Todavía no ejecutaste ninguna consulta" : "Sin coincidencias"}
+      title={search.trim() === "" ? t("Todavía no ejecutaste ninguna consulta") : t("Sin coincidencias")}
       hint={search.trim() === ""
-        ? "Cada consulta que ejecutes queda acá, con su duración y cuántas filas devolvió."
-        : "Probá con otra parte del texto de la consulta."}
+        ? t("Cada consulta que ejecutes queda acá, con su duración y cuántas filas devolvió.")
+        : t("Probá con otra parte del texto de la consulta.")}
     />
   {:else}
     <ul class="min-h-0 flex-1 overflow-auto">
@@ -161,7 +162,7 @@
             class="group flex w-full items-baseline gap-2 px-3 py-1.5 text-left
                    hover:bg-zinc-100 dark:hover:bg-zinc-700/70
                    {entry.id === selectedId ? 'bg-blue-50 dark:bg-blue-950/50' : ''}"
-            title="Ver la consulta entera. Doble clic la trae al editor"
+            title={t("Ver la consulta entera. Doble clic la trae al editor")}
             aria-pressed={entry.id === selectedId}
             onclick={() => (selectedId = entry.id)}
             ondblclick={() => onpick(entry.sql)}
@@ -172,8 +173,8 @@
             <!-- Lo que salió de un diálogo se marca: el historial ya no es solo lo que uno escribió,
                  es todo lo que la aplicación ejecutó contra el servidor. -->
             {#if entry.source === "dialog"}
-              <span class="tag tag-neutral shrink-0" title="Lo aplicó un diálogo de la aplicación">
-                diálogo
+              <span class="tag tag-neutral shrink-0" title={t("Lo aplicó un diálogo de la aplicación")}>
+                {t("diálogo")}
               </span>
             {/if}
             <span
@@ -187,11 +188,11 @@
                 <!-- Cuántas filas devolvió es lo primero que sobra cuando el panel es angosto: lo
                      que se busca en la lista es la consulta, y el tiempo dice más que el conteo. -->
                 {#if entry.rowCount !== null}
-                  <span class="hidden @sm/history:inline">{count(entry.rowCount)} filas ·</span>
+                  <span class="hidden @sm/history:inline">{t("{n} filas ·", { n: count(entry.rowCount) })}</span>
                 {/if}
                 {decimal(entry.seconds * 1000, 0)} ms
               {:else}
-                <span class="tag tag-bad">falló</span>
+                <span class="tag tag-bad">{t("falló")}</span>
               {/if}
             </span>
           </button>
@@ -208,10 +209,10 @@
           <span class="ml-auto"></span>
           <button class="btn btn-sm btn-ghost" onclick={copySelected}>
             <Icon name={copied ? "check" : "copy"} size={11} />
-            {copied ? "Copiada" : "Copiar"}
+            {copied ? t("Copiada") : t("Copiar")}
           </button>
           <button class="btn btn-sm btn-primary" onclick={() => onpick(selected.sql)}>
-            Traer al editor
+            {t("Traer al editor")}
           </button>
         </div>
         <div class="min-h-0 flex-1 overflow-auto px-3 pb-2 select-text">
@@ -224,9 +225,9 @@
 
 {#if confirmClear}
   <Confirm
-    title="Vaciar el historial"
-    message="Se borran todas las consultas registradas, de todos los servidores. No se toca nada en la base de datos."
-    confirmLabel="Vaciar"
+    title={t("Vaciar el historial")}
+    message={t("Se borran todas las consultas registradas, de todos los servidores. No se toca nada en la base de datos.")}
+    confirmLabel={t("Vaciar")}
     onconfirm={async () => {
       confirmClear = false;
       try {

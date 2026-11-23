@@ -222,6 +222,7 @@ pub fn run() {
             commands::ddl::role_info,
             commands::ddl::role_memberships,
             commands::ddl::role_names,
+            commands::ddl::role_options,
             commands::ddl::privilege_preview,
             commands::ddl::privilege_apply,
             commands::ddl::relation_privileges,

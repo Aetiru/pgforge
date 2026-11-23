@@ -6,16 +6,19 @@
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
+  import { t } from "./i18n.svelte";
   import { cellOf, indexEffective, objectsOf, PRIVILEGES_OF } from "./permission-matrix";
   import type { MatrixObjectKind, PermissionMatrixTab } from "./permission-matrix.svelte";
 
   let { tab }: { tab: PermissionMatrixTab } = $props();
 
-  const OBJECT_KINDS: { value: MatrixObjectKind; label: string; icon: "table" | "sequence" | "function" }[] = [
-    { value: "table", label: "Tablas", icon: "table" },
-    { value: "sequence", label: "Secuencias", icon: "sequence" },
-    { value: "function", label: "Funciones", icon: "function" },
-  ];
+  // Derivada: la etiqueta sigue al idioma vigente.
+  const OBJECT_KINDS: { value: MatrixObjectKind; label: string; icon: "table" | "sequence" | "function" }[] =
+    $derived([
+      { value: "table", label: t("Tablas"), icon: "table" },
+      { value: "sequence", label: t("Secuencias"), icon: "sequence" },
+      { value: "function", label: t("Funciones"), icon: "function" },
+    ]);
 
   const privileges = $derived(PRIVILEGES_OF[tab.objectKind]);
   const objects = $derived(objectsOf(tab.effective));
@@ -23,7 +26,7 @@
 
   async function changeSchema(schema: string) {
     tab.schema = schema;
-    tab.title = `Permisos · ${schema}`;
+    tab.title = t("Permisos · {schema}", { schema });
     await tab.load();
   }
 
@@ -41,7 +44,7 @@
 <div class="flex h-full flex-col">
   <div class="toolbar divider-b flex-wrap gap-3">
     <label class="flex flex-col gap-1">
-      <span class="label">Esquema</span>
+      <span class="label">{t("Esquema")}</span>
       <select
         class="field"
         value={tab.schema}
@@ -56,7 +59,7 @@
     <div class="toolbar-sep"></div>
 
     <div class="flex flex-col gap-1">
-      <span class="label">Objetos</span>
+      <span class="label">{t("Objetos")}</span>
       <div class="seg" role="tablist">
         {#each OBJECT_KINDS as { value, label, icon } (value)}
           <button
@@ -75,13 +78,13 @@
     <div class="toolbar-sep"></div>
 
     <div class="flex min-w-64 flex-1 flex-col gap-1">
-      <span class="label">Roles a mostrar</span>
+      <span class="label">{t("Roles a mostrar")}</span>
       <div class="flex flex-wrap items-center gap-1.5">
         {#each tab.availableRoles as role (role)}
           <button
             class="tag {tab.selectedRoles.includes(role) ? 'tag-info' : 'tag-neutral'}"
             onclick={() => toggle(role)}
-            title={tab.selectedRoles.includes(role) ? `Sacar a ${role}` : `Mostrar a ${role}`}
+            title={tab.selectedRoles.includes(role) ? t("Sacar a {role}", { role }) : t("Mostrar a {role}", { role })}
           >
             {role}
           </button>
@@ -89,7 +92,7 @@
       </div>
     </div>
 
-    <button class="btn btn-icon ml-auto" title="Volver a leer" onclick={() => tab.load()}>
+    <button class="btn btn-icon ml-auto" title={t("Volver a leer")} onclick={() => tab.load()}>
       <Icon name="refresh" size={12} />
     </button>
   </div>
@@ -99,12 +102,16 @@
   {/if}
 
   {#if tab.selectedRoles.length === 0}
-    <Empty icon="role" title="Sin roles elegidos" hint="Marcá al menos un rol arriba para ver la matriz." />
+    <Empty icon="role" title={t("Sin roles elegidos")} hint={t("Marcá al menos un rol arriba para ver la matriz.")} />
   {:else if !tab.loading && objects.length === 0}
     <Empty
       icon="table"
-      title="Sin objetos"
-      hint="Este esquema no tiene {tab.objectKind === 'table' ? 'tablas ni vistas' : tab.objectKind === 'sequence' ? 'secuencias' : 'funciones ni procedimientos'}."
+      title={t("Sin objetos")}
+      hint={tab.objectKind === "table"
+        ? t("Este esquema no tiene tablas ni vistas.")
+        : tab.objectKind === "sequence"
+          ? t("Este esquema no tiene secuencias.")
+          : t("Este esquema no tiene funciones ni procedimientos.")}
     />
   {:else}
     <div class="min-h-0 flex-1 overflow-auto">
@@ -148,7 +155,7 @@
                                  {cell.direct
                             ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
                             : 'border border-amber-500/60 text-amber-600 dark:text-amber-400'}"
-                          title="{privilege} — {cell.direct ? 'otorgado directo' : `heredado por membresía`}"
+                          title="{privilege} — {cell.direct ? t('otorgado directo') : t('heredado por membresía')}"
                         >
                           {privilege[0]}
                         </span>
@@ -166,11 +173,11 @@
     <div class="divider-t flex items-center gap-4 px-3 py-1.5 text-[11px] muted">
       <span class="flex items-center gap-1.5">
         <span class="inline-flex h-3.5 w-3.5 items-center justify-center rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"></span>
-        Otorgado directo
+        {t("Otorgado directo")}
       </span>
       <span class="flex items-center gap-1.5">
         <span class="inline-flex h-3.5 w-3.5 items-center justify-center rounded border border-amber-500/60"></span>
-        Heredado por membresía
+        {t("Heredado por membresía")}
       </span>
       <span class="ml-auto">{privileges.map((p) => `${p[0]} = ${p}`).join(" · ")}</span>
     </div>

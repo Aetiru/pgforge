@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { tick } from "svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
@@ -79,8 +80,8 @@
         bind:this={input}
         bind:value={query}
         class="w-full bg-transparent text-sm outline-none placeholder:text-zinc-400"
-        placeholder="Buscar entre las pestañas abiertas…"
-        aria-label="Buscar pestaña"
+        placeholder={t("Buscar entre las pestañas abiertas…")}
+        aria-label={t("Buscar pestaña")}
       />
       <kbd class="shrink-0 text-[10px] muted">Esc</kbd>
     </div>
@@ -89,8 +90,8 @@
       {#if items.length === 0}
         <Empty
           icon="search"
-          title="Ninguna pestaña coincide"
-          hint="Se busca por título, servidor y base entre las pestañas abiertas."
+          title={t("Ninguna pestaña coincide")}
+          hint={t("Se busca por título, servidor y base entre las pestañas abiertas.")}
         />
       {:else}
         {#each items as { tab, server }, index (tab.key)}
@@ -103,7 +104,7 @@
             <Icon name="table" size={12} class="shrink-0 text-zinc-400" />
             <span class="min-w-0 flex-1 truncate">{tab.title}</span>
             {#if tab instanceof QueryTab && tab.dirty}
-              <span class="size-2 shrink-0 rounded-full bg-amber-500" title="Cambios sin guardar"></span>
+              <span class="size-2 shrink-0 rounded-full bg-amber-500" title={t("Cambios sin guardar")}></span>
             {/if}
             <span class="min-w-0 shrink-[100] truncate text-xs muted">
               {server}{tab.database ? ` / ${tab.database}` : ""}

@@ -16,6 +16,8 @@
  * (qué confirmación pedir), así que vive acá y no se pide por IPC a cada diálogo.
  */
 
+
+import { t } from "./i18n.svelte";
 export type RiskKind = "drop" | "truncate" | "delete-all" | "update-all" | "unsure";
 
 export interface StatementRisk {
@@ -27,11 +29,11 @@ export interface StatementRisk {
 }
 
 export const RISK_LABEL: Record<RiskKind, string> = {
-  drop: "Elimina objetos (DROP)",
-  truncate: "Vacía tablas enteras (TRUNCATE)",
-  "delete-all": "DELETE sin WHERE: borra todas las filas",
-  "update-all": "UPDATE sin WHERE: modifica todas las filas",
-  unsure: "No se pudo analizar con certeza",
+  get drop() { return t("Elimina objetos (DROP)"); },
+  get truncate() { return t("Vacía tablas enteras (TRUNCATE)"); },
+  get "delete-all"() { return t("DELETE sin WHERE: borra todas las filas"); },
+  get "update-all"() { return t("UPDATE sin WHERE: modifica todas las filas"); },
+  get unsure() { return t("No se pudo analizar con certeza"); },
 };
 
 export type Token =

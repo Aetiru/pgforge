@@ -7,6 +7,7 @@
  * por filas— no tiene nodo en el árbol y se resuelve acá. Pura y con Vitest.
  */
 
+import { t } from "./i18n.svelte";
 import type { NodeLook } from "./badges";
 import { compareLabel, compareLook, kindLabel, lookOf } from "./badges";
 import type { CompareKind, CompareObject, DiffEntry } from "./ipc";
@@ -17,31 +18,31 @@ export type CompareCategory = "structure" | "logic" | "access";
 export const COMPARE_CATEGORIES: { key: CompareCategory; label: string; title: string }[] = [
   {
     key: "structure",
-    label: "Estructura",
-    title: "Tablas, vistas, secuencias y tipos",
+    get label() { return t("Estructura"); },
+    get title() { return t("Tablas, vistas, secuencias y tipos"); },
   },
   {
     key: "logic",
-    label: "Lógica",
-    title: "Funciones, procedimientos y disparadores",
+    get label() { return t("Lógica"); },
+    get title() { return t("Funciones, procedimientos y disparadores"); },
   },
   {
     key: "access",
-    label: "Acceso",
-    title: "Seguridad por filas, políticas y permisos (GRANT)",
+    get label() { return t("Acceso"); },
+    get title() { return t("Seguridad por filas, políticas y permisos (GRANT)"); },
   },
 ];
 
 /** Lo que se compara, en una frase para el diálogo. */
-export const COMPARE_SCOPE = [
-  "tablas con sus columnas, restricciones e índices",
-  "vistas",
-  "secuencias",
-  "tipos",
-  "funciones y procedimientos",
-  "disparadores",
-  "políticas de seguridad por filas",
-  "permisos",
+export const compareScope = () => [
+  t("tablas con sus columnas, restricciones e índices"),
+  t("vistas"),
+  t("secuencias"),
+  t("tipos"),
+  t("funciones y procedimientos"),
+  t("disparadores"),
+  t("políticas de seguridad por filas"),
+  t("permisos"),
 ];
 
 export function categoryOf(kind: CompareKind): CompareCategory {
@@ -99,9 +100,9 @@ export function compareKindLabel(kind: CompareKind): string {
     case "policy":
       return kindLabel(kind);
     case "rowSecurity":
-      return "Seguridad por filas";
+      return t("Seguridad por filas");
     case "grant":
-      return "Permisos";
+      return t("Permisos");
     default:
       return compareLabel(kind satisfies CompareObject);
   }

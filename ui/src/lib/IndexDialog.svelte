@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import { confirmMutation, isReadOnly, readOnlyReason } from "./access.svelte";
   import Alert from "./Alert.svelte";
@@ -72,7 +73,7 @@
       return;
     }
 
-    if (!(await confirmMutation(profileId, "Se va a crear un índice."))) return;
+    if (!(await confirmMutation(profileId, t("Se va a crear un índice.")))) return;
 
     // Se larga y se cierra: `CONCURRENTLY` sobre una tabla grande tarda lo suyo, y esperarlo con el
     // diálogo abierto dejaba la aplicación tomada. La lista de índices se relee cuando el índice
@@ -87,25 +88,29 @@
   }
 </script>
 
-<Modal title="Nuevo índice" subtitle="{schema}.{table}" {onclose}>
+<Modal title={t("Nuevo índice")} subtitle="{schema}.{table}" {onclose}>
   <div class="grid grid-cols-2 gap-3">
     <label class="flex flex-col gap-1">
-      <span class="label">Nombre (opcional)</span>
-      <input class="field" data-autofocus bind:value={form.name} placeholder="lo nombra Postgres" />
+      <span class="label">{t("Nombre (opcional)")}</span>
+      <input class="field" data-autofocus bind:value={form.name} placeholder={t("lo nombra Postgres")} />
     </label>
 
     <label class="flex flex-col gap-1">
-      <span class="label">Método</span>
+      <span class="label">{t("Método")}</span>
       <select class="field" bind:value={form.method}>
         {#each INDEX_METHODS as option (option.value)}
-          <option value={option.value}>{option.label}</option>
+          <option value={option.value}>{t(option.label)}</option>
         {/each}
       </select>
     </label>
   </div>
 
   <div class="mt-3">
-    <span class="label">Columnas {form.columns.length > 0 ? `(${form.columns.join(", ")})` : ""}</span>
+    <span class="label">
+      {form.columns.length > 0
+        ? t("Columnas ({list})", { list: form.columns.join(", ") })
+        : t("Columnas")}
+    </span>
     <div
       class="mt-1 flex max-h-52 flex-col gap-1 overflow-auto rounded-md border border-zinc-200 p-2
              dark:border-zinc-700"
@@ -122,22 +127,22 @@
         </label>
       {/each}
     </div>
-    <p class="mt-1 text-[11px] muted">El orden en que se marcan es el orden del índice.</p>
+    <p class="mt-1 text-[11px] muted">{t("El orden en que se marcan es el orden del índice.")}</p>
   </div>
 
   <label class="mt-3 flex flex-col gap-1">
-    <span class="label">WHERE (opcional, índice parcial)</span>
-    <input class="field" bind:value={form.whereClause} placeholder="expresión SQL" />
+    <span class="label">{t("WHERE (opcional, índice parcial)")}</span>
+    <input class="field" bind:value={form.whereClause} placeholder={t("expresión SQL")} />
   </label>
 
   <div class="mt-3 flex flex-wrap gap-4">
     <label class="check">
       <input type="checkbox" bind:checked={form.unique} />
-      Único
+      {t("Único")}
     </label>
     <label class="check">
       <input type="checkbox" bind:checked={form.concurrently} />
-      CONCURRENTLY (no bloquea la tabla mientras se construye)
+      {t("CONCURRENTLY (no bloquea la tabla mientras se construye)")}
     </label>
   </div>
 
@@ -150,12 +155,12 @@
   {/if}
 
   <p class="mt-3 text-xs muted">
-    Se crea en segundo plano: se sigue y se cancela desde la vista de procesos.
+    {t("Se crea en segundo plano: se sigue y se cancela desde la vista de procesos.")}
   </p>
 
   {#snippet footer()}
-    <button class="btn btn-ghost btn-sm" onclick={showPreview}>Ver SQL</button>
-    <button class="btn ml-auto" onclick={onclose}>Cancelar</button>
-    <button class="btn btn-primary" onclick={submit} {...blocked}>Crear índice</button>
+    <button class="btn btn-ghost btn-sm" onclick={showPreview}>{t("Ver SQL")}</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cancelar")}</button>
+    <button class="btn btn-primary" onclick={submit} {...blocked}>{t("Crear índice")}</button>
   {/snippet}
 </Modal>

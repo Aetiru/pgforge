@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import { bytes, count } from "./format";
   import { dataOpen, type TableShape, type TreeNode } from "./ipc";
@@ -81,11 +82,11 @@
   {/if}
 
   <div class="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 tabular-nums muted">
-    {#if node.rows !== undefined}<span>~{count(node.rows)} filas</span>{/if}
+    {#if node.rows !== undefined}<span>{t("~{n} filas", { n: count(node.rows) })}</span>{/if}
     {#if node.sizeBytes !== undefined}<span>{bytes(node.sizeBytes)}</span>{/if}
-    {#if shape?.key}<span>clave: {shape.key.columns.join(", ")}</span>{/if}
-    {#if shape && !shape.key && !shape.readOnly}<span>sin clave</span>{/if}
-    {#if shape && shape.referencedBy.length > 0}<span>{shape.referencedBy.length} la referencian</span>{/if}
+    {#if shape?.key}<span>{t("clave: {columns}", { columns: shape.key.columns.join(", ") })}</span>{/if}
+    {#if shape && !shape.key && !shape.readOnly}<span>{t("sin clave")}</span>{/if}
+    {#if shape && shape.referencedBy.length > 0}<span>{t("{n} la referencian", { n: shape.referencedBy.length })}</span>{/if}
   </div>
 
   {#if note}
@@ -110,7 +111,7 @@
         </div>
       {/each}
       {#if shape.columns.length > MAX_COLUMNS}
-        <div class="muted">+{shape.columns.length - MAX_COLUMNS} columnas más</div>
+        <div class="muted">{t("+{n} columnas más", { n: shape.columns.length - MAX_COLUMNS })}</div>
       {/if}
     {:else}
       <div class="skeleton h-3 w-40"></div>

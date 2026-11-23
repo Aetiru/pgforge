@@ -7,13 +7,14 @@
  * pueden tener dos abiertas contra dos servidores y compararlas lado a lado en el panel dividido.
  */
 
+import { t } from "./i18n.svelte";
 import { Tab, tabs } from "./tabs.svelte";
 
 export class ConfigTab extends Tab {
   readonly kind = "config" as const;
 
   constructor(profileId: string) {
-    super(profileId, "", "Configuración");
+    super(profileId, "", t("Configuración"));
   }
 }
 

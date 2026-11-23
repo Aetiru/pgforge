@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import Self from "./BlockTree.svelte";
   import { duration, oneLine } from "./format";
   import { monitor } from "./monitor.svelte";
@@ -41,7 +42,7 @@
            dark:hover:bg-zinc-700"
     role="button"
     tabindex="0"
-    title="Ver esta sesión en la lista"
+    title={t("Ver esta sesión en la lista")}
     onclick={() => onselect?.(node.pid)}
   >
     <span class="tag font-mono {isRoot ? 'tag-bad' : 'tag-neutral'}">
@@ -50,7 +51,9 @@
 
     {#if isRoot}
       <span class="tag tag-warn shrink-0">
-        la que bloquea a {waiting} {waiting === 1 ? "sesión" : "sesiones"}
+        {waiting === 1
+          ? t("la que bloquea a {n} sesión", { n: waiting })
+          : t("la que bloquea a {n} sesiones", { n: waiting })}
       </span>
     {/if}
 
@@ -65,7 +68,7 @@
       </span>
     {:else}
       <!-- El filtro puede estar ocultando la sesión, pero el bloqueo existe igual. -->
-      <span class="text-xs text-zinc-400">sesión fuera del filtro actual</span>
+      <span class="text-xs text-zinc-400">{t("sesión fuera del filtro actual")}</span>
     {/if}
 
     {#if isRoot && onterminate}
@@ -73,13 +76,13 @@
            su transacción, y eso no se deshace con un clic perdido. -->
       <button
         class="btn btn-danger-ghost btn-sm ml-auto shrink-0"
-        title="Terminar la sesión {node.pid}: corta su transacción y libera a las que esperan"
+        title={t("Terminar la sesión {pid}: corta su transacción y libera a las que esperan", { pid: node.pid })}
         onclick={(event) => {
           event.stopPropagation();
           onterminate(node.pid);
         }}
       >
-        Terminar…
+        {t("Terminar…")}
       </button>
     {/if}
   </div>

@@ -5,6 +5,7 @@
  * son decisiones que se pueden tomar pero que sorprenden después, y por eso se dicen antes de
  * guardar y no se prohíben. Puro: el diálogo solo pinta el resultado.
  */
+import { t } from "./i18n.svelte";
 import { isReserved } from "./sql-ident";
 
 /** Lo que estas reglas necesitan de una abreviatura; `Snippet` de `ipc/` lo cumple por estructura. */
@@ -78,7 +79,7 @@ const label = (s: SnippetLike) => s.description?.trim() || s.abbreviation;
 /** Hasta tres nombres entre comillas, con «y N más» si sobran. */
 function listNames(names: string[]): string {
   const shown = names.slice(0, 3).map((n) => `«${n}»`).join(", ");
-  return names.length > 3 ? `${shown} y ${names.length - 3} más` : shown;
+  return names.length > 3 ? t("{shown} y {names} más", { shown, names: names.length - 3 }) : shown;
 }
 
 export function checkAbbreviation(
@@ -91,13 +92,13 @@ export function checkAbbreviation(
   const value = abbreviation.trim();
 
   if (value === "") {
-    errors.push("La abreviatura no puede estar vacía.");
+    errors.push(t("La abreviatura no puede estar vacía."));
     return { errors, warnings };
   }
   if (/\s/.test(value)) {
-    errors.push("La abreviatura no puede llevar espacios: la expansión mira la palabra pegada al cursor.");
+    errors.push(t("La abreviatura no puede llevar espacios: la expansión mira la palabra pegada al cursor."));
   } else if (!WORD.test(value)) {
-    errors.push("Solo letras, números y guion bajo: la expansión mira la palabra pegada al cursor.");
+    errors.push(t("Solo letras, números y guion bajo: la expansión mira la palabra pegada al cursor."));
   }
   if (errors.length > 0) return { errors, warnings };
 
@@ -106,14 +107,14 @@ export function checkAbbreviation(
 
   const clash = others.find((s) => s.abbreviation.trim().toLowerCase() === lower);
   if (clash) {
-    errors.push(`Ya existe: ${label(clash)}.`);
+    errors.push(t("Ya existe: {label}.", { label: label(clash) }));
     return { errors, warnings };
   }
 
   const longer = others.filter((s) => s.abbreviation.trim().toLowerCase().startsWith(lower));
   if (longer.length > 0) {
     warnings.push(
-      `«${value}» es el comienzo de ${listNames(longer.map((s) => s.abbreviation.trim()))}: al escribirla la lista ofrece varias.`,
+      t("«{value}» es el comienzo de {listNames}: al escribirla la lista ofrece varias.", { value, listNames: listNames(longer.map((s) => s.abbreviation.trim())) }),
     );
   }
   const shorter = others.filter((s) => {
@@ -122,17 +123,17 @@ export function checkAbbreviation(
   });
   if (shorter.length > 0) {
     warnings.push(
-      `«${value}» empieza como ${listNames(shorter.map((s) => s.abbreviation.trim()))}: al escribirla la lista ofrece las dos.`,
+      t("«{value}» empieza como {listNames}: al escribirla la lista ofrece las dos.", { value, listNames: listNames(shorter.map((s) => s.abbreviation.trim())) }),
     );
   }
 
   if (isReserved(lower) || COMMON_KEYWORDS.has(lower)) {
     warnings.push(
-      `«${value}» es una palabra de SQL: al apretar Tab se expandiría la plantilla en lugar de lo que querías escribir.`,
+      t("«{value}» es una palabra de SQL: al apretar Tab se expandiría la plantilla en lugar de lo que querías escribir.", { value }),
     );
   }
   if ([...value].length === 1) {
-    warnings.push("Con una sola letra se expande muy fácil sin querer; dos o tres son más seguras.");
+    warnings.push(t("Con una sola letra se expande muy fácil sin querer; dos o tres son más seguras."));
   }
   return { errors, warnings };
 }
@@ -194,22 +195,22 @@ export function checkShortcut(
 
   const key = normalizeCombo(combo);
   if (key === null) {
-    errors.push("No se lee como una combinación: se escribe como Mod-Alt-1 o Ctrl-Shift-k.");
+    errors.push(t("No se lee como una combinación: se escribe como Mod-Alt-1 o Ctrl-Shift-k."));
     return { errors, warnings };
   }
   const parts = key.split("-");
   const mods = parts.length > 1 && parts[parts.length - 1] !== "" ? parts.slice(0, -1) : [];
   if (!mods.some((m) => PRIMARY.has(m))) {
-    errors.push("Falta Ctrl, Alt o Mod: sin eso se comería el texto que se escribe.");
+    errors.push(t("Falta Ctrl, Alt o Mod: sin eso se comería el texto que se escribe."));
     return { errors, warnings };
   }
 
   const clash = snippets.find((s) => !sameId(s.id, editingId) && normalizeCombo(s.shortcut) === key);
   if (clash) {
-    errors.push(`Ya lo usa la abreviatura «${clash.abbreviation}».`);
+    errors.push(t("Ya lo usa la abreviatura «{abbreviation}».", { abbreviation: clash.abbreviation }));
     return { errors, warnings };
   }
   const builtin = builtins.find((b) => normalizeCombo(b.combo) === key);
-  if (builtin) warnings.push(`Pisa el atajo de la aplicación «${builtin.label}».`);
+  if (builtin) warnings.push(t("Pisa el atajo de la aplicación «{label}».", { label: builtin.label }));
   return { errors, warnings };
 }

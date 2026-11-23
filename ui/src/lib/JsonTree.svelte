@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Icon from "./Icon.svelte";
+  import { t } from "./i18n.svelte";
   import { allContainers, defaultOpen, flatten, type JsonKind, type JsonRow } from "./json-tree";
 
   /**
@@ -45,10 +46,10 @@
 </script>
 
 <div class="mb-2 flex items-center gap-2 text-xs">
-  <button class="btn btn-sm" onclick={() => (open = allContainers(value))}>Desplegar todo</button>
-  <button class="btn btn-sm" onclick={() => (open = new Set(["$"]))}>Plegar todo</button>
+  <button class="btn btn-sm" onclick={() => (open = allContainers(value))}>{t("Desplegar todo")}</button>
+  <button class="btn btn-sm" onclick={() => (open = new Set(["$"]))}>{t("Plegar todo")}</button>
   <span class="ml-auto muted">
-    {copied ? "Ruta copiada" : "Clic en una ruta para copiarla"}
+    {copied ? t("Ruta copiada") : t("Clic en una ruta para copiarla")}
   </span>
 </div>
 
@@ -69,7 +70,7 @@
         {#if row.size > 0}
           <button
             class="shrink-0"
-            aria-label={row.open ? "Plegar" : "Desplegar"}
+            aria-label={row.open ? t("Plegar") : t("Desplegar")}
             onclick={() => toggle(row.path)}
           >
             <Icon name="chevron" size={11} class={row.open ? "rotate-90" : ""} />
@@ -81,14 +82,14 @@
         <span class={TONE[row.kind]}>{row.text}</span>
         <button
           class="ml-2 hidden text-[10px] muted hover:underline group-hover:inline"
-          title="Copiar la ruta (jsonpath)"
+          title={t("Copiar la ruta (jsonpath)")}
           onclick={() => copyPath(row.path)}
         >
           {row.path}
         </button>
       </div>
     {:else}
-      <div class="muted" style="padding-left: {row.depth * 14 + 15}px">… {row.more} más</div>
+      <div class="muted" style="padding-left: {row.depth * 14 + 15}px">{t("… {n} más", { n: row.more })}</div>
     {/if}
   {/each}
 </div>

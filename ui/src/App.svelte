@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { t } from "./lib/i18n.svelte";
   import { pickOpen } from "./lib/ipc";
   import Alert from "./lib/Alert.svelte";
   import Confirm from "./lib/Confirm.svelte";
@@ -410,7 +411,7 @@
       profile: {
         ...$state.snapshot(profile),
         id: crypto.randomUUID(),
-        name: `${profile.name} (copia)`,
+        name: t("{name} (copia)", { name: profile.name }),
         savePassword: false,
       },
     };
@@ -589,7 +590,7 @@
     if (!sqlTarget) return;
     try {
       const chosen = await pickOpen({
-        title: "Abrir una consulta",
+        title: t("Abrir una consulta"),
         multiple: true,
         filters: [{ name: "SQL", extensions: ["sql"] }],
       });
@@ -685,7 +686,7 @@
     const selected = explorer.selected;
     if (!selected) return null;
     if (selected.kind === "group") {
-      return { server: selected.label, connected: false, version: null, path: "carpeta" };
+      return { server: selected.label, connected: false, version: null, path: t("carpeta") };
     }
     const profile = profileOf(selected.profileId);
     const caps = explorer.caps[selected.profileId];
@@ -748,9 +749,8 @@
                 />
                 <input
                   class="field w-full py-1 pr-7 pl-7"
-                  placeholder="Buscar"
-                  title="Filtra lo que el árbol ya trajo. Enter busca en el servidor.
-  Con prefijo se acota al tipo — {PREFIX_HELP}"
+                  placeholder={t("Buscar")}
+                  title={t("Filtra lo que el árbol ya trajo. Enter busca en el servidor.") + "\n" + t("Con prefijo se acota al tipo — {help}", { help: PREFIX_HELP })}
                   bind:value={explorer.search}
                   onkeydown={(event) => {
                     if (event.key === "Escape") clearSearch();
@@ -762,7 +762,7 @@
                 {#if explorer.search}
                   <button
                     class="btn btn-ghost btn-icon absolute top-1/2 right-0.5 size-6 -translate-y-1/2"
-                    aria-label="Limpiar la búsqueda"
+                    aria-label={t("Limpiar la búsqueda")}
                     onclick={clearSearch}
                   >
                     <Icon name="close" size={11} />
@@ -772,9 +772,9 @@
               <button
                 class="btn btn-ghost btn-icon"
                 title={searchTarget
-                  ? `Buscar «${explorer.search}» en el catálogo de ${searchTarget.database}`
-                  : "Elegí una base o un objeto del árbol para buscar en el servidor"}
-                aria-label="Buscar en el servidor"
+                  ? t("Buscar «{text}» en el catálogo de {database}", { text: explorer.search, database: searchTarget.database })
+                  : t("Elegí una base o un objeto del árbol para buscar en el servidor")}
+                aria-label={t("Buscar en el servidor")}
                 disabled={!searchTarget || parseQuery(explorer.search).text === "" || explorer.searching}
                 onclick={searchServer}
               >
@@ -784,18 +784,18 @@
               <button
                 class="btn btn-ghost btn-icon btn-toggle"
                 aria-pressed={followActive}
-                aria-label="Seguir la pestaña activa en el árbol"
+                aria-label={t("Seguir la pestaña activa en el árbol")}
                 title={followActive
-                  ? "El árbol sigue a la pestaña activa (clic para dejar de seguirla)"
-                  : "Hacer que el árbol revele la tabla de la pestaña activa"}
+                  ? t("El árbol sigue a la pestaña activa (clic para dejar de seguirla)")
+                  : t("Hacer que el árbol revele la tabla de la pestaña activa")}
                 onclick={() => setFollowActive(!followActive)}
               >
                 <Icon name="eye" />
               </button>
               <button
                 class="btn btn-ghost btn-icon"
-                title="Nuevo servidor"
-                aria-label="Nuevo servidor"
+                title={t("Nuevo servidor")}
+                aria-label={t("Nuevo servidor")}
                 onclick={() => (dialog = { profile: null })}
               >
                 <Icon name="plus" />
@@ -809,8 +809,8 @@
               <div class="relative">
                 <button
                   class="btn btn-ghost btn-icon"
-                  title="Más opciones del árbol"
-                  aria-label="Más opciones del árbol"
+                  title={t("Más opciones del árbol")}
+                  aria-label={t("Más opciones del árbol")}
                   aria-expanded={treeMenu}
                   onclick={(event) => {
                     event.stopPropagation();
@@ -837,7 +837,7 @@
                       }}
                     >
                       <span class="flex items-center gap-2">
-                        <Icon name="folder" size={13} /> Nueva carpeta
+                        <Icon name="folder" size={13} /> {t("Nueva carpeta")}
                       </span>
                     </button>
                     <button
@@ -848,7 +848,7 @@
                       }}
                     >
                       <span class="flex items-center gap-2">
-                        <Icon name="download" size={13} /> Importar servidores…
+                        <Icon name="download" size={13} /> {t("Importar servidores…")}
                       </span>
                     </button>
                     <button
@@ -859,22 +859,22 @@
                       }}
                     >
                       <span class="flex items-center gap-2">
-                        <Icon name="collapse" size={13} /> Contraer todo
+                        <Icon name="collapse" size={13} /> {t("Contraer todo")}
                       </span>
                     </button>
                     <button
                       class="row-menu"
                       disabled={explorer.connectedCount === 0}
                       title={explorer.connectedCount === 0
-                        ? "No hay servidores conectados"
-                        : "Cierra la conexión de todos los servidores y sus pestañas"}
+                        ? t("No hay servidores conectados")
+                        : t("Cierra la conexión de todos los servidores y sus pestañas")}
                       onclick={() => {
                         treeMenu = false;
                         confirmDisconnectAll = true;
                       }}
                     >
                       <span class="flex items-center gap-2">
-                        <Icon name="plug" size={13} /> Desconectar todos
+                        <Icon name="plug" size={13} /> {t("Desconectar todos")}
                         {#if explorer.connectedCount > 0}
                           <span class="seg-count tabular-nums">{explorer.connectedCount}</span>
                         {/if}
@@ -894,7 +894,7 @@
                       }}
                     >
                       <span class="flex items-center gap-2">
-                        <Icon name="window" size={13} /> Ventana de workspace…
+                        <Icon name="window" size={13} /> {t("Ventana de workspace…")}
                       </span>
                     </button>
 
@@ -902,9 +902,9 @@
 
                     <!-- Filtra sin releer nada del servidor: es cambiar qué se dibuja, no qué se
                          cargó. -->
-                    <label class="check px-2 py-1" title="Esconde los servidores sin conectar">
+                    <label class="check px-2 py-1" title={t("Esconde los servidores sin conectar")}>
                       <input type="checkbox" bind:checked={explorer.onlyConnected} />
-                      Solo servidores conectados
+                      {t("Solo servidores conectados")}
                     </label>
                     <label class="check px-2 py-1">
                       <input
@@ -915,7 +915,7 @@
                           explorer.reloadAll();
                         }}
                       />
-                      Mostrar objetos del sistema
+                      {t("Mostrar objetos del sistema")}
                     </label>
                   </div>
                 {/if}
@@ -966,7 +966,7 @@
         class="group relative w-px shrink-0 bg-zinc-200 dark:bg-zinc-700"
         onmousedown={startResize}
         ondblclick={() => dock.setSidebarWidth(SIDEBAR_DEFAULT)}
-        title="Arrastrá para cambiar el ancho; doble clic para restablecerlo"
+        title={t("Arrastrá para cambiar el ancho; doble clic para restablecerlo")}
       >
         <div
           class="absolute inset-y-0 -left-[3px] w-[7px] cursor-col-resize
@@ -1046,7 +1046,7 @@
                     <!-- Hay un archivo o una consulta con nombre que ya no coincide con lo escrito. -->
                     <span
                       class="size-2 shrink-0 rounded-full bg-amber-500"
-                      title="Cambios sin guardar"
+                      title={t("Cambios sin guardar")}
                     ></span>
                   {:else}
                     <!-- El ícono ya no toma color del entorno: queda del mismo tono que el resto de
@@ -1081,22 +1081,22 @@
                      sobre la pestaña principal: partirla contra sí misma no significa nada. -->
                 <button
                   class="tab-close {tabs.split === tab.key ? 'text-blue-600 dark:text-blue-400' : ''}"
-                  aria-label={tabs.split === tab.key ? "Sacar del panel dividido" : "Abrir al lado"}
+                  aria-label={tabs.split === tab.key ? t("Sacar del panel dividido") : t("Abrir al lado")}
                   aria-pressed={tabs.split === tab.key}
                   disabled={tab.key === tabs.active}
                   title={tab.key === tabs.active
-                    ? "Ya es la pestaña principal"
+                    ? t("Ya es la pestaña principal")
                     : tabs.split === tab.key
-                      ? "Vuelve a mostrar una sola pestaña"
-                      : "Abre esta pestaña en un panel al lado, sin dejar de ver la actual"}
+                      ? t("Vuelve a mostrar una sola pestaña")
+                      : t("Abre esta pestaña en un panel al lado, sin dejar de ver la actual")}
                   onclick={() => tabs.toggleSplit(tab.key)}
                 >
                   <Icon name="columns" size={10} />
                 </button>
                 <button
                   class="tab-close"
-                  aria-label="Cerrar la pestaña"
-                  title="Cerrar la pestaña"
+                  aria-label={t("Cerrar la pestaña")}
+                  title={t("Cerrar la pestaña")}
                   onclick={() => closeTab(tab)}
                 >
                   <Icon name="close" size={10} />
@@ -1113,14 +1113,14 @@
           <button
             class="btn btn-ghost h-7 px-1.5"
             disabled={queryTarget === null}
-            aria-label="Nueva consulta"
+            aria-label={t("Nueva consulta")}
             title={queryTarget
-              ? `Nueva consulta contra ${queryTarget.database} (${shortcutStore.label("app.newQuery")})`
-              : "Elegí una base o un objeto de un servidor conectado"}
+              ? t("Nueva consulta contra {database} ({shortcut})", { database: queryTarget.database, shortcut: shortcutStore.label("app.newQuery") })
+              : t("Elegí una base o un objeto de un servidor conectado")}
             onclick={newQuery}
           >
             <Icon name="plus" size={13} />
-            <span class="hidden pr-1 text-xs xl:inline">Consulta</span>
+            <span class="hidden pr-1 text-xs xl:inline">{t("Consulta")}</span>
           </button>
 
           <!-- Guardar existía desde el principio; abrir, no. Un `.sql` que ya está en disco había
@@ -1128,10 +1128,10 @@
           <button
             class="btn btn-ghost btn-icon"
             disabled={sqlTarget === null}
-            aria-label="Abrir un archivo SQL"
+            aria-label={t("Abrir un archivo SQL")}
             title={sqlTarget
-              ? `Abrir un archivo .sql contra ${sqlTarget.database} (${shortcutStore.label("app.open")})`
-              : "Elegí una base o un objeto de un servidor conectado"}
+              ? t("Abrir un archivo .sql contra {database} ({shortcut})", { database: sqlTarget.database, shortcut: shortcutStore.label("app.open") })
+              : t("Elegí una base o un objeto de un servidor conectado")}
             onclick={openSqlDialog}
           >
             <Icon name="upload" size={13} />
@@ -1144,10 +1144,10 @@
           <button
             class="btn btn-ghost btn-icon"
             disabled={contextServer === null}
-            aria-label="Monitoreo"
+            aria-label={t("Monitoreo")}
             title={contextServer
-              ? `Monitoreo de ${serverName(contextServer)}`
-              : "Conectá un servidor para ver su monitoreo"}
+              ? t("Monitoreo de {name}", { name: serverName(contextServer) })
+              : t("Conectá un servidor para ver su monitoreo")}
             onclick={showMonitor}
           >
             <Icon name="chart" size={13} />
@@ -1155,10 +1155,10 @@
           <button
             class="btn btn-ghost btn-icon"
             disabled={contextServer === null}
-            aria-label="Configuración del servidor"
+            aria-label={t("Configuración del servidor")}
             title={contextServer
-              ? `Configuración de ${serverName(contextServer)}`
-              : "Conectá un servidor para ver su configuración"}
+              ? t("Configuración de {name}", { name: serverName(contextServer) })
+              : t("Conectá un servidor para ver su configuración")}
             onclick={showConfig}
           >
             <Icon name="sliders" size={13} />
@@ -1170,11 +1170,11 @@
             class="btn btn-ghost btn-icon {dock.inspectorOpen
               ? 'text-blue-600 dark:text-blue-400'
               : ''}"
-            aria-label="Inspector"
+            aria-label={t("Inspector")}
             aria-pressed={dock.inspectorOpen}
             title={dock.inspectorOpen
-              ? shortcutStore.hint("Ocultar el inspector", "app.inspector")
-              : shortcutStore.hint("Mostrar el inspector", "app.inspector")}
+              ? shortcutStore.hint(t("Ocultar el inspector"), "app.inspector")
+              : shortcutStore.hint(t("Mostrar el inspector"), "app.inspector")}
             onclick={() => dock.toggleInspector()}
           >
             <Icon name="compass" size={13} />
@@ -1232,14 +1232,14 @@
                  herramienta. -->
             <Empty
               icon="server"
-              title="Empezá con un servidor"
-              hint="Agregá una conexión a PostgreSQL, o traé las que ya tenés configuradas en pgpass, pg_service.conf o DBeaver. Las contraseñas nunca se importan."
+              title={t("Empezá con un servidor")}
+              hint={t("Agregá una conexión a PostgreSQL, o traé las que ya tenés configuradas en pgpass, pg_service.conf o DBeaver. Las contraseñas nunca se importan.")}
             >
               <button class="btn btn-primary" onclick={() => (dialog = { profile: null })}>
-                Nuevo servidor
+                {t("Nuevo servidor")}
               </button>
               <button class="btn" onclick={() => (importDialog = true)}>
-                Importar servidores existentes…
+                {t("Importar servidores existentes…")}
               </button>
             </Empty>
           {:else}
@@ -1247,17 +1247,17 @@
                  acá van las tres cosas que se abren desde cero. -->
             <Empty
               icon="sql"
-              title="No hay ninguna pestaña abierta"
-              hint="Elegí algo en el árbol para verlo en el inspector, o abrí una consulta contra la base con la que estés trabajando."
+              title={t("No hay ninguna pestaña abierta")}
+              hint={t("Elegí algo en el árbol para verlo en el inspector, o abrí una consulta contra la base con la que estés trabajando.")}
             >
               <button class="btn btn-primary" disabled={queryTarget === null} onclick={newQuery}>
-                Nueva consulta
+                {t("Nueva consulta")}
               </button>
               <button class="btn" disabled={contextServer === null} onclick={showMonitor}>
-                Monitoreo
+                {t("Monitoreo")}
               </button>
               <button class="btn" disabled={contextServer === null} onclick={showConfig}>
-                Configuración
+                {t("Configuración")}
               </button>
             </Empty>
           {/if}
@@ -1269,7 +1269,7 @@
             class="group relative h-full w-px shrink-0 bg-zinc-200 dark:bg-zinc-700"
             onmousedown={startSplitResize}
             ondblclick={() => splitView.reset()}
-            title="Arrastrá para repartir el espacio; doble clic para repartirlo por la mitad"
+            title={t("Arrastrá para repartir el espacio; doble clic para repartirlo por la mitad")}
           >
             <div
               class="absolute inset-y-0 -left-[3px] w-[7px] cursor-col-resize
@@ -1292,7 +1292,7 @@
         class="group relative w-px shrink-0 bg-zinc-200 dark:bg-zinc-700"
         onmousedown={startInspectorResize}
         ondblclick={() => dock.setInspectorWidth(INSPECTOR_DEFAULT)}
-        title="Arrastrá para cambiar el ancho; doble clic para restablecerlo"
+        title={t("Arrastrá para cambiar el ancho; doble clic para restablecerlo")}
       >
         <div
           class="absolute inset-y-0 -left-[3px] w-[7px] cursor-col-resize
@@ -1308,15 +1308,15 @@
       <aside
         class="panel flex min-h-0 shrink-0 flex-col overflow-hidden"
         style="width: {dock.inspectorWidth}px"
-        aria-label="Inspector"
+        aria-label={t("Inspector")}
       >
         <div class="divider-b flex h-8 shrink-0 items-center gap-2 px-2">
           <Icon name="compass" size={12} class="muted" />
-          <span class="card-title">Detalle</span>
+          <span class="card-title">{t("Detalle")}</span>
           <button
             class="btn btn-ghost btn-icon ml-auto"
-            aria-label="Ocultar el inspector"
-            title={shortcutStore.hint("Ocultar el inspector", "app.inspector")}
+            aria-label={t("Ocultar el inspector")}
+            title={shortcutStore.hint(t("Ocultar el inspector"), "app.inspector")}
             onclick={() => dock.setInspector(false)}
           >
             <Icon name="close" size={11} />
@@ -1356,7 +1356,7 @@
         <span class="truncate">{context.path}</span>
       {/if}
     {:else}
-      <span>Elegí un objeto del árbol para ver su detalle.</span>
+      <span>{t("Elegí un objeto del árbol para ver su detalle.")}</span>
     {/if}
 
     <div class="ml-auto flex shrink-0 items-center gap-3">
@@ -1364,23 +1364,23 @@
         <!-- Lo que se mira mientras se escribe: dónde está el cursor, cuánto hay seleccionado y si
              lo que se ejecute se confirma solo. -->
         <span class="tabular-nums">
-          Ln <strong class="font-semibold">{tabs.current.cursor.line}</strong>, Col
+          {t("Ln")} <strong class="font-semibold">{tabs.current.cursor.line}</strong>, {t("Col")}
           <strong class="font-semibold">{tabs.current.cursor.column}</strong>
         </span>
         {#if tabs.current.cursor.selected > 0}
           <span class="tabular-nums">
-            Sel. <strong class="font-semibold">{tabs.current.cursor.selected}</strong> car.
+            {t("Sel.")} <strong class="font-semibold">{tabs.current.cursor.selected}</strong> {t("car.")}
           </span>
         {/if}
         <span class={tabs.current.autocommit ? "" : "font-semibold text-amber-600 dark:text-amber-400"}>
-          {tabs.current.autocommit ? "Auto" : "Manual"}
+          {tabs.current.autocommit ? t("Auto") : t("Manual")}
         </span>
       {/if}
       {#if connectedServers.length > 0}
-        <span class="flex items-center gap-1.5" title="Servidores conectados">
+        <span class="flex items-center gap-1.5" title={t("Servidores conectados")}>
           <span class="dot dot-on"></span>
           {connectedServers.length}
-          {connectedServers.length === 1 ? "conectado" : "conectados"}
+          {connectedServers.length === 1 ? t("conectado") : t("conectados")}
         </span>
       {/if}
 
@@ -1393,7 +1393,7 @@
              versión nueva no interrumpe lo que se estaba haciendo. -->
         <button
           class="tag-ok flex items-center gap-1"
-          title="pgforge {updates.release.version} está disponible"
+          title={t("pgforge {version} está disponible", { version: updates.release.version })}
           onclick={() => (updates.showing = true)}
         >
           <Icon name="download" size={11} />
@@ -1407,7 +1407,7 @@
              sin esperar al próximo día. -->
         <button
           class="select-text"
-          title="{info.logDir ? `Registro en ${info.logDir}\n` : ''}Buscar una versión nueva"
+          title={(info.logDir ? t("Registro en {path}", { path: info.logDir }) + "\n" : "") + t("Buscar una versión nueva")}
           onclick={() => updates.check(true)}
         >
           v{info.version}
@@ -1452,9 +1452,9 @@
 
 {#if confirmDisconnectAll}
   <Confirm
-    title="Desconectar todos los servidores"
-    message="Se cierran las {explorer.connectedCount} conexiones abiertas y también todas las pestañas de esos servidores. Las consultas sin guardar de esas pestañas se pierden; las transacciones abiertas se revierten."
-    confirmLabel="Desconectar todos"
+    title={t("Desconectar todos los servidores")}
+    message={t("Se cierran las {count} conexiones abiertas y también todas las pestañas de esos servidores. Las consultas sin guardar de esas pestañas se pierden; las transacciones abiertas se revierten.", { count: explorer.connectedCount })}
+    confirmLabel={t("Desconectar todos")}
     danger
     onconfirm={() => {
       confirmDisconnectAll = false;
@@ -1545,7 +1545,7 @@
 
 {#if prompt}
   <Modal
-    title="Contraseña de {prompt.profile.name}"
+    title={t("Contraseña de {name}", { name: prompt.profile.name })}
     subtitle="{prompt.profile.user}@{prompt.profile.host}:{prompt.profile.port}"
     size="sm"
     onclose={() => (prompt = null)}
@@ -1553,7 +1553,7 @@
     <Alert tone="bad" box>{prompt.message}</Alert>
 
     <label class="mt-3 flex flex-col gap-1">
-      <span class="label">Contraseña</span>
+      <span class="label">{t("Contraseña")}</span>
       <input
         class="field"
         type="password"
@@ -1567,12 +1567,12 @@
     </label>
 
     {#snippet footer()}
-      <button class="btn ml-auto" onclick={() => (prompt = null)}>Cancelar</button>
+      <button class="btn ml-auto" onclick={() => (prompt = null)}>{t("Cancelar")}</button>
       <button
         class="btn btn-primary"
         onclick={() => prompt && connect(prompt.profile, prompt.password)}
       >
-        Conectar
+        {t("Conectar")}
       </button>
     {/snippet}
   </Modal>
@@ -1580,11 +1580,11 @@
 
 {#if hostKey}
   <Confirm
-    title="Clave del bastión SSH sin verificar"
-    message="El host {hostKey.host} {hostKey.changed
-      ? 'presentó una clave distinta de la registrada, lo que podría indicar un intermediario.'
-      : 'no está en tu archivo known_hosts.'} Huella SHA256: {hostKey.fingerprint}. ¿Confiar en esta clave y recordarla?"
-    confirmLabel={hostKey.changed ? "Confiar de todos modos" : "Confiar y conectar"}
+    title={t("Clave del bastión SSH sin verificar")}
+    message={hostKey.changed
+      ? t("El host {host} presentó una clave distinta de la registrada, lo que podría indicar un intermediario. Huella SHA256: {fingerprint}. ¿Confiar en esta clave y recordarla?", { host: hostKey.host, fingerprint: hostKey.fingerprint })
+      : t("El host {host} no está en tu archivo known_hosts. Huella SHA256: {fingerprint}. ¿Confiar en esta clave y recordarla?", { host: hostKey.host, fingerprint: hostKey.fingerprint })}
+    confirmLabel={hostKey.changed ? t("Confiar de todos modos") : t("Confiar y conectar")}
     danger={hostKey.changed}
     onconfirm={() => {
       const pending = hostKey;
@@ -1597,8 +1597,8 @@
 
 {#if closingTab}
   <TxDecision
-    title="Cerrar «{closingTab.title}»"
-    message="La pestaña tiene una transacción abierta. Si la cerrás sin decidir, el servidor revierte todo lo que no esté confirmado. ¿Qué hacemos con ella?"
+    title={t("Cerrar «{title}»", { title: closingTab.title })}
+    message={t("La pestaña tiene una transacción abierta. Si la cerrás sin decidir, el servidor revierte todo lo que no esté confirmado. ¿Qué hacemos con ella?")}
     busy={closingBusy}
     onchoose={async (choice) => {
       const target = closingTab;
@@ -1622,9 +1622,9 @@
 
 {#if confirmDelete}
   <Confirm
-    title="Eliminar «{confirmDelete.name}»"
-    message="Se borra el servidor de la lista y su contraseña guardada. No se toca nada en la base de datos."
-    confirmLabel="Eliminar"
+    title={t("Eliminar «{name}»", { name: confirmDelete.name })}
+    message={t("Se borra el servidor de la lista y su contraseña guardada. No se toca nada en la base de datos.")}
+    confirmLabel={t("Eliminar")}
     onconfirm={() => confirmDelete && remove(confirmDelete)}
     onclose={() => (confirmDelete = null)}
   />
@@ -1632,9 +1632,9 @@
 
 {#if confirmDeleteWorkspace}
   <Confirm
-    title="Eliminar «{confirmDeleteWorkspace.name}»"
-    message="Se borra la referencia a esta ventana guardada. No se toca ningún servidor ni carpeta de conexiones, y una ventana que la tenga abierta en este momento sigue abierta."
-    confirmLabel="Eliminar"
+    title={t("Eliminar «{name}»", { name: confirmDeleteWorkspace.name })}
+    message={t("Se borra la referencia a esta ventana guardada. No se toca ningún servidor ni carpeta de conexiones, y una ventana que la tenga abierta en este momento sigue abierta.")}
+    confirmLabel={t("Eliminar")}
     onconfirm={() => confirmDeleteWorkspace && removeWorkspace(confirmDeleteWorkspace)}
     onclose={() => (confirmDeleteWorkspace = null)}
   />
@@ -1649,9 +1649,9 @@
     {@const pending = guard.pending}
     {@const strong = pending.risks.length > 0}
     <Confirm
-      title={strong ? "Operación destructiva en producción" : "Modificar producción"}
-      message="«{pending.profile.name}» está marcado como servidor de producción. {pending.action}"
-      confirmLabel={strong ? "Ejecutar igual" : "Modificar igual"}
+      title={strong ? t("Operación destructiva en producción") : t("Modificar producción")}
+      message={t("«{name}» está marcado como servidor de producción. {action}", { name: pending.profile.name, action: pending.action })}
+      confirmLabel={strong ? t("Ejecutar igual") : t("Modificar igual")}
       requireText={strong ? pending.profile.name : undefined}
       onconfirm={() => guard.answer(true)}
       onclose={() => guard.answer(false)}

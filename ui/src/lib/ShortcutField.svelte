@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { comboFromEvent, formatCombo } from "./shortcuts";
   import { MAC } from "./shortcuts.svelte";
 
@@ -51,10 +52,10 @@
     type="button"
     class="btn btn-sm min-w-32 font-mono"
     aria-pressed={capturing}
-    title="Apretá y después la combinación. Retroceso la quita; Escape cancela."
+    title={t("Apretá y después la combinación. Retroceso la quita; Escape cancela.")}
     onclick={() => (capturing = !capturing)}
   >
-    {capturing ? "Apretá la combinación…" : value ? formatCombo(value, MAC) : "Sin atajo"}
+    {capturing ? t("Apretá la combinación…") : value ? formatCombo(value, MAC) : t("Sin atajo")}
   </button>
   {#if value && !capturing}
     <button
@@ -63,7 +64,7 @@
       onclick={() => {
         value = null;
         onchange?.(null);
-      }}>Quitar</button
+      }}>{t("Quitar")}</button
     >
   {/if}
 </div>

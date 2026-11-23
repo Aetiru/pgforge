@@ -6,6 +6,7 @@
  * fila y los valores originales de lo que cambia, así que si otro tocó la fila en el medio se
  * informa un conflicto en vez de pisarla. Es puro y con Vitest.
  */
+import { t } from "./i18n.svelte";
 import type { Change, EditSource, TableShape } from "./ipc";
 
 export interface EditPlan {
@@ -27,13 +28,13 @@ export type Edits = ReadonlyMap<number, ReadonlyMap<number, string | null>>;
  */
 export function planEdit(shape: TableShape, source: EditSource): EditPlan | string {
   if (shape.readOnly) return shape.readOnly;
-  if (!shape.key) return "La tabla no tiene clave con la cual señalar una fila.";
+  if (!shape.key) return t("La tabla no tiene clave con la cual señalar una fila.");
 
   const keyAt: number[] = [];
   for (const name of shape.key.columns) {
     const at = source.columns.indexOf(name);
     if (at === -1) {
-      return `Falta la columna «${name}» de la clave en el resultado: sin ella no se sabe qué fila es cada una. Agregala al SELECT para poder editar.`;
+      return t("Falta la columna «{name}» de la clave en el resultado: sin ella no se sabe qué fila es cada una. Agregala al SELECT para poder editar.", { name });
     }
     keyAt.push(at);
   }

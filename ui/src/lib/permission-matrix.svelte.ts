@@ -7,6 +7,7 @@
  * de los dos vuelve a leer, así que perderlos al mirar otra cosa obligaría a elegir todo de nuevo.
  */
 
+import { t } from "./i18n.svelte";
 import { Tab, tabs } from "./tabs.svelte";
 import {
   describeError,
@@ -46,7 +47,7 @@ export class PermissionMatrixTab extends Tab {
   error = $state<string | null>(null);
 
   constructor(profileId: string, database: string, schema: string) {
-    super(profileId, database, `Permisos · ${schema}`);
+    super(profileId, database, t("Permisos · {schema}", { schema }));
     this.schema = schema;
   }
 

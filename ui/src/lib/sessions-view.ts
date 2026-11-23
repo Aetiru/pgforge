@@ -1,3 +1,4 @@
+import { t } from "./i18n.svelte";
 import type { Backend, Lock } from "./ipc";
 
 /**
@@ -13,10 +14,10 @@ import type { Backend, Lock } from "./ipc";
 export type SessionKind = "blocked" | "itx" | "active" | "idle";
 
 export const KIND_LABEL: Record<SessionKind, string> = {
-  blocked: "Bloqueada",
-  itx: "Inactiva en transacción",
-  active: "Activa",
-  idle: "Inactiva",
+  get blocked() { return t("Bloqueada"); },
+  get itx() { return t("Inactiva en transacción"); },
+  get active() { return t("Activa"); },
+  get idle() { return t("Inactiva"); },
 };
 
 /**
@@ -109,7 +110,7 @@ export interface SessionGroup {
   longest: number;
 }
 
-const NO_NAME = "(sin nombre)";
+const noName = () => t("(sin nombre)");
 
 /**
  * Agrupa por aplicación o por usuario, con el grupo de la sesión más larga primero. Con `none`
@@ -121,7 +122,7 @@ export function groupSessions(list: Backend[], by: GroupBy): SessionGroup[] {
   }
   const groups = new Map<string, Backend[]>();
   for (const backend of list) {
-    const name = (by === "app" ? backend.applicationName : backend.user)?.trim() || NO_NAME;
+    const name = (by === "app" ? backend.applicationName : backend.user)?.trim() || noName();
     const bucket = groups.get(name);
     if (bucket) bucket.push(backend);
     else groups.set(name, [backend]);

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
@@ -93,7 +94,7 @@
   }
 
   function validate(): string | null {
-    if (!existing && !name.trim()) return "Elegí una extensión para instalar.";
+    if (!existing && !name.trim()) return t("Elegí una extensión para instalar.");
     return null;
   }
 
@@ -106,7 +107,7 @@
     }
     try {
       const statements = await extensionPreview(changes());
-      preview = statements.map((statement) => statement.sql).join(";\n\n") || "Nada que aplicar.";
+      preview = statements.map((statement) => statement.sql).join(";\n\n") || t("Nada que aplicar.");
     } catch (e) {
       error = describeError(e);
     }
@@ -139,19 +140,21 @@
 </script>
 
 <Modal
-  title={existing ? `Extensión ${existing.name}` : "Instalar extensión"}
-  subtitle="Las extensiones son de la base, no del clúster"
+  title={existing
+    ? t("Extensión {name}", { name: existing.name })
+    : t("Instalar extensión")}
+  subtitle={t("Las extensiones son de la base, no del clúster")}
   busy={saving}
   {onclose}
 >
   {#if existing}
     <div class="grid grid-cols-2 gap-3">
       <div class="flex flex-col gap-1">
-        <span class="label">Versión instalada</span>
+        <span class="label">{t("Versión instalada")}</span>
         <span class="text-sm select-text">v{existing.version}</span>
       </div>
       <div class="flex flex-col gap-1">
-        <span class="label">Esquema</span>
+        <span class="label">{t("Esquema")}</span>
         <span class="text-sm select-text">{existing.schema}</span>
       </div>
     </div>
@@ -165,14 +168,14 @@
         class="mt-3 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs
                text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300"
       >
-        Hay una versión más nueva disponible: v{existing.defaultVersion}.
+        {t("Hay una versión más nueva disponible: v{version}.", { version: existing.defaultVersion ?? "" })}
       </p>
     {/if}
 
     <label class="mt-3 flex flex-col gap-1">
-      <span class="label">Actualizar a la versión</span>
+      <span class="label">{t("Actualizar a la versión")}</span>
       <select class="field" bind:value={updateTo}>
-        <option value="">no actualizar (v{existing.version})</option>
+        <option value="">{t("no actualizar (v{version})", { version: existing.version })}</option>
         {#each existing.availableVersions.filter((version) => version !== existing.version) as version (version)}
           <option value={version}>v{version}</option>
         {/each}
@@ -181,22 +184,22 @@
 
     {#if existing.relocatable}
       <label class="mt-3 flex flex-col gap-1">
-        <span class="label">Cambiar de esquema</span>
+        <span class="label">{t("Cambiar de esquema")}</span>
         <input class="field" bind:value={schema} placeholder={existing.schema} />
       </label>
     {:else}
-      <p class="mt-3 text-xs muted">Esta extensión no se puede mover de esquema.</p>
+      <p class="mt-3 text-xs muted">{t("Esta extensión no se puede mover de esquema.")}</p>
     {/if}
   {:else if loadingAvailable}
     <p class="flex items-center gap-2 text-sm muted">
       <span class="spinner"></span>
-      Leyendo las extensiones disponibles…
+      {t("Leyendo las extensiones disponibles…")}
     </p>
   {:else if notInstalled.length === 0}
-    <p class="text-sm muted">Ya están instaladas todas las extensiones que ofrece el servidor.</p>
+    <p class="text-sm muted">{t("Ya están instaladas todas las extensiones que ofrece el servidor.")}</p>
   {:else}
     <label class="flex flex-col gap-1">
-      <span class="label">Extensión</span>
+      <span class="label">{t("Extensión")}</span>
       <select class="field" data-autofocus bind:value={name}>
         {#each notInstalled as ext (ext.name)}
           <option value={ext.name}>{ext.name} (v{ext.defaultVersion ?? "?"})</option>
@@ -209,13 +212,13 @@
     {/if}
 
     <label class="mt-3 flex flex-col gap-1">
-      <span class="label">Esquema (opcional)</span>
-      <input class="field" bind:value={installSchema} placeholder="por omisión de la extensión" />
+      <span class="label">{t("Esquema (opcional)")}</span>
+      <input class="field" bind:value={installSchema} placeholder={t("por omisión de la extensión")} />
     </label>
 
     <label class="check mt-3">
       <input type="checkbox" bind:checked={cascade} />
-      CASCADE (instala también las extensiones de las que depende)
+      {t("CASCADE (instala también las extensiones de las que depende)")}
     </label>
   {/if}
 
@@ -228,15 +231,15 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>{t("Ver SQL")}</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button
       class="btn btn-primary"
       onclick={submit}
       disabled={saving || (!existing && notInstalled.length === 0)}
     >
       {#if saving}<span class="spinner"></span>{/if}
-      {existing ? "Guardar" : "Instalar"}
+      {existing ? t("Guardar") : t("Instalar")}
     </button>
   {/snippet}
 </Modal>

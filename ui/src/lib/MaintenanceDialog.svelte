@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { t } from "./i18n.svelte";
   import { confirmMutation, isReadOnly, readOnlyReason } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
@@ -58,16 +59,16 @@
     target.kind === "table"
       ? `${target.schema}.${target.name}`
       : target.kind === "index"
-        ? `índice ${target.schema}.${target.name}`
-        : `base ${target.name}`,
+        ? t("índice {name}", { name: `${target.schema}.${target.name}` })
+        : t("base {name}", { name: target.name }),
   );
 
-  const ALL_KINDS: { value: Kind; label: string; hint: string }[] = [
-    { value: "vacuum", label: "VACUUM", hint: "recupera el espacio de las filas muertas" },
-    { value: "analyze", label: "ANALYZE", hint: "actualiza las estadísticas del planificador" },
-    { value: "reindex", label: "REINDEX", hint: "reconstruye los índices" },
-  ];
-  const KINDS = ALL_KINDS.filter((item) => kinds.includes(item.value));
+  const ALL_KINDS = $derived<{ value: Kind; label: string; hint: string }[]>([
+    { value: "vacuum", label: "VACUUM", hint: t("recupera el espacio de las filas muertas") },
+    { value: "analyze", label: "ANALYZE", hint: t("actualiza las estadísticas del planificador") },
+    { value: "reindex", label: "REINDEX", hint: t("reconstruye los índices") },
+  ]);
+  const KINDS = $derived(ALL_KINDS.filter((item) => kinds.includes(item.value)));
 
   // La sentencia exacta se pide al núcleo en vez de armarla acá: así lo que se muestra es
   // literalmente lo que se va a ejecutar, no una reconstrucción parecida.
@@ -98,7 +99,7 @@
    * `VACUUM FULL` de media hora era media hora sin poder mirar otra tabla.
    */
   async function run() {
-    if (!(await confirmMutation(profileId, "Se va a correr una tarea de mantenimiento."))) return;
+    if (!(await confirmMutation(profileId, t("Se va a correr una tarea de mantenimiento.")))) return;
 
     try {
       await tasks.maintenance({
@@ -116,7 +117,7 @@
   }
 </script>
 
-<Modal title="Mantenimiento" subtitle={targetLabel} size="lg" {onclose}>
+<Modal title={t("Mantenimiento")} subtitle={targetLabel} size="lg" {onclose}>
   <div class="seg" role="tablist">
     {#each KINDS as item (item.value)}
       <button
@@ -147,7 +148,7 @@
   {:else if kind === "reindex"}
     <label class="check mt-3">
       <input type="checkbox" bind:checked={concurrently} />
-      CONCURRENTLY (no bloquea las escrituras)
+      {t("CONCURRENTLY (no bloquea las escrituras)")}
     </label>
   {/if}
 
@@ -164,11 +165,11 @@
   {/if}
 
   <p class="mt-2 text-xs muted">
-    Corre en segundo plano: se sigue y se cancela desde la vista de procesos.
+    {t("Corre en segundo plano: se sigue y se cancela desde la vista de procesos.")}
   </p>
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose}>Cerrar</button>
-    <button class="btn btn-primary" onclick={run} disabled={!sql} {...blocked}>Ejecutar</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cerrar")}</button>
+    <button class="btn btn-primary" onclick={run} disabled={!sql} {...blocked}>{t("Ejecutar")}</button>
   {/snippet}
 </Modal>

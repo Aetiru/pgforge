@@ -9,6 +9,7 @@
  * Una clave compuesta se ofrece entera, con `AND`. Es puro y con Vitest.
  */
 
+import { t } from "./i18n.svelte";
 import type { CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 import type { ForeignKeyRef } from "./ipc";
 import { tablesInScope, type TableRef } from "./sql-complete";
@@ -123,7 +124,7 @@ export function joinConditions(
       if (pairs && pairs.length > 0) {
         const label = pairs.join(" AND ");
         if (!options.some((option) => option.label === label)) {
-          options.push({ label, detail: `clave foránea ${other.alias ?? other.name}` });
+          options.push({ label, detail: t("clave foránea {other}", { other: other.alias ?? other.name }) });
         }
       }
     }

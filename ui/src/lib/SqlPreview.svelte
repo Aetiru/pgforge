@@ -4,6 +4,7 @@
   import { describeError, rehearsalRun, type RehearsalReport } from "./ipc";
   import RehearsalResult from "./RehearsalResult.svelte";
   import Sql from "./Sql.svelte";
+  import { t } from "./i18n.svelte";
 
   /**
    * El SQL que un diálogo va a ejecutar.
@@ -61,11 +62,11 @@
     <button
       class="btn btn-sm"
       disabled={running}
-      title="Corre este SQL adentro de una transacción que se revierte: no deja nada aplicado"
+      title={t("Corre este SQL adentro de una transacción que se revierte: no deja nada aplicado")}
       onclick={rehearse}
     >
       {#if running}<span class="spinner"></span>{:else}<Icon name="flask" size={14} />{/if}
-      Ensayar
+      {t("Ensayar")}
     </button>
   </div>
 {/if}

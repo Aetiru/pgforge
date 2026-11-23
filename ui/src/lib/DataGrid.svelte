@@ -37,6 +37,7 @@
 <script lang="ts" generics="T">
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
+  import { i18n, t } from "./i18n.svelte";
   import JsonTree from "./JsonTree.svelte";
   import Modal from "./Modal.svelte";
   import { parseJsonTree } from "./json-tree";
@@ -51,7 +52,7 @@
     rowKey,
     selectedKey = null,
     onselect,
-    empty = "Sin datos.",
+    empty = t("Sin datos."),
     editable,
     onedit,
     onnearend,
@@ -402,7 +403,7 @@
   });
 
   /** Los promedios y las sumas no son enteros: se muestran con lo que haga falta y nada más. */
-  const num = (value: number) => value.toLocaleString("es", { maximumFractionDigits: 4 });
+  const num = (value: number) => value.toLocaleString(i18n.current, { maximumFractionDigits: 4 });
 
   const anyHidden = $derived(columns.length !== active.length);
 
@@ -737,7 +738,7 @@
       notify(message);
     } catch {
       // El portapapeles lo puede negar el sistema; decirlo es mejor que no hacer nada visible.
-      notify("No se pudo copiar");
+      notify(t("No se pudo copiar"));
     }
   }
 
@@ -747,22 +748,22 @@
     // los tiene.
     const text =
       format === "csv" ? delimited(headers, cells, ",") : delimited(null, cells, "\t");
-    return toClipboard(text, format === "csv" ? "Copiado con encabezados" : "Copiado");
+    return toClipboard(text, format === "csv" ? t("Copiado con encabezados") : t("Copiado"));
   }
 
   function copyMarkdown() {
     const { headers, cells } = selection();
-    return toClipboard(asMarkdown(headers, cells), "Copiado como tabla de Markdown");
+    return toClipboard(asMarkdown(headers, cells), t("Copiado como tabla de Markdown"));
   }
 
   function copyInserts() {
     const { headers, cells } = selection();
-    return toClipboard(asInserts(headers, cells), "Copiado como INSERT (cambiá «tabla» por la de destino)");
+    return toClipboard(asInserts(headers, cells), t("Copiado como INSERT (cambiá «tabla» por la de destino)"));
   }
 
   function copyJson() {
     const { headers, cells } = selection();
-    return toClipboard(asJson(headers, cells), "Copiado como JSON");
+    return toClipboard(asJson(headers, cells), t("Copiado como JSON"));
   }
 
   /**
@@ -778,7 +779,7 @@
     try {
       text = await navigator.clipboard.readText();
     } catch {
-      notify("No se pudo leer el portapapeles");
+      notify(t("No se pudo leer el portapapeles"));
       return;
     }
     if (!text) return;
@@ -806,7 +807,21 @@
     cursor = { row: top, column: left };
     anchor =
       rowsApplied > 1 || cols > 1 ? { row: top + rowsApplied - 1, column: left + cols - 1 } : null;
-    notify(`Pegado: ${rowsApplied} ${rowsApplied === 1 ? "fila" : "filas"}`);
+    notify(
+      rowsApplied === 1
+        ? t("Pegado: {n} fila", { n: rowsApplied })
+        : t("Pegado: {n} filas", { n: rowsApplied }),
+    );
+  }
+
+  /** Los avisos van separados por «—» en vez de armar una frase: cada trozo se traduce solo. */
+  function headerTitle(column: Column<T>, sticky: boolean): string {
+    return [
+      column.caption ? `${column.header} (${column.caption})` : column.header,
+      ...(canSort(column) ? [t("clic para ordenar")] : []),
+      t("clic derecho para fijar u ocultar"),
+      ...(sticky ? [] : [t("arrastrá para reordenar")]),
+    ].join(" — ");
   }
 
   function notify(message: string) {
@@ -848,7 +863,7 @@
     if (!row || !column) return [];
     const jump = linkAt?.(row, column);
     return [
-      ...(jump ? [{ label: `Ir a ${jump.label}`, run: jump.open }] : []),
+      ...(jump ? [{ label: t("Ir a {name}", { name: jump.label }), run: jump.open }] : []),
       ...(rowMenu?.(row, column) ?? []),
     ];
   });
@@ -913,10 +928,7 @@
         {sorted ? 'text-zinc-900 dark:text-zinc-100' : ''}
         {dragKey === column.key ? 'opacity-50' : ''}
         {dragOverKey === column.key ? 'bg-blue-100 dark:bg-blue-900/40' : ''}"
-      title="{column.header}{column.caption
-        ? ` (${column.caption})`
-        : ''}{canSort(column) ? ' — clic para ordenar' : ''} — clic derecho para
-        fijar u ocultar{sticky ? '' : ' — arrastrá para reordenar'}"
+      title={headerTitle(column, sticky)}
       tabindex="-1"
       draggable={!sticky}
       onclick={() => toggleSort(column)}
@@ -976,7 +988,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="absolute inset-y-0 -right-[3px] z-10 w-[6px] cursor-col-resize hover:bg-blue-500/40"
-      title="Arrastrá para cambiar el ancho; doble clic lo ajusta al contenido"
+      title={t("Arrastrá para cambiar el ancho; doble clic lo ajusta al contenido")}
       onmousedown={(event) => startResize(event, column)}
       ondblclick={(event) => {
         if (event.altKey) delete widths[column.key];
@@ -1023,7 +1035,7 @@
       <button
         class="shrink-0 rounded px-1 text-[10px] text-zinc-400 hover:bg-zinc-200
                hover:text-zinc-700 dark:hover:bg-zinc-600 dark:hover:text-zinc-100"
-        title="Poner NULL"
+        title={t("Poner NULL")}
         tabindex="-1"
         onmousedown={(event) => {
           // `mousedown` y no `click`: el `blur` del input confirmaría antes.
@@ -1066,8 +1078,8 @@
           <button
             class="fk-link"
             tabindex="-1"
-            title="Ir a {jump.label} (Ctrl+clic)"
-            aria-label="Ir a {jump.label}"
+            title={t("Ir a {name} (Ctrl+clic)", { name: jump.label })}
+            aria-label={t("Ir a {name}", { name: jump.label })}
             onclick={(event) => {
               event.stopPropagation();
               jump.open();
@@ -1094,18 +1106,18 @@
         bind:this={filterBox}
         bind:value={filter}
         class="field min-w-0 flex-1 py-0.5 text-xs"
-        placeholder="Filtrar entre las filas cargadas"
+        placeholder={t("Filtrar entre las filas cargadas")}
         autofocus
         onkeydown={(event) => {
           if (event.key === "Escape") closeFilter();
         }}
       />
       <span class="shrink-0 text-xs tabular-nums muted">
-        {count(ordered.length)} de {count(rows.length)}
+        {t("{shown} de {total}", { shown: count(ordered.length), total: count(rows.length) })}
       </span>
       <button
         class="btn btn-ghost btn-icon size-6"
-        aria-label="Cerrar el filtro"
+        aria-label={t("Cerrar el filtro")}
         onclick={closeFilter}
       >
         <Icon name="close" size={11} />
@@ -1155,6 +1167,10 @@
             llevar cada una su `top`: mover una capa ya compuesta no cuesta nada, y posicionar
             cuarenta filas a mano rehace la disposición en cada cuadro del desplazamiento.
 
+            Sin desplazamiento (`start === 0`) no hay capa ni `transform`: no hay nada que mover, y
+            en WebKitGTK la capa compuesta dejaba la última fila de un resultado corto pintada a
+            medias —«f» en vez de «false»— hasta que el ratón forzaba el repintado.
+
             La clave es la posición absoluta de la fila, no su identidad. En una lista con ventana
             deslizante los nodos se reciclan por posición de todos modos, y una clave derivada de
             los datos obliga a que sean únicos: pg_stat_statements, por ejemplo, distingue sus filas
@@ -1162,8 +1178,8 @@
             render.
           -->
           <div
-            class="absolute inset-x-0 top-0 will-change-transform"
-            style="transform: translateY({start * rowHeight}px)"
+            class="absolute inset-x-0 top-0 {start > 0 ? 'will-change-transform' : ''}"
+            style={start > 0 ? `transform: translateY(${start * rowHeight}px)` : undefined}
           >
             {#each visible as row, index (start + index)}
               {@const at = start + index}
@@ -1220,10 +1236,10 @@
       <div class="sticky left-0 flex w-full justify-center py-6">
         <Empty
           icon={needle === "" ? "table" : "search"}
-          title={needle === "" ? empty : "Ninguna fila cargada coincide"}
+          title={needle === "" ? empty : t("Ninguna fila cargada coincide")}
           hint={needle === ""
             ? undefined
-            : "El filtro solo alcanza a lo que ya se trajo del servidor."}
+            : t("El filtro solo alcanza a lo que ya se trajo del servidor.")}
         />
       </div>
     {/if}
@@ -1238,13 +1254,13 @@
       class="divider-t flex flex-wrap items-center gap-x-3 px-2 py-0.5 text-[11px] tabular-nums
              muted"
     >
-      <span>{count(summary.cells)} celdas</span>
+      <span>{t("{n} celdas", { n: count(summary.cells) })}</span>
       {#if summary.count > 0}
-        <span>suma {num(summary.sum)}</span>
-        <span>promedio {num(summary.sum / summary.count)}</span>
-        <span>mín {num(summary.min)}</span>
-        <span>máx {num(summary.max)}</span>
-        <span>({count(summary.count)} numéricas)</span>
+        <span>{t("suma {value}", { value: num(summary.sum) })}</span>
+        <span>{t("promedio {value}", { value: num(summary.sum / summary.count) })}</span>
+        <span>{t("mín {value}", { value: num(summary.min) })}</span>
+        <span>{t("máx {value}", { value: num(summary.max) })}</span>
+        <span>({t("{n} numéricas", { n: count(summary.count) })})</span>
       {/if}
     </div>
   {/if}
@@ -1272,25 +1288,25 @@
     onclick={(event) => event.stopPropagation()}
   >
     <button class="row-menu" onclick={() => copySelection("tsv")}>
-      Copiar <span class="muted">Ctrl+C</span>
+      {t("Copiar")} <span class="muted">Ctrl+C</span>
     </button>
     <button class="row-menu" onclick={() => copySelection("csv")}>
-      Copiar con encabezados <span class="muted">Ctrl+Shift+C</span>
+      {t("Copiar con encabezados")} <span class="muted">Ctrl+Shift+C</span>
     </button>
-    <button class="row-menu" onclick={copyJson}>Copiar como JSON</button>
-    <button class="row-menu" onclick={copyMarkdown}>Copiar como tabla de Markdown</button>
-    <button class="row-menu" onclick={copyInserts}>Copiar como INSERT</button>
+    <button class="row-menu" onclick={copyJson}>{t("Copiar como JSON")}</button>
+    <button class="row-menu" onclick={copyMarkdown}>{t("Copiar como tabla de Markdown")}</button>
+    <button class="row-menu" onclick={copyInserts}>{t("Copiar como INSERT")}</button>
     <button class="row-menu" disabled={!onedit} onclick={pasteSelection}>
-      Pegar <span class="muted">Ctrl+V</span>
+      {t("Pegar")} <span class="muted">Ctrl+V</span>
     </button>
     <button class="row-menu" onclick={openViewer}>
-      Ver el valor <span class="muted">Espacio</span>
+      {t("Ver el valor")} <span class="muted">{t("Espacio")}</span>
     </button>
     <button class="row-menu" onclick={openFilter}>
-      Filtrar las filas <span class="muted">Ctrl+F</span>
+      {t("Filtrar las filas")} <span class="muted">Ctrl+F</span>
     </button>
     {#if onfilter && active[cursor?.column ?? -1]?.orderBy}
-      <button class="row-menu" onclick={filterByCell}>Filtrar por este valor</button>
+      <button class="row-menu" onclick={filterByCell}>{t("Filtrar por este valor")}</button>
     {/if}
     {#each menuLinks as item (item.label)}
       <button
@@ -1319,7 +1335,7 @@
     onclick={(event) => event.stopPropagation()}
   >
     <button class="row-menu" onclick={() => pinTo(headerMenu!.index)}>
-      {pinned === headerMenu.index + 1 ? "No fijar ninguna" : "Fijar hasta esta columna"}
+      {pinned === headerMenu.index + 1 ? t("No fijar ninguna") : t("Fijar hasta esta columna")}
     </button>
     {#if onfilter && column.orderBy}
       <button
@@ -1329,14 +1345,14 @@
           onfilter(column);
         }}
       >
-        Filtrar esta columna…
+        {t("Filtrar esta columna…")}
       </button>
     {/if}
     <button class="row-menu" disabled={active.length <= 1} onclick={() => hide(column)}>
-      Ocultar esta columna
+      {t("Ocultar esta columna")}
     </button>
     <button class="row-menu" disabled={!anyHidden} onclick={showAll}>
-      Mostrar todas las columnas
+      {t("Mostrar todas las columnas")}
     </button>
     <button
       class="row-menu"
@@ -1345,7 +1361,7 @@
         headerMenu = null;
       }}
     >
-      Ajustar el ancho al contenido
+      {t("Ajustar el ancho al contenido")}
     </button>
   </div>
 {/if}
@@ -1353,17 +1369,17 @@
 {#if viewer}
   <Modal
     title={viewer.header}
-    subtitle={viewer.text === null ? "NULL" : `${viewer.text.length} caracteres`}
+    subtitle={viewer.text === null ? "NULL" : t("{n} caracteres", { n: viewer.text.length })}
     size="lg"
     onclose={() => (viewer = null)}
   >
     {#if viewer.text === null}
-      <p class="italic muted">NULL — la fila no tiene valor en esta columna.</p>
+      <p class="italic muted">{t("NULL — la fila no tiene valor en esta columna.")}</p>
     {:else}
       {#if viewerJson?.ok}
         <div class="seg mb-2" role="tablist">
-          <button class="seg-item" role="tab" aria-selected={viewerAs === "tree"} onclick={() => (viewerAs = "tree")}>Árbol</button>
-          <button class="seg-item" role="tab" aria-selected={viewerAs === "text"} onclick={() => (viewerAs = "text")}>Texto</button>
+          <button class="seg-item" role="tab" aria-selected={viewerAs === "tree"} onclick={() => (viewerAs = "tree")}>{t("Árbol")}</button>
+          <button class="seg-item" role="tab" aria-selected={viewerAs === "text"} onclick={() => (viewerAs = "text")}>{t("Texto")}</button>
         </div>
       {/if}
       {#if viewerJson?.ok && viewerAs === "tree"}
@@ -1379,12 +1395,12 @@
       <button
         class="btn btn-primary ml-auto"
         disabled={viewer?.text === null}
-        onclick={() => toClipboard(viewer?.text ?? "", "Copiado")}
+        onclick={() => toClipboard(viewer?.text ?? "", t("Copiado"))}
       >
         <Icon name="copy" size={12} />
-        Copiar
+        {t("Copiar")}
       </button>
-      <button class="btn" onclick={() => (viewer = null)}>Cerrar</button>
+      <button class="btn" onclick={() => (viewer = null)}>{t("Cerrar")}</button>
     {/snippet}
   </Modal>
 {/if}

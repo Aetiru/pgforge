@@ -12,6 +12,7 @@
  * pueden discrepar.
  */
 
+import { t } from "./i18n.svelte";
 import { assessRisks, lex, type Token } from "./statement-risk";
 
 export interface LintFinding {
@@ -150,7 +151,7 @@ export function lintStatement(text: string, offset: number): LintFinding[] {
       token.end,
       "null-comparison",
       "warning",
-      "Comparar con NULL usando un operador nunca es verdadero: usa IS NULL o IS NOT NULL.",
+      t("Comparar con NULL usando un operador nunca es verdadero: usa IS NULL o IS NOT NULL."),
     );
   });
 
@@ -163,7 +164,7 @@ export function lintStatement(text: string, offset: number): LintFinding[] {
       tokens[i + 3].end,
       "not-in-subquery",
       "warning",
-      "NOT IN con una subconsulta devuelve vacío si alguna fila trae NULL. NOT EXISTS no tiene ese problema.",
+      t("NOT IN con una subconsulta devuelve vacío si alguna fila trae NULL. NOT EXISTS no tiene ese problema."),
     );
   });
 
@@ -179,7 +180,7 @@ export function lintStatement(text: string, offset: number): LintFinding[] {
       pattern.end,
       "leading-wildcard",
       "info",
-      "Un patrón que empieza con % no puede usar un índice común; recorre toda la tabla. Con la extensión pg_trgm sí se puede indexar.",
+      t("Un patrón que empieza con % no puede usar un índice común; recorre toda la tabla. Con la extensión pg_trgm sí se puede indexar."),
     );
   });
 
@@ -195,7 +196,7 @@ export function lintStatement(text: string, offset: number): LintFinding[] {
       }
     }
     for (let i = w + 1; i < end; i += 1) {
-      const t = tokens[i];
+      const tok = tokens[i];
       const comparedAfter = (j: number) => {
         const next = tokens[j];
         if (next?.type === "punct" && COMPARATORS.has(next.value)) return true;
@@ -203,8 +204,8 @@ export function lintStatement(text: string, offset: number): LintFinding[] {
       };
 
       // lower(col) = …  /  date_trunc('day', col) = …
-      if (t.type === "word" && punct(tokens[i + 1], "(") && !punct(tokens[i - 1], ".")) {
-        const name = t.value.toLowerCase();
+      if (tok.type === "word" && punct(tokens[i + 1], "(") && !punct(tokens[i - 1], ".")) {
+        const name = tok.value.toLowerCase();
         let close = -1;
         if (WRAPPERS.has(name) && isColumnWord(tokens[i + 2])) {
           let j = i + 3;
@@ -223,18 +224,18 @@ export function lintStatement(text: string, offset: number): LintFinding[] {
         }
         if (close !== -1 && comparedAfter(close + 1)) {
           add(
-            t.start,
+            tok.start,
             tokens[close].end,
             "function-on-column",
             "info",
-            `${name}() sobre la columna impide usar el índice de esa columna. Se resuelve con un índice por expresión o comparando contra el valor transformado.`,
+            t("{name}() sobre la columna impide usar el índice de esa columna. Se resuelve con un índice por expresión o comparando contra el valor transformado.", { name }),
           );
         }
       }
 
       // col::text = …
       if (
-        isColumnWord(t) &&
+        isColumnWord(tok) &&
         punct(tokens[i + 1], ":") &&
         punct(tokens[i + 2], ":") &&
         tokens[i + 2].start === tokens[i + 1].end &&
@@ -250,11 +251,11 @@ export function lintStatement(text: string, offset: number): LintFinding[] {
         }
         if (comparedAfter(after)) {
           add(
-            t.start,
+            tok.start,
             tokens[i + 3].end,
             "cast-on-column",
             "info",
-            "Convertir la columna con :: impide usar su índice. Convierte el valor de la derecha en vez de la columna.",
+            t("Convertir la columna con :: impide usar su índice. Convierte el valor de la derecha en vez de la columna."),
           );
         }
       }
@@ -296,7 +297,7 @@ export function lintStatement(text: string, offset: number): LintFinding[] {
         tokens[star].end,
         "select-star",
         "info",
-        "SELECT * sin LIMIT trae todas las columnas de todas las filas. Si solo estás mirando, agrega LIMIT.",
+        t("SELECT * sin LIMIT trae todas las columnas de todas las filas. Si solo estás mirando, agrega LIMIT."),
       );
     }
   }
@@ -320,8 +321,8 @@ export function lintStatement(text: string, offset: number): LintFinding[] {
       risk.kind,
       "warning",
       risk.kind === "update-all"
-        ? "UPDATE sin WHERE: modifica todas las filas de la tabla."
-        : "DELETE sin WHERE: borra todas las filas de la tabla.",
+        ? t("UPDATE sin WHERE: modifica todas las filas de la tabla.")
+        : t("DELETE sin WHERE: borra todas las filas de la tabla."),
     );
   }
 

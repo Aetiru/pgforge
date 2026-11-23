@@ -1,3 +1,4 @@
+import { i18n, t } from "./i18n.svelte";
 import type { DiagnoseLevel } from "./ipc";
 import { bytes } from "./format";
 
@@ -18,13 +19,13 @@ export function levelTag(level: DiagnoseLevel): string {
 export function levelLabel(level: DiagnoseLevel): string {
   switch (level) {
     case "attention":
-      return "Requiere atención";
+      return t("Requiere atención");
     case "review":
-      return "Para revisar";
+      return t("Para revisar");
     case "info":
-      return "Informativo";
+      return t("Informativo");
     default:
-      return "En orden";
+      return t("En orden");
   }
 }
 
@@ -43,21 +44,23 @@ export function worstLevel(levels: DiagnoseLevel[]): DiagnoseLevel {
  */
 export function daysText(days: number | null | undefined): string {
   if (days === null || days === undefined || !Number.isFinite(days)) return "—";
-  if (days < 1) return "menos de un día";
-  if (days < 60) return `${Math.round(days)} ${Math.round(days) === 1 ? "día" : "días"}`;
-  if (days < 730) return `${Math.round(days / 30)} meses`;
+  if (days < 1) return t("menos de un día");
+  if (days < 60) return Math.round(days) === 1
+      ? t("{days} día", { days: 1 })
+      : t("{days} días", { days: Math.round(days) });
+  if (days < 730) return t("{months} meses", { months: Math.round(days / 30) });
   const years = Math.round(days / 365);
-  return years > 20 ? "más de 20 años" : `unos ${years} años`;
+  return years > 20 ? t("más de 20 años") : t("unos {years} años", { years });
 }
 
 /** «+2,1 GB/día»: lo que crece algo, con signo. */
 export function growthText(bytesPerDay: number | null | undefined): string {
-  if (bytesPerDay === null || bytesPerDay === undefined) return "faltan muestras";
+  if (bytesPerDay === null || bytesPerDay === undefined) return t("faltan muestras");
   const sign = bytesPerDay < 0 ? "−" : "+";
-  return `${sign}${bytes(Math.abs(bytesPerDay)).replace(".", ",")}/día`;
+  return t("{amount}/día", { amount: `${sign}${bytes(Math.abs(bytesPerDay)).replace(".", ",")}` });
 }
 
 /** Edad de transacciones en millones: «1.480 M». */
 export function millions(age: number): string {
-  return `${Math.round(age / 1_000_000).toLocaleString("es")} M`;
+  return `${Math.round(age / 1_000_000).toLocaleString(i18n.current)} M`;
 }

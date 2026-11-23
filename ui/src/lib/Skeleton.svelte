@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   /**
    * El esqueleto de lo que está por llegar: barras con la forma de las filas, en lugar de una rueda
    * girando en un hueco. Mantiene el tamaño del lugar, así que no salta cuando llegan los datos, y se
@@ -6,7 +7,7 @@
    */
   let {
     rows = 5,
-    label = "Cargando…",
+    label = t("Cargando…"),
     compact = false,
   }: {
     rows?: number;

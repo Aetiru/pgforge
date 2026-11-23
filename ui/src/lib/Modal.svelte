@@ -2,6 +2,7 @@
   import type { Snippet } from "svelte";
   import { fade, scale } from "svelte/transition";
   import Icon from "./Icon.svelte";
+  import { t } from "./i18n.svelte";
 
   /**
    * El diálogo de toda la aplicación.
@@ -126,7 +127,7 @@
       </div>
       <button
         class="btn btn-ghost btn-icon -mr-1 shrink-0"
-        aria-label="Cerrar"
+        aria-label={t("Cerrar")}
         disabled={busy}
         onclick={onclose}
       >

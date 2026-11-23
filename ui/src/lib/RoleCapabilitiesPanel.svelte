@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   /**
    * "Qué puede hacer este rol": mismo dato que la matriz, pivotado para un solo rol y las tres
    * familias de objetos juntas, agrupadas como secciones. De solo lectura, igual que la matriz.
@@ -51,16 +52,16 @@
           <td class="w-56 font-medium whitespace-nowrap text-zinc-800 dark:text-zinc-100">{row.object}</td>
           <td>
             {#if row.granted.length === 0}
-              <span class="muted italic">— sin permisos —</span>
+              <span class="muted italic">{t("— sin permisos —")}</span>
             {:else}
               <div class="flex flex-wrap gap-1.5">
                 {#each row.granted as grant (grant.privilege)}
                   <span
                     class="tag {grant.direct ? 'tag-ok' : 'tag-warn'}"
-                    title={grant.direct ? "Otorgado directo" : "Heredado por membresía"}
+                    title={grant.direct ? t("Otorgado directo") : t("Heredado por membresía")}
                   >
                     {grant.privilege}
-                    {#if !grant.direct}<span class="opacity-70">· heredado</span>{/if}
+                    {#if !grant.direct}<span class="opacity-70">· {t("heredado")}</span>{/if}
                   </span>
                 {/each}
               </div>
@@ -75,7 +76,7 @@
 <div class="flex h-full flex-col">
   <div class="toolbar divider-b gap-3">
     <label class="flex flex-col gap-1">
-      <span class="label">Esquema</span>
+      <span class="label">{t("Esquema")}</span>
       <select
         class="field"
         value={tab.schema}
@@ -87,7 +88,7 @@
       </select>
     </label>
 
-    <button class="btn btn-icon ml-auto" title="Volver a leer" onclick={() => tab.load()}>
+    <button class="btn btn-icon ml-auto" title={t("Volver a leer")} onclick={() => tab.load()}>
       <Icon name="refresh" size={12} />
     </button>
   </div>
@@ -97,12 +98,12 @@
   {/if}
 
   {#if !tab.loading && tables.length === 0 && sequences.length === 0 && functions.length === 0}
-    <Empty icon="role" title="Sin objetos" hint="Este esquema no tiene nada que {tab.role} pueda tocar." />
+    <Empty icon="role" title={t("Sin objetos")} hint={t("Este esquema no tiene nada que {role} pueda tocar.", { role: tab.role })} />
   {:else}
     <div class="min-h-0 flex-1 overflow-auto">
-      {@render section("Tablas", "table", tables)}
-      {@render section("Secuencias", "sequence", sequences)}
-      {@render section("Funciones", "function", functions)}
+      {@render section(t("Tablas"), "table", tables)}
+      {@render section(t("Secuencias"), "sequence", sequences)}
+      {@render section(t("Funciones"), "function", functions)}
     </div>
   {/if}
 </div>

@@ -7,6 +7,7 @@
  * no como quedó. Eso es exactamente lo que se rompe callado si se arma en el componente.
  */
 
+import { t } from "./i18n.svelte";
 import type { Timing, TriggerChange, TriggerEvent, TriggerInfo, TriggerLevel } from "./ipc";
 
 export const TIMING_OPTIONS: { value: Timing; label: string }[] = [
@@ -52,10 +53,10 @@ export function triggerForm(existing: TriggerInfo | null, schema: string): Trigg
 }
 
 export function validateTrigger(form: TriggerForm): string | null {
-  if (!form.name.trim()) return "Poné un nombre para el trigger.";
-  if (form.events.length === 0) return "Elegí al menos un evento.";
+  if (!form.name.trim()) return t("Poné un nombre para el trigger.");
+  if (form.events.length === 0) return t("Elegí al menos un evento.");
   if (!form.functionSchema.trim() || !form.functionName.trim()) {
-    return "Poné la función que va a ejecutar.";
+    return t("Poné la función que va a ejecutar.");
   }
   return null;
 }

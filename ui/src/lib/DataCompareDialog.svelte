@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
+  import { t } from "./i18n.svelte";
   import Modal from "./Modal.svelte";
   import { explorer } from "./explorer.svelte";
   import {
@@ -33,7 +34,7 @@
     explorer.profiles.filter((profile) => explorer.isConnected(profile.id)),
   );
   const sourceName = $derived(
-    explorer.profiles.find((profile) => profile.id === source.id)?.name ?? "servidor",
+    explorer.profiles.find((profile) => profile.id === source.id)?.name ?? t("servidor"),
   );
 
   // Copia inicial del origen: lo más probable es querer la misma tabla del otro lado. Se toma una
@@ -125,25 +126,25 @@
 </script>
 
 <Modal
-  title="Comparar datos"
+  title={t("Comparar datos")}
   subtitle="{source.database}.{source.schema}.{source.table}"
   size="md"
   {onclose}
 >
   <div class="grid gap-4">
     <div class="card p-3">
-      <div class="label">Origen · las filas que se quieren</div>
+      <div class="label">{t("Origen · las filas que se quieren")}</div>
       <div class="mt-1 text-sm select-text">
         {sourceName} · {source.database}.{source.schema}.{source.table}
       </div>
     </div>
 
     <div class="card p-3">
-      <div class="label">Destino · la tabla que se llevaría hasta el origen</div>
+      <div class="label">{t("Destino · la tabla que se llevaría hasta el origen")}</div>
 
       <div class="mt-2 grid gap-2">
         <label class="flex flex-col gap-1">
-          <span class="label">Servidor</span>
+          <span class="label">{t("Servidor")}</span>
           <select class="field" bind:value={targetId} data-autofocus>
             {#each servers as profile (profile.id)}
               <option value={profile.id}>{profile.name}</option>
@@ -152,7 +153,7 @@
         </label>
 
         <label class="flex flex-col gap-1">
-          <span class="label">Base</span>
+          <span class="label">{t("Base")}</span>
           <select class="field" bind:value={targetDatabase}>
             {#each databases as database (database)}
               <option value={database}>{database}</option>
@@ -161,7 +162,7 @@
         </label>
 
         <label class="flex flex-col gap-1">
-          <span class="label">Esquema</span>
+          <span class="label">{t("Esquema")}</span>
           <select class="field" bind:value={targetSchema}>
             {#each schemas as schema (schema)}
               <option value={schema}>{schema}</option>
@@ -170,7 +171,7 @@
         </label>
 
         <label class="flex flex-col gap-1">
-          <span class="label">Tabla</span>
+          <span class="label">{t("Tabla")}</span>
           <select class="field" bind:value={targetTable}>
             {#each tables as table (table)}
               <option value={table}>{table}</option>
@@ -181,13 +182,11 @@
     </div>
 
     <p class="text-xs muted">
-      Las filas se emparejan por la clave primaria (o un índice único sobre columnas NOT NULL) del
-      origen, y el destino tiene que tener una clave sobre las mismas columnas. Se leen las dos
-      tablas enteras; nada se modifica: el resultado es un informe y un script para revisar.
+      {t("Las filas se emparejan por la clave primaria (o un índice único sobre columnas NOT NULL) del origen, y el destino tiene que tener una clave sobre las mismas columnas. Se leen las dos tablas enteras; nada se modifica: el resultado es un informe y un script para revisar.")}
     </p>
 
     {#if sameSide}
-      <Alert tone="warn" box>Los dos lados son la misma tabla: no hay nada que comparar.</Alert>
+      <Alert tone="warn" box>{t("Los dos lados son la misma tabla: no hay nada que comparar.")}</Alert>
     {/if}
 
     {#if error}
@@ -196,7 +195,7 @@
   </div>
 
   {#snippet footer()}
-    <button class="btn btn-ghost" onclick={onclose}>Cancelar</button>
-    <button class="btn btn-primary" disabled={!ready} onclick={submit}>Comparar</button>
+    <button class="btn btn-ghost" onclick={onclose}>{t("Cancelar")}</button>
+    <button class="btn btn-primary" disabled={!ready} onclick={submit}>{t("Comparar")}</button>
   {/snippet}
 </Modal>

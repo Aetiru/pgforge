@@ -7,6 +7,8 @@
  * mira ponga valores de verdad. La que no tiene parámetros se explica en el acto.
  */
 
+
+import { t } from "./i18n.svelte";
 export function needsValues(sql: string): boolean {
   return /\$\d+/.test(sql);
 }
@@ -16,5 +18,9 @@ export function withValuesHint(sql: string): string {
   const params = [...new Set(sql.match(/\$\d+/g) ?? [])].sort(
     (a, b) => Number(a.slice(1)) - Number(b.slice(1)),
   );
-  return `-- Esta sentencia viene de pg_stat_statements con los valores quitados (${params.join(", ")}).\n-- Reemplazalos por valores reales y apretá «Explicar»: el plan depende de ellos.\n${sql}`;
+  const note = t(
+    "-- Esta sentencia viene de pg_stat_statements con los valores quitados ({params}).\n-- Reemplazalos por valores reales y apretá «Explicar»: el plan depende de ellos.",
+    { params: params.join(", ") },
+  );
+  return `${note}\n${sql}`;
 }

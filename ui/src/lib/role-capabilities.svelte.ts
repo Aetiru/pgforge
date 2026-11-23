@@ -5,6 +5,7 @@
  * rol toca en el esquema elegido, no comparar un tipo entre roles.
  */
 
+import { t } from "./i18n.svelte";
 import { Tab, tabs } from "./tabs.svelte";
 import {
   describeError,
@@ -29,7 +30,7 @@ export class RoleCapabilitiesTab extends Tab {
   error = $state<string | null>(null);
 
   constructor(profileId: string, database: string, role: string, schema: string) {
-    super(profileId, database, `Rol · ${role}`);
+    super(profileId, database, t("Rol · {role}", { role }));
     this.role = role;
     this.schema = schema;
   }

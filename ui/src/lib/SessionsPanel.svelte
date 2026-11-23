@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import BlockTree from "./BlockTree.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
@@ -6,7 +7,6 @@
   import { duration } from "./format";
   import type { Backend, BlockNode, Lock } from "./ipc";
   import {
-    KIND_LABEL,
     barShare,
     countSessions,
     filterSessions,
@@ -166,13 +166,21 @@
     }
   }
 
-  const CHIPS: { value: SessionKind | "all"; label: string }[] = [
-    { value: "all", label: "Todas" },
-    { value: "blocked", label: "Bloqueadas" },
-    { value: "itx", label: "Inactivas en tx" },
-    { value: "active", label: "Activas" },
-    { value: "idle", label: "Inactivas" },
-  ];
+  const CHIPS = $derived<{ value: SessionKind | "all"; label: string }[]>([
+    { value: "all", label: t("Todas") },
+    { value: "blocked", label: t("Bloqueadas") },
+    { value: "itx", label: t("Inactivas en tx") },
+    { value: "active", label: t("Activas") },
+    { value: "idle", label: t("Inactivas") },
+  ]);
+
+  const kindName = (kind: SessionKind): string =>
+    ({
+      blocked: t("Bloqueada"),
+      itx: t("Inactiva en transacción"),
+      active: t("Activa"),
+      idle: t("Inactiva"),
+    })[kind];
 
   const DOT: Record<SessionKind, string> = {
     blocked: "bg-rose-500",
@@ -188,11 +196,11 @@
     idle: "bg-zinc-400/70 dark:bg-zinc-500/70",
   };
 
-  const HEADERS: { key: SortKey; label: string; align?: "right" }[] = [
+  const HEADERS = $derived<{ key: SortKey; label: string; align?: "right" }[]>([
     { key: "pid", label: "PID" },
-    { key: "app", label: "Origen" },
-    { key: "duration", label: "Duración" },
-  ];
+    { key: "app", label: t("Origen") },
+    { key: "duration", label: t("Duración") },
+  ]);
 
   /** Las marcas de la escala, con rótulos cortos: «5 min 0 s» no entra entre dos marcas vecinas. */
   const TICKS: [number, string][] = [
@@ -216,7 +224,7 @@
       <input
         type="checkbox"
         class="align-middle"
-        aria-label="Marcar la sesión {backend.pid}"
+        aria-label={t("Marcar la sesión {pid}", { pid: backend.pid })}
         checked={marked.has(backend.pid)}
         disabled={backend.isMonitor}
         onclick={(event) => event.stopPropagation()}
@@ -224,7 +232,7 @@
       />
     </td>
     <td class="px-2 py-1.5 font-mono whitespace-nowrap">
-      <span class="mr-1.5 inline-block size-2 rounded-full {DOT[k]}" title={KIND_LABEL[k]}></span>{backend.pid}
+      <span class="mr-1.5 inline-block size-2 rounded-full {DOT[k]}" title={kindName(k)}></span>{backend.pid}
     </td>
     <td class="max-w-36 truncate px-2 whitespace-nowrap" title="{backend.user ?? '—'} · {backend.applicationName ?? ''}">
       {backend.applicationName || "—"}
@@ -242,7 +250,9 @@
           class="w-16 font-mono {isLong(backend, threshold)
             ? 'font-semibold text-amber-600 dark:text-amber-400'
             : ''}"
-          title={isLong(backend, threshold) ? `Lleva más de ${duration(threshold)} corriendo` : ""}
+          title={isLong(backend, threshold)
+            ? t("Lleva más de {duration} corriendo", { duration: duration(threshold) })
+            : ""}
         >
           {duration(secondsOf(backend))}
         </span>
@@ -273,8 +283,8 @@
 
     <input
       class="field ml-auto w-full max-w-56 py-0.5 text-xs"
-      placeholder="Buscar usuario, app o consulta"
-      aria-label="Buscar sesiones"
+      placeholder={t("Buscar usuario, app o consulta")}
+      aria-label={t("Buscar sesiones")}
       bind:value={text}
     />
   </div>
@@ -282,26 +292,26 @@
   <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
     <div class="seg" role="tablist">
       <button class="seg-item" role="tab" aria-selected={view === "table"} onclick={() => (view = "table")}>
-        Tabla
+        {t("Tabla")}
       </button>
       <button class="seg-item" role="tab" aria-selected={view === "timeline"} onclick={() => (view = "timeline")}>
-        Línea de tiempo
+        {t("Línea de tiempo")}
       </button>
     </div>
 
-    <label class="check text-xs" title="Agrupa las filas bajo el nombre de la aplicación o del usuario">
-      Agrupar por
+    <label class="check text-xs" title={t("Agrupa las filas bajo el nombre de la aplicación o del usuario")}>
+      {t("Agrupar por")}
       <select class="field py-0.5 text-xs" bind:value={group}>
         <option value="none">—</option>
-        <option value="app">Aplicación</option>
-        <option value="user">Usuario</option>
+        <option value="app">{t("Aplicación")}</option>
+        <option value="user">{t("Usuario")}</option>
       </select>
     </label>
 
-    <label class="check text-xs" title="Marca en ámbar lo que está corriendo hace más que esto">
-      Resaltar desde
+    <label class="check text-xs" title={t("Marca en ámbar lo que está corriendo hace más que esto")}>
+      {t("Resaltar desde")}
       <select class="field py-0.5 text-xs" bind:value={threshold}>
-        <option value={0}>no resaltar</option>
+        <option value={0}>{t("no resaltar")}</option>
         <option value={10}>10 s</option>
         <option value={30}>30 s</option>
         <option value={60}>1 min</option>
@@ -309,9 +319,9 @@
       </select>
     </label>
 
-    <label class="check text-xs" title="Con una sesión elegida, la lista deja de reordenarse mientras la leés">
+    <label class="check text-xs" title={t("Con una sesión elegida, la lista deja de reordenarse mientras la leés")}>
       <input type="checkbox" bind:checked={freeze} />
-      Congelar al elegir
+      {t("Congelar al elegir")}
     </label>
 
     <!-- Siempre a la vista: «actualizar» dentro de una pastilla no se leía como botón. Con la lista
@@ -321,23 +331,27 @@
       <button
         class="btn btn-sm border-amber-400 text-amber-800 dark:border-amber-600 dark:text-amber-300"
         onclick={refresh}
-        title="La lista dejó de reordenarse al elegir una sesión. Vuelve a tomar las sesiones de ahora; la elegida se conserva"
+        title={t("La lista dejó de reordenarse al elegir una sesión. Vuelve a tomar las sesiones de ahora; la elegida se conserva")}
       >
         <Icon name="refresh" size={12} />
-        Actualizar lista
-        <span class="text-[10px] opacity-80">· congelada</span>
+        {t("Actualizar lista")}
+        <span class="text-[10px] opacity-80">· {t("congelada")}</span>
       </button>
     {:else}
-      <span class="tag tag-neutral" title="La lista se actualiza sola en cada muestra">En vivo</span>
+      <span class="tag tag-neutral" title={t("La lista se actualiza sola en cada muestra")}>{t("En vivo")}</span>
     {/if}
   </div>
 
   {#if marked.size > 0}
     <div class="flex flex-wrap items-center gap-2 rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs dark:border-blue-800 dark:bg-blue-950/40">
-      <span class="font-medium">{marked.size} {marked.size === 1 ? "sesión marcada" : "sesiones marcadas"}</span>
-      <button class="btn btn-sm" onclick={() => oncancel([...marked])}>Cancelar consultas…</button>
-      <button class="btn btn-sm btn-danger-ghost" onclick={() => onterminate([...marked])}>Terminar sesiones…</button>
-      <button class="btn btn-sm btn-ghost ml-auto" onclick={() => (marked = new Set())}>Limpiar</button>
+      <span class="font-medium">
+        {marked.size === 1
+          ? t("{n} sesión marcada", { n: marked.size })
+          : t("{n} sesiones marcadas", { n: marked.size })}
+      </span>
+      <button class="btn btn-sm" onclick={() => oncancel([...marked])}>{t("Cancelar consultas…")}</button>
+      <button class="btn btn-sm btn-danger-ghost" onclick={() => onterminate([...marked])}>{t("Terminar sesiones…")}</button>
+      <button class="btn btn-sm btn-ghost ml-auto" onclick={() => (marked = new Set())}>{t("Limpiar")}</button>
     </div>
   {/if}
 
@@ -345,7 +359,7 @@
   {#if chain.length > 0}
     <div class="rounded-md border border-rose-300 bg-rose-50/60 px-2 py-1.5 dark:border-rose-900/60 dark:bg-rose-950/20">
       <p class="px-1 pb-1 text-xs font-medium text-rose-700 dark:text-rose-300">
-        Cadena de bloqueo · resolvé la de arriba: las de abajo esperan por ella
+        {t("Cadena de bloqueo · resolvé la de arriba: las de abajo esperan por ella")}
       </p>
       {#each chain as node (node.pid)}
         <BlockTree {node} onselect={(pid) => pick(pid)} onterminate={(pid) => onterminate([pid])} />
@@ -356,13 +370,13 @@
   <div class="flex min-h-0 flex-1 gap-3 @container/sessions">
     <div class="card min-h-0 min-w-0 flex-1 overflow-auto">
       {#if shown.length === 0}
-        <Empty icon="search" title="Ninguna sesión coincide" hint="Probá con otro filtro o borrá el texto de búsqueda." />
+        <Empty icon="search" title={t("Ninguna sesión coincide")} hint={t("Probá con otro filtro o borrá el texto de búsqueda.")} />
       {:else if view === "table"}
         <table class="w-full border-collapse">
           <thead class="sticky top-0 z-10 bg-zinc-50 dark:bg-zinc-800">
             <tr class="border-b border-zinc-200 text-left text-[11px] font-medium tracking-wide uppercase muted dark:border-zinc-700">
               <th class="w-7 pl-2">
-                <input type="checkbox" aria-label="Marcar todas las visibles" checked={allMarked} onchange={toggleAll} />
+                <input type="checkbox" aria-label={t("Marcar todas las visibles")} checked={allMarked} onchange={toggleAll} />
               </th>
               {#each HEADERS as header (header.key)}
                 <th class="px-2 py-1.5">
@@ -374,7 +388,7 @@
                   </button>
                 </th>
               {/each}
-              <th class="px-2 py-1.5">Consulta</th>
+              <th class="px-2 py-1.5">{t("Consulta")}</th>
             </tr>
           </thead>
           <tbody>
@@ -384,8 +398,10 @@
                   <td colspan="5" class="px-3 py-1 text-xs font-semibold">
                     {bucket.label}
                     <span class="font-normal muted">
-                      · {bucket.items.length} {bucket.items.length === 1 ? "sesión" : "sesiones"}
-                      · la más larga {duration(bucket.longest)}
+                      · {bucket.items.length === 1
+                        ? t("{n} sesión", { n: bucket.items.length })
+                        : t("{n} sesiones", { n: bucket.items.length })}
+                      · {t("la más larga {duration}", { duration: duration(bucket.longest) })}
                     </span>
                   </td>
                 </tr>
@@ -400,13 +416,13 @@
         <!-- La línea de tiempo: la barra es proporcional a la duración en escala logarítmica, así
              20 ms y siete minutos entran en la misma pantalla. Las marcas dicen qué escala es. -->
         <div class="grid grid-cols-[9rem_minmax(0,1fr)_4.5rem] gap-3 border-b border-zinc-200 bg-zinc-50 px-3 py-1 text-[10.5px] font-mono muted dark:border-zinc-700 dark:bg-zinc-800">
-          <span>Sesión</span>
+          <span>{t("Sesión")}</span>
           <div class="relative h-3">
             {#each TICKS as [seconds, label] (seconds)}
               <span class="absolute -translate-x-1/2 whitespace-nowrap" style="left: {barShare(seconds, longest) * 100}%">{label}</span>
             {/each}
           </div>
-          <span class="text-right">Duración</span>
+          <span class="text-right">{t("Duración")}</span>
         </div>
         {#each groups as bucket (bucket.key)}
           {#if group !== "none"}
@@ -452,28 +468,28 @@
               <span class="inline-block size-2 rounded-full {DOT[kindOf(selected)]}"></span>
               PID {selected.pid}
             </div>
-            <div class="text-xs muted">{KIND_LABEL[kindOf(selected)]}</div>
+            <div class="text-xs muted">{kindName(kindOf(selected))}</div>
           </div>
-          <button class="btn btn-ghost btn-icon size-6" aria-label="Cerrar el detalle" title="Cerrar el detalle" onclick={() => pick(null)}>
+          <button class="btn btn-ghost btn-icon size-6" aria-label={t("Cerrar el detalle")} title={t("Cerrar el detalle")} onclick={() => pick(null)}>
             <Icon name="close" size={11} />
           </button>
         </div>
 
         {#if gone}
-          <p class="text-xs text-amber-700 dark:text-amber-400">Esta sesión ya terminó: lo que se ve es su última muestra.</p>
+          <p class="text-xs text-amber-700 dark:text-amber-400">{t("Esta sesión ya terminó: lo que se ve es su última muestra.")}</p>
         {/if}
 
         <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
-          <dt class="muted">Usuario</dt><dd class="font-mono">{selected.user ?? "—"}@{selected.database ?? "—"}</dd>
-          <dt class="muted">Aplicación</dt><dd class="font-mono break-all">{selected.applicationName || "—"}</dd>
-          <dt class="muted">Cliente</dt><dd class="font-mono">{selected.clientAddr ?? "local"}</dd>
-          <dt class="muted">Consulta</dt><dd class="font-mono">{duration(selected.querySeconds)}</dd>
-          <dt class="muted">Transacción</dt><dd class="font-mono">{duration(selected.transactionSeconds)}</dd>
+          <dt class="muted">{t("Usuario")}</dt><dd class="font-mono">{selected.user ?? "—"}@{selected.database ?? "—"}</dd>
+          <dt class="muted">{t("Aplicación")}</dt><dd class="font-mono break-all">{selected.applicationName || "—"}</dd>
+          <dt class="muted">{t("Cliente")}</dt><dd class="font-mono">{selected.clientAddr ?? t("local")}</dd>
+          <dt class="muted">{t("Consulta")}</dt><dd class="font-mono">{duration(selected.querySeconds)}</dd>
+          <dt class="muted">{t("Transacción")}</dt><dd class="font-mono">{duration(selected.transactionSeconds)}</dd>
           {#if selected.waitEventType}
-            <dt class="muted">Espera</dt><dd class="font-mono">{selected.waitEventType}: {selected.waitEvent ?? ""}</dd>
+            <dt class="muted">{t("Espera")}</dt><dd class="font-mono">{selected.waitEventType}: {selected.waitEvent ?? ""}</dd>
           {/if}
           {#if selected.blockedBy.length > 0}
-            <dt class="muted">Bloqueada por</dt>
+            <dt class="muted">{t("Bloqueada por")}</dt>
             <dd class="font-mono">
               {#each selected.blockedBy as pid, index (pid)}
                 {index > 0 ? ", " : ""}<button class="text-rose-600 underline dark:text-rose-400" onclick={() => pick(pid)}>{pid}</button>
@@ -490,12 +506,12 @@
         {/if}
 
         {#if lockGroups.length > 0}
-          <div class="text-xs" title="Candados que tiene o espera esta sesión">
+          <div class="text-xs" title={t("Candados que tiene o espera esta sesión")}>
             <div class="flex items-center gap-1.5">
-              <span class="muted">Candados ({locks.length})</span>
+              <span class="muted">{t("Candados ({n})", { n: locks.length })}</span>
               {#if lockGroups.length > LOCKS_SHOWN}
                 <button class="underline muted" onclick={() => (allLocks = !allLocks)}>
-                  {allLocks ? "ver menos" : `ver los ${lockGroups.length} tipos`}
+                  {allLocks ? t("ver menos") : t("ver los {n} tipos", { n: lockGroups.length })}
                 </button>
               {/if}
             </div>
@@ -504,7 +520,7 @@
                 <li class="font-mono {group.granted ? '' : 'text-rose-600 dark:text-rose-400'}">
                   {group.mode}{group.count > 1 ? ` ×${group.count}` : ""}
                   <span class="muted">
-                    · {group.lockType}{group.relations.length ? ` · ${group.relations.join(", ")}` : ""}{group.granted ? "" : " · esperando"}
+                    · {group.lockType}{group.relations.length ? ` · ${group.relations.join(", ")}` : ""}{group.granted ? "" : ` · ${t("esperando")}`}
                   </span>
                 </li>
               {/each}
@@ -513,22 +529,22 @@
         {/if}
 
         {#if selected.isMonitor}
-          <span class="tag tag-neutral">es la sesión del propio monitor</span>
+          <span class="tag tag-neutral">{t("es la sesión del propio monitor")}</span>
         {:else}
           <div class="flex flex-wrap gap-1.5">
             {#if selected.query}
               <button class="btn btn-sm" onclick={copyQuery}>
                 <Icon name={copied ? "check" : "copy"} size={11} />
-                {copied ? "Copiada" : "Copiar"}
+                {copied ? t("Copiada") : t("Copiar")}
               </button>
               <button class="btn btn-sm" onclick={() => onopen(selected.query ?? "", selected.database)}>
-                Abrir en una consulta
+                {t("Abrir en una consulta")}
               </button>
             {/if}
-            <button class="btn btn-sm" onclick={() => oncancel([selected.pid])}>Cancelar consulta…</button>
-            <button class="btn btn-sm btn-danger-ghost" onclick={() => onterminate([selected.pid])}>Terminar sesión…</button>
+            <button class="btn btn-sm" onclick={() => oncancel([selected.pid])}>{t("Cancelar consulta…")}</button>
+            <button class="btn btn-sm btn-danger-ghost" onclick={() => onterminate([selected.pid])}>{t("Terminar sesión…")}</button>
           </div>
-          <p class="text-[11px] muted">Cancelar y terminar piden confirmación. Terminar revierte la transacción.</p>
+          <p class="text-[11px] muted">{t("Cancelar y terminar piden confirmación. Terminar revierte la transacción.")}</p>
         {/if}
       </aside>
     {/if}

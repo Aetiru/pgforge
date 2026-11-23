@@ -7,13 +7,15 @@
  * olvidada corriendo horas ahí es el caso que más cuesta.
  */
 
+
+import { t } from "./i18n.svelte";
 export const TIMEOUT_OPTIONS: { label: string; ms: number | null }[] = [
-  { label: "Tiempo: el del perfil", ms: null },
+  { get label() { return t("Tiempo: el del perfil"); }, ms: null },
   { label: "30 s", ms: 30_000 },
   { label: "1 min", ms: 60_000 },
   { label: "5 min", ms: 300_000 },
   { label: "30 min", ms: 1_800_000 },
-  { label: "Sin límite", ms: 0 },
+  { get label() { return t("Sin límite"); }, ms: 0 },
 ];
 
 /** Lo que se pone al abrir una pestaña, o `null` si no se toca nada. */

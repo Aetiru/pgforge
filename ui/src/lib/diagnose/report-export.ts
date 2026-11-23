@@ -1,3 +1,4 @@
+import { t } from "../i18n.svelte";
 import { describeError } from "../ipc";
 import {
   autovacuumStatus,
@@ -40,14 +41,14 @@ export async function collectReport(
 
   const [connections, sequences, wraparound, autovacuum, cache, space, checkpoints, config] =
     await Promise.all([
-      read("Conexiones", () => connectionReport(profileId)),
-      read("Secuencias", () => sequenceUsage(profileId)),
-      read("Edad de las transacciones", () => wraparoundStatus(profileId)),
-      read("Autovacuum", () => autovacuumStatus(profileId)),
-      read("Caché", () => cacheStats(profileId)),
-      read("Espacio", () => spaceOverview(profileId)),
-      read("Checkpoints", () => checkpointStats(profileId)),
-      read("Configuración", () => serverConfigReview(profileId, ramBytes)),
+      read(t("Conexiones"), () => connectionReport(profileId)),
+      read(t("Secuencias"), () => sequenceUsage(profileId)),
+      read(t("Edad de las transacciones"), () => wraparoundStatus(profileId)),
+      read(t("Autovacuum"), () => autovacuumStatus(profileId)),
+      read(t("Caché"), () => cacheStats(profileId)),
+      read(t("Espacio"), () => spaceOverview(profileId)),
+      read(t("Checkpoints"), () => checkpointStats(profileId)),
+      read(t("Configuración"), () => serverConfigReview(profileId, ramBytes)),
     ]);
 
   return {

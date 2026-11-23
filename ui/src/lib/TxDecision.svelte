@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import Modal from "./Modal.svelte";
 
   /**
@@ -28,7 +29,7 @@
   <p class="text-sm text-zinc-600 dark:text-zinc-300">{message}</p>
 
   {#snippet footer()}
-    <button class="btn" disabled={busy} onclick={onclose}>Cancelar</button>
+    <button class="btn" disabled={busy} onclick={onclose}>{t("Cancelar")}</button>
     {#if keepLabel}
       <button class="btn" disabled={busy} onclick={() => onchoose("keep")}>{keepLabel}</button>
     {/if}

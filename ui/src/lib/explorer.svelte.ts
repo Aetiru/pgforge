@@ -1,3 +1,4 @@
+import { t } from "./i18n.svelte";
 import {
   connect as ipcConnect,
   disconnect as ipcDisconnect,
@@ -27,11 +28,13 @@ import { folders, LOOSE_GROUP, normalizeGroup } from "./folders.svelte";
 import { recents } from "./recents.svelte";
 import { compareServers, reorderDrop } from "./server-order";
 import { folderForKind } from "./tree-actions";
+import { folderLabel } from "./folder-label";
 import { filterHits, matchesKind, parseQuery } from "./tree-query";
 import { matchesNote, type ObjectNote } from "./notes";
 import { visibleSchemas } from "./hidden-schemas";
 import { hiddenSchemas, treeView } from "./tree-view.svelte";
 import { groupByPrefix, orderNodes } from "./tree-order";
+import { groupRoles, roleGroupOpenByDefault, type RoleGroupId } from "./role-groups";
 import type { ActivityBrief } from "./server-activity";
 
 /**
@@ -119,10 +122,12 @@ function serverRow(profile: ConnectionProfile, level: number): Row {
 function groupDetail(servers: Row[]): string {
   // Una carpeta recién creada todavía no tiene nada: decirlo con palabras es más claro que un «0»
   // y le explica al usuario que ahí adentro se arrastran servidores.
-  if (servers.length === 0) return "vacía";
+  if (servers.length === 0) return t("vacía");
   const connected = servers.filter((server) => server.connected).length;
   return connected > 0
-    ? `${servers.length} · ${connected} conectado${connected === 1 ? "" : "s"}`
+    ? connected === 1
+      ? t("{total} · 1 conectado", { total: servers.length })
+      : t("{total} · {connected} conectados", { total: servers.length, connected })
     : `${servers.length}`;
 }
 
@@ -134,7 +139,7 @@ function groupDetail(servers: Row[]): string {
  * cantidad de filas. Solo aparece si hay al menos una carpeta: sin ninguna, «sin carpeta» sería el
  * título de la lista entera.
  */
-const LOOSE_LABEL = "Sin carpeta";
+const looseLabel = () => t("Sin carpeta");
 
 /**
  * Las carpetas anidan con `/`: `Clientes/ACME` se dibuja adentro de `Clientes`.
@@ -190,7 +195,7 @@ function groupRow(name: string | null, level: number, children: Row[]): Row {
     group: name ?? undefined,
     node: null,
     level,
-    label: name === null ? LOOSE_LABEL : leafName(name),
+    label: name === null ? looseLabel() : leafName(name),
     detail: groupDetail(serversUnder(children)),
     hasChildren: children.length > 0,
     // Si estaba cerrada la última vez, sigue cerrada: es lo primero que se toca cuando hay veinte
@@ -203,6 +208,10 @@ function groupRow(name: string | null, level: number, children: Row[]): Row {
 }
 
 function childRow(parent: Row, node: TreeNode): Row {
+  const folder = folderOf(node.kind);
+  // El núcleo rotula las carpetas en español: se traduce según el tipo, en el nodo mismo, para
+  // que el detalle y la barra de estado lean el mismo texto que la fila.
+  if (folder) node = { ...node, label: folderLabel(folder) };
   return {
     kind: "node",
     key: `${parent.profileId}:${node.id}`,
@@ -687,7 +696,7 @@ class Explorer {
     const row = this.rowFor(profileId);
     if (!row || !row.connected || row.down) return;
     row.down = true;
-    row.error = "sin conexión";
+    row.error = t("sin conexión");
   }
 
   /** `true` si el servidor está marcado como caído. */
@@ -748,7 +757,9 @@ class Explorer {
         shown = visible.shown;
         row.hiddenCount = visible.hiddenCount;
         row.detail =
-          visible.hiddenCount > 0 ? `${shown.length} de ${nodes.length}` : String(nodes.length);
+          visible.hiddenCount > 0
+            ? t("{shown} de {total}", { shown: shown.length, total: nodes.length })
+            : String(nodes.length);
       }
       row.children = this.arrange(
         row,
@@ -779,6 +790,7 @@ class Explorer {
    */
   private arrange(parent: Row, leaves: Row[]): Row[] {
     const kind = parent.node ? folderOf(parent.node.kind) : null;
+    if (kind === "roles" && parent.node && !parent.synthetic) return this.arrangeRoles(parent, leaves);
     if (!kind || !ORDERABLE.includes(kind) || !parent.node) return leaves;
 
     // Con los valores de fábrica se respeta el orden del servidor, que ya viene por nombre.
@@ -830,6 +842,53 @@ class Explorer {
     return [...groups, ...grouped.loose.map((node) => rowOf(node, parent.level + 1))];
   }
 
+  /**
+   * Reparte los roles en Usuarios, Grupos y Sistema. Son filas que arma el árbol (`synthetic`), como
+   * los grupos por prefijo: lo que cuelga de cada una son los mismos roles que leyó el servidor.
+   */
+  private arrangeRoles(parent: Row, leaves: Row[]): Row[] {
+    const previous = new Map(
+      (parent.children ?? []).filter((child) => child.synthetic).map((child) => [child.key, child.expanded]),
+    );
+    const titles: Record<RoleGroupId, string> = {
+      users: t("Usuarios"),
+      groups: t("Grupos"),
+      system: t("Sistema"),
+    };
+    return groupRoles(leaves.map((leaf) => ({ leaf, label: leaf.label, tags: leaf.node?.tags }))).map(
+      (group) => {
+        const key = `${parent.key}:roles:${group.id}`;
+        const detail = String(group.nodes.length);
+        return {
+          kind: "node" as const,
+          key,
+          profileId: parent.profileId,
+          node: {
+            id: `${parent.node!.id}:roles:${group.id}`,
+            label: titles[group.id],
+            detail,
+            kind: parent.node!.kind,
+            hasChildren: true,
+            database: parent.node!.database,
+          },
+          level: parent.level + 1,
+          label: titles[group.id],
+          detail,
+          hasChildren: true,
+          // Lo que el usuario abrió o cerró se respeta al releer; solo la primera vez manda el valor de fábrica.
+          expanded: previous.get(key) ?? roleGroupOpenByDefault(group.id),
+          loading: false,
+          children: group.nodes.map(({ leaf }) => {
+            leaf.level = parent.level + 2;
+            return leaf;
+          }),
+          connected: true,
+          synthetic: true,
+        };
+      },
+    );
+  }
+
   /** Vuelve a ordenar lo que ya está cargado, sin pedirle nada al servidor. */
   rearrange() {
     const walk = (rows: Row[]) => {
@@ -874,12 +933,16 @@ class Explorer {
     // Nada cargado: se va a leer solo cuando se lo abra, y ahí ya va a venir al día.
     if (row.children === null) return;
 
+    // Una fila armada por el árbol (grupo por prefijo, Usuarios/Grupos) no se lee del servidor: se
+    // rehace con su padre. Releerla traería de nuevo toda la carpeta adentro de cada grupo; lo que
+    // sí hay que conservar es lo abierto entre sus hojas.
+    const leavesOf = (rows: Row[]) => rows.flatMap((child) => (child.synthetic ? (child.children ?? []) : [child]));
     const open = new Map(
-      row.children.filter((child) => child.expanded).map((child) => [child.key, child]),
+      leavesOf(row.children).filter((child) => child.expanded).map((child) => [child.key, child]),
     );
     await this.loadChildren(row);
 
-    for (const child of row.children ?? []) {
+    for (const child of leavesOf(row.children ?? [])) {
       const previous = open.get(child.key);
       if (!previous) continue;
 

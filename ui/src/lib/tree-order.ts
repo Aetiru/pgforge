@@ -5,14 +5,15 @@
  * (por nombre, por tamaño o por filas) y qué prefijos forman un grupo plegable; lo que dibuja cada
  * grupo es del árbol. Es puro y con Vitest.
  */
+import { t } from "./i18n.svelte";
 import type { TreeNode } from "./ipc";
 
 export type OrderMode = "name" | "size" | "rows";
 
 export const ORDER_MODES: { value: OrderMode; label: string }[] = [
-  { value: "name", label: "Por nombre" },
-  { value: "size", label: "Por tamaño en disco" },
-  { value: "rows", label: "Por filas" },
+  { value: "name", get label() { return t("Por nombre"); } },
+  { value: "size", get label() { return t("Por tamaño en disco"); } },
+  { value: "rows", get label() { return t("Por filas"); } },
 ];
 
 const byName = (a: TreeNode, b: TreeNode) =>

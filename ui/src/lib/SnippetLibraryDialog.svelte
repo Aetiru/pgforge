@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
@@ -70,8 +71,8 @@
 </script>
 
 <Modal
-  title="Biblioteca de plantillas"
-  subtitle="Elegí una y agregala a tus abreviaturas: después se edita como cualquier otra."
+  title={t("Biblioteca de plantillas")}
+  subtitle={t("Elegí una y agregala a tus abreviaturas: después se edita como cualquier otra.")}
   size="xl"
   {busy}
   {onclose}
@@ -87,8 +88,8 @@
       <input
         class="field w-full"
         data-autofocus
-        placeholder="Buscar plantillas…"
-        aria-label="Buscar plantillas"
+        placeholder={t("Buscar plantillas…")}
+        aria-label={t("Buscar plantillas")}
         bind:value={query}
         onkeydown={(event) => event.key === "Escape" && query !== "" && (event.stopPropagation(), (query = ""))}
       />
@@ -98,7 +99,7 @@
             class="seg-item"
             role="tab"
             aria-selected={category === name}
-            onclick={() => (category = name)}>{name}</button
+            onclick={() => (category = name)}>{name === ALL ? t("Todas") : name}</button
           >
         {/each}
       </div>
@@ -115,12 +116,12 @@
               <span class="font-mono">{entry.abbreviation}</span>
               <span class="ml-2">{entry.description}</span>
               {#if installed.has(entry.abbreviation.toLowerCase())}
-                <span class="tag tag-ok ml-2">Agregada</span>
+                <span class="tag tag-ok ml-2">{t("Agregada")}</span>
               {/if}
             </button>
           </li>
         {:else}
-          <li><Empty icon="search" title="Ninguna plantilla coincide" /></li>
+          <li><Empty icon="search" title={t("Ninguna plantilla coincide")} /></li>
         {/each}
       </ul>
     </div>
@@ -134,12 +135,12 @@
         </div>
 
         <label class="field">
-          <span class="label">Abreviatura con la que se agrega</span>
+          <span class="label">{t("Abreviatura con la que se agrega")}</span>
           <input
             class="w-40 font-mono"
             bind:value={abbreviation}
             spellcheck="false"
-            aria-label="Abreviatura"
+            aria-label={t("Abreviatura")}
           />
         </label>
         {#each check.errors as message (message)}
@@ -151,25 +152,25 @@
 
         {#if added}
           <Alert tone="ok" box class="mt-3">
-            Agregada como «{added}». Escribila en el editor y apretá Tab.
+            {t("Agregada como \"{name}\". Escribila en el editor y apretá Tab.", { name: added })}
           </Alert>
         {/if}
       {:else}
-        <Empty icon="sql" title="Elegí una plantilla" />
+        <Empty icon="sql" title={t("Elegí una plantilla")} />
       {/if}
     </div>
   </div>
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose}>Cerrar</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cerrar")}</button>
     <button
       class="btn btn-primary"
       disabled={busy || !selected || check.errors.length > 0 || already}
-      title={already ? "Ya está agregada: cambiale la abreviatura para agregarla otra vez" : undefined}
+      title={already ? t("Ya está agregada: cambiale la abreviatura para agregarla otra vez") : undefined}
       onclick={add}
     >
       <Icon name="plus" size={12} />
-      Agregar
+      {t("Agregar")}
     </button>
   {/snippet}
 </Modal>

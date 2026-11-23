@@ -6,10 +6,11 @@
  * mandar la cadena vacía en vez de `null` produce un `CREATE INDEX ""` que el servidor rechaza.
  */
 
+import { t } from "./i18n.svelte";
 import type { IndexDef } from "./ipc";
 
 export const INDEX_METHODS = [
-  { value: "", label: "btree (por omisión)" },
+  { value: "", get label() { return t("btree (por omisión)"); } },
   { value: "gin", label: "gin" },
   { value: "gist", label: "gist" },
   { value: "hash", label: "hash" },
@@ -48,7 +49,7 @@ export function indexForm(columns: string[] = []): IndexForm {
 }
 
 export function validateIndex(form: IndexForm): string | null {
-  if (form.columns.length === 0) return "Elegí al menos una columna.";
+  if (form.columns.length === 0) return t("Elegí al menos una columna.");
   return null;
 }
 

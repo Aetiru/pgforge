@@ -40,6 +40,20 @@ pub struct RoleAttributes {
     pub valid_until: Option<String>,
 }
 
+/// Cuánto puede hacer un rol sobre un esquema, en los términos con que se piden las cosas y no en
+/// los de PostgreSQL: «solo lectura» es una intención, `USAGE` + `SELECT` es cómo se escribe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AccessLevel {
+    /// Ver el esquema y leer sus tablas.
+    Read,
+    /// Leer y modificar los datos. Incluye las secuencias: sin `USAGE` en ellas, un `INSERT` en una
+    /// tabla con `serial` o identidad falla aunque la tabla sea escribible.
+    Write,
+    /// Todo lo anterior más crear objetos en el esquema.
+    Admin,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(
     tag = "kind",
@@ -89,6 +103,20 @@ pub enum RoleChange {
         role: String,
         member: String,
     },
+    /// Los permisos de un rol sobre **todo** un esquema, de una vez. Es la plantilla de acceso de
+    /// «Nuevo rol»: lo habitual al dar de alta a alguien es «que lea este esquema», y hacerlo
+    /// objeto por objeto no escala. Va con la base conectada: un `GRANT … IN SCHEMA` solo ve los
+    /// esquemas de la base a la que se está conectado.
+    ///
+    /// Alcanza a las tablas que **ya existen**. Con `future_tables` agrega `ALTER DEFAULT
+    /// PRIVILEGES`, que vale para lo que cree **el rol que ejecuta la sentencia**: lo que cree otro
+    /// rol no queda cubierto, y por eso es una casilla y no algo que se haga siempre.
+    GrantSchemaAccess {
+        role: String,
+        schema: String,
+        level: AccessLevel,
+        future_tables: bool,
+    },
 }
 
 fn statement(sql: String) -> Statement {
@@ -131,7 +159,61 @@ fn attributes_clause(attrs: &RoleAttributes) -> String {
 }
 
 pub fn statements(changes: &[RoleChange]) -> Result<Vec<Statement>> {
-    changes.iter().map(one).collect()
+    let mut out = Vec::new();
+    for change in changes {
+        match change {
+            RoleChange::GrantSchemaAccess {
+                role,
+                schema,
+                level,
+                future_tables,
+            } => out.extend(schema_access(role, schema, *level, *future_tables)),
+            other => out.push(one(other)?),
+        }
+    }
+    Ok(out)
+}
+
+/// Las sentencias de una plantilla de acceso, en el orden en que se pueden correr: sin `USAGE` en el
+/// esquema, el resto de los permisos no sirve de nada.
+fn schema_access(role: &str, schema: &str, level: AccessLevel, future: bool) -> Vec<Statement> {
+    let role = quote_ident(role);
+    let schema = quote_ident(schema);
+
+    let (schema_privileges, table_privileges, sequence_privileges) = match level {
+        AccessLevel::Read => ("USAGE", "SELECT", None),
+        AccessLevel::Write => (
+            "USAGE",
+            "SELECT, INSERT, UPDATE, DELETE",
+            Some("USAGE, SELECT"),
+        ),
+        AccessLevel::Admin => ("USAGE, CREATE", "ALL PRIVILEGES", Some("ALL PRIVILEGES")),
+    };
+
+    let mut out = vec![
+        statement(format!(
+            "GRANT {schema_privileges} ON SCHEMA {schema} TO {role}"
+        )),
+        statement(format!(
+            "GRANT {table_privileges} ON ALL TABLES IN SCHEMA {schema} TO {role}"
+        )),
+    ];
+    if let Some(privileges) = sequence_privileges {
+        out.push(statement(format!(
+            "GRANT {privileges} ON ALL SEQUENCES IN SCHEMA {schema} TO {role}"
+        )));
+    }
+    if future {
+        out.push(statement(format!(
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT {table_privileges} ON TABLES TO {role}"
+        )));
+        if let Some(privileges) = sequence_privileges {
+            out.push(statement(format!(
+                "ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT {privileges} ON SEQUENCES TO {role}"
+            )));
+        }
+    }
+    out
 }
 
 fn one(change: &RoleChange) -> Result<Statement> {
@@ -203,6 +285,9 @@ fn one(change: &RoleChange) -> Result<Statement> {
             quote_ident(role),
             quote_ident(member)
         ))),
+        // `statements` la expande antes de llegar acá: produce varias sentencias, y `one` devuelve
+        // exactamente una.
+        RoleChange::GrantSchemaAccess { .. } => unreachable!("la expande `statements`"),
     }
 }
 
@@ -310,6 +395,38 @@ pub async fn role_names(handle: &ServerHandle, database: &str) -> Result<Vec<Str
         )
         .await?;
     Ok(rows.into_iter().map(|row| row.get(0)).collect())
+}
+
+/// Un rol elegible, con lo mínimo para ordenarlo: el diálogo ofrece primero los grupos.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleOption {
+    pub name: String,
+    /// Un rol que no inicia sesión es lo que en la práctica se usa como grupo.
+    pub login: bool,
+}
+
+/// Lo mismo que [`role_names`] pero con la bandera de login, y los grupos (sin login) antes que el
+/// resto. No se decide acá por el nombre —un `g_` es una costumbre de un equipo, no una regla de
+/// PostgreSQL—, sino por lo único que el servidor sabe: si el rol puede iniciar sesión.
+pub async fn role_options(handle: &ServerHandle, database: &str) -> Result<Vec<RoleOption>> {
+    let client = handle.client(database).await?;
+    let rows = client
+        .query(
+            "SELECT rolname::text, rolcanlogin
+               FROM pg_catalog.pg_roles
+              WHERE left(rolname, 3) <> 'pg_'
+              ORDER BY rolcanlogin, rolname",
+            &[],
+        )
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| RoleOption {
+            name: row.get(0),
+            login: row.get(1),
+        })
+        .collect())
 }
 
 /// Reconstruye el `CREATE ROLE` para mostrarlo en el panel de DDL. Sin `PASSWORD`: Postgres nunca
@@ -507,6 +624,107 @@ mod tests {
             "{}",
             statement.sql
         );
+    }
+
+    fn sqls(change: RoleChange) -> Vec<String> {
+        statements(&[change])
+            .unwrap()
+            .into_iter()
+            .map(|s| s.sql)
+            .collect()
+    }
+
+    fn access(level: AccessLevel, future_tables: bool) -> RoleChange {
+        RoleChange::GrantSchemaAccess {
+            role: "ana".into(),
+            schema: "ventas".into(),
+            level,
+            future_tables,
+        }
+    }
+
+    #[test]
+    fn solo_lectura_da_uso_del_esquema_y_select() {
+        assert_eq!(
+            sqls(access(AccessLevel::Read, false)),
+            vec![
+                "GRANT USAGE ON SCHEMA ventas TO ana",
+                "GRANT SELECT ON ALL TABLES IN SCHEMA ventas TO ana",
+            ]
+        );
+    }
+
+    #[test]
+    fn lectura_y_escritura_incluye_las_secuencias() {
+        // Sin `USAGE` en la secuencia, un INSERT en una tabla con `serial` falla.
+        assert_eq!(
+            sqls(access(AccessLevel::Write, false)),
+            vec![
+                "GRANT USAGE ON SCHEMA ventas TO ana",
+                "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ventas TO ana",
+                "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ventas TO ana",
+            ]
+        );
+    }
+
+    #[test]
+    fn administrar_el_esquema_agrega_crear_objetos() {
+        let out = sqls(access(AccessLevel::Admin, false));
+        assert_eq!(out[0], "GRANT USAGE, CREATE ON SCHEMA ventas TO ana");
+        assert_eq!(
+            out[1],
+            "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA ventas TO ana"
+        );
+        assert_eq!(
+            out[2],
+            "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ventas TO ana"
+        );
+    }
+
+    #[test]
+    fn las_tablas_futuras_suman_los_privilegios_por_omision() {
+        let out = sqls(access(AccessLevel::Write, true));
+        assert_eq!(out.len(), 5);
+        assert_eq!(
+            out[3],
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA ventas GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ana"
+        );
+        assert_eq!(
+            out[4],
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA ventas GRANT USAGE, SELECT ON SEQUENCES TO ana"
+        );
+        // Solo lectura no toca secuencias ni por omisión.
+        assert_eq!(sqls(access(AccessLevel::Read, true)).len(), 3);
+    }
+
+    #[test]
+    fn la_plantilla_cita_rol_y_esquema() {
+        let out = sqls(RoleChange::GrantSchemaAccess {
+            role: "María López".into(),
+            schema: "Ventas 2026".into(),
+            level: AccessLevel::Read,
+            future_tables: false,
+        });
+        assert_eq!(
+            out[0],
+            "GRANT USAGE ON SCHEMA \"Ventas 2026\" TO \"María López\""
+        );
+    }
+
+    #[test]
+    fn la_plantilla_se_mezcla_con_otros_cambios_en_orden() {
+        let out = statements(&[
+            RoleChange::CreateRole {
+                name: "ana".into(),
+                attributes: RoleAttributes::default(),
+                member_of: vec![],
+            },
+            access(AccessLevel::Read, false),
+        ])
+        .unwrap();
+        assert_eq!(out.len(), 3);
+        assert!(out[0].sql.starts_with("CREATE ROLE"));
+        assert!(out[1].sql.starts_with("GRANT USAGE"));
     }
 
     #[test]

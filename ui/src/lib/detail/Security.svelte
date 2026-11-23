@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "../i18n.svelte";
   /**
    * La seguridad por fila de la tabla: los dos interruptores y las políticas.
    *
@@ -36,12 +37,16 @@
   } = $props();
 </script>
 
-<Card title="Seguridad por fila" loading={loading ? "Leyendo las políticas…" : null} {error}>
+<Card
+  title={t("Seguridad por fila")}
+  loading={loading ? t("Leyendo las políticas…") : null}
+  {error}
+>
   {#snippet actions()}
     {#if canCreate}
       <button class="btn btn-sm ml-auto" {...blocked} onclick={onnew}>
         <Icon name="plus" size={11} />
-        Política
+        {t("Política")}
       </button>
     {/if}
   {/snippet}
@@ -54,7 +59,7 @@
           checked={security.enabled}
           onchange={() => onenabled(!security!.enabled)}
         />
-        Filtrar las filas según las políticas
+        {t("Filtrar las filas según las políticas")}
       </label>
       <label class="check">
         <input
@@ -63,36 +68,37 @@
           disabled={!security.enabled}
           onchange={() => onforced(!security!.forced)}
         />
-        Aplicarlo también al dueño de la tabla
+        {t("Aplicarlo también al dueño de la tabla")}
       </label>
     </div>
 
     {#if security.enabled && security.policies.length === 0}
       <Alert tone="warn" box class="m-3">
-        El filtro está activo y no hay ninguna política: la tabla no devuelve ninguna fila.
+        {t("El filtro está activo y no hay ninguna política: la tabla no devuelve ninguna fila.")}
       </Alert>
     {:else if !security.enabled && security.policies.length > 0}
       <Alert tone="warn" box class="m-3">
-        Hay políticas definidas pero el filtro está apagado: no se aplica ninguna.
+        {t("Hay políticas definidas pero el filtro está apagado: no se aplica ninguna.")}
       </Alert>
     {:else if security.enabled && !security.forced}
       <Alert tone="ok" box class="m-3">
-        El dueño de la tabla se saltea el filtro. Para probar las políticas hay que conectarse con
-        otro rol, o marcar la segunda casilla.
+        {t(
+          "El dueño de la tabla se saltea el filtro. Para probar las políticas hay que conectarse con otro rol, o marcar la segunda casilla.",
+        )}
       </Alert>
     {/if}
 
     {#if security.policies.length === 0}
-      <p class="px-3 py-4 text-sm muted">No tiene políticas.</p>
+      <p class="px-3 py-4 text-sm muted">{t("No tiene políticas.")}</p>
     {:else}
       <div class="table-scroll">
         <table class="list-table">
           <thead>
             <tr>
-              <th class="w-px whitespace-nowrap">Nombre</th>
-              <th class="w-px whitespace-nowrap">Comando</th>
-              <th class="w-px whitespace-nowrap">Roles</th>
-              <th class="w-full">Condición</th>
+              <th class="w-px whitespace-nowrap">{t("Nombre")}</th>
+              <th class="w-px whitespace-nowrap">{t("Comando")}</th>
+              <th class="w-px whitespace-nowrap">{t("Roles")}</th>
+              <th class="w-full">{t("Condición")}</th>
               <th></th>
             </tr>
           </thead>
@@ -103,7 +109,7 @@
                 <td class="w-px whitespace-nowrap">
                   <span class="tag tag-neutral font-mono">{policy.command.toUpperCase()}</span>
                   {#if policy.kind === "restrictive"}
-                    <span class="tag tag-info">restrictiva</span>
+                    <span class="tag tag-info">{t("restrictiva")}</span>
                   {/if}
                 </td>
                 <td class="w-px text-xs whitespace-nowrap muted">
@@ -118,8 +124,8 @@
                   <div class="row-actions">
                     <button
                       class="btn btn-ghost btn-icon size-6"
-                      title="Editar la política"
-                      aria-label="Editar la política"
+                      title={t("Editar la política")}
+                      aria-label={t("Editar la política")}
                       {...blocked}
                       onclick={() => onedit(policy)}
                     >
@@ -127,8 +133,8 @@
                     </button>
                     <button
                       class="btn btn-danger-ghost btn-icon size-6"
-                      title="Eliminar la política"
-                      aria-label="Eliminar la política"
+                      title={t("Eliminar la política")}
+                      aria-label={t("Eliminar la política")}
                       {...blocked}
                       onclick={() => ondrop(policy.name)}
                     >

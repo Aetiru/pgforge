@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
@@ -102,11 +103,11 @@
   }
 
   function validate(): string | null {
-    if (!name.trim()) return "Poné un nombre para la base.";
+    if (!name.trim()) return t("Poné un nombre para la base.");
     if (limit() === null && connectionLimit.trim() !== "") {
-      return "El límite de conexiones tiene que ser un entero (-1 es sin límite).";
+      return t("El límite de conexiones tiene que ser un entero (-1 es sin límite).");
     }
-    if (existing && changes().length === 0) return "No hay nada que cambiar.";
+    if (existing && changes().length === 0) return t("No hay nada que cambiar.");
     return null;
   }
 
@@ -143,7 +144,7 @@
       return;
     }
 
-    if (!(await confirmMutation(profileId, "Se va a modificar una base.", sqlToApply))) return;
+    if (!(await confirmMutation(profileId, t("Se va a modificar una base."), sqlToApply))) return;
 
     saving = true;
     try {
@@ -158,7 +159,7 @@
 </script>
 
 <Modal
-  title={existing ? `Editar ${existing}` : "Nueva base"}
+  title={existing ? t("Editar {name}", { name: existing }) : t("Nueva base")}
   size="lg"
   busy={saving}
   {onclose}
@@ -166,48 +167,49 @@
   {#if loading}
     <p class="flex items-center justify-center gap-2 py-8 text-sm muted">
       <span class="spinner"></span>
-      Leyendo la definición…
+      {t("Leyendo la definición…")}
     </p>
   {:else}
     <div class="grid grid-cols-2 gap-3">
       <label class="flex flex-col gap-1">
-        <span class="label">Nombre</span>
+        <span class="label">{t("Nombre")}</span>
         <input class="field" data-autofocus bind:value={name} />
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="label">Dueño</span>
-        <input class="field" bind:value={owner} placeholder="el rol conectado" />
+        <span class="label">{t("Dueño")}</span>
+        <input class="field" bind:value={owner} placeholder={t("el rol conectado")} />
       </label>
 
       {#if !existing}
         <label class="flex flex-col gap-1">
-          <span class="label">Plantilla</span>
+          <span class="label">{t("Plantilla")}</span>
           <input class="field" bind:value={template} placeholder="template1" />
         </label>
 
         <label class="flex flex-col gap-1">
-          <span class="label">Codificación</span>
-          <input class="field" bind:value={encoding} placeholder="la de la plantilla" />
+          <span class="label">{t("Codificación")}</span>
+          <input class="field" bind:value={encoding} placeholder={t("la de la plantilla")} />
         </label>
       {/if}
 
       <label class="flex flex-col gap-1">
-        <span class="label">Límite de conexiones</span>
+        <span class="label">{t("Límite de conexiones")}</span>
         <input class="field" bind:value={connectionLimit} />
       </label>
 
       {#if existing}
-        <label class="check self-end pb-2" title="Impide que se conecte nadie más">
+        <label class="check self-end pb-2" title={t("Impide que se conecte nadie más")}>
           <input type="checkbox" bind:checked={allowConnections} />
-          Admite conexiones
+          {t("Admite conexiones")}
         </label>
       {/if}
     </div>
 
     <p class="mt-3 text-xs muted">
-      Crear o borrar una base no corre adentro de una transacción, así que los cambios se mandan uno
-      por uno y lo que ya se hizo queda hecho aunque el siguiente falle.
+      {t(
+        "Crear o borrar una base no corre adentro de una transacción, así que los cambios se mandan uno por uno y lo que ya se hizo queda hecho aunque el siguiente falle.",
+      )}
     </p>
   {/if}
 
@@ -221,12 +223,12 @@
 
   {#snippet footer()}
     <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving || loading}>
-      Ver SQL
+      {t("Ver SQL")}
     </button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving || loading}>
       {#if saving}<span class="spinner"></span>{/if}
-      {existing ? "Guardar" : "Crear"}
+      {existing ? t("Guardar") : t("Crear")}
     </button>
   {/snippet}
 </Modal>

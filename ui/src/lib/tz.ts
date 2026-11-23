@@ -8,12 +8,14 @@
  * de la columna. Es puro y con Vitest.
  */
 
+
+import { t } from "./i18n.svelte";
 export type TimeZoneMode = "server" | "local" | "utc";
 
 export const ZONE_MODES: { value: TimeZoneMode; label: string; hint: string }[] = [
-  { value: "server", label: "Del servidor", hint: "Como las entrega PostgreSQL, en la zona de la sesión" },
-  { value: "local", label: "Esta computadora", hint: "Convertidas a la zona de este equipo" },
-  { value: "utc", label: "UTC", hint: "Convertidas a UTC" },
+  { value: "server", get label() { return t("Del servidor"); }, get hint() { return t("Como las entrega PostgreSQL, en la zona de la sesión"); } },
+  { value: "local", get label() { return t("Esta computadora"); }, get hint() { return t("Convertidas a la zona de este equipo"); } },
+  { value: "utc", label: "UTC", get hint() { return t("Convertidas a UTC"); } },
 ];
 
 const STAMP =

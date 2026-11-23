@@ -4,6 +4,8 @@
  * con las comillas duplicadas, igual que un CSV. Es puro y con Vitest.
  */
 
+
+import { t } from "./i18n.svelte";
 /** Filas de celdas. Una línea final vacía —Excel siempre deja un salto al final— no es una fila. */
 export function parseTsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -75,7 +77,7 @@ export function planPaste(
   columns: readonly { name: string; generated: boolean }[],
   options: { header?: boolean } = {},
 ): PastePlan | string {
-  if (grid.length === 0) return "No hay nada para pegar.";
+  if (grid.length === 0) return t("No hay nada para pegar.");
 
   const names = columns.map((column) => column.name);
   const first = grid[0];
@@ -86,17 +88,17 @@ export function planPaste(
   let target: number[];
   if (useHeader) {
     target = first.map((cell) => names.indexOf(cell.trim()));
-    if (target.some((index) => index === -1)) return "Algún encabezado no es una columna de la tabla.";
+    if (target.some((index) => index === -1)) return t("Algún encabezado no es una columna de la tabla.");
   } else {
     target = columns.map((column, index) => (column.generated ? -1 : index)).filter((index) => index >= 0);
   }
   if (target.some((index) => columns[index].generated)) {
-    return "Las columnas generadas o de identidad las calcula el servidor: no se pueden pegar.";
+    return t("Las columnas generadas o de identidad las calcula el servidor: no se pueden pegar.");
   }
 
   const body = useHeader ? grid.slice(1) : grid;
-  if (body.length === 0) return "Solo hay encabezados, sin filas.";
-  if (body.length > MAX_PASTE_ROWS) return `Son ${body.length} filas; el máximo por pegado es ${MAX_PASTE_ROWS}.`;
+  if (body.length === 0) return t("Solo hay encabezados, sin filas.");
+  if (body.length > MAX_PASTE_ROWS) return t("Son {length} filas; el máximo por pegado es {MAX_PASTE_ROWS}.", { length: body.length, MAX_PASTE_ROWS });
 
   const rows = body.map((cells) => {
     const row = new Map<number, string | null>();

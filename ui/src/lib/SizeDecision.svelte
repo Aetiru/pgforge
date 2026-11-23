@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { i18n, t } from "./i18n.svelte";
   import Modal from "./Modal.svelte";
 
   /**
@@ -20,19 +21,19 @@
   } = $props();
 </script>
 
-<Modal title="Tabla muy grande en producción" size="sm" onclose={() => onchoose("cancel")}>
+<Modal title={t("Tabla muy grande en producción")} size="sm" onclose={() => onchoose("cancel")}>
   <p class="text-sm text-zinc-600 dark:text-zinc-300">
-    <b class="font-mono">{table}</b> tiene unas <b>{rows.toLocaleString("es")}</b> filas y la
-    consulta no tiene <code class="font-mono">LIMIT</code>. La aplicación solo trae las primeras
-    que entran en el máximo elegido, pero el servidor puede tardar mucho en producirlas.
+    <b class="font-mono">{table}</b>
+    {t("tiene unas {rows} filas y la consulta no tiene", { rows: rows.toLocaleString(i18n.current) })}
+    <code class="font-mono">LIMIT</code>{t(". La aplicación solo trae las primeras que entran en el máximo elegido, pero el servidor puede tardar mucho en producirlas.")}
   </p>
 
   {#snippet footer()}
-    <button class="btn" onclick={() => onchoose("cancel")}>Cancelar</button>
-    <button class="btn" onclick={() => onchoose("run")}>Ejecutar igual</button>
+    <button class="btn" onclick={() => onchoose("cancel")}>{t("Cancelar")}</button>
+    <button class="btn" onclick={() => onchoose("run")}>{t("Ejecutar igual")}</button>
     <span class="ml-auto"></span>
     <button class="btn btn-primary" data-autofocus onclick={() => onchoose("limit")}>
-      Ejecutar con LIMIT {limit.toLocaleString("es")}
+      {t("Ejecutar con LIMIT {limit}", { limit: limit.toLocaleString(i18n.current) })}
     </button>
   {/snippet}
 </Modal>

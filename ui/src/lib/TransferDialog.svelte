@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
+  import { t } from "./i18n.svelte";
   import Modal from "./Modal.svelte";
   import { confirmMutation } from "./access.svelte";
   import { explorer } from "./explorer.svelte";
@@ -38,7 +39,7 @@
 
   const servers = $derived(explorer.profiles.filter((profile) => explorer.isConnected(profile.id)));
   const sourceName = $derived(
-    explorer.profiles.find((profile) => profile.id === profileId)?.name ?? "servidor",
+    explorer.profiles.find((profile) => profile.id === profileId)?.name ?? t("servidor"),
   );
 
   // Copia inicial tomada una sola vez, como en el resto de los formularios.
@@ -58,11 +59,12 @@
   let planning = $state(false);
   let running = $state(false);
 
-  const MODES: { value: TransferMode; label: string; hint: string }[] = [
-    { value: "create", label: "Crear la tabla", hint: "La tabla no existe en el destino: se crea y se cargan las filas." },
-    { value: "append", label: "Agregar filas", hint: "La tabla ya existe: se le suman las filas, sin tocar las que tiene." },
-    { value: "truncate", label: "Reemplazar filas", hint: "La tabla ya existe: se vacía y se recarga, todo en una transacción." },
-  ];
+  // Derivada: el texto sigue al idioma vigente.
+  const MODES: { value: TransferMode; label: string; hint: string }[] = $derived([
+    { value: "create", label: t("Crear la tabla"), hint: t("La tabla no existe en el destino: se crea y se cargan las filas.") },
+    { value: "append", label: t("Agregar filas"), hint: t("La tabla ya existe: se le suman las filas, sin tocar las que tiene.") },
+    { value: "truncate", label: t("Reemplazar filas"), hint: t("La tabla ya existe: se vacía y se recarga, todo en una transacción.") },
+  ]);
 
   $effect(() => {
     const id = targetId;
@@ -157,7 +159,10 @@
       // La escritura es contra el destino: es su entorno el que pide la confirmación extra.
       const sure = await confirmMutation(
         targetId,
-        `Se va a copiar ${schema}.${table} a ${targetSchema}.${targetTable.trim()}.`,
+        t("Se va a copiar {source} a {target}.", {
+          source: `${schema}.${table}`,
+          target: `${targetSchema}.${targetTable.trim()}`,
+        }),
         script,
       );
       if (!sure) return;
@@ -177,10 +182,10 @@
   }
 </script>
 
-<Modal title="Copiar tabla a otro servidor" subtitle="{sourceName} · {database}.{schema}.{table}" size="lg" {onclose}>
+<Modal title={t("Copiar tabla a otro servidor")} subtitle="{sourceName} · {database}.{schema}.{table}" size="lg" {onclose}>
   <div class="grid gap-3 sm:grid-cols-2">
     <label class="flex flex-col gap-1">
-      <span class="label">Servidor de destino</span>
+      <span class="label">{t("Servidor de destino")}</span>
       <select class="field" bind:value={targetId}>
         {#each servers as server (server.id)}
           <option value={server.id}>{server.name}</option>
@@ -188,7 +193,7 @@
       </select>
     </label>
     <label class="flex flex-col gap-1">
-      <span class="label">Base</span>
+      <span class="label">{t("Base")}</span>
       <select class="field" bind:value={targetDatabase}>
         {#each databases as name (name)}
           <option value={name}>{name}</option>
@@ -196,7 +201,7 @@
       </select>
     </label>
     <label class="flex flex-col gap-1">
-      <span class="label">Esquema</span>
+      <span class="label">{t("Esquema")}</span>
       <select class="field" bind:value={targetSchema}>
         {#each schemas as name (name)}
           <option value={name}>{name}</option>
@@ -204,7 +209,7 @@
       </select>
     </label>
     <label class="flex flex-col gap-1">
-      <span class="label">Tabla</span>
+      <span class="label">{t("Tabla")}</span>
       <input class="field font-mono" bind:value={targetTable} spellcheck="false" />
     </label>
   </div>
@@ -226,18 +231,18 @@
     <div class="mt-3 flex flex-wrap gap-x-5 gap-y-1">
       <label class="check">
         <input type="checkbox" bind:checked={withData} />
-        Copiar las filas
+        {t("Copiar las filas")}
       </label>
       <label class="check">
         <input type="checkbox" bind:checked={withIndexes} />
-        Recrear los índices
+        {t("Recrear los índices")}
       </label>
     </div>
   {/if}
 
   {#if withData}
     <label class="mt-3 flex flex-col gap-1">
-      <span class="label">Solo las filas que cumplan (WHERE, opcional)</span>
+      <span class="label">{t("Solo las filas que cumplan (WHERE, opcional)")}</span>
       <input
         class="field font-mono text-xs"
         bind:value={filter}
@@ -248,7 +253,7 @@
   {/if}
 
   {#if sameTable}
-    <Alert tone="warn" box class="mt-3">El origen y el destino son la misma tabla.</Alert>
+    <Alert tone="warn" box class="mt-3">{t("El origen y el destino son la misma tabla.")}</Alert>
   {/if}
   {#if error}
     <Alert tone="bad" box class="mt-3">{error}</Alert>
@@ -263,25 +268,26 @@
              font-mono text-xs whitespace-pre-wrap select-text dark:border-zinc-700
              dark:bg-zinc-700/50">{[
         ...plan.before.map((sql) => `${sql};`),
-        ...(plan.copyOut ? [`-- origen:  ${plan.copyOut}`, `-- destino: ${plan.copyIn}`] : []),
+        ...(plan.copyOut
+          ? [`-- ${t("origen")}:  ${plan.copyOut}`, `-- ${t("destino")}: ${plan.copyIn}`]
+          : []),
         ...plan.after.map((sql) => `${sql};`),
       ].join("\n")}</pre>
   {/if}
 
   <p class="mt-2 text-xs muted">
-    Corre en segundo plano y en una sola transacción del lado del destino: si algo falla o se
-    cancela, no queda nada a medias. Se sigue desde la vista de procesos.
+    {t("Corre en segundo plano y en una sola transacción del lado del destino: si algo falla o se cancela, no queda nada a medias. Se sigue desde la vista de procesos.")}
   </p>
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose}>Cerrar</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cerrar")}</button>
     <button class="btn" disabled={!ready || planning || running} onclick={preview}>
       {#if planning}<span class="spinner"></span>{/if}
-      Ver SQL
+      {t("Ver SQL")}
     </button>
     <button class="btn btn-primary" disabled={!ready || running} onclick={run}>
       {#if running}<span class="spinner"></span>{/if}
-      Copiar
+      {t("Copiar")}
     </button>
   {/snippet}
 </Modal>

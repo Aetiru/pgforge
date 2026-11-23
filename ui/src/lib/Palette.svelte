@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
+  import { t } from "./i18n.svelte";
   import { EDITOR_ACTIONS } from "./editor/actions";
   import { explorer, type Row } from "./explorer.svelte";
   import { noteHint } from "./notes";
@@ -50,12 +51,12 @@
     onclose: () => void;
   } = $props();
 
-  const THEME_LABEL = {
-    system: "el del sistema",
-    light: "claro",
-    dark: "oscuro",
-    paper: "papel",
-  } as const;
+  function themeLabel(preference: "system" | "light" | "dark" | "paper"): string {
+    if (preference === "light") return t("claro");
+    if (preference === "dark") return t("oscuro");
+    if (preference === "paper") return t("papel");
+    return t("el del sistema");
+  }
 
   let query = $state("");
   let cursor = $state(0);
@@ -65,11 +66,11 @@
    * Los paneles laterales. Monitoreo y configuración salieron de esta lista cuando dejaron de ser
    * vistas: son pestañas, y por eso están arriba entre las acciones que abren algo.
    */
-  const PANES: { value: SidePane; label: string }[] = [
-    { value: "explorer", label: "Explorador" },
-    { value: "library", label: "Historial y consultas guardadas" },
-    { value: "processes", label: "Procesos" },
-  ];
+  const panes = $derived<{ value: SidePane; label: string }[]>([
+    { value: "explorer", label: t("Explorador") },
+    { value: "library", label: t("Historial y consultas guardadas") },
+    { value: "processes", label: t("Procesos") },
+  ]);
 
   /** Las filas de objeto que el árbol ya trajo, estén a la vista o dentro de una rama plegada. */
   function loadedRows(): Row[] {
@@ -88,25 +89,25 @@
     const out: Command[] = [
       {
         id: "query",
-        label: "Nueva consulta",
+        label: t("Nueva consulta"),
         hint: shortcutStore.label("app.newQuery"),
         group: "acción",
         run: onnewquery,
       },
-      { id: "sql", label: "Abrir un archivo SQL", hint: shortcutStore.label("app.open"), group: "acción", run: onopensql },
+      { id: "sql", label: t("Abrir un archivo SQL"), hint: shortcutStore.label("app.open"), group: "acción", run: onopensql },
       {
         id: "shortcuts",
-        label: "Atajos de teclado",
+        label: t("Atajos de teclado"),
         hint: shortcutStore.label("app.shortcuts"),
         group: "acción",
         run: onshortcuts,
       },
-      { id: "server", label: "Nuevo servidor", group: "acción", run: onnewserver },
+      { id: "server", label: t("Nuevo servidor"), group: "acción", run: onnewserver },
       ...(explorer.connectedCount > 0
         ? [
             {
               id: "disconnect-all",
-              label: `Desconectar todos los servidores (${explorer.connectedCount})`,
+              label: t("Desconectar todos los servidores ({n})", { n: explorer.connectedCount }),
               group: "acción" as const,
               run: ondisconnectall,
             },
@@ -114,31 +115,31 @@
         : []),
       {
         id: "zoom-in",
-        label: "Agrandar toda la interfaz",
+        label: t("Agrandar toda la interfaz"),
         hint: uiZoom.percent,
         group: "acción",
         run: () => uiZoom.bigger(),
       },
       {
         id: "zoom-out",
-        label: "Achicar toda la interfaz",
+        label: t("Achicar toda la interfaz"),
         hint: uiZoom.percent,
         group: "acción",
         run: () => uiZoom.smaller(),
       },
       {
         id: "zoom-reset",
-        label: "Interfaz a su tamaño (100 %)",
+        label: t("Interfaz a su tamaño (100 %)"),
         group: "acción",
         run: () => uiZoom.reset(),
       },
-      { id: "monitor", label: "Monitoreo del servidor", group: "acción", run: onmonitor },
-      { id: "config", label: "Configuración del servidor", group: "acción", run: onconfig },
-      { id: "migrations", label: "Migraciones del servidor", group: "acción", run: onmigrations },
+      { id: "monitor", label: t("Monitoreo del servidor"), group: "acción", run: onmonitor },
+      { id: "config", label: t("Configuración del servidor"), group: "acción", run: onconfig },
+      { id: "migrations", label: t("Migraciones del servidor"), group: "acción", run: onmigrations },
       {
         id: "theme",
-        label: "Cambiar el tema",
-        hint: THEME_LABEL[theme.preference],
+        label: t("Cambiar el tema"),
+        hint: themeLabel(theme.preference),
         group: "acción",
         run: () => theme.cycle(),
       },
@@ -150,7 +151,7 @@
     if (current instanceof QueryTab) {
       out.push({
         id: "format",
-        label: "Formatear el SQL",
+        label: t("Formatear el SQL"),
         hint: shortcutStore.label("editor.format"),
         group: "acción",
         run: () => current.requestFormat(),
@@ -159,7 +160,8 @@
       for (const item of EDITOR_ACTIONS) {
         out.push({
           id: `editor:${item.action}`,
-          label: item.label,
+          // Las etiquetas viven en `editor/actions.ts` (en español): se traducen al armar la paleta.
+          label: t(item.label),
           hint: item.shortcut ? shortcutStore.label(item.shortcut) : undefined,
           group: "acción",
           run: () => current.requestEditor(item.action),
@@ -167,24 +169,24 @@
       }
       out.push({
         id: "format-options",
-        label: "Opciones del formateador…",
-        hint: "caja de las palabras clave, sangría, coma",
+        label: t("Opciones del formateador…"),
+        hint: t("caja de las palabras clave, sangría, coma"),
         group: "acción",
         run: () => current.requestFormatOptions(),
       });
       out.push({
         id: "versions",
-        label: "Versiones anteriores de este texto",
+        label: t("Versiones anteriores de este texto"),
         hint: shortcutStore.label("editor.versions"),
         group: "acción",
         run: () => current.requestVersions(),
       });
     }
 
-    for (const item of PANES) {
+    for (const item of panes) {
       out.push({
         id: `pane:${item.value}`,
-        label: `Ir a ${item.label}`,
+        label: t("Ir a {name}", { name: item.label }),
         group: "vista",
         run: () => view.show(item.value),
       });
@@ -205,7 +207,7 @@
       out.push({
         id: `server:${server.profileId}`,
         label: server.label,
-        hint: server.connected ? "conectado" : "conectar",
+        hint: server.connected ? t("conectado") : t("conectar"),
         group: "servidor",
         run: () => {
           if (server.connected) {
@@ -284,6 +286,21 @@
     }
   }
 
+  function groupLabel(group: CommandGroup): string {
+    switch (group) {
+      case "acción":
+        return t("acción");
+      case "vista":
+        return t("vista");
+      case "servidor":
+        return t("servidor");
+      case "pestaña":
+        return t("pestaña");
+      default:
+        return t("objeto");
+    }
+  }
+
   const GROUP_ICON: Record<CommandGroup, "play" | "compass" | "server" | "sql" | "table"> = {
     acción: "play",
     vista: "compass",
@@ -309,7 +326,7 @@
         bind:this={input}
         bind:value={query}
         class="w-full bg-transparent text-sm outline-none placeholder:text-zinc-400"
-        placeholder="Escribí una acción, un servidor, una pestaña o una tabla"
+        placeholder={t("Escribí una acción, un servidor, una pestaña o una tabla")}
       />
       <kbd class="shrink-0 text-[10px] muted">Esc</kbd>
     </div>
@@ -328,12 +345,12 @@
             <span class="shrink-0 text-xs muted">{command.hint}</span>
           {/if}
           <span class="w-16 shrink-0 text-right text-[10px] tracking-wide muted uppercase">
-            {command.group}
+            {groupLabel(command.group)}
           </span>
         </button>
       {:else}
         <p class="px-3 py-6 text-center text-xs muted">
-          Nada coincide con «{query}». Lo que el árbol todavía no trajo se busca desde el explorador.
+          {t("Nada coincide con «{query}». Lo que el árbol todavía no trajo se busca desde el explorador.", { query })}
         </p>
       {/each}
     </div>

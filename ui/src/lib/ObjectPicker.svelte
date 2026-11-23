@@ -2,9 +2,10 @@
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
+  import { t } from "./i18n.svelte";
   import { lookOf } from "./badges";
   import { describeError, treeSearch, type SearchHit } from "./ipc";
-  import { filterHits, parseQuery, PREFIX_HELP } from "./tree-query";
+  import { filterHits, parseQuery } from "./tree-query";
 
   /**
    * Buscar un objeto del servidor para dejar su nombre en el editor, sin salir del teclado ni abrir
@@ -25,6 +26,11 @@
     onpick: (hit: SearchHit, withColumns: boolean) => void;
     onclose: () => void;
   } = $props();
+
+  // Texto de `PREFIX_HELP` (tree-query.ts) traducido: la constante del módulo quedaría fija en un idioma.
+  const prefixHelp = $derived(
+    t("t: tablas · v: vistas · s: esquemas · f: funciones · i: índices · q: secuencias · c: columnas · r: roles · y: tipos"),
+  );
 
   let query = $state("");
   let hits = $state<SearchHit[]>([]);
@@ -104,8 +110,8 @@
         bind:this={input}
         bind:value={query}
         class="w-full bg-transparent text-sm outline-none placeholder:text-zinc-400"
-        placeholder="Insertar tabla, vista, función…"
-        aria-label="Buscar un objeto para insertarlo"
+        placeholder={t("Insertar tabla, vista, función…")}
+        aria-label={t("Buscar un objeto para insertarlo")}
       />
       <kbd class="shrink-0 text-[10px] muted">Esc</kbd>
     </div>
@@ -114,12 +120,12 @@
       {#if error}
         <Alert tone="bad">{error}</Alert>
       {:else if query.trim() === ""}
-        <p class="px-3 py-6 text-center text-xs muted">{PREFIX_HELP}</p>
+        <p class="px-3 py-6 text-center text-xs muted">{prefixHelp}</p>
       {:else if hits.length === 0 && !loading}
         <Empty
           icon="search"
-          title="Sin coincidencias en el servidor"
-          hint="No hay ningún objeto cuyo nombre contenga «{query}» en esa base."
+          title={t("Sin coincidencias en el servidor")}
+          hint={t("No hay ningún objeto cuyo nombre contenga «{query}» en esa base.", { query })}
         />
       {:else}
         {#each hits as hit, index (`${hit.schema}.${hit.oid}`)}
@@ -139,8 +145,8 @@
     </div>
 
     <div class="divider-t px-3 py-1.5 text-[11px] muted">
-      <kbd class="kbd">Enter</kbd> inserta el nombre · <kbd class="kbd">Mayús</kbd>+<kbd class="kbd">Enter</kbd> inserta
-      un SELECT con todas las columnas
+      <kbd class="kbd">Enter</kbd> {t("inserta el nombre")} · <kbd class="kbd">{t("Mayús")}</kbd>+<kbd class="kbd">Enter</kbd>
+      {t("inserta un SELECT con todas las columnas")}
     </div>
   </div>
 </div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import Skeleton from "./Skeleton.svelte";
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
@@ -132,7 +133,7 @@
     if (!svg || !plan) return;
 
     const chosen = await pickSave({
-      title: "Dónde guardar el diagrama",
+      title: t("Dónde guardar el diagrama"),
       defaultPath: `${tab.schema}.svg`,
     });
     if (typeof chosen !== "string") return;
@@ -175,47 +176,47 @@
 
 <div class="flex h-full flex-col">
   <div class="toolbar">
-    <button class="btn" title="Vuelve a traer el grafo del servidor" onclick={() => tab.load()}>
+    <button class="btn" title={t("Vuelve a traer el grafo del servidor")} onclick={() => tab.load()}>
       <Icon name="refresh" size={12} />
-      Actualizar
+      {t("Actualizar")}
     </button>
 
     <span class="toolbar-sep"></span>
 
-    <button class="btn btn-ghost btn-icon" title="Alejar" onclick={() => (zoom = Math.max(ZOOM_MIN, zoom / 1.2))}>
+    <button class="btn btn-ghost btn-icon" title={t("Alejar")} onclick={() => (zoom = Math.max(ZOOM_MIN, zoom / 1.2))}>
       −
     </button>
     <span class="text-xs muted tabular-nums">{Math.round(zoom * 100)}%</span>
-    <button class="btn btn-ghost btn-icon" title="Acercar" onclick={() => (zoom = Math.min(ZOOM_MAX, zoom * 1.2))}>
+    <button class="btn btn-ghost btn-icon" title={t("Acercar")} onclick={() => (zoom = Math.min(ZOOM_MAX, zoom * 1.2))}>
       +
     </button>
-    <button class="btn" title="Deja todo el diagrama a la vista" onclick={fit}>Encajar</button>
+    <button class="btn" title={t("Deja todo el diagrama a la vista")} onclick={fit}>{t("Encajar")}</button>
     <button
       class="btn"
-      title="Descarta las tablas que se movieron a mano"
+      title={t("Descarta las tablas que se movieron a mano")}
       disabled={Object.keys(tab.moved).length === 0}
       onclick={() => tab.reset()}
     >
-      Reacomodar
+      {t("Reacomodar")}
     </button>
 
     <span class="toolbar-sep"></span>
 
     <button
       class="btn"
-      title="Guarda el diagrama completo como SVG"
+      title={t("Guarda el diagrama completo como SVG")}
       disabled={!tab.graph}
       onclick={exportSvg}
     >
       <Icon name="download" size={12} />
-      Exportar SVG
+      {t("Exportar SVG")}
     </button>
 
     <span class="ml-auto flex items-center gap-2 text-xs muted">
       {#if tab.loading}<span class="spinner"></span>{/if}
       {#if tab.graph}
         <span class="tabular-nums">
-          {tab.graph.tables.length} tablas · {tab.graph.edges.length} referencias
+          {t("{tables} tablas · {edges} referencias", { tables: tab.graph.tables.length, edges: tab.graph.edges.length })}
         </span>
       {/if}
     </span>
@@ -228,8 +229,8 @@
   {:else if tab.graph && tab.graph.tables.length === 0}
     <Empty
       icon="schema"
-      title="El esquema no tiene tablas"
-      hint="Un diagrama necesita al menos una tabla que dibujar."
+      title={t("El esquema no tiene tablas")}
+      hint={t("Un diagrama necesita al menos una tabla que dibujar.")}
     />
   {:else if plan}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -238,7 +239,7 @@
       class="min-h-0 flex-1 cursor-grab"
       style="background: var(--erd-bg)"
       role="img"
-      aria-label={`Diagrama del esquema ${tab.schema}`}
+      aria-label={t("Diagrama del esquema {schema}", { schema: tab.schema })}
       onpointerdown={startPan}
       onpointermove={move}
       onpointerup={stop}
@@ -372,7 +373,7 @@
                 dominant-baseline="middle"
                 fill="var(--erd-muted)"
               >
-                {box.table.kind === "partitionedTable" ? "particionada" : "foránea"}
+                {box.table.kind === "partitionedTable" ? t("particionada") : t("foránea")}
               </text>
             {/if}
 
@@ -414,7 +415,7 @@
                 dominant-baseline="middle"
                 fill="var(--erd-muted)"
               >
-                +{box.hidden} columnas
+                {t("+{n} columnas", { n: box.hidden })}
               </text>
             {/if}
           </g>
@@ -422,6 +423,6 @@
       </g>
     </svg>
   {:else}
-    <Skeleton rows={8} label="Cargando el diagrama…" />
+    <Skeleton rows={8} label={t("Cargando el diagrama…")} />
   {/if}
 </div>

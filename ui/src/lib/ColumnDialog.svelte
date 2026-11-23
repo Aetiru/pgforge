@@ -3,6 +3,7 @@
   import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
+  import { t } from "./i18n.svelte";
   import SqlPreview from "./SqlPreview.svelte";
   import {
     COMMON_TYPES,
@@ -41,6 +42,12 @@
   let preview = $state<string | null>(null);
 
   const typeChanged = $derived(column !== null && form.typeName.trim() !== column.typeName);
+  // Las etiquetas viven en `column-form.ts` (en español); acá se traducen al dibujar.
+  function identityLabel(value: string): string {
+    if (value === "always") return t("Siempre");
+    if (value === "byDefault") return t("Por defecto");
+    return t("Ninguna");
+  }
   const validate = () => validateColumn(form);
   const changes = () => columnChanges(form, { schema, table }, column);
 
@@ -55,7 +62,7 @@
     }
     try {
       const statements = await ddlPreview(changes());
-      preview = statements.map((statement) => statement.sql).join(";\n\n") || "Nada que aplicar.";
+      preview = statements.map((statement) => statement.sql).join(";\n\n") || t("Nada que aplicar.");
     } catch (e) {
       error = describeError(e);
     }
@@ -84,7 +91,7 @@
       return;
     }
 
-    if (!(await confirmMutation(profileId, "Se van a modificar columnas de la tabla.", sqlToApply))) return;
+    if (!(await confirmMutation(profileId, t("Se van a modificar columnas de la tabla."), sqlToApply))) return;
 
     saving = true;
     try {
@@ -99,35 +106,35 @@
 </script>
 
 <Modal
-  title={column ? `Editar la columna ${column.name}` : "Nueva columna"}
+  title={column ? t("Editar la columna {name}", { name: column.name }) : t("Nueva columna")}
   subtitle="{schema}.{table}"
   busy={saving}
   {onclose}
 >
   <div class="grid grid-cols-2 gap-3">
     <label class="flex flex-col gap-1">
-      <span class="label">Nombre</span>
+      <span class="label">{t("Nombre")}</span>
       <input class="field" data-autofocus bind:value={form.name} />
     </label>
 
     <label class="flex flex-col gap-1">
-      <span class="label">Tipo</span>
+      <span class="label">{t("Tipo")}</span>
       <input class="field" list="pgforge-column-types" bind:value={form.typeName} />
     </label>
 
     {#if column && typeChanged}
       <label class="col-span-2 flex flex-col gap-1">
-        <span class="label">USING (opcional, solo si el cambio de tipo no es implícito)</span>
+        <span class="label">{t("USING (opcional, solo si el cambio de tipo no es implícito)")}</span>
         <input class="field" placeholder={`${column.name}::${form.typeName}`} bind:value={form.using} />
       </label>
     {/if}
 
     {#if !column}
       <label class="flex flex-col gap-1">
-        <span class="label">Identidad</span>
+        <span class="label">{t("Identidad")}</span>
         <select class="field" bind:value={form.identity}>
           {#each IDENTITY_OPTIONS as option (option.value)}
-            <option value={option.value}>{option.label}</option>
+            <option value={option.value}>{identityLabel(option.value)}</option>
           {/each}
         </select>
       </label>
@@ -139,7 +146,7 @@
         class="field"
         disabled={!column && form.identity !== ""}
         bind:value={form.default}
-        placeholder="expresión SQL, p. ej. now()"
+        placeholder={t("expresión SQL, p. ej. now()")}
       />
     </label>
 
@@ -164,20 +171,24 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>{t("Ver SQL")}</button>
     {#if column}
       <span class="text-xs muted">
-        {pending > 0 ? `${pending} cambio${pending === 1 ? "" : "s"}` : "sin cambios"}
+        {pending > 0
+          ? pending === 1
+            ? t("{n} cambio", { n: pending })
+            : t("{n} cambios", { n: pending })
+          : t("sin cambios")}
       </span>
     {/if}
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button
       class="btn btn-primary"
       onclick={submit}
       disabled={saving || (column !== null && pending === 0)}
     >
       {#if saving}<span class="spinner"></span>{/if}
-      {column ? "Guardar" : "Agregar columna"}
+      {column ? t("Guardar") : t("Agregar columna")}
     </button>
   {/snippet}
 </Modal>

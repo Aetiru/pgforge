@@ -44,7 +44,7 @@ export function columnWidth({ longest, fontSize, min, max, padding }: WidthOptio
  * mil filas sobran cuarenta píxeles fijos y con un millón faltan, y es una columna que se paga en
  * todas las demás —lo que ocupa el número es ancho que no ve el dato—.
  */
-export function gutterWidth(rowCount: number, fontSize: number, padding = 16): number {
+export function gutterWidth(rowCount: number, fontSize: number, padding = 22): number {
   const digits = Math.max(2, String(Math.max(1, rowCount)).length);
   return Math.round(digits * CHAR_EM * fontSize) + padding;
 }

@@ -6,6 +6,7 @@
  * generar cuando el modelo cambia, que es el punto: una documentación escrita a mano se desactualiza
  * el día que alguien agrega una columna. Es puro y con Vitest.
  */
+import { t } from "./i18n.svelte";
 import type { GraphEdge, GraphTable, SchemaGraph } from "./ipc";
 import type { ObjectNote } from "./notes";
 
@@ -53,26 +54,29 @@ function section(table: GraphTable, graph: SchemaGraph, options: DocOptions): st
   if (table.comment) lines.push(`> ${cell(table.comment)}`, "");
 
   const note = options.noteOf?.(table) ?? null;
-  if (note && note.note.trim() !== "") lines.push(`**Nota:** ${cell(note.note)}`, "");
-  if (note && note.tags.length > 0) lines.push(`**Etiquetas:** ${note.tags.map((tag) => `#${tag}`).join(" ")}`, "");
+  if (note && note.note.trim() !== "") lines.push(t("**Nota:** {note}", { note: cell(note.note) }), "");
+  if (note && note.tags.length > 0) lines.push(t("**Etiquetas:** {tags}", { tags: note.tags.map((tag) => `#${tag}`).join(" ") }), "");
 
-  lines.push("| Columna | Tipo | Nulo | Clave | Descripción |", "| --- | --- | --- | --- | --- |");
+  lines.push(`| ${[t("Columna"), t("Tipo"), t("Nulo"), t("Clave"), t("Descripción")].join(" | ")} |`, "| --- | --- | --- | --- | --- |");
   for (const column of table.columns) {
     const key = [column.primaryKey ? "PK" : "", column.foreignKey ? "FK" : ""].filter(Boolean).join(", ");
     lines.push(
-      `| ${code(column.name)} | ${cell(column.typeName)} | ${column.notNull ? "no" : "sí"} | ${key} | ${cell(column.comment)} |`,
+      `| ${code(column.name)} | ${cell(column.typeName)} | ${column.notNull ? t("no") : t("sí")} | ${key} | ${cell(column.comment)} |`,
     );
   }
   lines.push("");
 
   const outgoing = graph.edges.filter((edge) => edge.source === table.oid);
   if (outgoing.length > 0) {
-    lines.push("**Referencia a:**", "");
+    lines.push(t("**Referencia a:**"), "");
     for (const edge of outgoing) {
       const target = targetOf(edge, graph);
       lines.push(
         `- ${edge.sourceColumns.map(code).join(", ")} → ${code(target.table)}(${target.columns}) · ` +
-          `al borrar: ${ACTION[edge.onDelete] ?? edge.onDelete}, al cambiar: ${ACTION[edge.onUpdate] ?? edge.onUpdate}`,
+          t("al borrar: {onDelete}, al cambiar: {onUpdate}", {
+            onDelete: ACTION[edge.onDelete] ?? edge.onDelete,
+            onUpdate: ACTION[edge.onUpdate] ?? edge.onUpdate,
+          }),
       );
     }
     lines.push("");
@@ -80,7 +84,7 @@ function section(table: GraphTable, graph: SchemaGraph, options: DocOptions): st
 
   const incoming = graph.edges.filter((edge) => edge.target === table.oid);
   if (incoming.length > 0) {
-    lines.push("**Referenciada por:**", "");
+    lines.push(t("**Referenciada por:**"), "");
     for (const edge of incoming) {
       const source = graph.tables.find((candidate) => candidate.oid === edge.source)?.name ?? "?";
       lines.push(`- ${code(source)}(${edge.sourceColumns.join(", ")})`);
@@ -97,7 +101,7 @@ export function mermaidDiagram(graph: SchemaGraph): string[] {
     lines.push(`  ${mermaidId(table.name)} {`);
     for (const column of table.columns) {
       const key = column.primaryKey ? " PK" : column.foreignKey ? " FK" : "";
-      lines.push(`    ${mermaidId(column.typeName) || "tipo"} ${mermaidId(column.name)}${key}`);
+      lines.push(`    ${mermaidId(column.typeName) || t("tipo")} ${mermaidId(column.name)}${key}`);
     }
     lines.push("  }");
   }
@@ -116,20 +120,22 @@ export function mermaidDiagram(graph: SchemaGraph): string[] {
 
 export function schemaMarkdown(graph: SchemaGraph, options: DocOptions): string {
   const lines: string[] = [
-    `# Esquema ${code(graph.schema)} de ${code(graph.database)}`,
+    t("# Esquema {schema} de {database}", { schema: code(graph.schema), database: code(graph.database) }),
     "",
-    `Generado con pgForge el ${options.date}. ${graph.tables.length} ${graph.tables.length === 1 ? "tabla" : "tablas"}.`,
+    graph.tables.length === 1
+      ? t("Generado con pgForge el {date}. 1 tabla.", { date: options.date })
+      : t("Generado con pgForge el {date}. {count} tablas.", { date: options.date, count: graph.tables.length }),
     "",
   ];
 
   if (graph.tables.length > 0) {
-    lines.push("## Índice", "");
+    lines.push(t("## Índice"), "");
     for (const table of graph.tables) lines.push(`- ${table.name}${table.comment ? ` — ${cell(table.comment)}` : ""}`);
     lines.push("");
   }
 
   if (options.diagram && graph.edges.some((edge) => edge.targetLabel === undefined || edge.targetLabel === null)) {
-    lines.push("## Diagrama de relaciones", "", ...mermaidDiagram(graph), "");
+    lines.push(t("## Diagrama de relaciones"), "", ...mermaidDiagram(graph), "");
   }
 
   for (const table of graph.tables) lines.push(...section(table, graph, options));

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import ColumnFilterDialog from "./ColumnFilterDialog.svelte";
   import FkPicker from "./FkPicker.svelte";
   import PasteRowsDialog from "./PasteRowsDialog.svelte";
@@ -73,14 +74,24 @@
       // Mismo caso que el booleano: el tipo viene con confianza, así que no hace falta el
       // heurístico por valor que usa el resultado de una consulta (`ResultGrid`).
       const geometry = isGeometryType(column.typeName);
-      const longest = sample.reduce(
-        (max, row) => Math.max(max, (tab.value(row, index) ?? NULL).length),
-        column.name.length,
-      );
       // Por tipo del catálogo: `numeric(12,2)` también, aunque no esté en `NUMERIC` tal cual.
       const numericType = /^(smallint|integer|bigint|numeric|decimal|real|double precision|int[248]|float[48])\b/.test(
         column.typeName.toLowerCase(),
       );
+      // Se mide el texto que se dibuja y no el que viaja (ver `ResultGrid`): «t» pasa a «false» y
+      // un número gana un punto cada tres cifras.
+      const longest = sample.reduce((max, row) => {
+        const raw = tab.value(row, index);
+        const text =
+          raw === null
+            ? NULL
+            : bool
+              ? boolText(raw)
+              : numericType
+                ? numberFormat.show(raw)
+                : timeZone.show(raw);
+        return Math.max(max, text.length);
+      }, column.name.length);
 
       return {
         key: `${index}-${column.name}`,
@@ -183,7 +194,7 @@
    * sin guardar. En vez de perderlas en silencio, los controles se apagan y dicen por qué.
    */
   const pendingBlocks = $derived(
-    tab.pending > 0 ? "Hay cambios sin guardar: guardalos o descartalos antes de volver a leer" : null,
+    tab.pending > 0 ? t("Hay cambios sin guardar: guardalos o descartalos antes de volver a leer") : null,
   );
 
   /** Contra qué entorno se está editando. Pinta la barra igual que en la pestaña de consulta:
@@ -249,7 +260,7 @@
     const link = name === undefined ? null : outgoing.get(name);
     if (link && editable(row, column)) {
       items.push({
-        label: `Elegir de la lista de ${linkLabel(link)}…`,
+        label: t("Elegir de la lista de {name}…", { name: linkLabel(link) }),
         run: () => (fkPick = { row, link }),
       });
     }
@@ -257,7 +268,10 @@
     if (!row.isNew) {
       for (const incoming of shape?.referencedBy ?? []) {
         items.push({
-          label: `Ver filas de ${linkLabel(incoming)} que apuntan aquí (${incoming.otherColumns.join(", ")})`,
+          label: t("Ver filas de {name} que apuntan aquí ({columns})", {
+            name: linkLabel(incoming),
+            columns: incoming.otherColumns.join(", "),
+          }),
           run: () => jump(incoming, row),
         });
       }
@@ -325,16 +339,16 @@
     appliedView = "";
   }
 
-  const VIEWS: { id: "data" | StructureSection; label: string }[] = [
-    { id: "data", label: "Datos" },
-    { id: "columns", label: "Columnas" },
-    { id: "indexes", label: "Índices" },
-    { id: "constraints", label: "Restricciones" },
+  const views = $derived<{ id: "data" | StructureSection; label: string }[]>([
+    { id: "data", label: t("Datos") },
+    { id: "columns", label: t("Columnas") },
+    { id: "indexes", label: t("Índices") },
+    { id: "constraints", label: t("Restricciones") },
     { id: "triggers", label: "Triggers" },
-    { id: "stats", label: "Estadísticas" },
-    { id: "dependencies", label: "Dependencias" },
+    { id: "stats", label: t("Estadísticas") },
+    { id: "dependencies", label: t("Dependencias") },
     { id: "ddl", label: "DDL" },
-  ];
+  ]);
   let view = $state<"data" | StructureSection>("data");
 
   /** La fila sobre la que actúan los botones de la barra. */
@@ -372,7 +386,7 @@
        el panel de detalle. «Datos» es la grilla de siempre; el resto es de solo lectura. -->
   <div class="divider-b flex items-center gap-2 overflow-x-auto px-2 py-1">
     <div class="seg shrink-0" role="tablist">
-      {#each VIEWS as item (item.id)}
+      {#each views as item (item.id)}
         <button
           class="seg-item"
           role="tab"
@@ -393,15 +407,15 @@
   <header class="toolbar {envBar(environment)}">
     <button class="btn" disabled={tab.loading || tab.saving} onclick={() => tab.load()}>
       <Icon name="refresh" size={12} />
-      Refrescar
+      {t("Refrescar")}
     </button>
 
     <!-- Llegar desde la grilla hasta dónde vive la tabla eran cinco niveles a mano cada vez. -->
     <button
       class="btn btn-ghost btn-icon"
       disabled={tab.shape === null}
-      title="Revelar la tabla en el árbol"
-      aria-label="Revelar en el árbol"
+      title={t("Revelar la tabla en el árbol")}
+      aria-label={t("Revelar en el árbol")}
       onclick={() =>
         tab.shape &&
         explorer.revealRelation(tab.profileId, tab.database, tab.shape.schema, tab.shape.oid)}
@@ -415,23 +429,23 @@
       <button
         class="btn"
         disabled={tab.saving}
-        title="Pega filas copiadas de Excel como filas nuevas"
+        title={t("Pega filas copiadas de Excel como filas nuevas")}
         onclick={() => (pasteOpen = true)}
       >
-        Pegar filas…
+        {t("Pegar filas…")}
       </button>
       <button class="btn" disabled={tab.saving} onclick={() => tab.addRow()}>
         <Icon name="plus" size={12} />
-        Fila
+        {t("Fila")}
       </button>
       <button
         class="btn {selectedRow?.deleted ? '' : 'btn-danger-ghost'}"
         disabled={selectedRow === null || tab.saving}
-        title="Marca la fila elegida para borrarla al guardar"
+        title={t("Marca la fila elegida para borrarla al guardar")}
         onclick={() => selectedRow && tab.toggleDelete(selectedRow)}
       >
         <Icon name="trash" size={12} />
-        {selectedRow?.deleted ? "No borrar" : "Borrar fila"}
+        {selectedRow?.deleted ? t("No borrar") : t("Borrar fila")}
       </button>
 
       <span class="toolbar-sep"></span>
@@ -439,14 +453,14 @@
       <button
         class="btn"
         disabled={tab.pending === 0 || tab.saving}
-        title="Muestra el SQL exacto que se va a ejecutar"
+        title={t("Muestra el SQL exacto que se va a ejecutar")}
         onclick={() => tab.showPreview()}
       >
         <Icon name="sql" size={12} />
-        Ver el SQL
+        {t("Ver el SQL")}
       </button>
       <button class="btn" disabled={tab.pending === 0 || tab.saving} onclick={() => tab.discard()}>
-        Descartar
+        {t("Descartar")}
       </button>
       <button
         class="btn btn-primary"
@@ -454,7 +468,7 @@
         onclick={() => tab.save()}
       >
         {#if tab.saving}<span class="spinner"></span>{/if}
-        Guardar
+        {t("Guardar")}
         {#if tab.pending > 0}
           <span class="rounded bg-white/20 px-1 text-[11px] tabular-nums">{tab.pending}</span>
         {/if}
@@ -465,11 +479,11 @@
       <button
         class="btn btn-sm"
         aria-pressed={showRecord}
-        title="Muestra todos los valores de la fila elegida, una columna por línea"
+        title={t("Muestra todos los valores de la fila elegida, una columna por línea")}
         onclick={toggleRecord}
       >
         <Icon name="columns" size={12} />
-        Fila completa
+        {t("Fila completa")}
       </button>
 
       {#if tab.loading}
@@ -488,7 +502,7 @@
         <!-- svelte-ignore a11y_autofocus -->
         <input
           class="field w-36 py-0.5 text-xs"
-          placeholder="Nombre de la vista"
+          placeholder={t("Nombre de la vista")}
           maxlength="40"
           autofocus
           bind:value={viewName}
@@ -497,12 +511,12 @@
             if (event.key === "Escape") namingView = false;
           }}
         />
-        <button class="btn btn-sm" disabled={viewName.trim() === ""} onclick={saveView}>Guardar</button>
-        <button class="btn btn-sm btn-ghost" onclick={() => (namingView = false)}>Cancelar</button>
+        <button class="btn btn-sm" disabled={viewName.trim() === ""} onclick={saveView}>{t("Guardar")}</button>
+        <button class="btn btn-sm btn-ghost" onclick={() => (namingView = false)}>{t("Cancelar")}</button>
       {:else}
         {#if savedViews.length > 0}
-          <label class="flex items-center gap-1" title="Vistas guardadas de esta tabla">
-            <span>Vista</span>
+          <label class="flex items-center gap-1" title={t("Vistas guardadas de esta tabla")}>
+            <span>{t("Vista")}</span>
             <select
               class="field py-0.5 text-xs"
               value={appliedView}
@@ -518,12 +532,12 @@
         {/if}
         <button
           class="btn btn-sm btn-ghost"
-          title="Guarda las columnas visibles, el orden y el filtro de ahora con un nombre"
-          onclick={() => (namingView = true)}>Guardar vista…</button
+          title={t("Guarda las columnas visibles, el orden y el filtro de ahora con un nombre")}
+          onclick={() => (namingView = true)}>{t("Guardar vista…")}</button
         >
         {#if appliedView !== ""}
-          <button class="btn btn-sm btn-ghost" title="Borra la vista elegida" onclick={removeView}>
-            Borrar vista
+          <button class="btn btn-sm btn-ghost" title={t("Borra la vista elegida")} onclick={removeView}>
+            {t("Borrar vista")}
           </button>
         {/if}
       {/if}
@@ -532,8 +546,8 @@
 
       <!-- Cuántas filas trae cada tanda. La tabla no se lee entera nunca: el scroll pide la
            siguiente al acercarse al final, y el tamaño depende de para qué se abrió. -->
-      <label class="flex items-center gap-1" title="Filas que trae cada tanda">
-        <span>Tanda</span>
+      <label class="flex items-center gap-1" title={t("Filas que trae cada tanda")}>
+        <span>{t("Tanda")}</span>
         <select
           class="field py-0.5 text-xs"
           value={paging.size}
@@ -550,19 +564,22 @@
         <button
           class="btn btn-sm"
           disabled={tab.loading}
-          title="El scroll ya trajo todo lo que trae solo"
+          title={t("El scroll ya trajo todo lo que trae solo")}
           onclick={() => tab.more()}
         >
-          Cargar {paging.size} más
+          {t("Cargar {n} más", { n: paging.size })}
         </button>
       {/if}
 
       <span class="tabular-nums">
-        {tab.rows.length}
-        {tab.rows.length === 1 ? "fila" : "filas"}{tab.complete ? "" : " o más"}
+        {#if tab.complete}
+          {tab.rows.length === 1 ? t("{n} fila", { n: tab.rows.length }) : t("{n} filas", { n: tab.rows.length })}
+        {:else}
+          {tab.rows.length === 1 ? t("{n} fila o más", { n: tab.rows.length }) : t("{n} filas o más", { n: tab.rows.length })}
+        {/if}
       </span>
       {#if shape?.key}
-        <span class="tag tag-neutral" title="Con esta clave se identifica cada fila al guardar">
+        <span class="tag tag-neutral" title={t("Con esta clave se identifica cada fila al guardar")}>
           <Icon name="key" size={10} />
           {shape.key.columns.join(", ")}
         </span>
@@ -585,7 +602,7 @@
       <input
         class="field min-w-0 flex-1 py-0.5 font-mono text-xs"
         placeholder="estado = 'activo' AND creado &gt; now() - interval '7 days'"
-        title={pendingBlocks ?? "Se aplica con Enter; vuelve a leer la tabla desde la primera tanda"}
+        title={pendingBlocks ?? t("Se aplica con Enter; vuelve a leer la tabla desde la primera tanda")}
         disabled={pendingBlocks !== null}
         bind:value={draftFilter}
         onkeydown={(event) => {
@@ -601,7 +618,7 @@
         disabled={pendingBlocks !== null || tab.loading || draftFilter.trim() === tab.filter.trim()}
         onclick={() => tab.applyFilter(draftFilter)}
       >
-        Aplicar
+        {t("Aplicar")}
       </button>
       {#if tab.filter.trim() !== ""}
         <button
@@ -612,19 +629,19 @@
             tab.applyFilter("");
           }}
         >
-          Quitar
+          {t("Quitar")}
         </button>
       {/if}
     </div>
 
     <div class="flex items-center gap-2">
-      <span class="shrink-0" title="Busca texto literal en todas las columnas">
+      <span class="shrink-0" title={t("Busca texto literal en todas las columnas")}>
         <Icon name="search" size={12} />
       </span>
       <input
         class="field min-w-0 flex-1 py-0.5 text-xs"
-        placeholder="Buscar en cualquier columna…"
-        title={pendingBlocks ?? "Se aplica con Enter; vuelve a leer la tabla desde la primera tanda"}
+        placeholder={t("Buscar en cualquier columna…")}
+        title={pendingBlocks ?? t("Se aplica con Enter; vuelve a leer la tabla desde la primera tanda")}
         disabled={pendingBlocks !== null}
         bind:value={draftSearch}
         onkeydown={(event) => {
@@ -640,7 +657,7 @@
         disabled={pendingBlocks !== null || tab.loading || draftSearch.trim() === tab.search.trim()}
         onclick={() => tab.applySearch(draftSearch)}
       >
-        Aplicar
+        {t("Aplicar")}
       </button>
       {#if tab.search.trim() !== ""}
         <button
@@ -651,7 +668,7 @@
             tab.applySearch("");
           }}
         >
-          Quitar
+          {t("Quitar")}
         </button>
       {/if}
     </div>
@@ -672,7 +689,7 @@
   <div class="flex min-h-0 flex-1">
   <div class="min-h-0 min-w-0 flex-1">
     {#if !shape}
-      <div class="flex flex-col gap-px p-3" aria-label="Abriendo la tabla…">
+      <div class="flex flex-col gap-px p-3" aria-label={t("Abriendo la tabla…")}>
         <div class="flex gap-2 pb-2">
           {#each SKELETON_COLUMNS as _, column (column)}
             <div
@@ -699,7 +716,7 @@
         rows={tab.rows}
         rowKey={(row) => row.index}
         selectedKey={selected}
-        empty="La tabla está vacía."
+        empty={t("La tabla está vacía.")}
         editable={tab.editable ? editable : undefined}
         onedit={(row, column, value) => tab.edit(row, columnIndex(column), value)}
         onnearend={() => tab.moreAuto()}
@@ -726,10 +743,10 @@
 
   {#if tab.editable && tab.rows.length > 0}
     <p class="divider-t flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1 text-xs muted">
-      <span><span class="kbd">Doble clic</span> en una celda para editarla</span>
-      <span><span class="kbd">∅</span> pone NULL</span>
-      <span><span class="kbd">Enter</span> confirma · <span class="kbd">Esc</span> descarta</span>
-      <span class="ml-auto">Nada se escribe en la base hasta que se guarda.</span>
+      <span><span class="kbd">{t("Doble clic")}</span> {t("en una celda para editarla")}</span>
+      <span><span class="kbd">∅</span> {t("pone NULL")}</span>
+      <span><span class="kbd">Enter</span> {t("confirma")} · <span class="kbd">Esc</span> {t("descarta")}</span>
+      <span class="ml-auto">{t("Nada se escribe en la base hasta que se guarda.")}</span>
     </p>
   {/if}
   {/if}
@@ -737,10 +754,10 @@
 
 {#if tab.preview}
   <Modal
-    title="Esto es lo que se va a ejecutar"
-    subtitle="Las {tab.preview.length} {tab.preview.length === 1
-      ? 'sentencia va'
-      : 'sentencias van'} en una sola transacción: si alguna falla, no se aplica ninguna."
+    title={t("Esto es lo que se va a ejecutar")}
+    subtitle={tab.preview.length === 1
+      ? t("La sentencia va en una sola transacción: si falla, no se aplica.")
+      : t("Las {n} sentencias van en una sola transacción: si alguna falla, no se aplica ninguna.", { n: tab.preview.length })}
     size="xl"
     busy={tab.saving}
     onclose={() => (tab.preview = null)}
@@ -761,10 +778,10 @@
     {/each}
 
     {#snippet footer()}
-      <button class="btn ml-auto" onclick={() => (tab.preview = null)}>Cerrar</button>
+      <button class="btn ml-auto" onclick={() => (tab.preview = null)}>{t("Cerrar")}</button>
       <button class="btn btn-primary" disabled={tab.saving} onclick={() => tab.save()}>
         {#if tab.saving}<span class="spinner"></span>{/if}
-        Guardar
+        {t("Guardar")}
       </button>
     {/snippet}
   </Modal>

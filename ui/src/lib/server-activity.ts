@@ -7,6 +7,8 @@
  * se aprende a ignorar. Es puro y con Vitest.
  */
 
+
+import { t } from "./i18n.svelte";
 /** Refleja `monitor::activity::Brief`. */
 export interface ActivityBrief {
   blocked: number;
@@ -38,19 +40,19 @@ export function activityBadge(brief: ActivityBrief | undefined): ActivityBadge |
 
   if (brief.blocked > 0) {
     return {
-      text: brief.blocked === 1 ? "1 bloqueada" : `${brief.blocked} bloqueadas`,
+      text: brief.blocked === 1 ? t("1 bloqueada") : t("{blocked} bloqueadas", { blocked: brief.blocked }),
       level: brief.blocked >= BLOCKED_BAD ? "bad" : "warn",
-      title: "Sesiones que esperan a que otra suelte un bloqueo. Abre el monitoreo para ver cuál.",
+      title: t("Sesiones que esperan a que otra suelte un bloqueo. Abre el monitoreo para ver cuál."),
     };
   }
 
   const idle = brief.longestIdleInTransactionSeconds;
   if (idle !== null && idle >= IDLE_WARN_SECONDS) {
     return {
-      text: `transacción de ${span(idle)}`,
+      text: t("transacción de {span}", { span: span(idle) }),
       level: idle >= IDLE_BAD_SECONDS ? "bad" : "warn",
       title:
-        "Hay una transacción abierta sin hacer nada. Retiene bloqueos y frena a VACUUM hasta que se cierre.",
+        t("Hay una transacción abierta sin hacer nada. Retiene bloqueos y frena a VACUUM hasta que se cierre."),
     };
   }
   return null;

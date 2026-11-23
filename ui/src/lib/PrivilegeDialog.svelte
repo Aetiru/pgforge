@@ -33,6 +33,7 @@
 </script>
 
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
@@ -189,10 +190,10 @@
   }
 
   function validate(): string | null {
-    if (!name()) return "Poné a quién otorgarle los privilegios.";
-    if (!existing && changes().length === 0) return "Elegí al menos un privilegio.";
+    if (!name()) return t("Poné a quién otorgarle los privilegios.");
+    if (!existing && changes().length === 0) return t("Elegí al menos un privilegio.");
     if (pickedColumns.length > 0 && columnPrivileges.length === 0) {
-      return "Elegí qué privilegio dar sobre esas columnas.";
+      return t("Elegí qué privilegio dar sobre esas columnas.");
     }
     return null;
   }
@@ -206,7 +207,7 @@
     }
     try {
       const statements = await privilegePreview(changes());
-      preview = statements.map((statement) => statement.sql).join(";\n\n") || "Nada que aplicar.";
+      preview = statements.map((statement) => statement.sql).join(";\n\n") || t("Nada que aplicar.");
     } catch (e) {
       error = describeError(e);
     }
@@ -236,7 +237,7 @@
       return;
     }
 
-    if (!(await confirmMutation(profileId, "Se van a modificar privilegios.", sqlToApply))) return;
+    if (!(await confirmMutation(profileId, t("Se van a modificar privilegios."), sqlToApply))) return;
 
     saving = true;
     try {
@@ -254,36 +255,38 @@
       case "table":
         return `${subject.schema}.${subject.table}`;
       case "schema":
-        return `esquema ${subject.schema}`;
+        return t("esquema {name}", { name: subject.schema });
       case "sequence":
-        return `secuencia ${subject.schema}.${subject.sequence}`;
+        return t("secuencia {name}", { name: `${subject.schema}.${subject.sequence}` });
       case "function":
-        return `${subject.procedure ? "procedimiento" : "función"} ${subject.schema}.${subject.name}(${subject.args})`;
+        return subject.procedure
+          ? t("procedimiento {name}", { name: `${subject.schema}.${subject.name}(${subject.args})` })
+          : t("función {name}", { name: `${subject.schema}.${subject.name}(${subject.args})` });
       case "database":
-        return `base ${subject.database}`;
+        return t("base {name}", { name: subject.database });
     }
   });
 </script>
 
 <Modal
-  title={existing ? `Privilegios de ${existing.grantee}` : "Nuevo privilegio"}
+  title={existing ? t("Privilegios de {name}", { name: existing.grantee }) : t("Nuevo privilegio")}
   {subtitle}
   busy={saving}
   {onclose}
 >
   <label class="flex flex-col gap-1">
-    <span class="label">Rol destinatario</span>
+    <span class="label">{t("Rol destinatario")}</span>
     <input
       class="field"
       data-autofocus
       bind:value={grantee}
       disabled={existing !== null}
-      placeholder="ana, o PUBLIC para todos"
+      placeholder={t("ana, o PUBLIC para todos")}
     />
   </label>
 
   <div class="mt-3">
-    <span class="label">Privilegios</span>
+    <span class="label">{t("Privilegios")}</span>
     <div class="mt-1 flex flex-wrap gap-x-4 gap-y-1.5">
       {#each options as option (option)}
         <label class="check">
@@ -300,10 +303,9 @@
 
   {#if acceptsColumns}
     <div class="divider-t mt-4 pt-3">
-      <span class="label">Acotado a columnas</span>
+      <span class="label">{t("Acotado a columnas")}</span>
       <p class="mt-0.5 text-xs muted">
-        Se suma a lo de arriba, no lo reemplaza. Un SELECT sobre toda la tabla ya alcanza cada
-        columna.
+        {t("Se suma a lo de arriba, no lo reemplaza. Un SELECT sobre toda la tabla ya alcanza cada columna.")}
       </p>
 
       <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
@@ -338,13 +340,13 @@
 
   <label class="check mt-3">
     <input type="checkbox" bind:checked={grantOption} />
-    Con GRANT OPTION (puede volver a otorgarlos)
+    {t("Con GRANT OPTION (puede volver a otorgarlos)")}
   </label>
 
   {#if existing}
     <label class="check mt-2">
       <input type="checkbox" bind:checked={cascade} />
-      CASCADE al revocar lo que se desmarque
+      {t("CASCADE al revocar lo que se desmarque")}
     </label>
   {/if}
 
@@ -357,11 +359,11 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>{t("Ver SQL")}</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving}>
       {#if saving}<span class="spinner"></span>{/if}
-      {existing ? "Guardar" : "Otorgar"}
+      {existing ? t("Guardar") : t("Otorgar")}
     </button>
   {/snippet}
 </Modal>

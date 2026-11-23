@@ -7,6 +7,7 @@
  * nunca tocó nada lo recibe sin que una copia vieja de la tabla entera se lo tape.
  */
 
+import { t } from "./i18n.svelte";
 import {
   SHORTCUTS,
   effective,
@@ -64,11 +65,11 @@ class ShortcutStore {
    */
   set(id: string, combo: string | null): string | null {
     const def = SHORTCUTS.find((item) => item.id === id);
-    if (!def || def.fixed) return "Ese atajo no se puede cambiar.";
+    if (!def || def.fixed) return t("Ese atajo no se puede cambiar.");
     let next: string | null = null;
     if (combo !== null) {
       next = normalizeCombo(combo);
-      const problem = next === null ? "Esa tecla no se puede usar como atajo." : validateCombo(next);
+      const problem = next === null ? t("Esa tecla no se puede usar como atajo.") : validateCombo(next);
       if (problem) return problem;
     }
     const overrides = { ...this.overrides };

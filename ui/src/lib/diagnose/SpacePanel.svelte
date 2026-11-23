@@ -3,6 +3,7 @@
   import DataGrid, { type Column } from "../DataGrid.svelte";
   import Empty from "../Empty.svelte";
   import { bytes, count } from "../format";
+  import { t } from "../i18n.svelte";
   import { spaceOverview, type Growth, type SpaceOverview } from "../ipc";
   import { growthText } from "../diagnose-view";
   import { squarify } from "../treemap";
@@ -61,16 +62,18 @@
           label: name,
           bytes: size,
           hue: (i * 47 + 210) % 360,
-          title: `${name}: ${bytes(size)}. Clic para ver sus tablas`,
+          title: t("{name}: {size}. Clic para ver sus tablas", { name, size: bytes(size) }),
           enter: name,
         }));
       if (map.restBytes > 0) {
         list.push({
           key: "~rest",
-          label: "Catálogo y tablas menores",
+          label: t("Catálogo y tablas menores"),
           bytes: map.restBytes,
           hue: -1,
-          title: `${bytes(map.restBytes)} que no están en el mapa: catálogo, tablas más chicas que el corte`,
+          title: t("{size} que no están en el mapa: catálogo, tablas más chicas que el corte", {
+            size: bytes(map.restBytes),
+          }),
           enter: null,
         });
       }
@@ -83,7 +86,13 @@
       label: e.table,
       bytes: e.heapBytes + e.toastBytes + e.indexBytes,
       hue: (Math.max(index, 0) * 47 + 210) % 360,
-      title: `${schema}.${e.table}: ${bytes(e.heapBytes + e.toastBytes + e.indexBytes)} (tabla ${bytes(e.heapBytes)}, TOAST y otros ${bytes(e.toastBytes)}, índices ${bytes(e.indexBytes)})`,
+      title: t("{name}: {total} (tabla {heap}, TOAST y otros {toast}, índices {index})", {
+        name: `${schema}.${e.table}`,
+        total: bytes(e.heapBytes + e.toastBytes + e.indexBytes),
+        heap: bytes(e.heapBytes),
+        toast: bytes(e.toastBytes),
+        index: bytes(e.indexBytes),
+      }),
       enter: null,
     }));
   });
@@ -91,11 +100,17 @@
   const rects = $derived(squarify(cells.map((c) => c.bytes), BOX));
   const total = $derived(cells.reduce((sum, c) => sum + c.bytes, 0));
 
-  const growthColumns: Column<Growth>[] = [
-    { key: "name", header: "Nombre", width: 280, value: (g) => (g.kind === "database" ? `Base ${g.name}` : g.name) },
+  // Derivada: los encabezados siguen al idioma vigente.
+  const growthColumns: Column<Growth>[] = $derived([
+    {
+      key: "name",
+      header: t("Nombre"),
+      width: 280,
+      value: (g) => (g.kind === "database" ? t("Base {name}", { name: g.name }) : g.name),
+    },
     {
       key: "size",
-      header: "Tamaño",
+      header: t("Tamaño"),
       width: 110,
       align: "right",
       value: (g) => bytes(g.bytes),
@@ -103,19 +118,22 @@
     },
     {
       key: "rate",
-      header: "Crece",
+      header: t("Crece"),
       width: 150,
       align: "right",
       value: (g) => growthText(g.forecast?.perDay),
       sort: (g) => g.forecast?.perDay ?? Number.MIN_SAFE_INTEGER,
       title: (g) =>
         g.forecast
-          ? `Recta sobre ${g.forecast.samples} muestras de ${g.forecast.spanDays.toFixed(1)} días`
-          : "Se guarda una muestra por hora al abrir esta pestaña; hacen falta tres repartidas en medio día",
+          ? t("Recta sobre {samples} muestras de {days} días", {
+              samples: g.forecast.samples,
+              days: g.forecast.spanDays.toFixed(1),
+            })
+          : t("Se guarda una muestra por hora al abrir esta pestaña; hacen falta tres repartidas en medio día"),
     },
     {
       key: "week",
-      header: "Por semana",
+      header: t("Por semana"),
       width: 120,
       align: "right",
       value: (g) => (g.forecast ? bytes(Math.abs(g.forecast.perDay) * 7) : "—"),
@@ -123,17 +141,17 @@
     },
     {
       key: "p30",
-      header: "En 30 días",
+      header: t("En 30 días"),
       width: 120,
       align: "right",
       value: (g) => (g.projected30d === null ? "—" : bytes(g.projected30d)),
       sort: (g) => g.projected30d ?? 0,
     },
-  ];
+  ]);
 </script>
 
 <PanelFrame
-  title="Espacio"
+  title={t("Espacio")}
   icon="database"
   loading={overview.loading}
   loadedAt={overview.loadedAt}
@@ -153,12 +171,12 @@
           <span class="muted">{bytes(total)}</span>
         {/if}
         <span class="ml-auto muted">
-          Cada rectángulo es proporcional a su tamaño total (tabla, TOAST e índices).
+          {t("Cada rectángulo es proporcional a su tamaño total (tabla, TOAST e índices).")}
         </span>
       </div>
 
       {#if cells.length === 0}
-        <Empty icon="table" title="No hay tablas para mostrar" />
+        <Empty icon="table" title={t("No hay tablas para mostrar")} />
       {:else}
         <div
           class="relative w-full overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700"
@@ -189,10 +207,9 @@
         </div>
       {/if}
 
-      <h3 class="mt-1 text-xs font-semibold">Crecimiento</h3>
+      <h3 class="mt-1 text-xs font-semibold">{t("Crecimiento")}</h3>
       <p class="text-xs muted">
-        Se calcula con las muestras de tamaño que se guardan al abrir esta pestaña, una por hora como
-        mucho. Sin muestras suficientes aparece «faltan muestras».
+        {t("Se calcula con las muestras de tamaño que se guardan al abrir esta pestaña, una por hora como mucho. Sin muestras suficientes aparece \"faltan muestras\".")}
       </p>
       <div class="h-64">
         <DataGrid
@@ -200,15 +217,15 @@
           rows={overview.data.growth}
           rowKey={(g) => `${g.kind}:${g.name}`}
           sortable
-          empty="Todavía no hay muestras."
+          empty={t("Todavía no hay muestras.")}
         />
       </div>
       <p class="text-xs muted">
-        {count(map.entries.length)} tablas en el mapa
-        {#if map.restBytes > 0}· {bytes(map.restBytes)} fuera de él (catálogo y tablas menores){/if}.
+        {t("{n} tablas en el mapa", { n: count(map.entries.length) })}
+        {#if map.restBytes > 0}· {t("{size} fuera de él (catálogo y tablas menores)", { size: bytes(map.restBytes) })}{/if}.
       </p>
     {:else if !overview.error}
-      <Empty icon="database" title="Leyendo el espacio de la base…" />
+      <Empty icon="database" title={t("Leyendo el espacio de la base…")} />
     {/if}
   </div>
 </PanelFrame>

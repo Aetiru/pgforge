@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import type { Snippet } from "svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
@@ -14,7 +15,7 @@
   let {
     title,
     message,
-    confirmLabel = "Aceptar",
+    confirmLabel = undefined,
     danger = true,
     busy = false,
     error = null,
@@ -25,7 +26,7 @@
   }: {
     title: string;
     message: string;
-    confirmLabel?: string;
+    confirmLabel?: string | undefined;
     /** Casi todas cortan o borran algo; las que no, piden el botón en azul. */
     danger?: boolean;
     busy?: boolean;
@@ -54,13 +55,13 @@
 
   {#if requireText !== undefined}
     <label class="mt-3 block">
-      <span class="label">Para continuar, escribí <strong class="select-text">{requireText}</strong></span>
+      <span class="label">{t("Para continuar, escribí")} <strong class="select-text">{requireText}</strong></span>
       <input
         class="field mt-1 w-full font-mono"
         bind:value={typed}
         autocomplete="off"
         spellcheck="false"
-        aria-label="Nombre del servidor"
+        aria-label={t("Nombre del servidor")}
         data-autofocus
         onkeydown={(event) => {
           if (event.key === "Enter" && allowed && !busy) onconfirm();
@@ -74,7 +75,7 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn ml-auto" disabled={busy} onclick={onclose}>Cancelar</button>
+    <button class="btn ml-auto" disabled={busy} onclick={onclose}>{t("Cancelar")}</button>
     <button
       class="btn {danger ? 'btn-danger' : 'btn-primary'}"
       disabled={busy || !allowed}
@@ -82,7 +83,7 @@
       onclick={onconfirm}
     >
       {#if busy}<span class="spinner"></span>{/if}
-      {confirmLabel}
+      {confirmLabel ?? t("Aceptar")}
     </button>
   {/snippet}
 </Modal>

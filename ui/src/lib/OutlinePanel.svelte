@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
@@ -66,15 +67,15 @@
 
 <aside
   class="flex w-60 shrink-0 flex-col border-l border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900"
-  aria-label="Esquema del script"
+  aria-label={t("Esquema del script")}
 >
   <div class="divider-b flex items-center gap-1.5 px-2 py-1.5">
-    <span class="text-xs font-semibold">Esquema</span>
+    <span class="text-xs font-semibold">{t("Esquema")}</span>
     <span class="tag tag-neutral font-mono">{rows.length}</span>
     <button
       class="btn btn-ghost btn-icon ml-auto"
-      aria-label="Cerrar el esquema del script"
-      title="Cerrar el esquema del script"
+      aria-label={t("Cerrar el esquema del script")}
+      title={t("Cerrar el esquema del script")}
       onclick={onclose}
     >
       <Icon name="close" size={12} />
@@ -84,8 +85,8 @@
   <div class="px-2 py-1.5">
     <input
       class="field w-full text-xs"
-      placeholder="Filtrar sentencias…"
-      aria-label="Filtrar las sentencias del script"
+      placeholder={t("Filtrar sentencias…")}
+      aria-label={t("Filtrar las sentencias del script")}
       bind:value={filter}
     />
   </div>
@@ -94,7 +95,7 @@
     {#if shown.length === 0}
       <Empty
         icon="sql"
-        title={rows.length === 0 ? "El script está vacío" : "Ninguna sentencia coincide"}
+        title={rows.length === 0 ? t("El script está vacío") : t("Ninguna sentencia coincide")}
       />
     {:else}
       {#each shown as row (row.item.from)}

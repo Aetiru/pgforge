@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { sqlDensity, sqlFont } from "./editor.svelte";
 
   /**
@@ -10,20 +11,20 @@
    */
 </script>
 
-<div class="flex items-center" title="Tamaño de letra del SQL — Ctrl +, Ctrl - y Ctrl 0">
+<div class="flex items-center" title={t("Tamaño de letra del SQL — Ctrl +, Ctrl - y Ctrl 0")}>
   <button
     class="btn btn-ghost btn-icon btn-sm text-[11px]"
     disabled={!sqlFont.canShrink}
-    aria-label="Achicar la letra del SQL"
-    title="Achicar (Ctrl -)"
+    aria-label={t("Achicar la letra del SQL")}
+    title={t("Achicar (Ctrl -)")}
     onclick={() => sqlFont.smaller()}
   >
     A−
   </button>
   <button
     class="btn btn-ghost btn-sm px-1 text-[10px] tabular-nums muted"
-    aria-label="Volver al tamaño normal"
-    title="Volver al tamaño normal (Ctrl 0)"
+    aria-label={t("Volver al tamaño normal")}
+    title={t("Volver al tamaño normal (Ctrl 0)")}
     onclick={() => sqlFont.reset()}
   >
     {sqlFont.size}
@@ -31,8 +32,8 @@
   <button
     class="btn btn-ghost btn-icon btn-sm text-sm"
     disabled={!sqlFont.canGrow}
-    aria-label="Agrandar la letra del SQL"
-    title="Agrandar (Ctrl +)"
+    aria-label={t("Agrandar la letra del SQL")}
+    title={t("Agrandar (Ctrl +)")}
     onclick={() => sqlFont.bigger()}
   >
     A+
@@ -40,10 +41,10 @@
   <button
     class="btn btn-ghost btn-icon btn-sm text-[11px]"
     aria-pressed={sqlDensity.mode === "compact"}
-    aria-label="Interlineado del SQL"
+    aria-label={t("Interlineado del SQL")}
     title={sqlDensity.mode === "compact"
-      ? "Interlineado compacto: apretá para volver al cómodo"
-      : "Interlineado cómodo: apretá para ver más líneas (compacto)"}
+      ? t("Interlineado compacto: apretá para volver al cómodo")
+      : t("Interlineado cómodo: apretá para ver más líneas (compacto)")}
     onclick={() => sqlDensity.toggle()}
   >
     ↕

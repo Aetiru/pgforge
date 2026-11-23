@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   /**
    * La lista de marcadores, agrupada por servidor: forma de `SavedPanel.svelte` —filtro en memoria,
    * `Alert`/`Empty`/`<ul>`, `row-actions` que aparecen al pasar por encima, `Confirm` antes de
@@ -69,7 +70,7 @@
       />
       <input
         class="field w-full pl-7"
-        placeholder="Filtrar marcadores"
+        placeholder={t("Filtrar marcadores")}
         bind:value={filter}
         onkeydown={(event) => {
           if (event.key === "Escape") filter = "";
@@ -85,10 +86,10 @@
   {#if shown.length === 0}
     <Empty
       icon="star"
-      title={bookmarks.entries.length === 0 ? "Todavía no marcaste nada" : "Sin coincidencias"}
+      title={bookmarks.entries.length === 0 ? t("Todavía no marcaste nada") : t("Sin coincidencias")}
       hint={bookmarks.entries.length === 0
-        ? "Marcá una tabla, vista, función o procedimiento desde el árbol o desde su detalle para tenerla siempre a mano acá."
-        : "Probá con otra parte del nombre, del esquema o del alias."}
+        ? t("Marcá una tabla, vista, función o procedimiento desde el árbol o desde su detalle para tenerla siempre a mano acá.")
+        : t("Probá con otra parte del nombre, del esquema o del alias.")}
     />
   {:else}
     <ul class="min-h-0 flex-1 overflow-auto">
@@ -104,7 +105,7 @@
           >
             <button
               class="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-              title="Revelar en el árbol"
+              title={t("Revelar en el árbol")}
               onclick={() => onopen(entry)}
             >
               <Icon name={look.icon} size={13} class={look.tone} />
@@ -115,8 +116,8 @@
             <div class="row-actions shrink-0">
               <button
                 class="btn btn-icon btn-sm btn-danger-ghost"
-                title="Quitar el marcador"
-                aria-label="Quitar el marcador"
+                title={t("Quitar el marcador")}
+                aria-label={t("Quitar el marcador")}
                 onclick={() => (confirmDelete = entry)}
               >
                 <Icon name="trash" size={11} />
@@ -131,9 +132,11 @@
 
 {#if confirmDelete}
   <Confirm
-    title="Quitar de marcadores"
-    message="¿Quitar «{confirmDelete.label ?? confirmDelete.name}» de la sección fija? El objeto no se toca en el servidor."
-    confirmLabel="Quitar"
+    title={t("Quitar de marcadores")}
+    message={t("¿Quitar «{name}» de la sección fija? El objeto no se toca en el servidor.", {
+      name: confirmDelete.label ?? confirmDelete.name,
+    })}
+    confirmLabel={t("Quitar")}
     onconfirm={() => confirmDelete && remove(confirmDelete)}
     onclose={() => (confirmDelete = null)}
   />

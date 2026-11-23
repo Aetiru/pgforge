@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
@@ -52,8 +53,8 @@
   }
 
   function validate(): string | null {
-    if (!name.trim()) return "Poné un nombre para el esquema.";
-    if (existing && changes().length === 0) return "No hay nada que cambiar.";
+    if (!name.trim()) return t("Poné un nombre para el esquema.");
+    if (existing && changes().length === 0) return t("No hay nada que cambiar.");
     return null;
   }
 
@@ -90,7 +91,7 @@
       return;
     }
 
-    if (!(await confirmMutation(profileId, "Se va a modificar un esquema.", sqlToApply))) return;
+    if (!(await confirmMutation(profileId, t("Se va a modificar un esquema."), sqlToApply))) return;
 
     saving = true;
     try {
@@ -105,20 +106,20 @@
 </script>
 
 <Modal
-  title={existing ? `Editar ${existing.name}` : "Nuevo esquema"}
+  title={existing ? t("Editar {name}", { name: existing.name }) : t("Nuevo esquema")}
   subtitle={database}
   busy={saving}
   {onclose}
 >
   <div class="grid grid-cols-2 gap-3">
     <label class="flex flex-col gap-1">
-      <span class="label">Nombre</span>
+      <span class="label">{t("Nombre")}</span>
       <input class="field" data-autofocus bind:value={name} />
     </label>
 
     <label class="flex flex-col gap-1">
-      <span class="label">Dueño</span>
-      <input class="field" bind:value={owner} placeholder="el rol conectado" />
+      <span class="label">{t("Dueño")}</span>
+      <input class="field" bind:value={owner} placeholder={t("el rol conectado")} />
     </label>
   </div>
 
@@ -131,11 +132,11 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>{t("Ver SQL")}</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving}>
       {#if saving}<span class="spinner"></span>{/if}
-      {existing ? "Guardar" : "Crear"}
+      {existing ? t("Guardar") : t("Crear")}
     </button>
   {/snippet}
 </Modal>

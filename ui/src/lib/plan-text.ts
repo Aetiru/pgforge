@@ -11,6 +11,7 @@
  * lo que describe al nodo va indentado debajo.
  */
 
+import { t } from "./i18n.svelte";
 import type { Plan, PlanNode } from "./ipc";
 
 /** Dos espacios por nivel, como `psql`. */
@@ -83,7 +84,7 @@ export function planText(plan: Plan): string {
 
   if (plan.planningMs !== null) out.push(`Planning Time: ${decimal(plan.planningMs, 3)} ms`);
   if (plan.executionMs !== null) out.push(`Execution Time: ${decimal(plan.executionMs, 3)} ms`);
-  if (!plan.analyzed) out.push("(plan estimado, sin ejecutar)");
+  if (!plan.analyzed) out.push(t("(plan estimado, sin ejecutar)"));
 
   return out.join("\n");
 }

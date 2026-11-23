@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Confirm from "./Confirm.svelte";
@@ -28,7 +29,7 @@
     type ScopeForm,
   } from "./snippet-dialog";
   import {
-    NO_CATEGORY,
+    noCategory,
     filterSnippets,
     groupByCategory,
     scopeLabel,
@@ -102,7 +103,7 @@
     groupByCategory(sortSnippets(filterSnippets(snippets.items, query), order, snippets.usage)),
   );
   /** Con una sola carpeta —o ninguna— los rótulos de grupo sobran. */
-  const showGroups = $derived(groups.length > 1 || (groups[0] && groups[0].category !== NO_CATEGORY));
+  const showGroups = $derived(groups.length > 1 || (groups[0] && groups[0].category !== noCategory()));
 
   // Sin ningún uso registrado todas figurarían «sin usar», y avisarlo en una instalación nueva es
   // ruido: el aviso espera a que el contador tenga algo que decir.
@@ -241,7 +242,7 @@
     notice = null;
     // La ruta sale de un diálogo abierto desde Rust: es lo único que `snippets_export` acepta.
     const path = await pickSave({
-      title: "Exportar abreviaturas",
+      title: t("Exportar abreviaturas"),
       defaultPath: "abreviaturas.json",
       filters: [{ name: "JSON", extensions: ["json"] }],
     });
@@ -249,7 +250,8 @@
     busy = true;
     const count = await snippets.exportTo(path, marked.length > 0 ? marked : null);
     busy = false;
-    if (count !== null) notice = `Se exportaron ${count} ${count === 1 ? "abreviatura" : "abreviaturas"}.`;
+    if (count !== null) notice =
+        count === 1 ? t("Se exportó 1 abreviatura.") : t("Se exportaron {n} abreviaturas.", { n: count });
   }
 
   /** El archivo elegido y qué hacer con las que chocan; mientras es `null` no hay importación en curso. */
@@ -260,7 +262,7 @@
     notice = null;
     imported = null;
     const path = await pickOpen({
-      title: "Importar abreviaturas",
+      title: t("Importar abreviaturas"),
       filters: [{ name: "JSON", extensions: ["json"] }],
     });
     if (path) importing = { path, mode: "skip" };
@@ -289,8 +291,8 @@
   />
 {:else}
   <Modal
-    title="Abreviaturas"
-    subtitle="Escribí la abreviatura en el editor y apretá Tab para expandirla."
+    title={t("Abreviaturas")}
+    subtitle={t("Escribí la abreviatura en el editor y apretá Tab para expandirla.")}
     size="xl"
     {busy}
     {onclose}
@@ -308,7 +310,7 @@
       <div class="space-y-3">
         <div class="grid grid-cols-[160px_1fr_200px] gap-3">
           <label class="field">
-            <span class="label">Abreviatura</span>
+            <span class="label">{t("Abreviatura")}</span>
             <input
               class="w-full"
               data-autofocus
@@ -318,16 +320,16 @@
             />
           </label>
           <label class="field">
-            <span class="label">Para qué es</span>
-            <input class="w-full" bind:value={editing.description} placeholder="Consulta base" />
+            <span class="label">{t("Para qué es")}</span>
+            <input class="w-full" bind:value={editing.description} placeholder={t("Consulta base")} />
           </label>
           <label class="field">
-            <span class="label">Categoría</span>
+            <span class="label">{t("Categoría")}</span>
             <input
               class="w-full"
               list="pgforge-snippet-categories"
               bind:value={editing.category}
-              placeholder="Consultas"
+              placeholder={t("Consultas")}
               maxlength="40"
             />
             <datalist id="pgforge-snippet-categories">
@@ -347,14 +349,14 @@
 
         <div class="field">
           <div class="mb-1 flex items-center gap-2">
-            <span class="label mb-0">Texto</span>
+            <span class="label mb-0">{t("Texto")}</span>
             {#if hasLiterals}
               <button
                 class="btn btn-ghost btn-sm ml-auto"
-                title="Reemplaza los valores fijos —fechas, números, textos— por variables que se preguntan al expandir"
+                title={t("Reemplaza los valores fijos —fechas, números, textos— por variables que se preguntan al expandir")}
                 onclick={() => (converting = true)}
               >
-                Convertir valores en variables…
+                {t("Convertir valores en variables…")}
               </button>
             {/if}
           </div>
@@ -363,12 +365,12 @@
 
         <div class="grid grid-cols-2 gap-3">
           <div class="min-w-0">
-            <p class="label mb-1">Así se inserta (con los valores por omisión)</p>
+            <p class="label mb-1">{t("Así se inserta (con los valores por omisión)")}</p>
             <div
               class="max-h-44 min-h-12 overflow-auto rounded border border-zinc-200 p-2 dark:border-zinc-700"
             >
               {#if editing.body.trim() === ""}
-                <span class="text-xs muted">Escribí el texto para ver cómo queda.</span>
+                <span class="text-xs muted">{t("Escribí el texto para ver cómo queda.")}</span>
               {:else}
                 <Sql code={shown} />
               {/if}
@@ -376,9 +378,9 @@
           </div>
           <div class="min-w-0 space-y-2 text-xs">
             <div>
-              <p class="label mb-1">Variables que preguntará</p>
+              <p class="label mb-1">{t("Variables que preguntará")}</p>
               {#if asked.length === 0}
-                <p class="muted">Ninguna: se inserta de una.</p>
+                <p class="muted">{t("Ninguna: se inserta de una.")}</p>
               {:else}
                 <ul class="space-y-0.5">
                   {#each asked as variable (variable.name)}
@@ -393,7 +395,7 @@
             </div>
             {#if automatic.length > 0}
               <div>
-                <p class="label mb-1">Se llenan solas</p>
+                <p class="label mb-1">{t("Se llenan solas")}</p>
                 <p class="font-mono">{automatic.join(", ")}</p>
               </div>
             {/if}
@@ -402,19 +404,19 @@
 
         <div class="grid grid-cols-2 gap-3">
           <div class="field">
-            <span class="label">Dónde vale</span>
+            <span class="label">{t("Dónde vale")}</span>
             <div class="seg" role="tablist">
               <button
                 class="seg-item"
                 role="tab"
                 aria-selected={!scopeForm.only}
-                onclick={() => (scopeForm.only = false)}>Todos los servidores</button
+                onclick={() => (scopeForm.only = false)}>{t("Todos los servidores")}</button
               >
               <button
                 class="seg-item"
                 role="tab"
                 aria-selected={scopeForm.only}
-                onclick={() => (scopeForm.only = true)}>Solo estos…</button
+                onclick={() => (scopeForm.only = true)}>{t("Solo estos…")}</button
               >
             </div>
             {#if scopeForm.only}
@@ -432,11 +434,11 @@
                   {/each}
                 </div>
                 <label class="field">
-                  <span class="label">Bases (separadas por coma; vacío = todas)</span>
+                  <span class="label">{t("Bases (separadas por coma; vacío = todas)")}</span>
                   <input
                     class="w-full"
                     bind:value={scopeForm.databasesText}
-                    placeholder="ventas, rrhh"
+                    placeholder={t("ventas, rrhh")}
                     spellcheck="false"
                   />
                 </label>
@@ -447,12 +449,12 @@
                 class="btn btn-ghost btn-sm mt-1 self-start"
                 onclick={() => (scopeForm = hereOnly(profileId, database))}
               >
-                Solo aquí{database ? ` (${database})` : ""}
+                {database ? t("Solo aquí ({database})", { database }) : t("Solo aquí")}
               </button>
             {/if}
           </div>
           <div class="field">
-            <span class="label">Atajo de teclado</span>
+            <span class="label">{t("Atajo de teclado")}</span>
             <ShortcutField bind:value={editing.shortcut} />
             {#each shortcutCheck.errors as message (message)}
               <p class="mt-1 text-xs text-rose-600 dark:text-rose-400">{message}</p>
@@ -460,46 +462,45 @@
             {#each shortcutCheck.warnings as message (message)}
               <p class="mt-1 text-xs text-amber-600 dark:text-amber-400">{message}</p>
             {/each}
-            <p class="mt-1 text-xs muted">Expande la abreviatura de un golpe, sin escribir su nombre.</p>
+            <p class="mt-1 text-xs muted">{t("Expande la abreviatura de un golpe, sin escribir su nombre.")}</p>
           </div>
         </div>
 
         <p class="text-xs muted">
-          Lo que va entre <code>{"${}"}</code> es un hueco: al expandir queda seleccionado y con Tab se
-          salta al siguiente. <code>{"${nombre:valor}"}</code> es una variable con valor por omisión;
-          <code>{"${estado|activo|baja}"}</code>, una lista;
-          <code>{"${t@tabla}"}</code>, <code>{"${c@columna}"}</code>, <code>{"${d@fecha}"}</code> y
-          <code>{"${n@numero}"}</code>, campos tipados. <code>{"${hoy}"}</code>,
+          {t("Lo que va entre")} <code>{"${}"}</code> {t("es un hueco: al expandir queda seleccionado y con Tab se salta al siguiente.")}
+          <code>{"${nombre:valor}"}</code> {t("es una variable con valor por omisión;")}
+          <code>{"${estado|activo|baja}"}</code>{t(", una lista;")}
+          <code>{"${t@tabla}"}</code>, <code>{"${c@columna}"}</code>, <code>{"${d@fecha}"}</code> {t("y")}
+          <code>{"${n@numero}"}</code>{t(", campos tipados.")} <code>{"${hoy}"}</code>,
           <code>{"${ahora}"}</code>, <code>{"${usuario}"}</code>, <code>{"${base}"}</code>,
-          <code>{"${servidor}"}</code>, <code>{"${seleccion}"}</code> y
-          <code>{"${portapapeles}"}</code> se llenan solos. Un <code>$1</code> sin llaves es un
-          parámetro de PostgreSQL y se inserta tal cual.
+          <code>{"${servidor}"}</code>, <code>{"${seleccion}"}</code> {t("y")}
+          <code>{"${portapapeles}"}</code> {t("se llenan solos.")} {t("Un")} <code>$1</code> {t("sin llaves es un parámetro de PostgreSQL y se inserta tal cual.")}
         </p>
       </div>
     {:else if importing}
       <div class="space-y-3">
         <p class="text-sm">
-          Se importan las abreviaturas de <span class="font-mono break-all">{importing.path}</span>.
+          {t("Se importan las abreviaturas de")} <span class="font-mono break-all">{importing.path}</span>.
         </p>
-        <p class="label">Si la abreviatura ya existe</p>
+        <p class="label">{t("Si la abreviatura ya existe")}</p>
         <div class="seg" role="tablist">
           <button
             class="seg-item"
             role="tab"
             aria-selected={importing.mode === "skip"}
-            onclick={() => importing && (importing.mode = "skip")}>Omitirla</button
+            onclick={() => importing && (importing.mode = "skip")}>{t("Omitirla")}</button
           >
           <button
             class="seg-item"
             role="tab"
             aria-selected={importing.mode === "replace"}
-            onclick={() => importing && (importing.mode = "replace")}>Reemplazarla</button
+            onclick={() => importing && (importing.mode = "replace")}>{t("Reemplazarla")}</button
           >
         </div>
         <p class="text-xs muted">
           {importing.mode === "skip"
-            ? "Se conservan las tuyas y se agregan solo las que no existen."
-            : "Se pisa el texto de las tuyas con el del archivo. Las que no choquen se agregan."}
+            ? t("Se conservan las tuyas y se agregan solo las que no existen.")
+            : t("Se pisa el texto de las tuyas con el del archivo. Las que no choquen se agregan.")}
         </p>
       </div>
     {:else}
@@ -515,28 +516,29 @@
       {/if}
       {#if undo}
         <Alert tone="warn" box class="mb-3">
-          Se borró «{undo.abbreviation}».
-          <button class="btn btn-sm ml-2" onclick={undoRemove}>Deshacer</button>
-          <span class="ml-2 text-xs muted">Si cerrás este diálogo ya no se puede deshacer.</span>
+          {t("Se borró «{name}».", { name: undo.abbreviation })}
+          <button class="btn btn-sm ml-2" onclick={undoRemove}>{t("Deshacer")}</button>
+          <span class="ml-2 text-xs muted">{t("Si cerrás este diálogo ya no se puede deshacer.")}</span>
         </Alert>
       {/if}
       {#if unused.length > 0 && query === ""}
         <Alert tone="warn" box class="mb-3">
-          {unused.length === 1 ? "1 abreviatura sin usar" : `${unused.length} abreviaturas sin usar`} en 60
-          días.
-          <button class="btn btn-sm ml-2" onclick={() => (marked = unused)}>Seleccionar para borrar</button>
+          {unused.length === 1
+            ? t("1 abreviatura sin usar en 60 días.")
+            : t("{n} abreviaturas sin usar en 60 días.", { n: unused.length })}
+          <button class="btn btn-sm ml-2" onclick={() => (marked = unused)}>{t("Seleccionar para borrar")}</button>
         </Alert>
       {/if}
 
       {#if snippets.items.length === 0}
-        <Empty icon="sql" title="No hay abreviaturas" hint="Creá una, mirá la biblioteca o volvé a las de fábrica." />
+        <Empty icon="sql" title={t("No hay abreviaturas")} hint={t("Creá una, mirá la biblioteca o volvé a las de fábrica.")} />
       {:else}
         <div class="mb-2 flex items-center gap-2">
           <input
             class="field w-64"
             data-autofocus
-            placeholder="Buscar por abreviatura, texto o categoría…"
-            aria-label="Buscar abreviaturas"
+            placeholder={t("Buscar por abreviatura, texto o categoría…")}
+            aria-label={t("Buscar abreviaturas")}
             bind:value={query}
             onkeydown={(event) => {
               if (event.key === "Escape" && query !== "") {
@@ -546,18 +548,18 @@
             }}
           />
           <label class="check text-xs">
-            Orden
+            {t("Orden")}
             <select class="field py-0.5 text-xs" bind:value={order}>
-              <option value="name">Por nombre</option>
-              <option value="uses">Más usadas</option>
-              <option value="recent">Recientes</option>
+              <option value="name">{t("Por nombre")}</option>
+              <option value="uses">{t("Más usadas")}</option>
+              <option value="recent">{t("Recientes")}</option>
             </select>
           </label>
           {#if marked.length > 0}
-            <span class="ml-auto text-xs">{marked.length} marcadas</span>
-            <button class="btn btn-sm" onclick={exportSnippets}>Exportar</button>
-            <button class="btn btn-sm btn-danger" onclick={() => (confirmingDelete = true)}>Borrar</button>
-            <button class="btn btn-sm btn-ghost" onclick={() => (marked = [])}>Quitar selección</button>
+            <span class="ml-auto text-xs">{t("{n} marcadas", { n: marked.length })}</span>
+            <button class="btn btn-sm" onclick={exportSnippets}>{t("Exportar")}</button>
+            <button class="btn btn-sm btn-danger" onclick={() => (confirmingDelete = true)}>{t("Borrar")}</button>
+            <button class="btn btn-sm btn-ghost" onclick={() => (marked = [])}>{t("Quitar selección")}</button>
           {/if}
         </div>
 
@@ -566,9 +568,9 @@
             <thead>
               <tr>
                 <th class="w-8"></th>
-                <th class="w-32">Abreviatura</th>
-                <th>Se expande a</th>
-                <th class="w-44">Usos</th>
+                <th class="w-32">{t("Abreviatura")}</th>
+                <th>{t("Se expande a")}</th>
+                <th class="w-44">{t("Usos")}</th>
                 <th class="w-28"></th>
               </tr>
             </thead>
@@ -596,7 +598,7 @@
                       <td>
                         <input
                           type="checkbox"
-                          aria-label="Marcar «{item.abbreviation}»"
+                          aria-label={t("Marcar «{name}»", { name: item.abbreviation })}
                           checked={marked.includes(item.id!)}
                           onchange={() => toggleMark(item.id!)}
                         />
@@ -608,10 +610,10 @@
                           <span class="ml-2 text-xs muted">{preview(item.body)}</span>
                         {/if}
                         {#if where !== "Todos los servidores"}
-                          <span class="tag tag-info ml-2" title="Solo vale en: {where}">{where}</span>
+                          <span class="tag tag-info ml-2" title={t("Solo vale en: {where}", { where })}>{t(where)}</span>
                         {/if}
                         {#if item.shortcut}
-                          <span class="tag tag-neutral ml-1 font-mono" title="Atajo de teclado">
+                          <span class="tag tag-neutral ml-1 font-mono" title={t("Atajo de teclado")}>
                             {formatCombo(item.shortcut, MAC)}
                           </span>
                         {/if}
@@ -623,21 +625,21 @@
                         <div class="row-actions">
                           <button
                             class="btn btn-icon btn-sm"
-                            title="Editar «{item.abbreviation}»"
+                            title={t("Editar «{name}»", { name: item.abbreviation })}
                             onclick={() => edit(item)}
                           >
                             <Icon name="edit" />
                           </button>
                           <button
                             class="btn btn-icon btn-sm"
-                            title="Duplicar «{item.abbreviation}»"
+                            title={t("Duplicar «{name}»", { name: item.abbreviation })}
                             onclick={() => duplicate(item)}
                           >
                             <Icon name="copy" />
                           </button>
                           <button
                             class="btn btn-icon btn-sm"
-                            title="Borrar «{item.abbreviation}»"
+                            title={t("Borrar «{name}»", { name: item.abbreviation })}
                             onclick={() => remove(item)}
                           >
                             <Icon name="trash" />
@@ -648,7 +650,7 @@
                   {/each}
                 {/if}
               {:else}
-                <tr><td colspan="5" class="muted">Ninguna abreviatura coincide con «{query}».</td></tr>
+                <tr><td colspan="5" class="muted">{t("Ninguna abreviatura coincide con «{query}».", { query })}</td></tr>
               {/each}
             </tbody>
           </table>
@@ -658,29 +660,29 @@
 
     {#snippet footer()}
       {#if editing}
-        <button class="btn btn-ghost" onclick={() => (editing = null)} disabled={busy}>Cancelar</button>
-        <button class="btn btn-primary" onclick={submit} disabled={busy || !canSave}>Guardar</button>
+        <button class="btn btn-ghost" onclick={() => (editing = null)} disabled={busy}>{t("Cancelar")}</button>
+        <button class="btn btn-primary" onclick={submit} disabled={busy || !canSave}>{t("Guardar")}</button>
       {:else if importing}
-        <button class="btn btn-ghost" onclick={() => (importing = null)} disabled={busy}>Cancelar</button>
-        <button class="btn btn-primary" onclick={runImport} disabled={busy}>Importar</button>
+        <button class="btn btn-ghost" onclick={() => (importing = null)} disabled={busy}>{t("Cancelar")}</button>
+        <button class="btn btn-primary" onclick={runImport} disabled={busy}>{t("Importar")}</button>
       {:else if confirmingReset}
-        <span class="mr-auto text-xs muted">Se descartan las tuyas y vuelven las de fábrica.</span>
-        <button class="btn btn-ghost" onclick={() => (confirmingReset = false)}>Cancelar</button>
-        <button class="btn btn-danger" onclick={reset} disabled={busy}>Restablecer</button>
+        <span class="mr-auto text-xs muted">{t("Se descartan las tuyas y vuelven las de fábrica.")}</span>
+        <button class="btn btn-ghost" onclick={() => (confirmingReset = false)}>{t("Cancelar")}</button>
+        <button class="btn btn-danger" onclick={reset} disabled={busy}>{t("Restablecer")}</button>
       {:else}
-        <button class="btn btn-ghost mr-auto" onclick={() => (confirmingReset = true)}>Restablecer</button>
-        <button class="btn" onclick={() => (showLibrary = true)}>Biblioteca…</button>
-        <button class="btn" onclick={pickImport} disabled={busy}>Importar…</button>
+        <button class="btn btn-ghost mr-auto" onclick={() => (confirmingReset = true)}>{t("Restablecer")}</button>
+        <button class="btn" onclick={() => (showLibrary = true)}>{t("Biblioteca…")}</button>
+        <button class="btn" onclick={pickImport} disabled={busy}>{t("Importar…")}</button>
         <button
           class="btn"
           onclick={exportSnippets}
           disabled={busy || snippets.items.length === 0}
-          title={marked.length > 0 ? `Exporta las ${marked.length} marcadas` : "Exporta todas"}
+          title={marked.length > 0 ? t("Exporta las {n} marcadas", { n: marked.length }) : t("Exporta todas")}
         >
-          Exportar…
+          {t("Exportar…")}
         </button>
-        <button class="btn" onclick={create}>Nueva</button>
-        <button class="btn btn-primary" onclick={onclose}>Listo</button>
+        <button class="btn" onclick={create}>{t("Nueva")}</button>
+        <button class="btn btn-primary" onclick={onclose}>{t("Listo")}</button>
       {/if}
     {/snippet}
   </Modal>
@@ -688,9 +690,11 @@
 
 {#if confirmingDelete}
   <Confirm
-    title="Borrar {marked.length === 1 ? 'la abreviatura marcada' : `las ${marked.length} abreviaturas marcadas`}"
-    message="No se pueden recuperar desde acá. Si no estás seguro, exportalas antes."
-    confirmLabel="Borrar"
+    title={marked.length === 1
+      ? t("Borrar la abreviatura marcada")
+      : t("Borrar las {n} abreviaturas marcadas", { n: marked.length })}
+    message={t("No se pueden recuperar desde acá. Si no estás seguro, exportalas antes.")}
+    confirmLabel={t("Borrar")}
     onconfirm={removeMarked}
     onclose={() => (confirmingDelete = false)}
   />

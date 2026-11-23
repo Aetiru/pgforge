@@ -8,6 +8,7 @@
  * es `compare::data::script`.
  */
 
+import { t } from "./i18n.svelte";
 import type { RiskFilter } from "./compare-script";
 import type { DataRowDiff, DataStatement, DiffStatus, SyncRisk } from "./ipc";
 
@@ -58,9 +59,9 @@ export function summary(counts: {
   equal: number;
 }): string {
   const parts: string[] = [];
-  if (counts.onlySource) parts.push(`${counts.onlySource} solo en el origen`);
-  if (counts.onlyTarget) parts.push(`${counts.onlyTarget} solo en el destino`);
-  if (counts.different) parts.push(`${counts.different} distintas`);
-  parts.push(`${counts.equal} iguales`);
+  if (counts.onlySource) parts.push(t("{onlySource} solo en el origen", { onlySource: counts.onlySource }));
+  if (counts.onlyTarget) parts.push(t("{onlyTarget} solo en el destino", { onlyTarget: counts.onlyTarget }));
+  if (counts.different) parts.push(t("{different} distintas", { different: counts.different }));
+  parts.push(t("{equal} iguales", { equal: counts.equal }));
   return parts.join(" · ");
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
@@ -11,11 +12,11 @@
     variables,
     onsubmit,
     onclose,
-    submitLabel = "Insertar",
+    submitLabel = undefined,
     tables = [],
     columns = [],
   }: {
-    submitLabel?: string;
+    submitLabel?: string | undefined;
     title: string;
     description: string;
     variables: SnippetVariable[];
@@ -68,14 +69,14 @@
           {#if variable.kind !== "text"}
             <span class="font-normal muted">
               · {variable.kind === "list"
-                ? "elige una opción"
+                ? t("elige una opción")
                 : variable.kind === "date"
-                  ? "fecha"
+                  ? t("fecha")
                   : variable.kind === "number"
-                    ? "número"
+                    ? t("número")
                     : variable.kind === "table"
-                      ? "tabla del catálogo"
-                      : "columna del catálogo"}
+                      ? t("tabla del catálogo")
+                      : t("columna del catálogo")}
             </span>
           {/if}
         </span>
@@ -144,10 +145,10 @@
   </form>
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose}>Cancelar</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit}>
       <Icon name="check" size={12} />
-      {submitLabel}
+      {submitLabel ?? t("Insertar")}
     </button>
   {/snippet}
 </Modal>

@@ -449,3 +449,68 @@ async fn assertions(handle: &ServerHandle, schema_name: &str) {
         Err(e) => eprintln!("AVISO: no se pudo generar el DDL de la tabla ({e})"),
     }
 }
+
+/// El vencimiento se decide con el reloj del servidor y viaja como etiqueta: un rol vencido y uno
+/// que vence pronto tienen que distinguirse de los que no vencen, que son casi todos.
+#[tokio::test]
+async fn marca_los_roles_vencidos_o_por_vencer() {
+    let urls = test_urls();
+    if urls.is_empty() {
+        eprintln!(
+            "AVISO: PGFORGE_TEST_URLS no está definida, no se verificó nada contra un servidor real."
+        );
+        return;
+    }
+
+    for url in urls {
+        let handle = connect(&url).await;
+        if !handle.caps.is_superuser {
+            eprintln!("AVISO: {url} no es superusuario, no se puede crear roles de prueba.");
+            continue;
+        }
+        let pid = std::process::id();
+        let (vencido, pronto, lejos) = (
+            format!("pgforge_venc_{pid}"),
+            format!("pgforge_pronto_{pid}"),
+            format!("pgforge_lejos_{pid}"),
+        );
+        let client = handle.client(handle.default_database()).await.unwrap();
+        client
+            .batch_execute(&format!(
+                "CREATE ROLE {vencido} LOGIN VALID UNTIL '2000-01-01';
+                 -- VALID UNTIL pide un literal: la fecha relativa al reloj del servidor se arma con EXECUTE.
+                 DO $$ BEGIN
+                   EXECUTE format('CREATE ROLE {pronto} LOGIN VALID UNTIL %L', now() + interval '3 days');
+                   EXECUTE format('CREATE ROLE {lejos} LOGIN VALID UNTIL %L', now() + interval '90 days');
+                 END $$;"
+            ))
+            .await
+            .unwrap_or_else(|e| panic!("no se pudieron crear los roles de prueba: {e}"));
+
+        let outcome = {
+            let handle = Arc::clone(&handle);
+            let (vencido, pronto, lejos) = (vencido.clone(), pronto.clone(), lejos.clone());
+            tokio::spawn(async move {
+                let databases = introspect::children(&handle, None, TreeOptions::default())
+                    .await
+                    .unwrap();
+                let carpeta = folder(&databases, Folder::Roles).clone();
+                let roles = expand(&handle, &carpeta).await;
+                assert!(find(&roles, &vencido).tags.contains(&NodeTag::Expired));
+                assert!(find(&roles, &pronto).tags.contains(&NodeTag::ExpiresSoon));
+                let lejano = &find(&roles, &lejos).tags;
+                assert!(
+                    !lejano.contains(&NodeTag::Expired) && !lejano.contains(&NodeTag::ExpiresSoon)
+                );
+            })
+            .await
+        };
+        let _ = client
+            .batch_execute(&format!("DROP ROLE IF EXISTS {vencido}, {pronto}, {lejos}"))
+            .await;
+        if let Err(join) = outcome {
+            std::panic::resume_unwind(join.into_panic());
+        }
+        eprintln!("ok contra PostgreSQL {} ({url})", handle.caps.version);
+    }
+}

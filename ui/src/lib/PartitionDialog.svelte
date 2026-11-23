@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
@@ -92,20 +93,20 @@
   }
 
   function validate(): string | null {
-    if (!name.trim()) return "Poné un nombre para la partición.";
+    if (!name.trim()) return t("Poné un nombre para la partición.");
     if (isDefault) return null;
 
     if (kind === "range") {
-      if (list(from).length === 0) return "Poné el extremo inicial del rango.";
-      if (list(to).length === 0) return "Poné el extremo final del rango.";
+      if (list(from).length === 0) return t("Poné el extremo inicial del rango.");
+      if (list(to).length === 0) return t("Poné el extremo final del rango.");
     } else if (kind === "list") {
-      if (list(values).length === 0) return "Poné al menos un valor.";
+      if (list(values).length === 0) return t("Poné al menos un valor.");
     } else {
       const m = Number(modulus);
       const r = Number(remainder);
-      if (!Number.isInteger(m) || m < 1) return "El módulo tiene que ser un entero de al menos 1.";
+      if (!Number.isInteger(m) || m < 1) return t("El módulo tiene que ser un entero de al menos 1.");
       if (!Number.isInteger(r) || r < 0 || r >= m) {
-        return "El resto tiene que ser un entero menor que el módulo.";
+        return t("El resto tiene que ser un entero menor que el módulo.");
       }
     }
     return null;
@@ -144,7 +145,7 @@
       return;
     }
 
-    if (!(await confirmMutation(profileId, "Se va a modificar una tabla particionada.", sqlToApply))) return;
+    if (!(await confirmMutation(profileId, t("Se va a modificar una tabla particionada."), sqlToApply))) return;
 
     saving = true;
     try {
@@ -158,55 +159,55 @@
   }
 </script>
 
-<Modal title="Nueva partición" subtitle="{schema}.{parent} · {strategy}" size="lg" busy={saving} {onclose}>
+<Modal title={t("Nueva partición")} subtitle="{schema}.{parent} · {strategy}" size="lg" busy={saving} {onclose}>
   <div class="seg" role="tablist">
     <button role="tab" aria-selected={!attach} onclick={() => (attach = false)}>
-      Crear tabla nueva
+      {t("Crear tabla nueva")}
     </button>
     <button role="tab" aria-selected={attach} onclick={() => (attach = true)}>
-      Enganchar una existente
+      {t("Enganchar una existente")}
     </button>
   </div>
 
   <label class="mt-3 flex flex-col gap-1">
-    <span class="label">Nombre de la partición</span>
+    <span class="label">{t("Nombre de la partición")}</span>
     <input class="field" data-autofocus bind:value={name} />
   </label>
 
   <label class="check mt-3">
     <input type="checkbox" bind:checked={isDefault} />
-    Partición por omisión: se lleva todo lo que no entra en ninguna otra
+    {t("Partición por omisión: se lleva todo lo que no entra en ninguna otra")}
   </label>
 
   {#if !isDefault}
     {#if kind === "range"}
       <div class="mt-3 grid grid-cols-2 gap-3">
         <label class="flex flex-col gap-1">
-          <span class="label">Desde (incluido)</span>
+          <span class="label">{t("Desde (incluido)")}</span>
           <input class="field" bind:value={from} placeholder="'2024-01-01'" />
         </label>
         <label class="flex flex-col gap-1">
-          <span class="label">Hasta (excluido)</span>
+          <span class="label">{t("Hasta (excluido)")}</span>
           <input class="field" bind:value={to} placeholder="'2025-01-01'" />
         </label>
       </div>
       <p class="mt-1 text-xs muted">
-        Con varias columnas de partición, separá los extremos con coma. Se admiten
-        <code>MINVALUE</code> y <code>MAXVALUE</code>.
+        {t("Con varias columnas de partición, separá los extremos con coma. Se admiten")}
+        <code>MINVALUE</code> {t("y")} <code>MAXVALUE</code>.
       </p>
     {:else if kind === "list"}
       <label class="mt-3 flex flex-col gap-1">
-        <span class="label">Valores (separados por coma)</span>
+        <span class="label">{t("Valores (separados por coma)")}</span>
         <input class="field" bind:value={values} placeholder="'sur', 'patagonia'" />
       </label>
     {:else}
       <div class="mt-3 grid grid-cols-2 gap-3">
         <label class="flex flex-col gap-1">
-          <span class="label">Módulo</span>
+          <span class="label">{t("Módulo")}</span>
           <input class="field" bind:value={modulus} />
         </label>
         <label class="flex flex-col gap-1">
-          <span class="label">Resto</span>
+          <span class="label">{t("Resto")}</span>
           <input class="field" bind:value={remainder} />
         </label>
       </div>
@@ -215,8 +216,7 @@
 
   {#if attach}
     <Alert tone="warn" box class="mt-3">
-      El servidor revisa que ninguna fila de la tabla se salga del límite antes de engancharla, y la
-      bloquea mientras lo hace.
+      {t("El servidor revisa que ninguna fila de la tabla se salga del límite antes de engancharla, y la bloquea mientras lo hace.")}
     </Alert>
   {/if}
 
@@ -229,11 +229,11 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>{t("Ver SQL")}</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving}>
       {#if saving}<span class="spinner"></span>{/if}
-      {attach ? "Enganchar" : "Crear"}
+      {attach ? t("Enganchar") : t("Crear")}
     </button>
   {/snippet}
 </Modal>

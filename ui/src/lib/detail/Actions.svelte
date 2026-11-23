@@ -29,13 +29,14 @@
 <div class="ml-auto flex flex-wrap items-center justify-end gap-1.5">
   {#each actions as action (action.kind)}
     <button
-      class="btn {toneClass(action.tone)} btn-icon"
+      class="btn {toneClass(action.tone)} {action.showLabel ? 'btn-sm' : 'btn-icon'}"
       title={action.title}
       aria-label={action.label}
       {...action.guarded ? blocked : {}}
       onclick={() => onaction(action)}
     >
       <Icon name={action.icon} size={14} />
+      {#if action.showLabel}{action.label}{/if}
     </button>
   {/each}
 </div>

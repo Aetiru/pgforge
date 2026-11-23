@@ -45,6 +45,22 @@ describe("headerActions", () => {
     expect(list.indexOf("export")).toBeLessThan(list.indexOf("dropTable"));
   });
 
+  it("los botones de un rol llevan texto y el comentario no repite el lápiz de editar", () => {
+    const role = node("role", { oid: 7, label: "ana" });
+    const list = headerActions(context(role, { hasCommentTarget: true }));
+    const by = (kind: string) => list.find((action) => action.kind === kind)!;
+
+    expect(["editRole", "openRoleCapabilities", "comment", "dropRole"].every((k) => by(k).showLabel)).toBe(true);
+    expect(by("openRoleCapabilities").label).toBe("Ver accesos");
+    expect(by("comment").icon).not.toBe(by("editRole").icon);
+    expect(list.at(-1)?.kind).toBe("dropRole");
+  });
+
+  it("fuera de los roles los botones siguen siendo solo ícono", () => {
+    const view = node("view", { schema: "public", oid: 9 });
+    expect(headerActions(context(view, { hasCommentTarget: true })).some((a) => a.showLabel)).toBe(false);
+  });
+
   it("una carpeta ofrece crear lo que contiene, y nada más", () => {
     expect(kinds(context(node({ folder: "views" }, { schema: "public" })))).toEqual([
       "newView",

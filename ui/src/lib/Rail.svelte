@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon, { type IconName } from "./Icon.svelte";
+  import { t } from "./i18n.svelte";
   import { explorer } from "./explorer.svelte";
   import { tasks } from "./tasks.svelte";
   import { theme } from "./theme.svelte";
@@ -8,18 +9,19 @@
 
   let { onpreferences }: { onpreferences: () => void } = $props();
 
-  const PANES: { value: SidePane; label: string; icon: IconName; hint: string }[] = [
-    { value: "explorer", label: "Explorador", icon: "schema", hint: "Servidores y catálogo" },
-    { value: "library", label: "Biblioteca", icon: "star", hint: "Historial y consultas guardadas" },
-    { value: "processes", label: "Procesos", icon: "clock", hint: "Lo que corre en segundo plano" },
-  ];
+  // Derivados: el texto sigue al idioma vigente en vez de quedar fijo al primer render.
+  const PANES: { value: SidePane; label: string; icon: IconName; hint: string }[] = $derived([
+    { value: "explorer", label: t("Explorador"), icon: "schema", hint: t("Servidores y catálogo") },
+    { value: "library", label: t("Biblioteca"), icon: "star", hint: t("Historial y consultas guardadas") },
+    { value: "processes", label: t("Procesos"), icon: "clock", hint: t("Lo que corre en segundo plano") },
+  ]);
 
-  const THEME_LABEL = {
-    system: "Tema: el del sistema",
-    light: "Tema: claro",
-    dark: "Tema: oscuro",
-    paper: "Tema: papel",
-  } as const;
+  const THEME_LABEL = $derived({
+    system: t("Tema: el del sistema"),
+    light: t("Tema: claro"),
+    dark: t("Tema: oscuro"),
+    paper: t("Tema: papel"),
+  } as const);
 
   const THEME_ICON = { system: "auto", light: "sun", dark: "moon", paper: "edit" } as const;
 </script>
@@ -32,13 +34,13 @@
 -->
 <nav
   class="panel divider-r flex w-12 shrink-0 flex-col items-center gap-1 py-2"
-  aria-label="Paneles"
+  aria-label={t("Paneles")}
 >
   <span
     class="mb-1 grid size-7 place-items-center rounded-md bg-blue-600 font-mono text-[11px]
            font-bold text-white shadow-sm shadow-blue-600/30"
     title={explorer.workspaceLabel
-      ? `pgforge · workspace «${explorer.workspaceLabel}»`
+      ? t("pgforge · workspace \"{name}\"", { name: explorer.workspaceLabel })
       : "pgforge"}>pg</span
   >
 
@@ -48,7 +50,7 @@
     <span
       class="-mt-1 mb-1 grid size-4 place-items-center rounded bg-zinc-200 text-zinc-600
              dark:bg-zinc-700 dark:text-zinc-300"
-      title="Esta ventana está acotada al workspace «{explorer.workspaceLabel}»"
+      title={t("Esta ventana está acotada al workspace \"{name}\"", { name: explorer.workspaceLabel })}
     >
       <Icon name="window" size={10} />
     </span>
@@ -87,8 +89,8 @@
     </button>
     <button
       class="rail-item"
-      title="Preferencias"
-      aria-label="Preferencias"
+      title={t("Preferencias")}
+      aria-label={t("Preferencias")}
       onclick={onpreferences}
     >
       <Icon name="gear" size={16} />

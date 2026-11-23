@@ -1,5 +1,6 @@
 <script lang="ts">
   import Alert from "./Alert.svelte";
+  import { t } from "./i18n.svelte";
   import Modal from "./Modal.svelte";
   import { count } from "./format";
   import { parseTsv, planPaste } from "./tsv";
@@ -36,11 +37,11 @@
   }
 </script>
 
-<Modal title="Pegar filas" subtitle="Desde Excel o cualquier hoja" size="lg" {onclose}>
+<Modal title={t("Pegar filas")} subtitle={t("Desde Excel o cualquier hoja")} size="lg" {onclose}>
   <!-- svelte-ignore a11y_autofocus -->
   <textarea
     class="field h-40 w-full font-mono text-xs"
-    placeholder="Copiá las celdas en la hoja y pegalas acá (Ctrl+V)"
+    placeholder={t("Copiá las celdas en la hoja y pegalas acá (Ctrl+V)")}
     autofocus
     spellcheck="false"
     bind:value={text}
@@ -53,10 +54,10 @@
         checked={header ?? (plan !== null && typeof plan !== "string" && plan.usedHeader)}
         onchange={(event) => (header = event.currentTarget.checked)}
       />
-      La primera fila son los nombres de las columnas
+      {t("La primera fila son los nombres de las columnas")}
     </label>
     <span class="muted">
-      Sin encabezado se pega en el orden de las columnas, saltando las que calcula el servidor.
+      {t("Sin encabezado se pega en el orden de las columnas, saltando las que calcula el servidor.")}
     </span>
   </div>
 
@@ -65,17 +66,17 @@
   {:else if plan}
     <p class="mt-3 text-xs">
       <b>{count(plan.rows.length)}</b>
-      {plan.rows.length === 1 ? "fila" : "filas"} en
+      {plan.rows.length === 1 ? t("fila en") : t("filas en")}
       {#each plan.columns as name, index (name)}<code class="font-mono">{name}</code
         >{index < plan.columns.length - 1 ? ", " : ""}{/each}.
-      Las celdas vacías quedan en NULL.
+      {t("Las celdas vacías quedan en NULL.")}
     </p>
   {/if}
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose}>Cancelar</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cancelar")}</button>
     <button class="btn btn-primary" disabled={!ready} onclick={add}>
-      Agregar {plan && typeof plan !== "string" ? `${plan.rows.length} filas` : "filas"}
+      {plan && typeof plan !== "string" ? t("Agregar {n} filas", { n: plan.rows.length }) : t("Agregar filas")}
     </button>
   {/snippet}
 </Modal>

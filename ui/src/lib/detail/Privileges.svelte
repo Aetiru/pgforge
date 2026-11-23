@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "../i18n.svelte";
   /**
    * Los privilegios del objeto: los suyos, los acotados a columnas y —solo en un esquema— los que
    * van a recibir los objetos que se creen adentro.
@@ -33,17 +34,17 @@
 </script>
 
 <Card
-  title="Privilegios"
-  loading={loading ? "Leyendo privilegios…" : null}
+  title={t("Privilegios")}
+  loading={loading ? t("Leyendo privilegios…") : null}
   {error}
   empty={groups.length === 0
-    ? "Nadie tiene privilegios propios: rige el default (el dueño puede todo)."
+    ? t("Nadie tiene privilegios propios: rige el default (el dueño puede todo).")
     : null}
 >
   {#snippet actions()}
     <button class="btn btn-sm ml-auto" {...blocked} onclick={onnew}>
       <Icon name="plus" size={11} />
-      Privilegio
+      {t("Privilegio")}
     </button>
   {/snippet}
 
@@ -51,8 +52,8 @@
     <table class="list-table">
       <thead>
         <tr>
-          <th class="w-px whitespace-nowrap">Rol</th>
-          <th class="w-full">Privilegios</th>
+          <th class="w-px whitespace-nowrap">{t("Rol")}</th>
+          <th class="w-full">{t("Privilegios")}</th>
           <th></th>
         </tr>
       </thead>
@@ -68,7 +69,7 @@
                   <span class="tag tag-neutral font-mono">{privilege.toUpperCase()}</span>
                 {/each}
                 {#if group.grantable}
-                  <span class="tag tag-info">con GRANT OPTION</span>
+                  <span class="tag tag-info">{t("con GRANT OPTION")}</span>
                 {/if}
               </span>
             </td>
@@ -76,8 +77,8 @@
               <div class="row-actions">
                 <button
                   class="btn btn-ghost btn-icon size-6"
-                  title="Editar los privilegios"
-                  aria-label="Editar los privilegios"
+                  title={t("Editar los privilegios")}
+                  aria-label={t("Editar los privilegios")}
                   {...blocked}
                   onclick={() => onedit(group)}
                 >
@@ -85,8 +86,8 @@
                 </button>
                 <button
                   class="btn btn-danger-ghost btn-icon size-6"
-                  title="Revocar todo"
-                  aria-label="Revocar todo"
+                  title={t("Revocar todo")}
+                  aria-label={t("Revocar todo")}
                   {...blocked}
                   onclick={() => onrevoke(group)}
                 >
@@ -104,16 +105,16 @@
 {#if columnGroups.length > 0}
   <div class="card mt-3 overflow-hidden">
     <div class="card-head">
-      <span class="card-title">Acotados a columnas</span>
+      <span class="card-title">{t("Acotados a columnas")}</span>
       <span class="seg-count">{columnGroups.length}</span>
     </div>
     <div class="table-scroll">
       <table class="list-table">
         <thead>
           <tr>
-            <th class="w-px whitespace-nowrap">Columna</th>
-            <th class="w-px whitespace-nowrap">Rol</th>
-            <th class="w-full">Privilegios</th>
+            <th class="w-px whitespace-nowrap">{t("Columna")}</th>
+            <th class="w-px whitespace-nowrap">{t("Rol")}</th>
+            <th class="w-full">{t("Privilegios")}</th>
           </tr>
         </thead>
         <tbody>
@@ -139,17 +140,17 @@
 {#if defaultGrants.length > 0}
   <div class="card mt-3 overflow-hidden">
     <div class="card-head">
-      <span class="card-title">Por omisión</span>
-      <span class="text-xs muted">lo que van a recibir los objetos que se creen acá</span>
+      <span class="card-title">{t("Por omisión")}</span>
+      <span class="text-xs muted">{t("lo que van a recibir los objetos que se creen acá")}</span>
     </div>
     <div class="table-scroll">
       <table class="list-table">
         <thead>
           <tr>
-            <th class="w-px whitespace-nowrap">Cuando crea</th>
-            <th class="w-px whitespace-nowrap">Sobre</th>
-            <th class="w-px whitespace-nowrap">Rol</th>
-            <th class="w-full">Privilegio</th>
+            <th class="w-px whitespace-nowrap">{t("Cuando crea")}</th>
+            <th class="w-px whitespace-nowrap">{t("Sobre")}</th>
+            <th class="w-px whitespace-nowrap">{t("Rol")}</th>
+            <th class="w-full">{t("Privilegio")}</th>
           </tr>
         </thead>
         <tbody>
@@ -161,7 +162,7 @@
               <td>
                 <span class="tag tag-neutral font-mono">{grant.privilege}</span>
                 {#if grant.grantable}
-                  <span class="tag tag-info">con GRANT OPTION</span>
+                  <span class="tag tag-info">{t("con GRANT OPTION")}</span>
                 {/if}
               </td>
             </tr>

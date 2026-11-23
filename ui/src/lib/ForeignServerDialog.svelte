@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
@@ -87,8 +88,8 @@
   }
 
   function validate(): string | null {
-    if (!name.trim()) return "Poné un nombre para el servidor.";
-    if (!existing && !fdw) return "Elegí el wrapper del servidor.";
+    if (!name.trim()) return t("Poné un nombre para el servidor.");
+    if (!existing && !fdw) return t("Elegí el wrapper del servidor.");
     return null;
   }
 
@@ -97,7 +98,7 @@
     if (error) return;
     try {
       const statements = await foreignServerPreview(changes());
-      preview = statements.map((statement) => statement.sql).join(";\n\n") || "Nada que aplicar.";
+      preview = statements.map((statement) => statement.sql).join(";\n\n") || t("Nada que aplicar.");
     } catch (e) {
       error = describeError(e);
     }
@@ -124,13 +125,13 @@
 </script>
 
 <Modal
-  title={existing ? `Servidor ${existing.name}` : "Nuevo servidor foráneo"}
+  title={existing ? t("Servidor {name}", { name: existing.name }) : t("Nuevo servidor foráneo")}
   subtitle="SERVER"
   busy={saving}
   {onclose}
 >
   <label class="flex flex-col gap-1">
-    <span class="label">Nombre</span>
+    <span class="label">{t("Nombre")}</span>
     <input class="field" data-autofocus bind:value={name} disabled={existing !== null} />
   </label>
 
@@ -148,18 +149,18 @@
       {/if}
     </label>
     <label class="flex flex-col gap-1">
-      <span class="label">Tipo (opcional)</span>
+      <span class="label">{t("Tipo (opcional)")}</span>
       <input class="field" bind:value={serverType} disabled={existing !== null} />
     </label>
     <label class="flex flex-col gap-1">
-      <span class="label">Versión (opcional)</span>
+      <span class="label">{t("Versión (opcional)")}</span>
       <input class="field" bind:value={version} />
     </label>
   </div>
 
   <div class="mt-3">
-    <span class="label">Opciones</span>
-    <p class="mb-1 text-xs muted">Para postgres_fdw: host, port, dbname, …</p>
+    <span class="label">{t("Opciones")}</span>
+    <p class="mb-1 text-xs muted">{t("Para postgres_fdw: host, port, dbname, …")}</p>
     <OptionsEditor bind:rows />
   </div>
 
@@ -172,11 +173,11 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>{t("Ver SQL")}</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving}>
       {#if saving}<span class="spinner"></span>{/if}
-      {existing ? "Guardar" : "Crear"}
+      {existing ? t("Guardar") : t("Crear")}
     </button>
   {/snippet}
 </Modal>

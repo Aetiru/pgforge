@@ -2,6 +2,7 @@
   import { pickOpen, pickSave } from "./ipc";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
+  import { t } from "./i18n.svelte";
   import { tasks } from "./tasks.svelte";
   import { backupPlan, describeError, type BackupFormat, type BackupOptions } from "./ipc";
 
@@ -15,27 +16,27 @@
     onclose: () => void;
   } = $props();
 
-  const FORMATS: { value: BackupFormat; label: string; hint: string; extension: string }[] = [
+  const FORMATS = $derived<{ value: BackupFormat; label: string; hint: string; extension: string }[]>([
     {
       value: "custom",
       label: "Custom",
-      hint: "el formato de pg_restore: comprimido y con restore selectivo",
+      hint: t("el formato de pg_restore: comprimido y con restore selectivo"),
       extension: "dump",
     },
     {
       value: "plain",
-      label: "Plano",
-      hint: "un script SQL, se restaura con psql",
+      label: t("Plano"),
+      hint: t("un script SQL, se restaura con psql"),
       extension: "sql",
     },
     {
       value: "directory",
-      label: "Directorio",
-      hint: "un archivo por tabla; el único que se puede paralelizar",
+      label: t("Directorio"),
+      hint: t("un archivo por tabla; el único que se puede paralelizar"),
       extension: "",
     },
-    { value: "tar", label: "Tar", hint: "un tar sin comprimir", extension: "tar" },
-  ];
+    { value: "tar", label: "Tar", hint: t("un tar sin comprimir"), extension: "tar" },
+  ]);
 
   /** Qué se lleva el backup. Las tres opciones son excluyentes, así que van como una sola. */
   type Contents = "all" | "schema" | "data";
@@ -101,9 +102,9 @@
 
   async function choose() {
     const chosen = isDirectory
-      ? await pickOpen({ directory: true, title: "Dónde guardar el backup" })
+      ? await pickOpen({ directory: true, title: t("Dónde guardar el backup") })
       : await pickSave({
-          title: "Guardar el backup",
+          title: t("Guardar el backup"),
           defaultPath: `${database}.${FORMATS.find((f) => f.value === format)?.extension}`,
         });
     if (typeof chosen === "string") path = chosen;
@@ -123,7 +124,7 @@
   }
 </script>
 
-<Modal title="Backup" subtitle="base {database}" size="lg" {onclose}>
+<Modal title="Backup" subtitle={t("base {database}", { database })} size="lg" {onclose}>
   <div class="seg" role="tablist">
     {#each FORMATS as item (item.value)}
       <button
@@ -141,31 +142,31 @@
 
   <div class="mt-3 flex items-end gap-2">
     <label class="flex min-w-0 flex-1 flex-col gap-1">
-      <span class="label">{isDirectory ? "Directorio" : "Archivo"}</span>
+      <span class="label">{isDirectory ? t("Directorio") : t("Archivo")}</span>
       <input
         class="field font-mono text-xs"
         bind:value={path}
         readonly
-        title="La ruta se elige con el botón: solo se aceptan rutas elegidas en el diálogo del sistema"
+        title={t("La ruta se elige con el botón: solo se aceptan rutas elegidas en el diálogo del sistema")}
       />
     </label>
-    <button class="btn" onclick={choose}>Elegir…</button>
+    <button class="btn" onclick={choose}>{t("Elegir…")}</button>
   </div>
 
   <div class="mt-3">
-    <span class="label">Qué incluir</span>
+    <span class="label">{t("Qué incluir")}</span>
     <div class="mt-1 flex flex-col gap-1.5">
       <label class="check">
         <input type="radio" value="all" bind:group={contents} />
-        El esquema y los datos
+        {t("El esquema y los datos")}
       </label>
       <label class="check">
         <input type="radio" value="schema" bind:group={contents} />
-        Solo el esquema
+        {t("Solo el esquema")}
       </label>
       <label class="check">
         <input type="radio" value="data" bind:group={contents} />
-        Solo los datos
+        {t("Solo los datos")}
       </label>
     </div>
   </div>
@@ -173,11 +174,11 @@
   <div class="mt-3 flex flex-wrap gap-4">
     <label class="check">
       <input type="checkbox" bind:checked={noOwner} />
-      Sin los dueños (para restaurar con otro rol)
+      {t("Sin los dueños (para restaurar con otro rol)")}
     </label>
     <label class="check">
       <input type="checkbox" bind:checked={noPrivileges} />
-      Sin los privilegios
+      {t("Sin los privilegios")}
     </label>
   </div>
 
@@ -185,20 +186,20 @@
     <div class="mt-3 flex flex-wrap gap-4">
       {#if admiteCompresion}
         <label class="flex flex-col gap-1">
-          <span class="label">Compresión (0 a 9)</span>
+          <span class="label">{t("Compresión (0 a 9)")}</span>
           <input
             class="field w-24"
             type="number"
             min="0"
             max="9"
             bind:value={compression}
-            placeholder="por omisión"
+            placeholder={t("por omisión")}
           />
         </label>
       {/if}
       {#if isDirectory}
         <label class="flex flex-col gap-1">
-          <span class="label">Trabajos en paralelo</span>
+          <span class="label">{t("Trabajos en paralelo")}</span>
           <input
             class="field w-24"
             type="number"
@@ -225,13 +226,13 @@
   {/if}
 
   <p class="mt-2 text-xs muted">
-    Corre en segundo plano: se sigue y se cancela desde la vista de procesos.
+    {t("Corre en segundo plano: se sigue y se cancela desde la vista de procesos.")}
   </p>
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose}>Cerrar</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cerrar")}</button>
     <button class="btn btn-primary" onclick={run} disabled={command.length === 0}>
-      Hacer el backup
+      {t("Hacer el backup")}
     </button>
   {/snippet}
 </Modal>

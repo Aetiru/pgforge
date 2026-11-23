@@ -19,6 +19,7 @@
  * explícito.
  */
 
+import { t } from "./i18n.svelte";
 import { duration } from "./format";
 import { explorer } from "./explorer.svelte";
 import { notify } from "./notify.svelte";
@@ -245,7 +246,7 @@ class Tasks {
     const what = `${taskKindLabel(run.kind)} · ${run.target}`;
     toasts.push(
       run.status === "failed" ? "bad" : "ok",
-      run.status === "failed" ? `Falló: ${what}` : `Terminó: ${what}`,
+      run.status === "failed" ? t("Falló: {what}", { what }) : t("Terminó: {what}", { what }),
       `${run.server}${run.database ? ` / ${run.database}` : ""} · ${duration(seconds)}`,
     );
   }

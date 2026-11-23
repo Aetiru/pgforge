@@ -1,6 +1,7 @@
 <script lang="ts">
   /** De qué depende el objeto y qué se rompe si cambia: claves foráneas y vistas. */
   import Icon, { type IconName } from "../Icon.svelte";
+  import { t } from "../i18n.svelte";
   import type { Dependency } from "../ipc";
   import Card from "./Card.svelte";
 
@@ -16,6 +17,24 @@
 
   const uses = $derived(dependencies?.filter((item) => item.direction === "uses") ?? []);
   const usedBy = $derived(dependencies?.filter((item) => item.direction === "usedBy") ?? []);
+
+  // Los tipos llegan del núcleo en español; se traducen al dibujar.
+  function kindLabel(kind: string): string {
+    switch (kind) {
+      case "tabla":
+        return t("tabla");
+      case "tabla particionada":
+        return t("tabla particionada");
+      case "vista":
+        return t("vista");
+      case "vista materializada":
+        return t("vista materializada");
+      case "clave foránea":
+        return t("clave foránea");
+      default:
+        return kind;
+    }
+  }
 
   const ICON: Record<string, IconName> = {
     tabla: "table",
@@ -37,7 +56,7 @@
           <li class="flex items-baseline gap-2 px-3 py-1 text-sm">
             <Icon name={ICON[item.kind] ?? "table"} size={12} class="shrink-0 translate-y-0.5 muted" />
             <span class="font-medium whitespace-nowrap">{item.schema}.{item.name}</span>
-            <span class="tag tag-neutral shrink-0">{item.kind}</span>
+            <span class="tag tag-neutral shrink-0">{kindLabel(item.kind)}</span>
             {#if item.detail}
               <span class="min-w-0 flex-1 truncate font-mono text-xs muted" title={item.detail}>
                 {item.detail}
@@ -51,13 +70,19 @@
 {/snippet}
 
 <Card
-  title="Dependencias"
-  loading={loading ? "Leyendo dependencias…" : null}
+  title={t("Dependencias")}
+  loading={loading ? t("Leyendo dependencias…") : null}
   {error}
-  empty={dependencies && dependencies.length === 0 ? "Ningún objeto depende de este ni él de otro." : null}
+  empty={dependencies && dependencies.length === 0
+    ? t("Ningún objeto depende de este ni él de otro.")
+    : null}
 >
   {#if dependencies}
-    {@render group("Depende de", "Lo que este objeto necesita para existir", uses)}
-    {@render group("Lo usan", "Lo que deja de andar o de poder crearse si este objeto cambia", usedBy)}
+    {@render group(t("Depende de"), t("Lo que este objeto necesita para existir"), uses)}
+    {@render group(
+      t("Lo usan"),
+      t("Lo que deja de andar o de poder crearse si este objeto cambia"),
+      usedBy,
+    )}
   {/if}
 </Card>

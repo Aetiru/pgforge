@@ -7,6 +7,7 @@
  * usuario cree.
  */
 
+import { t } from "./i18n.svelte";
 import type { PolicyChange, PolicyCommand, PolicyInfo, PolicyKind } from "./ipc";
 
 export interface PolicyForm {
@@ -78,6 +79,6 @@ export function policyChanges(
 }
 
 export function validatePolicy(form: PolicyForm): string | null {
-  if (!form.name.trim()) return "Poné un nombre para la política.";
+  if (!form.name.trim()) return t("Poné un nombre para la política.");
   return null;
 }

@@ -56,6 +56,8 @@ export type NodeTag =
   | "login"
   | "group"
   | "superuser"
+  | "expired"
+  | "expiresSoon"
   | "partition"
   | "rowSecurity"
   | "noPrimaryKey"

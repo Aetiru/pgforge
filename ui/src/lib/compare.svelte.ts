@@ -7,6 +7,7 @@
  * el script uno quiere ver que ya no queda nada, y ese es el botón que más se usa.
  */
 
+import { t } from "./i18n.svelte";
 import { Tab, tabs } from "./tabs.svelte";
 import {
   describeError,
@@ -46,7 +47,7 @@ export class CompareTab extends Tab {
     // destino, que es el único lado vivo.
     const live = typeof source === "string" ? target : source;
     const from = typeof source === "string" ? fileName(source) : source.schema;
-    super(live.id, live.database, `Comparar · ${from} → ${target.schema}`);
+    super(live.id, live.database, t("Comparar · {from} → {schema}", { from, schema: target.schema }));
     this.source = source;
     this.target = target;
   }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import DataGrid, { type Column } from "./DataGrid.svelte";
   import { boolText, isBoolType } from "./format";
   import { geometryText, geometryTextOrNull, isGeometryType } from "./geometry";
@@ -74,13 +75,24 @@
       // con cualquier otro texto que por casualidad decodifique, así que no alcanza con mirar uno.
       const columnType = types?.[index];
       const geometryColumn = isGeometryType(columnType);
-      const longest = sample.reduce(
-        (max, row) => Math.max(max, (row[index] ?? NULL).length),
-        name.length,
-      );
-
       // Una columna de puros números: se alinea a la derecha y admite el separador de miles.
       const numericColumn = numeric(sample, index);
+
+      // El ancho se estima con el texto que se dibuja y no con el que viaja: «t» pasa a «false» y un
+      // número gana un punto cada tres cifras, y medido en crudo la celda quedaba corta y cortaba
+      // con «…» justo lo que se acaba de formatear.
+      const longest = sample.reduce((max, row) => {
+        const raw = row[index];
+        const text =
+          raw === null
+            ? NULL
+            : bool
+              ? boolText(raw)
+              : numericColumn
+                ? numberFormat.show(raw)
+                : timeZone.show(raw);
+        return Math.max(max, text.length);
+      }, name.length);
 
       return {
         key: `${index}-${name}`,
@@ -176,5 +188,5 @@
   sortable
   editable={editing ? (_row, column) => editing.editable[positionOf(column)] === true : undefined}
   onedit={editing ? (row, column, value) => editing.onedit(row.index, positionOf(column), value) : undefined}
-  empty="La consulta no devolvió ninguna fila."
+  empty={t("La consulta no devolvió ninguna fila.")}
 />

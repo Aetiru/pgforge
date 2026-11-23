@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { untrack } from "svelte";
   import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
@@ -64,7 +65,7 @@
 
   async function submit() {
     error = null;
-    if (!(await confirmMutation(profileId, "Se va a cambiar un comentario.", sqlToApply))) return;
+    if (!(await confirmMutation(profileId, t("Se va a cambiar un comentario."), sqlToApply))) return;
 
     saving = true;
     try {
@@ -78,12 +79,12 @@
   }
 </script>
 
-<Modal title="Comentario" subtitle={label} busy={saving} {onclose}>
+<Modal title={t("Comentario")} subtitle={label} busy={saving} {onclose}>
   <label class="flex flex-col gap-1">
-    <span class="label">Texto</span>
+    <span class="label">{t("Texto")}</span>
     <textarea class="field h-28 resize-none" data-autofocus bind:value={text}></textarea>
   </label>
-  <p class="mt-1 text-xs muted">Dejalo vacío para borrar el comentario.</p>
+  <p class="mt-1 text-xs muted">{t("Dejalo vacío para borrar el comentario.")}</p>
 
   {#if error}
     <Alert tone="bad" box class="mt-3">{error}</Alert>
@@ -94,11 +95,11 @@
   {/if}
 
   {#snippet footer()}
-    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>Ver SQL</button>
-    <button class="btn ml-auto" onclick={onclose} disabled={saving}>Cancelar</button>
+    <button class="btn btn-ghost btn-sm" onclick={showPreview} disabled={saving}>{t("Ver SQL")}</button>
+    <button class="btn ml-auto" onclick={onclose} disabled={saving}>{t("Cancelar")}</button>
     <button class="btn btn-primary" onclick={submit} disabled={saving}>
       {#if saving}<span class="spinner"></span>{/if}
-      Guardar
+      {t("Guardar")}
     </button>
   {/snippet}
 </Modal>

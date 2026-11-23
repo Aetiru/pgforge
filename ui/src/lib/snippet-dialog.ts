@@ -4,6 +4,7 @@
  * resumen de una importación y qué carpetas quedaron plegadas. Puro y con Vitest: el diálogo solo
  * pinta el resultado.
  */
+import { i18n, t } from "./i18n.svelte";
 import type { ImportReport, Snippet, SnippetScope } from "./ipc";
 import { autoVariablesOf, variablesOf, type VariableKind } from "./snippet-vars";
 import type { UsageInfo } from "./snippet-list";
@@ -50,15 +51,18 @@ export function emptySnippet(): Snippet {
 /** Cuándo se usó por última vez, a la escala de días que alcanza para decidir si sirve. */
 function lastUsed(lastUsedAt: number, nowSeconds: number): string {
   const seconds = Math.max(0, nowSeconds - lastUsedAt);
-  if (seconds < 86_400) return "hoy";
+  if (seconds < 86_400) return t("hoy");
   const days = Math.floor(seconds / 86_400);
-  return days === 1 ? "ayer" : `hace ${days} días`;
+  return days === 1 ? t("ayer") : t("hace {days} días", { days });
 }
 
 /** «142 usos · hoy», o «sin usos» cuando nunca se expandió. */
 export function usageText(info: UsageInfo | undefined, nowSeconds: number): string {
-  if (!info || info.uses === 0) return "sin usos";
-  const uses = `${info.uses.toLocaleString("es")} ${info.uses === 1 ? "uso" : "usos"}`;
+  if (!info || info.uses === 0) return t("sin usos");
+  const uses =
+    info.uses === 1
+      ? t("1 uso")
+      : t("{uses} usos", { uses: info.uses.toLocaleString(i18n.current) });
   return info.lastUsedAt === null ? uses : `${uses} · ${lastUsed(info.lastUsedAt, nowSeconds)}`;
 }
 
@@ -111,20 +115,20 @@ export function hereOnly(profileId: string | null, database: string | null): Sco
 export function importSummary(report: Pick<ImportReport, "added" | "replaced" | "skipped">): string {
   const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
   const parts: string[] = [];
-  parts.push(plural(report.added, "agregada", "agregadas"));
-  if (report.replaced > 0) parts.push(plural(report.replaced, "reemplazada", "reemplazadas"));
-  if (report.skipped.length > 0) parts.push(plural(report.skipped.length, "omitida", "omitidas"));
+  parts.push(plural(report.added, t("agregada"), t("agregadas")));
+  if (report.replaced > 0) parts.push(plural(report.replaced, t("reemplazada"), t("reemplazadas")));
+  if (report.skipped.length > 0) parts.push(plural(report.skipped.length, t("omitida"), t("omitidas")));
   return parts.join(", ");
 }
 
 /** Cómo se llama cada tipo de variable en el diálogo. */
 export const KIND_LABEL: Record<VariableKind, string> = {
-  text: "texto",
-  list: "lista",
-  date: "fecha",
-  table: "tabla del catálogo",
-  column: "columna del catálogo",
-  number: "número",
+  get text() { return t("texto"); },
+  get list() { return t("lista"); },
+  get date() { return t("fecha"); },
+  get table() { return t("tabla del catálogo"); },
+  get column() { return t("columna del catálogo"); },
+  get number() { return t("número"); },
 };
 
 export interface AskedVariable {
@@ -143,7 +147,7 @@ export function askedVariables(body: string): AskedVariable[] {
         ? (variable.options ?? []).join(" · ")
         : variable.default === ""
           ? ""
-          : `por omisión: ${variable.default}`,
+          : t("por omisión: {default}", { default: variable.default }),
   }));
 }
 

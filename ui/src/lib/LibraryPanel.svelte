@@ -1,5 +1,6 @@
 <script lang="ts">
   import Empty from "./Empty.svelte";
+  import { t } from "./i18n.svelte";
   import HistoryPanel from "./HistoryPanel.svelte";
   import SavedPanel from "./SavedPanel.svelte";
   import { describeError, type SavedQuery } from "./ipc";
@@ -42,11 +43,11 @@
 
     const server = target.profileId ?? profileId;
     if (!server) {
-      onerror("Conectá un servidor para abrir esta consulta.");
+      onerror(t("Conectá un servidor para abrir esta consulta."));
       return;
     }
     try {
-      const tab = await openQuery(server, target.database ?? database ?? "", saved?.name ?? "Consulta");
+      const tab = await openQuery(server, target.database ?? database ?? "", saved?.name ?? t("Consulta"));
       if (saved) tab.applySaved(saved);
       else tab.sql = sql;
     } catch (error) {
@@ -62,13 +63,13 @@
         class="seg-item"
         role="tab"
         aria-selected={mode === "history"}
-        onclick={() => (mode = "history")}>Historial</button
+        onclick={() => (mode = "history")}>{t("Historial")}</button
       >
       <button
         class="seg-item"
         role="tab"
         aria-selected={mode === "saved"}
-        onclick={() => (mode = "saved")}>Guardadas</button
+        onclick={() => (mode = "saved")}>{t("Guardadas")}</button
       >
     </div>
   </div>
@@ -85,8 +86,8 @@
       {:else}
         <Empty
           icon="clock"
-          title="Sin servidor"
-          hint="El historial se filtra por servidor. Conectá uno o elegí algo en el árbol."
+          title={t("Sin servidor")}
+          hint={t("El historial se filtra por servidor. Conectá uno o elegí algo en el árbol.")}
         />
       {/if}
     {:else}

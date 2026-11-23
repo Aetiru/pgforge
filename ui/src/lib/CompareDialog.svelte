@@ -1,11 +1,12 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { pickOpen, pickSave } from "./ipc";
   import { untrack } from "svelte";
   import Alert from "./Alert.svelte";
   import Modal from "./Modal.svelte";
   import type { CompareSource } from "./compare.svelte";
   import { explorer } from "./explorer.svelte";
-  import { COMPARE_SCOPE as SCOPE } from "./compare-kinds";
+  import { compareScope } from "./compare-kinds";
   import {
     describeError,
     schemaNames,
@@ -45,17 +46,17 @@
   let saved = $state<string | null>(null);
   let saving = $state(false);
 
-  const EXTENSION = { name: "Instantánea de esquema", extensions: ["json"] };
+  const EXTENSION = { name: t("Instantánea de esquema"), extensions: ["json"] };
 
   async function chooseSnapshot() {
-    const chosen = await pickOpen({ title: "Instantánea a comparar", filters: [EXTENSION] });
+    const chosen = await pickOpen({ title: t("Instantánea a comparar"), filters: [EXTENSION] });
     if (typeof chosen === "string") snapshotPath = chosen;
   }
 
   /** Guarda el esquema de origen tal como está ahora, para compararlo más adelante. */
   async function saveSnapshot() {
     const chosen = await pickSave({
-      title: "Dónde guardar la instantánea",
+      title: t("Dónde guardar la instantánea"),
       defaultPath: `${sourceName}-${source.database}-${source.schema}.json`,
       filters: [EXTENSION],
     });
@@ -77,7 +78,7 @@
     explorer.profiles.filter((profile) => explorer.isConnected(profile.id)),
   );
   const sourceName = $derived(
-    explorer.profiles.find((profile) => profile.id === source.id)?.name ?? "servidor",
+    explorer.profiles.find((profile) => profile.id === source.id)?.name ?? t("servidor"),
   );
 
   // Copia inicial del origen: es lo más probable que se quiera del otro lado —el mismo esquema, la
@@ -147,7 +148,7 @@
   }
 </script>
 
-<Modal title="Comparar esquemas" subtitle="{source.database}.{source.schema}" size="md" {onclose}>
+<Modal title={t("Comparar esquemas")} subtitle="{source.database}.{source.schema}" size="md" {onclose}>
   <div class="grid gap-4">
     <div class="seg" role="tablist">
       <button
@@ -156,53 +157,52 @@
         aria-selected={mode === "server"}
         onclick={() => (mode = "server")}
       >
-        Contra otro esquema en vivo
+        {t("Contra otro esquema en vivo")}
       </button>
       <button
         class="seg-item"
         role="tab"
         aria-selected={mode === "file"}
-        title="Qué cambió desde que se tomó una instantánea —por ejemplo, antes de un deploy—"
+        title={t("Qué cambió desde que se tomó una instantánea —por ejemplo, antes de un deploy—")}
         onclick={() => (mode = "file")}
       >
-        Contra una instantánea guardada
+        {t("Contra una instantánea guardada")}
       </button>
     </div>
 
     {#if mode === "file"}
       <div class="card p-3">
-        <div class="label">Origen · la instantánea, el estado que se quiere</div>
+        <div class="label">{t("Origen · la instantánea, el estado que se quiere")}</div>
         <div class="mt-2 flex items-center gap-2">
           <span class="min-w-0 flex-1 truncate text-sm select-text" title={snapshotPath ?? ""}>
-            {snapshotPath ?? "Ningún archivo elegido"}
+            {snapshotPath ?? t("Ningún archivo elegido")}
           </span>
-          <button class="btn btn-sm" data-autofocus onclick={chooseSnapshot}>Elegir…</button>
+          <button class="btn btn-sm" data-autofocus onclick={chooseSnapshot}>{t("Elegir…")}</button>
         </div>
       </div>
       <div class="card p-3">
-        <div class="label">Destino · el que se llevaría hasta la instantánea</div>
+        <div class="label">{t("Destino · el que se llevaría hasta la instantánea")}</div>
         <div class="mt-1 text-sm select-text">
           {sourceName} · {source.database}.{source.schema}
         </div>
       </div>
       <p class="text-xs muted">
-        El script devuelve este esquema a como estaba cuando se tomó la instantánea. Leído al revés,
-        el informe dice qué cambió desde entonces.
+        {t("El script devuelve este esquema a como estaba cuando se tomó la instantánea. Leído al revés, el informe dice qué cambió desde entonces.")}
       </p>
     {:else}
       <div class="card p-3">
-        <div class="label">Origen · el estado que se quiere</div>
+        <div class="label">{t("Origen · el estado que se quiere")}</div>
         <div class="mt-1 text-sm select-text">
           {sourceName} · {source.database}.{source.schema}
         </div>
       </div>
 
       <div class="card p-3">
-        <div class="label">Destino · el que se llevaría hasta el origen</div>
+        <div class="label">{t("Destino · el que se llevaría hasta el origen")}</div>
 
         <div class="mt-2 grid gap-2">
           <label class="flex flex-col gap-1">
-            <span class="label">Servidor</span>
+            <span class="label">{t("Servidor")}</span>
             <select class="field" bind:value={targetId} data-autofocus>
               {#each servers as profile (profile.id)}
                 <option value={profile.id}>{profile.name}</option>
@@ -211,7 +211,7 @@
           </label>
 
           <label class="flex flex-col gap-1">
-            <span class="label">Base</span>
+            <span class="label">{t("Base")}</span>
             <select class="field" bind:value={targetDatabase}>
               {#each databases as database (database)}
                 <option value={database}>{database}</option>
@@ -220,7 +220,7 @@
           </label>
 
           <label class="flex flex-col gap-1">
-            <span class="label">Esquema</span>
+            <span class="label">{t("Esquema")}</span>
             <select class="field" bind:value={targetSchema}>
               {#each schemas as schema (schema)}
                 <option value={schema}>{schema}</option>
@@ -232,28 +232,25 @@
 
       {#if servers.length < 2}
         <Alert tone="warn" box>
-          Hay un solo servidor conectado. Se puede comparar contra otro esquema del mismo, o conectar
-          el otro servidor y volver a abrir esta ventana.
+          {t("Hay un solo servidor conectado. Se puede comparar contra otro esquema del mismo, o conectar el otro servidor y volver a abrir esta ventana.")}
         </Alert>
       {/if}
 
       {#if sameSide}
-        <Alert tone="warn" box>Los dos lados son el mismo esquema: no hay nada que comparar.</Alert>
+        <Alert tone="warn" box>{t("Los dos lados son el mismo esquema: no hay nada que comparar.")}</Alert>
       {/if}
     {/if}
 
     <!-- Qué entra: sin esto, que falten datos o dueños parece un olvido y no una decisión. -->
     <p class="text-xs muted">
-      Se comparan {SCOPE.join(", ")}. No se comparan los datos, los dueños ni los permisos por
-      columna.
+      {t("Se comparan {scope}. No se comparan los datos, los dueños ni los permisos por columna.", { scope: compareScope().join(", ") })}
       {#if mode === "file"}
-        Una instantánea tomada con una versión anterior de pgforge no trae funciones, disparadores,
-        políticas ni permisos: hay que volver a tomarla.
+        {t("Una instantánea tomada con una versión anterior de pgforge no trae funciones, disparadores, políticas ni permisos: hay que volver a tomarla.")}
       {/if}
     </p>
 
     {#if saved}
-      <Alert tone="ok" box>Instantánea guardada en {saved}</Alert>
+      <Alert tone="ok" box>{t("Instantánea guardada en {path}", { path: saved })}</Alert>
     {/if}
 
     {#if error}
@@ -266,12 +263,12 @@
     <button
       class="btn btn-ghost mr-auto"
       disabled={saving}
-      title="Guarda {source.database}.{source.schema} tal como está ahora, para compararlo más adelante"
+      title={t("Guarda {name} tal como está ahora, para compararlo más adelante", { name: `${source.database}.${source.schema}` })}
       onclick={saveSnapshot}
     >
-      {saving ? "Guardando…" : "Guardar instantánea…"}
+      {saving ? t("Guardando…") : t("Guardar instantánea…")}
     </button>
-    <button class="btn btn-ghost" onclick={onclose}>Cancelar</button>
-    <button class="btn btn-primary" disabled={!ready} onclick={submit}>Comparar</button>
+    <button class="btn btn-ghost" onclick={onclose}>{t("Cancelar")}</button>
+    <button class="btn btn-primary" disabled={!ready} onclick={submit}>{t("Comparar")}</button>
   {/snippet}
 </Modal>

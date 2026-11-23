@@ -1,3 +1,4 @@
+import { t } from "./i18n.svelte";
 import { connectionLevel } from "./health";
 import { duration } from "./format";
 import type { Metrics } from "./ipc";
@@ -53,8 +54,8 @@ interface RuleSpec {
 
 export const RULE_SPECS: Record<AlertKey, RuleSpec> = {
   blocked: {
-    label: "Sesión bloqueada",
-    unit: "segundos esperando",
+    get label() { return t("Sesión bloqueada"); },
+    get unit() { return t("segundos esperando"); },
     min: 5,
     max: 3600,
     step: 5,
@@ -64,11 +65,11 @@ export const RULE_SPECS: Record<AlertKey, RuleSpec> = {
     direction: "above",
     holdSeconds: 0,
     clearAt: (t) => t * 0.8,
-    description: "Una sesión espera a otra más de este tiempo.",
+    get description() { return t("Una sesión espera a otra más de este tiempo."); },
   },
   idleTx: {
-    label: "Transacción abierta sin trabajar",
-    unit: "minutos",
+    get label() { return t("Transacción abierta sin trabajar"); },
+    get unit() { return t("minutos"); },
     min: 1,
     max: 1440,
     step: 1,
@@ -78,11 +79,11 @@ export const RULE_SPECS: Record<AlertKey, RuleSpec> = {
     direction: "above",
     holdSeconds: 0,
     clearAt: (t) => t * 0.8,
-    description: "Una sesión lleva más de este tiempo en «idle in transaction»: retiene candados.",
+    get description() { return t("Una sesión lleva más de este tiempo en «idle in transaction»: retiene candados."); },
   },
   connections: {
-    label: "Conexiones cerca del máximo",
-    unit: "% de max_connections",
+    get label() { return t("Conexiones cerca del máximo"); },
+    get unit() { return t("% de max_connections"); },
     min: 50,
     max: 99,
     step: 1,
@@ -92,11 +93,11 @@ export const RULE_SPECS: Record<AlertKey, RuleSpec> = {
     direction: "above",
     holdSeconds: 30,
     clearAt: (t) => t - 5,
-    description: "La tabla de conexiones supera este porcentaje, sostenido medio minuto.",
+    get description() { return t("La tabla de conexiones supera este porcentaje, sostenido medio minuto."); },
   },
   replication: {
-    label: "Retraso de réplica",
-    unit: "segundos de retraso",
+    get label() { return t("Retraso de réplica"); },
+    get unit() { return t("segundos de retraso"); },
     min: 5,
     max: 86400,
     step: 5,
@@ -106,11 +107,11 @@ export const RULE_SPECS: Record<AlertKey, RuleSpec> = {
     direction: "above",
     holdSeconds: 0,
     clearAt: (t) => t * 0.8,
-    description: "La réplica está más atrás que esto. Apagada por omisión: solo importa con réplicas.",
+    get description() { return t("La réplica está más atrás que esto. Apagada por omisión: solo importa con réplicas."); },
   },
   cache: {
-    label: "Caché de lectura bajo",
-    unit: "% de aciertos",
+    get label() { return t("Caché de lectura bajo"); },
+    get unit() { return t("% de aciertos"); },
     min: 10,
     max: 99,
     step: 1,
@@ -120,7 +121,7 @@ export const RULE_SPECS: Record<AlertKey, RuleSpec> = {
     direction: "below",
     holdSeconds: 300,
     clearAt: (t) => t + 3,
-    description: "Los aciertos de caché se mantienen por debajo de esto durante cinco minutos.",
+    get description() { return t("Los aciertos de caché se mantienen por debajo de esto durante cinco minutos."); },
   },
 };
 
@@ -247,7 +248,7 @@ function measure(key: AlertKey, metrics: Metrics, threshold: number): Measure {
       if (lag.kind === "restricted") {
         return {
           kind: "restricted",
-          reason: "sin permisos: el rol no puede ver el progreso de las réplicas (pg_read_all_stats)",
+          reason: t("sin permisos: el rol no puede ver el progreso de las réplicas (pg_read_all_stats)"),
         };
       }
       return lag.seconds === null
@@ -267,23 +268,33 @@ function describe(key: AlertKey, value: number, metrics: Metrics): { title: stri
   switch (key) {
     case "blocked":
       return {
-        title: "Sesión bloqueada",
-        detail: `Una sesión lleva ${duration(value)} esperando a otra (${metrics.waitingConnections} en espera)`,
+        title: t("Sesión bloqueada"),
+        detail: t("Una sesión lleva {duration} esperando a otra ({waiting} en espera)", {
+          duration: duration(value),
+          waiting: metrics.waitingConnections,
+        }),
       };
     case "idleTx":
       return {
-        title: "Transacción abierta sin trabajar",
-        detail: `Una sesión lleva ${duration(value * 60)} en «idle in transaction»`,
+        title: t("Transacción abierta sin trabajar"),
+        detail: t("Una sesión lleva {duration} en «idle in transaction»", { duration: duration(value * 60) }),
       };
     case "connections":
       return {
-        title: "Conexiones cerca del máximo",
-        detail: `${Math.round(value)} % del máximo (${metrics.totalConnections} de ${metrics.maxConnections})`,
+        title: t("Conexiones cerca del máximo"),
+        detail: t("{percent} % del máximo ({total} de {max})", {
+          percent: Math.round(value),
+          total: metrics.totalConnections,
+          max: metrics.maxConnections,
+        }),
       };
     case "replication":
-      return { title: "Réplica atrasada", detail: `Retraso de ${duration(value)}` };
+      return { title: t("Réplica atrasada"), detail: t("Retraso de {lag}", { lag: duration(value) }) };
     case "cache":
-      return { title: "Caché de lectura bajo", detail: `Aciertos de caché en ${value.toFixed(1)} %` };
+      return {
+        title: t("Caché de lectura bajo"),
+        detail: t("Aciertos de caché en {ratio} %", { ratio: value.toFixed(1) }),
+      };
   }
 }
 

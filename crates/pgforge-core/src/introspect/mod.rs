@@ -144,7 +144,12 @@ async fn roles(
     let client = handle.client(&parent.database).await?;
     let rows = client
         .query(
-            "SELECT r.oid, r.rolname::text, r.rolcanlogin, r.rolsuper
+            // El vencimiento se decide en el servidor y no en la interfaz: es su reloj el que
+            // decide si la contraseña sirve, y el del equipo del usuario puede estar corrido.
+            "SELECT r.oid, r.rolname::text, r.rolcanlogin, r.rolsuper,
+                    CASE WHEN r.rolvaliduntil IS NULL OR r.rolvaliduntil = 'infinity' THEN NULL
+                         WHEN r.rolvaliduntil < now() THEN 'expired'
+                         WHEN r.rolvaliduntil < now() + interval '14 days' THEN 'soon' END
                FROM pg_catalog.pg_roles r
               WHERE $1 OR r.rolname NOT LIKE 'pg\\_%'
               ORDER BY r.rolname",
@@ -157,6 +162,7 @@ async fn roles(
         .map(|row| {
             let can_login: bool = row.get(2);
             let is_super: bool = row.get(3);
+            let expiry: Option<String> = row.get(4);
 
             // Poder entrar o no es la distinción que separa a un usuario de un rol de agrupación, y
             // es lo primero que se busca al mirar la lista: va como etiqueta y no como texto.
@@ -167,6 +173,11 @@ async fn roles(
             }];
             if is_super {
                 tags.push(NodeTag::Superuser);
+            }
+            match expiry.as_deref() {
+                Some("expired") => tags.push(NodeTag::Expired),
+                Some("soon") => tags.push(NodeTag::ExpiresSoon),
+                _ => {}
             }
 
             TreeNode::object(parent, NodeKind::Role, row.get(0), row.get(1), None, false)

@@ -1,3 +1,4 @@
+import { t } from "./i18n.svelte";
 import type { SnippetVariable } from "./snippet-vars";
 
 /**
@@ -23,14 +24,14 @@ export function validateVariable(variable: SnippetVariable, raw: string): Variab
       // `<input type="date">` ya entrega este formato; la comprobación cubre lo escrito a mano en
       // los navegadores que lo dejan escribir como texto.
       if (!DATE.test(text) || Number.isNaN(Date.parse(`${text}T00:00:00`))) {
-        return { value: null, error: "Escribe una fecha válida (AAAA-MM-DD)." };
+        return { value: null, error: t("Escribe una fecha válida (AAAA-MM-DD).") };
       }
       return { value: text, error: null };
     }
     case "number": {
       const text = raw.trim();
       if (text === "") return { value: null, error: null };
-      if (!NUMBER.test(text)) return { value: null, error: "Tiene que ser un número." };
+      if (!NUMBER.test(text)) return { value: null, error: t("Tiene que ser un número.") };
       // PostgreSQL no entiende la coma decimal: lo que se escribe como en español se inserta bien.
       return { value: text.replace(",", "."), error: null };
     }

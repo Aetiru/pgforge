@@ -1,5 +1,6 @@
 <script lang="ts">
   import { envFrame } from "./badges";
+  import { t } from "./i18n.svelte";
   import type { Environment } from "./ipc";
 
   let { environment, server }: { environment: Environment | null; server: string } = $props();
@@ -24,7 +25,7 @@
                px-2.5 py-px text-[10px] font-semibold tracking-widest uppercase {look.ribbon}"
       >
         <span class="size-1.5 rounded-full bg-current"></span>
-        Producción{server ? ` · ${server}` : ""}
+        {t("Producción")}{server ? ` · ${server}` : ""}
       </span>
     {/if}
   </div>

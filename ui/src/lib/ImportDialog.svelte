@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "./i18n.svelte";
   import { pickOpen } from "./ipc";
   import { confirmMutation } from "./access.svelte";
   import Alert from "./Alert.svelte";
@@ -20,11 +21,11 @@
     onclose: () => void;
   } = $props();
 
-  const FORMATS: { value: CopyFormat; label: string; hint: string }[] = [
-    { value: "csv", label: "CSV", hint: "valores separados por comas" },
-    { value: "text", label: "Texto", hint: "el formato de COPY: campos separados por tabulador" },
-    { value: "binary", label: "Binario", hint: "el que produce una exportación binaria de pgforge" },
-  ];
+  const formats = $derived<{ value: CopyFormat; label: string; hint: string }[]>([
+    { value: "csv", label: "CSV", hint: t("valores separados por comas") },
+    { value: "text", label: t("Texto"), hint: t("el formato de COPY: campos separados por tabulador") },
+    { value: "binary", label: t("Binario"), hint: t("el que produce una exportación binaria de pgforge") },
+  ]);
 
   let format = $state<CopyFormat>("csv");
   let path = $state("");
@@ -75,7 +76,7 @@
   });
 
   async function choose() {
-    const chosen = await pickOpen({ title: "Qué archivo importar" });
+    const chosen = await pickOpen({ title: t("Qué archivo importar") });
     if (typeof chosen === "string") path = chosen;
   }
 
@@ -84,7 +85,7 @@
    * a la mitad no deja la tabla a medio llenar; lo que cambia es que la ventana queda libre.
    */
   async function run() {
-    if (!(await confirmMutation(profileId, "Se van a insertar filas en la tabla."))) return;
+    if (!(await confirmMutation(profileId, t("Se van a insertar filas en la tabla.")))) return;
 
     try {
       await tasks.import({ profileId, database, spec, path });
@@ -96,9 +97,9 @@
   }
 </script>
 
-<Modal title="Importar" subtitle="{schema}.{table}" size="lg" {onclose}>
+<Modal title={t("Importar")} subtitle="{schema}.{table}" size="lg" {onclose}>
   <div class="seg" role="tablist">
-    {#each FORMATS as item (item.value)}
+    {#each formats as item (item.value)}
       <button
         class="seg-item"
         role="tab"
@@ -110,42 +111,42 @@
       </button>
     {/each}
   </div>
-  <p class="mt-1 text-xs muted">{FORMATS.find((item) => item.value === format)?.hint}</p>
+  <p class="mt-1 text-xs muted">{formats.find((item) => item.value === format)?.hint}</p>
 
   <div class="mt-3 flex items-end gap-2">
     <label class="flex min-w-0 flex-1 flex-col gap-1">
-      <span class="label">Archivo</span>
+      <span class="label">{t("Archivo")}</span>
       <input
         class="field font-mono text-xs"
         bind:value={path}
         readonly
-        title="La ruta se elige con el botón: solo se aceptan rutas elegidas en el diálogo del sistema"
+        title={t("La ruta se elige con el botón: solo se aceptan rutas elegidas en el diálogo del sistema")}
       />
     </label>
-    <button class="btn" onclick={choose}>Elegir…</button>
+    <button class="btn" onclick={choose}>{t("Elegir…")}</button>
   </div>
 
   {#if !isBinary}
     {#if isCsv}
       <label class="check mt-3">
         <input type="checkbox" bind:checked={header} />
-        La primera línea trae los nombres de columna (se saltea)
+        {t("La primera línea trae los nombres de columna (se saltea)")}
       </label>
     {/if}
 
     <div class="mt-3 flex flex-wrap gap-4">
       <label class="flex flex-col gap-1">
-        <span class="label">Delimitador</span>
+        <span class="label">{t("Delimitador")}</span>
         <input
           class="field w-20 font-mono"
           maxlength="1"
           bind:value={delimiter}
-          placeholder={isCsv ? "," : "tab"}
+          placeholder={isCsv ? "," : t("tab")}
         />
       </label>
       {#if isCsv}
         <label class="flex flex-col gap-1">
-          <span class="label">Comillas</span>
+          <span class="label">{t("Comillas")}</span>
           <input
             class="field w-20 font-mono"
             maxlength="1"
@@ -155,19 +156,18 @@
         </label>
       {/if}
       <label class="flex flex-col gap-1">
-        <span class="label">Texto para NULL</span>
+        <span class="label">{t("Texto para NULL")}</span>
         <input
           class="field w-28 font-mono"
           bind:value={nullText}
-          placeholder={isCsv ? "(vacío)" : "\\N"}
+          placeholder={isCsv ? t("(vacío)") : "\\N"}
         />
       </label>
     </div>
   {/if}
 
   <Alert tone="warn" box class="mt-3">
-    El archivo carga entero o no carga nada: si una fila no entra, se revierte todo. Las columnas
-    del archivo tienen que venir en el orden de la tabla.
+    {t("El archivo carga entero o no carga nada: si una fila no entra, se revierte todo. Las columnas del archivo tienen que venir en el orden de la tabla.")}
   </Alert>
 
   {#if previewError}
@@ -180,13 +180,13 @@
   {/if}
 
   <p class="mt-2 text-xs muted">
-    Corre en segundo plano: se sigue y se cancela desde la vista de procesos.
+    {t("Corre en segundo plano: se sigue y se cancela desde la vista de procesos.")}
   </p>
 
   {#snippet footer()}
-    <button class="btn ml-auto" onclick={onclose}>Cerrar</button>
+    <button class="btn ml-auto" onclick={onclose}>{t("Cerrar")}</button>
     <button class="btn btn-primary" onclick={run} disabled={!path || command === null}>
-      Importar
+      {t("Importar")}
     </button>
   {/snippet}
 </Modal>

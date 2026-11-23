@@ -167,7 +167,21 @@ export type RoleChange =
   | { kind: "reassignOwned"; from: string; to: string }
   | { kind: "dropOwned"; role: string; cascade: boolean }
   | { kind: "grantMembership"; role: string; member: string; adminOption: boolean }
-  | { kind: "revokeMembership"; role: string; member: string };
+  | { kind: "revokeMembership"; role: string; member: string }
+  /**
+   * Los permisos del rol sobre todo un esquema de la base conectada. `futureTables` suma
+   * `ALTER DEFAULT PRIVILEGES`, que solo cubre lo que cree quien ejecuta la sentencia.
+   */
+  | {
+      kind: "grantSchemaAccess";
+      role: string;
+      schema: string;
+      level: AccessLevel;
+      futureTables: boolean;
+    };
+
+/** Lectura, lectura y escritura, o además crear objetos en el esquema. */
+export type AccessLevel = "read" | "write" | "admin";
 
 export interface RoleInfo {
   oid: number;
@@ -194,6 +208,15 @@ export const roleInfo = (id: string, oid: number, database?: string) =>
 
 export const roleMemberships = (id: string, name: string, database?: string) =>
   invoke<string[]>("role_memberships", { id, name, database: database ?? null });
+
+/** Un rol elegible: los que no inician sesión (los grupos) vienen primero. */
+export interface RoleOption {
+  name: string;
+  login: boolean;
+}
+
+export const roleOptions = (id: string, database?: string) =>
+  invoke<RoleOption[]>("role_options", { id, database: database ?? null });
 
 export const roleNames = (id: string, database?: string) =>
   invoke<string[]>("role_names", { id, database: database ?? null });

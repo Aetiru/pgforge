@@ -1,3 +1,4 @@
+import { t } from "./i18n.svelte";
 import { confirmMutation, isReadOnly } from "./access.svelte";
 import { AUTO_LIMIT, paging } from "./paging.svelte";
 import { Tab, tabs } from "./tabs.svelte";
@@ -301,7 +302,7 @@ export class DataTab extends Tab {
     const shape = this.shape;
     const changes = this.changes();
     if (!shape || changes.length === 0) return;
-    if (!(await confirmMutation(this.profileId, `Se van a aplicar ${changes.length} cambios.`))) {
+    if (!(await confirmMutation(this.profileId, t("Se van a aplicar {length} cambios.", { length: changes.length })))) {
       return;
     }
 

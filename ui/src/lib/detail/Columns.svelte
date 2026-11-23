@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "../i18n.svelte";
   /** Las columnas de la tabla elegida, con lo que se puede hacer con cada una. */
   import Icon from "../Icon.svelte";
   import type { TableColumn, TableShape } from "../ipc";
@@ -23,12 +24,12 @@
   } = $props();
 </script>
 
-<Card title="Columnas" loading={loading ? "Leyendo columnas…" : null} {error}>
+<Card title={t("Columnas")} loading={loading ? t("Leyendo columnas…") : null} {error}>
   {#snippet actions()}
     {#if shape}
       <button class="btn btn-sm ml-auto" {...blocked} onclick={onnew}>
         <Icon name="plus" size={11} />
-        Columna
+        {t("Columna")}
       </button>
     {/if}
   {/snippet}
@@ -38,9 +39,9 @@
       <table class="list-table">
         <thead>
           <tr>
-            <th class="w-px whitespace-nowrap">Nombre</th>
-            <th class="w-px whitespace-nowrap">Tipo</th>
-            <th class="w-full">Valor por omisión</th>
+            <th class="w-px whitespace-nowrap">{t("Nombre")}</th>
+            <th class="w-px whitespace-nowrap">{t("Tipo")}</th>
+            <th class="w-full">{t("Valor por omisión")}</th>
             <th></th>
           </tr>
         </thead>
@@ -55,15 +56,15 @@
               </td>
               <td class="w-px font-mono text-xs whitespace-nowrap muted">{column.typeName}</td>
               <td class="max-w-0 truncate text-xs muted">
-                {column.default ?? (column.generated ? "generada por el servidor" : "—")}
+                {column.default ?? (column.generated ? t("generada por el servidor") : "—")}
               </td>
               <td class="w-28">
                 <div class="row-actions">
                   {#if !column.generated}
                     <button
                       class="btn btn-ghost btn-icon size-6"
-                      title="Editar la columna"
-                      aria-label="Editar la columna"
+                      title={t("Editar la columna")}
+                      aria-label={t("Editar la columna")}
                       {...blocked}
                       onclick={() => onedit(column)}
                     >
@@ -72,8 +73,8 @@
                   {/if}
                   <button
                     class="btn btn-danger-ghost btn-icon size-6"
-                    title="Eliminar la columna"
-                    aria-label="Eliminar la columna"
+                    title={t("Eliminar la columna")}
+                    aria-label={t("Eliminar la columna")}
                     {...blocked}
                     onclick={() => ondrop(column.name)}
                   >
