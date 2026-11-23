@@ -140,6 +140,19 @@ pub async fn table_indexes(
     index::indexes(&handle, &database, oid).await
 }
 
+/// Los roles elegibles con su bandera de login, grupos primero.
+#[tauri::command]
+pub async fn role_options(
+    state: State<'_, AppState>,
+    id: ProfileId,
+    database: Option<String>,
+) -> Result<Vec<role::RoleOption>> {
+    let handle = state.manager.require(id).await?;
+    let database = database.unwrap_or_else(|| handle.default_database().to_owned());
+
+    role::role_options(&handle, &database).await
+}
+
 /// El SQL que se ejecutaría, sin ejecutar nada.
 #[tauri::command]
 pub fn view_preview(changes: Vec<ViewChange>) -> Result<Vec<Statement>> {

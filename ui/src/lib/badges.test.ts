@@ -41,6 +41,8 @@ const TAGS: Record<NodeTag, true> = {
   login: true,
   group: true,
   superuser: true,
+  expired: true,
+  expiresSoon: true,
   partition: true,
   rowSecurity: true,
   noPrimaryKey: true,

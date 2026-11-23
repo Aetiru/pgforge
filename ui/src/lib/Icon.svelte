@@ -53,6 +53,7 @@
     | "auto"
     | "trash"
     | "edit"
+    | "note"
     | "check"
     | "warn"
     | "info"
@@ -152,6 +153,7 @@
     /* El automático es el mismo círculo con una mitad llena: sigue al sistema, sea cual sea. */
     auto: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none"/>',
     trash: '<path d="M4 7h16M9.5 7V5h5v2M6.5 7l1 13h9l1-13"/>',
+    note: '<path d="M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1h-8l-4 3.5V17H5a1 1 0 0 1-1-1z"/><path d="M8 9h8M8 12.5h5"/>',
     edit: '<path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M14.5 6.5l3 3"/>',
     check: '<path d="M5 12.5l4.5 4.5L19 7"/>',
     warn: '<path d="M12 3.5l9 16H3z"/><path d="M12 9.5v5"/><circle cx="12" cy="17.2" r="1" fill="currentColor" stroke="none"/>',

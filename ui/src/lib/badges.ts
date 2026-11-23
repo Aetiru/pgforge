@@ -108,6 +108,16 @@ const TAGS: Record<NodeTag, { label: string; tone: string; title: string }> = {
     tone: "tag-warn",
     get title() { return t("El rol se saltea todos los controles de permisos"); },
   },
+  expired: {
+    get label() { return t("vencido"); },
+    tone: "tag-bad",
+    get title() { return t("La contraseña del rol ya venció: no puede iniciar sesión con ella"); },
+  },
+  expiresSoon: {
+    get label() { return t("vence pronto"); },
+    tone: "tag-warn",
+    get title() { return t("La contraseña del rol vence en los próximos 14 días"); },
+  },
   partition: {
     get label() { return t("partición"); },
     tone: "tag-neutral",

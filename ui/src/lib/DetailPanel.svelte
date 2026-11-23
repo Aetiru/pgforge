@@ -10,6 +10,7 @@
    * probar con Vitest la parte que decide sin montar el panel entero.
    */
   import { untrack } from "svelte";
+  import { detailRequest } from "./detail-request.svelte";
   import BackupDialog from "./BackupDialog.svelte";
   import RestoreDialog from "./RestoreDialog.svelte";
   import ExportDialog from "./ExportDialog.svelte";
@@ -197,6 +198,16 @@
       ? { disabled: true, title: readOnlyReason(selected.profileId) ?? "" }
       : {},
   );
+
+  // Pedidos del menú del árbol (editar o borrar un rol). Se ejecuta la misma acción de la cabecera,
+  // así que si el botón no existe —servidor de solo lectura, por ejemplo— el pedido se descarta.
+  $effect(() => {
+    const request = detailRequest.pending;
+    if (!request || !selected || selected.key !== request.rowKey) return;
+    const action = actions.find((candidate) => candidate.kind === request.kind);
+    detailRequest.clear();
+    if (action && !(action.guarded && blocked.disabled)) untrack(() => run(action));
+  });
 
   $effect(() => {
     const current = node;

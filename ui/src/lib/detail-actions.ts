@@ -109,6 +109,11 @@ export interface DetailAction {
   /** Lo que se ve al pasar por encima; explica cuando el ícono solo no alcanza. */
   title: string;
   tone?: "primary" | "danger";
+  /**
+   * Dibuja el rótulo junto al ícono. Un botón de solo ícono se lee bien cuando es uno conocido
+   * (borrar, editar); con cinco seguidos y dos lápices iguales no, así que los de un rol lo piden.
+   */
+  showLabel?: boolean;
   /** Se apaga, con su motivo, cuando el perfil es de solo lectura. */
   guarded?: boolean;
 }
@@ -270,7 +275,8 @@ export function headerActions(context: ActionContext): DetailAction[] {
     actions.push({
       kind: "openRoleCapabilities",
       icon: "role",
-      label: t("Qué puede hacer"),
+      label: t("Ver accesos"),
+      showLabel: true,
       title: t("Los permisos calculados de {label} sobre un esquema elegido", { label: node.label }),
     });
   }
@@ -357,7 +363,9 @@ export function headerActions(context: ActionContext): DetailAction[] {
   if (flags.isRoutine && context.hasDdl) {
     actions.push({ kind: "editFunction", icon: "edit", label: t("Editar"), title: t("Editar"), guarded: true });
   }
-  if (flags.isRole) actions.push({ kind: "editRole", icon: "edit", label: t("Editar"), title: t("Editar") });
+  if (flags.isRole) {
+    actions.push({ kind: "editRole", icon: "edit", label: t("Editar"), title: t("Editar"), showLabel: true });
+  }
   if (flags.isExtension) actions.push({ kind: "editExtension", icon: "edit", label: t("Editar"), title: t("Editar") });
   if (flags.isFdw) actions.push({ kind: "editFdw", icon: "edit", label: t("Editar"), title: t("Editar") });
   if (flags.isForeignServer) {
@@ -381,10 +389,12 @@ export function headerActions(context: ActionContext): DetailAction[] {
   if (context.hasCommentTarget) {
     actions.push({
       kind: "comment",
-      icon: "edit",
+      // En un rol convive con «Editar»: dos lápices seguidos no se distinguen sin leer el `title`.
+      icon: flags.isRole ? "note" : "edit",
       label: t("Comentario"),
       title: t("Documenta el objeto adentro de la propia base"),
       guarded: true,
+      showLabel: flags.isRole,
     });
   }
   if (context.isGroup) {
@@ -433,7 +443,15 @@ export function headerActions(context: ActionContext): DetailAction[] {
     actions.push({ kind: "dropDatabase", icon: "trash", label: t("Eliminar"), title: t("Eliminar"), tone: "danger", guarded: true });
   }
   if (flags.isRole) {
-    actions.push({ kind: "dropRole", icon: "trash", label: t("Eliminar"), title: t("Eliminar"), tone: "danger", guarded: true });
+    actions.push({
+      kind: "dropRole",
+      icon: "trash",
+      label: t("Eliminar…"),
+      title: t("Eliminar el rol"),
+      tone: "danger",
+      guarded: true,
+      showLabel: true,
+    });
   }
   if (flags.isExtension) {
     actions.push({ kind: "dropExtension", icon: "trash", label: t("Quitar"), title: t("Quitar"), tone: "danger", guarded: true });

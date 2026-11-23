@@ -33,6 +33,7 @@ import { matchesNote, type ObjectNote } from "./notes";
 import { visibleSchemas } from "./hidden-schemas";
 import { hiddenSchemas, treeView } from "./tree-view.svelte";
 import { groupByPrefix, orderNodes } from "./tree-order";
+import { groupRoles, roleGroupOpenByDefault, type RoleGroupId } from "./role-groups";
 import type { ActivityBrief } from "./server-activity";
 
 /**
@@ -784,6 +785,7 @@ class Explorer {
    */
   private arrange(parent: Row, leaves: Row[]): Row[] {
     const kind = parent.node ? folderOf(parent.node.kind) : null;
+    if (kind === "roles" && parent.node && !parent.synthetic) return this.arrangeRoles(parent, leaves);
     if (!kind || !ORDERABLE.includes(kind) || !parent.node) return leaves;
 
     // Con los valores de fábrica se respeta el orden del servidor, que ya viene por nombre.
@@ -835,6 +837,53 @@ class Explorer {
     return [...groups, ...grouped.loose.map((node) => rowOf(node, parent.level + 1))];
   }
 
+  /**
+   * Reparte los roles en Usuarios, Grupos y Sistema. Son filas que arma el árbol (`synthetic`), como
+   * los grupos por prefijo: lo que cuelga de cada una son los mismos roles que leyó el servidor.
+   */
+  private arrangeRoles(parent: Row, leaves: Row[]): Row[] {
+    const previous = new Map(
+      (parent.children ?? []).filter((child) => child.synthetic).map((child) => [child.key, child.expanded]),
+    );
+    const titles: Record<RoleGroupId, string> = {
+      users: t("Usuarios"),
+      groups: t("Grupos"),
+      system: t("Sistema"),
+    };
+    return groupRoles(leaves.map((leaf) => ({ leaf, label: leaf.label, tags: leaf.node?.tags }))).map(
+      (group) => {
+        const key = `${parent.key}:roles:${group.id}`;
+        const detail = String(group.nodes.length);
+        return {
+          kind: "node" as const,
+          key,
+          profileId: parent.profileId,
+          node: {
+            id: `${parent.node!.id}:roles:${group.id}`,
+            label: titles[group.id],
+            detail,
+            kind: parent.node!.kind,
+            hasChildren: true,
+            database: parent.node!.database,
+          },
+          level: parent.level + 1,
+          label: titles[group.id],
+          detail,
+          hasChildren: true,
+          // Lo que el usuario abrió o cerró se respeta al releer; solo la primera vez manda el valor de fábrica.
+          expanded: previous.get(key) ?? roleGroupOpenByDefault(group.id),
+          loading: false,
+          children: group.nodes.map(({ leaf }) => {
+            leaf.level = parent.level + 2;
+            return leaf;
+          }),
+          connected: true,
+          synthetic: true,
+        };
+      },
+    );
+  }
+
   /** Vuelve a ordenar lo que ya está cargado, sin pedirle nada al servidor. */
   rearrange() {
     const walk = (rows: Row[]) => {
@@ -879,12 +928,16 @@ class Explorer {
     // Nada cargado: se va a leer solo cuando se lo abra, y ahí ya va a venir al día.
     if (row.children === null) return;
 
+    // Una fila armada por el árbol (grupo por prefijo, Usuarios/Grupos) no se lee del servidor: se
+    // rehace con su padre. Releerla traería de nuevo toda la carpeta adentro de cada grupo; lo que
+    // sí hay que conservar es lo abierto entre sus hojas.
+    const leavesOf = (rows: Row[]) => rows.flatMap((child) => (child.synthetic ? (child.children ?? []) : [child]));
     const open = new Map(
-      row.children.filter((child) => child.expanded).map((child) => [child.key, child]),
+      leavesOf(row.children).filter((child) => child.expanded).map((child) => [child.key, child]),
     );
     await this.loadChildren(row);
 
-    for (const child of row.children ?? []) {
+    for (const child of leavesOf(row.children ?? [])) {
       const previous = open.get(child.key);
       if (!previous) continue;
 

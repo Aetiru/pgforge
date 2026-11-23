@@ -49,6 +49,10 @@ pub enum NodeTag {
     /// El rol no puede iniciar sesión: existe para agrupar privilegios.
     Group,
     Superuser,
+    /// La contraseña del rol ya venció (`rolvaliduntil` en el pasado): no puede iniciar sesión con ella.
+    Expired,
+    /// La contraseña del rol vence dentro de los próximos 14 días.
+    ExpiresSoon,
     /// La tabla es una partición de otra.
     Partition,
     /// La tabla tiene activada la seguridad por fila.

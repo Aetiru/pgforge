@@ -1,6 +1,8 @@
 import type { Dictionary } from "../../i18n";
 import { common } from "./common";
 import { modules } from "./modules";
+import { roles } from "./roles";
+import { rolesTree } from "./roles-tree";
 import { ui1 } from "./ui-1";
 import { ui2 } from "./ui-2";
 import { ui3 } from "./ui-3";
@@ -18,6 +20,8 @@ import { ui8 } from "./ui-8";
 export const en: Dictionary = {
   ...common,
   ...modules,
+  ...roles,
+  ...rolesTree,
   ...ui1,
   ...ui2,
   ...ui3,

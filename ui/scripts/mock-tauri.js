@@ -17,6 +17,15 @@
     schemas: [node("s:public", "public", "schema", { hasChildren: true, oid: 2200, schema: "public" })],
     "s:public": [folder("tables", "Tablas", "tables", { schema: "public" }), folder("views", "Vistas", "views", { schema: "public" })],
     tables: [node("t:clientes", "clientes", "table", { oid: 16401, schema: "public", detail: "120 k filas" }), node("t:pedidos", "pedidos", "table", { oid: 16410, schema: "public", detail: "48 k filas" }), node("t:facturas", "facturas", "table", { oid: 16422, schema: "public", detail: "9 k filas" })],
+    roles: [
+      node("r:aprieto", "aprieto", "role", { oid: 17001, database: "", tags: ["login", "superuser"] }),
+      node("r:mlopez", "mlopez", "role", { oid: 17002, database: "", tags: ["login", "expired"] }),
+      node("r:jperez", "jperez", "role", { oid: 17003, database: "", tags: ["login", "expiresSoon"] }),
+      node("r:g_consulta", "g_consulta", "role", { oid: 17004, database: "", tags: ["group"] }),
+      node("r:apps_services", "apps_services", "role", { oid: 17005, database: "", tags: ["group"] }),
+      node("r:pg_monitor", "pg_monitor", "role", { oid: 17006, database: "", tags: ["group"] }),
+      node("r:pg_read_all_data", "pg_read_all_data", "role", { oid: 17007, database: "", tags: ["group"] }),
+    ],
     views: [node("v:resumen", "resumen_mensual", "view", { oid: 16440, schema: "public" })],
   };
   const keyOf = (p) => (p ? (typeof p.id === "string" ? p.id : "root") : "root");
@@ -150,6 +159,11 @@
       const e = (name, source, target) => ({ name, source, target, sourceColumns: ["x"], targetColumns: ["id"], onUpdate: "noAction", onDelete: "noAction" });
       return { database: "ventas", schema: "public", tables, edges: [e("pedidos_cliente_fk", 2, 1), e("items_pedido_fk", 3, 2), e("items_producto_fk", 3, 4), e("productos_cat_fk", 4, 5), e("facturas_pedido_fk", 6, 2), e("pagos_factura_fk", 7, 6)] };
     },
+    role_options: () => [{ name: "g_consulta", login: false }, { name: "apps_services", login: false }, { name: "aprieto", login: true }, { name: "mlopez", login: true }],
+    schema_names: () => ["public", "xtrack", "liquidacion"],
+    role_memberships: () => ["g_consulta"],
+    role_info: () => ({ oid: 17001, name: "aprieto", superuser: false, createdb: false, createrole: false, inherit: true, login: true, replication: false, bypassRls: false, connectionLimit: -1, validUntil: "2026-12-10 00:00:00+00" }),
+    role_preview: ({ changes }) => changes.map((c) => ({ sql: c.kind === "createRole" ? "CREATE ROLE " + c.name + " LOGIN" : c.kind + " " + (c.role ?? c.name), risk: "safe" })),
     history_recent: () => [], saved_list: () => [], bookmarks_list: () => [], snippets_list: () => [],
     snippet_usage: () => ({}), snippet_used: () => null, snippets_export: () => 0,
     snippets_import: () => ({ snippets: [], added: 0, replaced: 0, skipped: [] }),

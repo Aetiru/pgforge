@@ -4,7 +4,10 @@
   import Alert from "./Alert.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
-  import { confirmMutation, environmentOf, isReadOnly } from "./access.svelte";
+  import { confirmMutation, environmentOf, isReadOnly, readOnlyReason } from "./access.svelte";
+  import { detailRequest } from "./detail-request.svelte";
+  import { dock } from "./dock.svelte";
+  import { roleRowTags } from "./role-groups";
   import { pins } from "./pins.svelte";
   import { envIcon, envLook, envWash, lookOf, READ_ONLY_LOOK, serverColorLook, tagLook } from "./badges";
   import { bookmarks } from "./bookmarks.svelte";
@@ -631,11 +634,29 @@
     if (row && target) onmatrix(row.profileId, target.database, target.schema);
   }
 
+  /** Las etiquetas de una fila; en un rol sobran las que ya dice el grupo donde está. */
+  function tagsOf(row: Row) {
+    return row.node?.kind === "role" ? roleRowTags(row.node.tags) : (row.node?.tags ?? []);
+  }
+
   function openRoleCapabilities() {
     const row = menu?.row;
     const target = menuRole;
     menu = null;
     if (row && target) onrolecapabilities(row.profileId, target.database, target.role);
+  }
+
+  /**
+   * Editar y borrar un rol pasan por el panel de detalle, que ya tiene el camino entero
+   * (confirmación de producción incluida): acá solo se le pide y se lo muestra si estaba oculto.
+   */
+  function askRole(kind: "editRole" | "dropRole") {
+    const row = menu?.row;
+    menu = null;
+    if (!row) return;
+    explorer.select(row);
+    dock.setInspector(true);
+    detailRequest.ask(row.key, kind);
   }
 
   function connect() {
@@ -1500,7 +1521,7 @@
                 Los rasgos del objeto van como etiquetas y no como texto: que un rol pueda entrar o
                 que una tabla filtre filas se reconoce por el color, sin leer la fila entera.
               -->
-              {#each row.node?.tags ?? [] as tag (tag)}
+              {#each tagsOf(row) as tag (tag)}
                 {@const badge = tagLook(tag)}
                 <span class="tag {badge.tone} shrink-0" title={badge.title}>{badge.label}</span>
               {/each}
@@ -1914,7 +1935,7 @@
       </button>
     {/if}
 
-    {#if menuQuery}
+    {#if menuQuery && !menuRole}
       <button class="row-menu" onclick={newQuery}>
         <span class="flex items-center gap-2"><Icon name="sql" size={13} /> {t("Nueva consulta")}</span>
         <span class="muted">Ctrl+Q</span>
@@ -2001,9 +2022,28 @@
     {/if}
 
     {#if menuRole}
+      {@const roleBlocked = isReadOnly(menu.row.profileId)}
+      <button
+        class="row-menu"
+        disabled={roleBlocked}
+        title={roleBlocked ? readOnlyReason(menu.row.profileId) : undefined}
+        onclick={() => askRole("editRole")}
+      >
+        <span class="flex items-center gap-2"><Icon name="edit" size={13} /> {t("Editar")}</span>
+      </button>
       <button class="row-menu" onclick={openRoleCapabilities}>
         <span class="flex items-center gap-2">
-          <Icon name="role" size={13} /> {t("Qué puede hacer")}
+          <Icon name="role" size={13} /> {t("Ver accesos")}
+        </span>
+      </button>
+      <button
+        class="row-menu"
+        disabled={roleBlocked}
+        title={roleBlocked ? readOnlyReason(menu.row.profileId) : undefined}
+        onclick={() => askRole("dropRole")}
+      >
+        <span class="flex items-center gap-2 text-rose-600 dark:text-rose-400">
+          <Icon name="trash" size={13} /> {t("Eliminar…")}
         </span>
       </button>
     {/if}
@@ -2011,6 +2051,13 @@
     {#if menuName}
       <button class="row-menu" onclick={copyName}>
         <span class="flex items-center gap-2"><Icon name="copy" size={13} /> {t("Copiar el nombre")}</span>
+      </button>
+    {/if}
+
+    {#if menuQuery && menuRole}
+      <button class="row-menu" onclick={newQuery}>
+        <span class="flex items-center gap-2"><Icon name="sql" size={13} /> {t("Nueva consulta")}</span>
+        <span class="muted">Ctrl+Q</span>
       </button>
     {/if}
 

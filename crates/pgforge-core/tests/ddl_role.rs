@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use pgforge_core::conn::{ConnectionManager, ConnectionProfile, ServerHandle};
 use pgforge_core::ddl::quote_ident;
-use pgforge_core::ddl::role::{self, RoleAttributes, RoleChange};
+use pgforge_core::ddl::role::{self, AccessLevel, RoleAttributes, RoleChange};
 
 fn test_urls() -> Vec<String> {
     std::env::var("PGFORGE_TEST_URLS")
@@ -253,4 +253,156 @@ async fn borra(handle: &ServerHandle, uno: &str, dos: &str) {
 
     assert!(oid_of(handle, uno).await.is_none());
     assert!(oid_of(handle, dos).await.is_none());
+}
+
+/// Una plantilla de acceso da exactamente los permisos pedidos, y solo esos. Se verifica con las
+/// funciones `has_*_privilege` del servidor y no leyendo las ACL: es la respuesta que daría
+/// PostgreSQL a quien después use ese rol.
+#[tokio::test]
+async fn la_plantilla_de_acceso_da_los_permisos_pedidos_contra_servidores_reales() {
+    let urls = test_urls();
+    if urls.is_empty() {
+        eprintln!(
+            "AVISO: PGFORGE_TEST_URLS no está definida, no se verificó nada contra un servidor real."
+        );
+        return;
+    }
+
+    for url in urls {
+        let handle = connect(&url).await;
+        let version = handle.caps.version;
+        let lectora = role_name("lectora");
+        let escritora = role_name("escritora");
+        let schema = format!("pgforge_acc_{}", std::process::id());
+        let database = handle.default_database().to_owned();
+
+        limpia(&handle, &database, &schema, &[&lectora, &escritora]).await;
+
+        let outcome = {
+            let handle = Arc::clone(&handle);
+            let (lectora, escritora, schema, database) = (
+                lectora.clone(),
+                escritora.clone(),
+                schema.clone(),
+                database.clone(),
+            );
+            tokio::spawn(async move {
+                let client = handle.client(&database).await.unwrap();
+                client
+                    .batch_execute(&format!(
+                        "CREATE SCHEMA {schema};
+                         CREATE TABLE {schema}.pedidos (id serial PRIMARY KEY, total numeric);"
+                    ))
+                    .await
+                    .unwrap();
+
+                for (name, level) in [(&lectora, AccessLevel::Read), (&escritora, AccessLevel::Write)] {
+                    role::apply(
+                        &handle,
+                        &database,
+                        &[
+                            RoleChange::CreateRole {
+                                name: name.clone(),
+                                attributes: RoleAttributes {
+                                    login: Some(true),
+                                    ..Default::default()
+                                },
+                                member_of: vec![],
+                            },
+                            RoleChange::GrantSchemaAccess {
+                                role: name.clone(),
+                                schema: schema.clone(),
+                                level,
+                                future_tables: true,
+                            },
+                        ],
+                    )
+                    .await
+                    .expect("tenía que crear el rol con su plantilla");
+                }
+
+                // Las opciones del selector traen la bandera de login y los grupos van antes.
+                let options = role::role_options(&handle, &database).await.unwrap();
+                assert!(options.iter().any(|o| o.name == lectora && o.login));
+                let first_login = options.iter().position(|o| o.login).unwrap_or(options.len());
+                assert!(
+                    options[first_login..].iter().all(|o| o.login),
+                    "los roles sin login tienen que ir todos antes que los que sí inician sesión"
+                );
+                assert!(options.iter().all(|o| !o.name.starts_with("pg_")));
+
+                let can = |sql: String| {
+                    let client = &client;
+                    async move { client.query_one(&sql, &[]).await.unwrap().get::<_, bool>(0) }
+                };
+                let table = |role: &str, privilege: &str, table: &str| {
+                    format!(
+                        "SELECT has_table_privilege('{role}', '{schema}.{table}', '{privilege}')"
+                    )
+                };
+
+                // Solo lectura: ve el esquema y lee, pero no escribe ni usa la secuencia.
+                assert!(can(format!("SELECT has_schema_privilege('{lectora}', '{schema}', 'USAGE')")).await);
+                assert!(can(table(&lectora, "SELECT", "pedidos")).await);
+                assert!(!can(table(&lectora, "INSERT", "pedidos")).await);
+                assert!(!can(format!(
+                    "SELECT has_sequence_privilege('{lectora}', '{schema}.pedidos_id_seq', 'USAGE')"
+                ))
+                .await);
+                assert!(!can(format!("SELECT has_schema_privilege('{lectora}', '{schema}', 'CREATE')")).await);
+
+                // Lectura y escritura: modifica y usa la secuencia (sin eso un INSERT con `serial` falla).
+                assert!(can(table(&escritora, "INSERT", "pedidos")).await);
+                assert!(can(table(&escritora, "DELETE", "pedidos")).await);
+                assert!(can(format!(
+                    "SELECT has_sequence_privilege('{escritora}', '{schema}.pedidos_id_seq', 'USAGE')"
+                ))
+                .await);
+                assert!(!can(format!("SELECT has_schema_privilege('{escritora}', '{schema}', 'CREATE')")).await);
+
+                // Las tablas que se crean después también quedan cubiertas (lo creó este mismo rol).
+                client
+                    .batch_execute(&format!("CREATE TABLE {schema}.nueva (id int)"))
+                    .await
+                    .unwrap();
+                assert!(can(table(&lectora, "SELECT", "nueva")).await);
+                assert!(!can(table(&lectora, "INSERT", "nueva")).await);
+                assert!(can(table(&escritora, "UPDATE", "nueva")).await);
+            })
+            .await
+        };
+
+        limpia(&handle, &database, &schema, &[&lectora, &escritora]).await;
+
+        if let Err(join) = outcome {
+            std::panic::resume_unwind(join.into_panic());
+        }
+        eprintln!("ok contra PostgreSQL {version} ({url})");
+    }
+}
+
+/// `DROP OWNED` antes de borrar los roles: los `ALTER DEFAULT PRIVILEGES` los dejan enganchados.
+async fn limpia(handle: &ServerHandle, database: &str, schema: &str, roles: &[&String]) {
+    let Ok(client) = handle.client(database).await else {
+        return;
+    };
+    for role in roles {
+        let quoted = quote_ident(role);
+        let exists: bool = client
+            .query_one(
+                "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)",
+                &[role],
+            )
+            .await
+            .map(|row| row.get(0))
+            .unwrap_or(false);
+        if exists {
+            let _ = client
+                .batch_execute(&format!("DROP OWNED BY {quoted}; DROP ROLE {quoted}"))
+                .await;
+        }
+    }
+    let _ = client
+        .batch_execute(&format!("DROP SCHEMA IF EXISTS {schema} CASCADE"))
+        .await;
 }
