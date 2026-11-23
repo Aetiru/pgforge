@@ -5,8 +5,33 @@ Cliente de administración de PostgreSQL, open source, escrito en Rust.
 Arranque instantáneo y bajo consumo de RAM: el núcleo es un crate de Rust y la interfaz corre
 sobre el WebView nativo del sistema (Tauri), no sobre Electron.
 
-**Estado: funcionalmente completo para las tareas comunes de administración**, en preparación de la
-primera release (`v0.1.0`). Usable, pero todavía sin rodaje en producción.
+**Estado: funcionalmente completo para las tareas comunes de administración.** Ya hay releases
+publicadas (ver [Instalación](#instalación)), pero todavía sin rodaje en producción: úsalo con
+cuidado contra servidores reales, y con la marca de entorno `prod` y el modo solo lectura de cada
+perfil si quieres una red de seguridad extra.
+
+*English: pgforge is an open-source PostgreSQL administration client written in Rust (Tauri +
+Svelte). The UI is available in Spanish and English; see [English summary](#english-summary).*
+
+## Qué es
+
+Un cliente de escritorio para administrar PostgreSQL: explorar esquemas, editar datos, escribir y
+planificar consultas, gestionar objetos, roles y permisos, hacer backup y restore, comparar
+esquemas y datos entre servidores, y monitorear. Toda la lógica vive en un núcleo reutilizable
+(`pgforge-core`) que también expone una CLI. Antes de aplicar cualquier cambio muestra el SQL
+exacto que se va a ejecutar.
+
+## Idioma de la interfaz
+
+La interfaz está en **español e inglés**. Se elige en **Preferencias → Idioma**. El código, los
+comentarios y los mensajes de commit del proyecto están en español.
+
+## Requisitos
+
+- Un servidor PostgreSQL **13 a 17** (el CI prueba el núcleo contra las cinco versiones).
+- `pg_dump` y `pg_restore` instalados en la máquina **solo** para backup, restore y ver el DDL de
+  tablas; el resto funciona sin ellos. Deben ser de una versión igual o mayor que la del servidor.
+- Windows 10/11 (usa WebView2), macOS o Linux (WebKitGTK 4.1).
 
 ## Alcance
 
@@ -53,15 +78,16 @@ de ejecución (`pgforge-core::caps`), no con consultas escritas contra una versi
 
 ## Instalación
 
-Cuando haya una release publicada, los instaladores de cada plataforma estarán en la página de
-[Releases](../../releases):
+Los instaladores de cada plataforma están en la página de
+[Releases](https://github.com/Aetiru/pgforge/releases):
 
 - **Windows**: `pgforge_x.y.z_x64-setup.exe` (NSIS) o `pgforge_x.y.z_x64_en-US.msi`. Usa el WebView2
   del sistema, que ya viene con Windows 10/11 al día.
 - **macOS**: `pgforge_x.y.z_*.dmg`.
 - **Linux**: `pgforge_x.y.z_amd64.deb` o `pgforge_x.y.z_amd64.AppImage`.
 
-Para la última versión del código, o mientras no haya release, se compila desde el fuente (ver
+Los instaladores todavía no están firmados, así que Windows SmartScreen o Gatekeeper en macOS
+pueden advertirlo al abrirlos. Para la última versión del código se compila desde el fuente (ver
 [Desarrollo](#desarrollo)): `pnpm install && pnpm build` deja los instaladores en
 `target/release/bundle/`.
 
@@ -148,6 +174,16 @@ $env:PGFORGE_TEST_URLS = ((Get-Content .env.local) -match 'PGFORGE_TEST_URLS=') 
 cargo test --workspace
 ```
 
+## Contribuir
+
+Los issues y pull requests son bienvenidos en
+[GitHub](https://github.com/Aetiru/pgforge). Antes de abrir un PR conviene correr
+`cargo fmt --all --check`, `cargo clippy -p pgforge-core -p pgforge-cli --all-targets`,
+`cargo test -p pgforge-core -p pgforge-cli` (con `PGFORGE_TEST_URLS`, ver arriba) y
+`pnpm ui:check && pnpm ui:test`. Reglas de diseño y convenciones en [`CLAUDE.md`](CLAUDE.md) y
+[`ui/CLAUDE.md`](ui/CLAUDE.md): la lógica va en el núcleo, cada mutación tiene vista previa, y
+los textos del proyecto están en español.
+
 ## Licencia
 
 Bajo cualquiera de estas dos licencias, a elección:
@@ -157,3 +193,22 @@ Bajo cualquiera de estas dos licencias, a elección:
 
 Salvo indicación explícita en contrario, toda contribución enviada a este proyecto queda
 licenciada de la misma forma dual, sin condiciones adicionales.
+
+## English summary
+
+pgforge is an open-source PostgreSQL administration client written in Rust: instant startup and
+low memory use, with the UI running on the system's native WebView (Tauri) instead of Electron.
+
+- **What it does:** schema explorer, editable data grid, SQL editor with EXPLAIN, DDL for tables,
+  views, indexes, roles and privileges, backup/restore, `COPY` import/export, SSH tunnel,
+  monitoring and maintenance, schema and data comparison, and an ERD diagram. Every change shows
+  the exact SQL before it is applied.
+- **Requirements:** PostgreSQL 13 to 17. `pg_dump` / `pg_restore` are needed only for backup,
+  restore and table DDL.
+- **Install:** download the installer for your platform (Windows `.exe`/`.msi`, macOS `.dmg`,
+  Linux `.deb`/`.AppImage`) from [Releases](https://github.com/Aetiru/pgforge/releases), or build
+  from source (see [Desarrollo](#desarrollo)).
+- **Language:** the interface is available in English and Spanish; pick it in
+  Preferences > Language. Project docs and code comments are in Spanish.
+- **Contributing:** issues and PRs welcome; see [Contribuir](#contribuir).
+- **License:** Apache-2.0 or MIT, at your option.
