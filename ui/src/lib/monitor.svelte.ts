@@ -1,3 +1,4 @@
+import { t } from "./i18n.svelte";
 import {
   Channel,
   describeError,
@@ -175,7 +176,7 @@ export class MonitorTab extends Tab {
   readonly kind = "monitor" as const;
 
   constructor(profileId: string) {
-    super(profileId, "", "Monitoreo");
+    super(profileId, "", t("Monitoreo"));
   }
 }
 

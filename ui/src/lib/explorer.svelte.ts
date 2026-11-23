@@ -28,6 +28,7 @@ import { folders, LOOSE_GROUP, normalizeGroup } from "./folders.svelte";
 import { recents } from "./recents.svelte";
 import { compareServers, reorderDrop } from "./server-order";
 import { folderForKind } from "./tree-actions";
+import { folderLabel } from "./folder-label";
 import { filterHits, matchesKind, parseQuery } from "./tree-query";
 import { matchesNote, type ObjectNote } from "./notes";
 import { visibleSchemas } from "./hidden-schemas";
@@ -207,6 +208,10 @@ function groupRow(name: string | null, level: number, children: Row[]): Row {
 }
 
 function childRow(parent: Row, node: TreeNode): Row {
+  const folder = folderOf(node.kind);
+  // El núcleo rotula las carpetas en español: se traduce según el tipo, en el nodo mismo, para
+  // que el detalle y la barra de estado lean el mismo texto que la fila.
+  if (folder) node = { ...node, label: folderLabel(folder) };
   return {
     kind: "node",
     key: `${parent.profileId}:${node.id}`,

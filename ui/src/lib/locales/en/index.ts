@@ -3,6 +3,7 @@ import { common } from "./common";
 import { modules } from "./modules";
 import { roles } from "./roles";
 import { rolesTree } from "./roles-tree";
+import { folderLabels } from "./folders";
 import { ui1 } from "./ui-1";
 import { ui2 } from "./ui-2";
 import { ui3 } from "./ui-3";
@@ -22,6 +23,7 @@ export const en: Dictionary = {
   ...modules,
   ...roles,
   ...rolesTree,
+  ...folderLabels,
   ...ui1,
   ...ui2,
   ...ui3,
