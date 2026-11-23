@@ -66,5 +66,5 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "pgforge ${{ github.ref_name }}"
           releaseDraft: true
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
