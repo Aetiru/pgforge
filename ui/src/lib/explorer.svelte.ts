@@ -211,7 +211,7 @@ function childRow(parent: Row, node: TreeNode): Row {
   const folder = folderOf(node.kind);
   // El núcleo rotula las carpetas en español: se traduce según el tipo, en el nodo mismo, para
   // que el detalle y la barra de estado lean el mismo texto que la fila.
-  if (folder) node = { ...node, label: folderLabel(folder) };
+  if (folder) node = { ...node, label: folderLabel(folder) ?? node.label };
   return {
     kind: "node",
     key: `${parent.profileId}:${node.id}`,

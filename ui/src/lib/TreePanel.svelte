@@ -1602,7 +1602,7 @@
             {/if}
           </span>
 
-          <span class="ml-auto flex min-w-0 shrink items-center gap-0.5 pl-1">
+          <span class="ml-auto flex min-w-0 shrink-[100] items-center gap-0.5 pl-1">
             {#if isGroup && row.group !== undefined && ongroup}
               <button
                 class="btn btn-ghost btn-icon size-6 opacity-0 focus-visible:opacity-100

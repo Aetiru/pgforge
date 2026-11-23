@@ -25,8 +25,8 @@ export type FolderKind =
   | "roles"
   | "databases"
   | "extensions"
-  | "fdws"
-  | "fservers";
+  | "foreignDataWrappers"
+  | "foreignServers";
 
 export type NodeKind =
   | "database"
