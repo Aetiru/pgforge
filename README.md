@@ -21,6 +21,20 @@ esquemas y datos entre servidores, y monitorear. Toda la lógica vive en un núc
 (`pgforge-core`) que también expone una CLI. Antes de aplicar cualquier cambio muestra el SQL
 exacto que se va a ejecutar.
 
+## Capturas
+
+Modo oscuro a la izquierda y claro a la derecha, con una base de ejemplo.
+
+![Datos de una tabla](docs/capturas/1-datos-oscuro-y-claro.jpg)
+
+![Editor de SQL con resultados](docs/capturas/2-consulta-oscuro-y-claro.jpg)
+
+![Monitoreo de sesiones](docs/capturas/3-monitoreo-oscuro-y-claro.jpg)
+
+![Árbol de roles con su estado y SQL](docs/capturas/4-roles-oscuro-y-claro.jpg)
+
+![Nuevo rol con plantilla de accesos y SQL en vivo](docs/capturas/5-nuevo-rol-oscuro-y-claro.jpg)
+
 ## Idioma de la interfaz
 
 La interfaz está en **español e inglés**. Se elige en **Preferencias → Idioma**. El código, los
