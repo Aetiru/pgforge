@@ -3465,7 +3465,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "pgforge-app"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "pgforge-core",
  "serde",
@@ -3483,7 +3483,7 @@ dependencies = [
 
 [[package]]
 name = "pgforge-cli"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "clap",
  "pgforge-core",
@@ -3492,7 +3492,7 @@ dependencies = [
 
 [[package]]
 name = "pgforge-core"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "bytes",
  "crc32fast",
