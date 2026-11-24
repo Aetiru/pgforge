@@ -61,6 +61,7 @@ editor para revisarla. **Nunca se ejecuta sola.**
 | 7 | **Comparar dos resultados** de consultas, no solo tablas | M |
 | 8 | **Compartir configuración de equipo:** exportar e importar perfiles y carpetas sin contraseñas | M |
 | 9 | **Plantillas de consulta con parámetros** y un formulario para rellenarlos (hoy hay `{{nombre}}`) | S |
+| 10 | **De la comparación de esquemas a la migración con un clic** (hoy el flujo existe, pero hay que guardar el script a mano) | M |
 
 ## Pulido pendiente
 - «Eliminar…» baja a otra línea en el inspector angosto.
@@ -81,6 +82,8 @@ por 5000×11 celdas) y no hay fuga al cerrar pestañas; el resto es el motor web
 - Perfilar el **costo de dibujar la grilla en WebKit** (capas y DOM).
 - Una prueba de **estrés**: varios servidores conectados, consultas en paralelo y pestañas pesadas.
 - Cargar bajo demanda los módulos pesados (monitoreo, diagrama, comparar).
+- Soltar los datos de las pestañas inactivas: ahorra poco (unos 6 MB por pestaña) y cambia el
+  comportamiento visible (scroll, recarga, estado de edición); va al final.
 - No se recomienda reescribir la interfaz en Rust nativo solo para ahorrar memoria.
 
 ## Distribución
@@ -95,3 +98,22 @@ por 5000×11 celdas) y no hay fuga al cerrar pestañas; el resto es el motor web
 - Un `SECURITY.md` con cómo reportar vulnerabilidades.
 - README completo en inglés y un GIF corto de uso.
 - Pruebas de interfaz de extremo a extremo (Playwright) en CI y un job que avise si sube la memoria.
+- Que cada comando nuevo del IPC tenga su prueba con la carga JSON tal como la manda la interfaz
+  (como `src-tauri/tests/preview.rs`).
+- Pruebas de la interfaz con roles de permisos distintos (por ejemplo, solo lectura).
+
+## Descartado por ahora
+- **Reescribir la interfaz en Rust nativo** (`egui`, `iced`, `slint`) para ahorrar memoria: son meses
+  de trabajo para unos 100 a 200 MB, con riesgo en accesibilidad y texto en Windows y macOS.
+- **Edición colaborativa o sesiones compartidas:** exige un servidor propio y cambia el modelo de
+  seguridad de una aplicación que hoy no tiene cuentas.
+- **SQL por lenguaje natural que envíe datos de las tablas:** solo se contempla con la estructura (ver
+  arriba), nunca con filas.
+
+## Decisiones abiertas
+- Cómo conectar el SQL por lenguaje natural: la API de Anthropic con la clave del usuario, la
+  herramienta `claude` instalada en el equipo, o un modelo local. La propuesta es empezar por `claude -p`
+  porque no obliga a guardar ninguna clave en pgforge.
+- Si la sincronización con Git guarda también las abreviaturas y consultas guardadas o solo los
+  archivos de scripts.
+- Si se publican estas ideas como issues de GitHub para que quien pruebe la rc.2 vote lo que prefiere.
