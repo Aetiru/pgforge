@@ -8,7 +8,7 @@ import type { FolderKind } from "./ipc/schema";
  * un solo idioma; traducirlo aquí, según el tipo de carpeta y no según el texto recibido, evita
  * que un cambio de redacción en Rust deje la carpeta sin traducir sin que nada falle.
  */
-export function folderLabel(folder: FolderKind): string {
+export function folderLabel(folder: FolderKind): string | undefined {
   switch (folder) {
     case "schemas": return t("Esquemas");
     case "tables": return t("Tablas");
@@ -27,7 +27,10 @@ export function folderLabel(folder: FolderKind): string {
     case "roles": return t("Roles");
     case "databases": return t("Bases de datos");
     case "extensions": return t("Extensiones");
-    case "fdws": return t("Wrappers foráneos");
-    case "fservers": return t("Servidores foráneos");
+    case "foreignDataWrappers": return t("Wrappers foráneos");
+    case "foreignServers": return t("Servidores foráneos");
+    // Un tipo de carpeta que el núcleo agregue y esta lista no conozca: se deja el rótulo que
+    // mandó (en español) antes que una fila sin nombre.
+    default: return undefined;
   }
 }
